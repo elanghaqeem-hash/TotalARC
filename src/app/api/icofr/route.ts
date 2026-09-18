@@ -21,13 +21,17 @@ export async function POST(request: Request) {
     const action = requireString(body.action, 'action', 40);
 
     if (action === 'CREATE_ACCOUNT') {
+      const balanceAmount = Number(body.balanceAmount ?? 0);
+      if (!Number.isFinite(balanceAmount)) {
+        throw new ApiError(400, 'VALIDATION_ERROR', 'balanceAmount must be a finite number');
+      }
       const account = await prisma.financialAccount.create({
         data: {
           institutionId: user.institutionId,
           accountCode: requireString(body.accountCode, 'accountCode', 80),
           accountName: requireString(body.accountName, 'accountName', 250),
           financialStatement: requireString(body.financialStatement, 'financialStatement', 100),
-          balanceAmount: Number(body.balanceAmount || 0),
+          balanceAmount,
           isSignificant: body.isSignificant === true,
           scopingRationale: optionalString(body.scopingRationale, 4000),
           fraudExposure: optionalString(body.fraudExposure, 30) || 'Low',
@@ -43,6 +47,12 @@ export async function POST(request: Request) {
     }
 
     if (action === 'CREATE_IPE') {
+      const completenessTested = body.completenessTested === true;
+      const accuracyTested = body.accuracyTested === true;
+      const evidenceDoc = optionalString(body.evidenceDoc, 1000);
+      if ((completenessTested || accuracyTested) && !evidenceDoc) {
+        throw new ApiError(400, 'EVIDENCE_REQUIRED', 'Evidence reference is required when IPE completeness or accuracy is marked as tested');
+      }
       const item = await prisma.iPERegister.create({
         data: {
           institutionId: user.institutionId,
@@ -51,9 +61,9 @@ export async function POST(request: Request) {
           reportOwner: requireString(body.reportOwner || user.name, 'reportOwner', 250),
           parameters: optionalString(body.parameters, 4000),
           logicSummary: optionalString(body.logicSummary, 4000),
-          completenessTested: body.completenessTested === true,
-          accuracyTested: body.accuracyTested === true,
-          evidenceDoc: optionalString(body.evidenceDoc, 1000)
+          completenessTested,
+          accuracyTested,
+          evidenceDoc
         }
       });
       await writeAudit(user, request, { action: 'CREATE', entityType: 'IPERegister', recordId: item.id, newValue: item });
