@@ -2,12 +2,12 @@
 
 import React,{useState} from 'react';
 import { Download, FileSpreadsheet } from 'lucide-react';
+import { csvCell } from '@/lib/utils';
 
 function downloadCsv(name:string, rows:any[]) {
   if(!rows.length) return false;
   const keys=Array.from(new Set(rows.flatMap(r=>Object.keys(r).filter(k=>typeof r[k]!=='object'))));
-  const esc=(v:any)=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const csv=[keys.map(esc).join(','),...rows.map(r=>keys.map(k=>esc(r[k])).join(','))].join('\n');
+  const csv=[keys.map(csvCell).join(','),...rows.map(r=>keys.map(k=>csvCell(r[k])).join(','))].join('\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);return true;
 }
