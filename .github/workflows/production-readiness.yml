@@ -104,6 +104,9 @@ jobs:
       - name: Verify migration status
         run: npx prisma migrate status
 
+      - name: Verify database schema matches Prisma datamodel
+        run: npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
+
       - name: Seed reference data only
         run: npm run db:seed
 
