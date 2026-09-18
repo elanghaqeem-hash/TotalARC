@@ -30,6 +30,12 @@ export async function POST(request: Request) {
     const shortName = requireString(body.shortName, 'shortName', 30).toUpperCase();
     const adminName = requireString(body.adminName, 'adminName', 250);
     const adminEmail = requireString(body.adminEmail, 'adminEmail', 254).toLowerCase();
+    const industryClassificationId = body.industryId ? requireString(body.industryId, 'industryId', 100) : null;
+
+    if (industryClassificationId) {
+      const industry = await prisma.industryClassification.findUnique({ where: { id: industryClassificationId } });
+      if (!industry) throw new ApiError(404, 'INDUSTRY_NOT_FOUND', 'Industry classification not found');
+    }
 
     const existingEmail = await prisma.user.findUnique({ where: { email: adminEmail } });
     if (existingEmail) throw new ApiError(409, 'EMAIL_EXISTS', 'Initial administrator email is already registered');
@@ -50,6 +56,7 @@ export async function POST(request: Request) {
           name,
           legalName,
           shortName,
+          industryClassificationId,
           institutionType: requireString(body.institutionType || 'Corporation', 'institutionType', 100),
           country: requireString(body.country || 'Indonesia', 'country', 100),
           provinceState: optionalString(body.provinceState, 150),
