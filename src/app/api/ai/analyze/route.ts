@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     const processId = requireString(body.processId, 'processId', 100);
     const mode = typeof body.mode === 'string' ? body.mode.slice(0, 60) : 'control_gap';
 
-    const process = await prisma.businessProcess.findFirst({
+    const businessProcess = await prisma.businessProcess.findFirst({
       where: { id: processId, institutionId: user.institutionId },
       include: {
         activities: true,
@@ -31,14 +31,14 @@ export async function POST(request: Request) {
         controls: { include: { risks: { include: { risk: true } } } }
       }
     });
-    if (!process) throw new ApiError(404, 'PROCESS_NOT_FOUND', 'Process not found');
+    if (!businessProcess) throw new ApiError(404, 'PROCESS_NOT_FOUND', 'Process not found');
 
     const source = {
-      process: { id: process.processId, name: process.name, description: process.description, criticality: process.criticality },
-      objectives: process.objectives,
-      activities: process.activities,
-      risks: process.risks,
-      controls: process.controls.map(c => ({
+      process: { id: businessProcess.processId, name: businessProcess.name, description: businessProcess.description, criticality: businessProcess.criticality },
+      objectives: businessProcess.objectives,
+      activities: businessProcess.activities,
+      risks: businessProcess.risks,
+      controls: businessProcess.controls.map(c => ({
         id: c.controlId,
         name: c.name,
         description: c.description,
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       records.push(await prisma.aISuggestion.create({
         data: {
           institutionId: user.institutionId,
-          processId: process.id,
+          processId: businessProcess.id,
           mode,
           category: row.category.slice(0, 250),
           description: row.description.slice(0, 5000),
@@ -97,8 +97,8 @@ export async function POST(request: Request) {
       }));
     }
 
-    await writeAudit(user, request, { action: 'AI_ANALYZE', entityType: 'BusinessProcess', recordId: process.id, reason: `Generated ${records.length} evidence-grounded suggestion(s) using configured provider` });
-    return NextResponse.json({ processAnalyzed: process.name, findingsCount: records.length, findings: records, disclaimer: 'AI-generated suggestions require human review and are not authoritative control evidence.' });
+    await writeAudit(user, request, { action: 'AI_ANALYZE', entityType: 'BusinessProcess', recordId: businessProcess.id, reason: `Generated ${records.length} evidence-grounded suggestion(s) using configured provider` });
+    return NextResponse.json({ processAnalyzed: businessProcess.name, findingsCount: records.length, findings: records, disclaimer: 'AI-generated suggestions require human review and are not authoritative control evidence.' });
   } catch (error) {
     return apiError(error);
   }
