@@ -38,14 +38,10 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Generate lockfile when missing
-        shell: bash
-        run: |
-          if [ ! -f package-lock.json ]; then
-            npm install --package-lock-only --ignore-scripts
-          fi
+      - name: Reconcile lockfile
+        run: npm install --package-lock-only --ignore-scripts
 
-      - name: Persist generated lockfile
+      - name: Persist reconciled lockfile
         if: github.event_name == 'push'
         shell: bash
         run: |
