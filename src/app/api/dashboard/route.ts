@@ -18,8 +18,8 @@ export async function GET(request: Request) {
       prisma.controlMaster.findMany({
         where: { institutionId },
         include: {
-          todTests: { orderBy: { testedAt: 'desc' }, take: 1 },
-          toeTests: { orderBy: { testedAt: 'desc' }, take: 1 },
+          todTests: { where: { status: 'Approved' }, orderBy: { testedAt: 'desc' }, take: 1 },
+          toeTests: { where: { status: 'Reviewed' }, orderBy: { testedAt: 'desc' }, take: 1 },
           issues: { orderBy: { createdAt: 'desc' } },
           monitoringRules: { orderBy: { createdAt: 'desc' } }
         }
