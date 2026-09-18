@@ -19,8 +19,10 @@ import {
   X
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
+import { useRole } from '@/context/RoleContext';
 
 export default function ProcessesPage() {
+  const { currentUser } = useRole();
   const [processes, setProcesses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [selectedProcess, setSelectedProcess] = useState<any>(null);
@@ -35,9 +37,9 @@ export default function ProcessesPage() {
     name: '',
     categoryId: '',
     ownerName: '',
-    criticality: 'Critical',
+    criticality: 'Medium',
     classification: 'Core',
-    isIcofrRelevant: true,
+    isIcofrRelevant: false,
     description: ''
   });
 
@@ -49,15 +51,19 @@ export default function ProcessesPage() {
         setCategories(data.categories || []);
         if (data.processes?.length > 0 && !selectedProcess) {
           setSelectedProcess(data.processes[0]);
-          setFormData(prev => ({ ...prev, categoryId: data.categories?.[0]?.id || '' }));
         }
+        setFormData(prev => ({
+          ...prev,
+          categoryId: prev.categoryId || data.categories?.[0]?.id || '',
+          ownerName: prev.ownerName || currentUser?.name || ''
+        }));
       })
       .catch(console.error);
   };
 
   useEffect(() => {
     loadProcesses();
-  }, []);
+  }, [currentUser?.name]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -430,7 +436,7 @@ export default function ProcessesPage() {
                   <input
                     type="text"
                     required
-                    placeholder="Maya Indira"
+                    placeholder="Select or enter the accountable process owner"
                     value={formData.ownerName}
                     onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
