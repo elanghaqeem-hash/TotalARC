@@ -12,8 +12,8 @@ export async function GET(request: Request) {
         risk: { include: { process: { include: { category: true, objectives: true } }, activity: true } },
         control: {
           include: {
-            todTests: { orderBy: { testedAt: 'desc' }, take: 1 },
-            toeTests: { orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
+            todTests: { where: { status: 'Approved' }, orderBy: { testedAt: 'desc' }, take: 1 },
+            toeTests: { where: { status: 'Reviewed' }, orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
             issues: {
               orderBy: { createdAt: 'desc' },
               include: {
