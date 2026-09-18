@@ -1,116 +1,75 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  CheckSquare,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  Shield,
-  Layers,
-  ArrowRight,
-  UserCheck,
-  Flame
-} from 'lucide-react';
-import { useRole } from '@/context/RoleContext';
+import { CheckSquare, Plus } from 'lucide-react';
+
+type TaskRow = { id: string; title: string; type: string; dueDate: string; priority: string; status: string; entityRef?: string | null; link?: string | null; user?: { name: string } | null };
+type UserRow = { id: string; name: string; role: string };
 
 export default function TasksPage() {
-  const { currentUser } = useRole();
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({ title: '', type: 'Review', dueDate: '', priority: 'Medium', userId: '', entityRef: '', link: '' });
 
-  const tasks = [
-    { id: 'TSK-001', title: 'Quarterly Risk & Control Matrix Review (Q3 2026)', type: 'Review', dueDate: '2026-09-30', priority: 'High', status: 'In Progress', link: '/rcm', assignee: 'Maya Indira' },
-    { id: 'TSK-002', title: 'Perform ToE Testing on User Access Management (PRC-UAM-001)', type: 'TOE', dueDate: '2026-10-15', priority: 'Medium', status: 'Pending', link: '/toe', assignee: 'Kevin Sanjaya' },
-    { id: 'TSK-003', title: 'Complete Control Self-Assessment for Q4 2026 Cycle', type: 'CSA', dueDate: '2026-11-01', priority: 'Medium', status: 'Pending', link: '/rcsa', assignee: 'Rizky Ananda' }
-  ];
+  const load = async () => {
+    const [t, u] = await Promise.all([fetch('/api/tasks', { cache: 'no-store' }), fetch('/api/users', { cache: 'no-store' })]);
+    const td = await t.json(); const ud = await u.json();
+    if (!t.ok) throw new Error(td.error || 'Unable to load tasks');
+    setTasks(td.tasks || []); setUsers(ud.users || []);
+  };
+  useEffect(() => { load().catch(err => setMessage(err.message)); }, []);
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault(); setMessage('');
+    const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'CREATE', ...form }) });
+    const data = await res.json();
+    if (!res.ok) return setMessage(data.error || 'Unable to create task');
+    setForm({ title: '', type: 'Review', dueDate: '', priority: 'Medium', userId: '', entityRef: '', link: '' });
+    setShowForm(false); await load();
+  };
+
+  const update = async (id: string, status: string) => {
+    const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'UPDATE_STATUS', id, status }) });
+    const data = await res.json();
+    if (!res.ok) return setMessage(data.error || 'Unable to update task');
+    await load();
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-emerald-600 uppercase tracking-wider">
-            <CheckSquare className="w-4 h-4" />
-            <span>Task Center & SLA Escalation (MONITOR)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            Personalized Assurance Tasks & Escalations
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Section 94 & 95: Filtered by active role ({currentUser.roleTitle}). Configured with automated SLA triggers: 30d, 14d, 7d, due today, and overdue.
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><CheckSquare className="w-5 h-5 text-brand-600" />Task Center</h1><p className="text-xs text-slate-500 mt-1">Persistent assignments and due dates for the authenticated institution.</p></div>
+        <button onClick={() => setShowForm(v => !v)} className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Plus className="w-4 h-4" />New Task</button>
       </div>
-
-      {/* Escalation Engine Tiers (Section 95) */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-          <Flame className="w-3.5 h-3.5 text-amber-500" />
-          <span>Automated Escalation Policy (Section 95)</span>
-        </span>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <div className="font-bold text-slate-800">14 Days Before</div>
-            <div className="text-[10px] text-slate-500">Email reminder to Action Owner</div>
-          </div>
-          <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200">
-            <div className="font-bold text-amber-800">3 Days Before</div>
-            <div className="text-[10px] text-amber-600">CC Department Head</div>
-          </div>
-          <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200">
-            <div className="font-bold text-rose-800">Due Today</div>
-            <div className="text-[10px] text-rose-600">Urgent In-App Notification</div>
-          </div>
-          <div className="p-2.5 rounded-lg bg-red-100 border border-red-300">
-            <div className="font-bold text-red-900">7 Days Overdue</div>
-            <div className="text-[10px] text-red-700">Executive Escalation to CFO/CRO</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tasks List */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-        <h2 className="text-sm font-bold text-slate-900">Assigned Tasks ({tasks.length})</h2>
-
-        <div className="space-y-3">
-          {tasks.map(t => (
-            <div
-              key={t.id}
-              className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs hover:border-slate-300 transition-all"
-            >
-              <div className="flex items-center space-x-3">
-                <span className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 font-bold flex items-center justify-center text-[10px]">
-                  {t.type}
-                </span>
-                <div>
-                  <div className="font-bold text-slate-900">{t.title}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    Assignee: <strong>{t.assignee}</strong> • Due: <strong>{t.dueDate}</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-3">
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                    t.priority === 'High'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : 'bg-amber-50 text-amber-700 border-amber-200'
-                  }`}
-                >
-                  {t.priority} Priority
-                </span>
-
-                <Link
-                  href={t.link}
-                  className="px-3 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg font-bold text-brand-600 transition-colors"
-                >
-                  Open Task →
-                </Link>
-              </div>
+      {message && <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}
+      {showForm && (
+        <form onSubmit={create} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
+          <label className="font-semibold text-slate-700 md:col-span-2">Title<input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5" /></label>
+          <label className="font-semibold text-slate-700">Type<input required value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5" /></label>
+          <label className="font-semibold text-slate-700">Due date<input required type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5" /></label>
+          <label className="font-semibold text-slate-700">Priority<select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>Critical</option><option>High</option><option>Medium</option></select></label>
+          <label className="font-semibold text-slate-700">Assignee<select value={form.userId} onChange={e => setForm({ ...form, userId: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option value="">Unassigned</option>{users.map(u => <option key={u.id} value={u.id}>{u.name} — {u.role}</option>)}</select></label>
+          <button className="md:col-span-2 justify-self-start bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg">Create Task</button>
+        </form>
+      )}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm divide-y divide-slate-100">
+        {tasks.map(task => (
+          <div key={task.id} className="p-4 flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex-1">
+              <div className="text-xs font-bold text-slate-900">{task.title}</div>
+              <div className="text-[11px] text-slate-500 mt-1">{task.type} • Due {new Date(task.dueDate).toLocaleDateString('id-ID')} • {task.user?.name || 'Unassigned'}</div>
             </div>
-          ))}
-        </div>
+            <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{task.priority}</span>
+            <select value={task.status} onChange={e => update(task.id, e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+              <option>Pending</option><option>In Progress</option><option>Completed</option><option>Overdue</option>
+            </select>
+            {task.link && <Link href={task.link} className="text-xs font-semibold text-brand-600">Open</Link>}
+          </div>
+        ))}
+        {!tasks.length && <div className="p-8 text-xs text-slate-500">No tasks are registered.</div>}
       </div>
     </div>
   );
