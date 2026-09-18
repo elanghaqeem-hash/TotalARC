@@ -8,7 +8,6 @@ export async function GET() {
       prisma.framework.findMany({ orderBy: { name: 'asc' } }),
       prisma.regulation.findMany({ orderBy: { regulator: 'asc' } })
     ]);
-
     return NextResponse.json({ industries, frameworks, regulations });
   } catch (error) {
     console.error('Failed to load onboarding references:', error);
@@ -20,83 +19,59 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
-      name,
-      legalName,
-      shortName,
-      institutionType,
-      country,
-      city,
-      website,
-      generalEmail,
-      telephone,
-      yearEstablished,
-      taxId,
-      stockExchange,
-      ticker,
-      businessModel,
-      operatingModel,
-      employeeCount,
-      revenueRange
+      name, legalName, shortName, institutionType, country, provinceState, city,
+      registeredAddress, operationalAddress, website, generalEmail, telephone,
+      yearEstablished, registrationNumber, taxId, parentCompany, holdingCompany,
+      stockExchange, ticker, logo, employeeCount, revenueRange, businessModel, operatingModel
     } = body;
 
-    const newInst = await prisma.institution.create({
+    if (!name || !institutionType || !country) {
+      return NextResponse.json({ error: 'name, institutionType, and country are required.' }, { status: 400 });
+    }
+
+    const normalizedShortName = (shortName || name.replace(/[^A-Za-z0-9]/g, '').slice(0, 8) || 'ORG').toUpperCase();
+    const institution = await prisma.institution.create({
       data: {
         name,
         legalName: legalName || name,
-        shortName: shortName || name.slice(0, 4).toUpperCase(),
-        institutionType: institutionType || 'Corporation',
-        country: country || 'Indonesia',
-        city: city || 'Jakarta',
-        website,
-        generalEmail,
-        telephone,
-        yearEstablished: yearEstablished ? parseInt(yearEstablished) : 2026,
-        taxId,
-        stockExchange,
-        ticker,
-        businessModel: businessModel || 'B2B',
-        operatingModel: operatingModel || 'Centralized',
-        employeeCount: employeeCount || '500 - 1,000 Employees',
-        revenueRange: revenueRange || 'IDR 500 Billion - IDR 1 Trillion'
-      }
-    });
-
-    // Create default HQ legal entity
-    const legalEntity = await prisma.legalEntity.create({
-      data: {
-        institutionId: newInst.id,
-        code: `ENT-${newInst.shortName}-HQ`,
-        name: `${newInst.name} (Headquarters)`,
-        country: newInst.country,
-        taxId: newInst.taxId
-      }
-    });
-
-    // Create default top-level organization unit
-    await prisma.organizationUnit.create({
-      data: {
-        institutionId: newInst.id,
-        legalEntityId: legalEntity.id,
-        type: 'Directorate',
-        code: 'DIR-OPS',
-        name: 'Directorate of Operations & Risk',
-        headName: 'Director of Risk'
+        shortName: normalizedShortName,
+        institutionType,
+        country,
+        provinceState: provinceState || null,
+        city: city || null,
+        registeredAddress: registeredAddress || null,
+        operationalAddress: operationalAddress || null,
+        website: website || null,
+        generalEmail: generalEmail || null,
+        telephone: telephone || null,
+        yearEstablished: yearEstablished ? Number(yearEstablished) : null,
+        registrationNumber: registrationNumber || null,
+        taxId: taxId || null,
+        parentCompany: parentCompany || null,
+        holdingCompany: holdingCompany || null,
+        stockExchange: stockExchange || null,
+        ticker: ticker || null,
+        logo: logo || null,
+        employeeCount: employeeCount || null,
+        revenueRange: revenueRange || null,
+        businessModel: businessModel || null,
+        operatingModel: operatingModel || null
       }
     });
 
     await prisma.auditLog.create({
       data: {
-        institutionId: newInst.id,
-        userName: 'System Onboarding',
-        userRole: 'Admin',
+        institutionId: institution.id,
+        userName: 'System',
+        userRole: 'System',
         action: 'CREATE',
         entityType: 'Institution',
-        recordId: newInst.id,
-        reason: `Onboarded new institution: ${newInst.name}`
+        recordId: institution.id,
+        reason: 'Institution registered through onboarding.'
       }
     });
 
-    return NextResponse.json({ success: true, institution: newInst });
+    return NextResponse.json({ success: true, institution }, { status: 201 });
   } catch (error) {
     console.error('Onboarding failed:', error);
     return NextResponse.json({ error: 'Failed to onboard institution' }, { status: 500 });

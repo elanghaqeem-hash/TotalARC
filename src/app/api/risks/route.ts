@@ -1,22 +1,19 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+function riskRating(score: number) {
+  if (score >= 15) return 'Critical';
+  if (score >= 10) return 'High';
+  if (score >= 5) return 'Medium';
+  return 'Low';
+}
+
 export async function GET() {
   try {
     const risks = await prisma.riskMaster.findMany({
-      include: {
-        process: true,
-        activity: true,
-        controls: {
-          include: {
-            control: true
-          }
-        },
-        issues: true
-      },
+      include: { process: true, activity: true, controls: { include: { control: true } }, issues: true },
       orderBy: { riskId: 'asc' }
     });
-
     return NextResponse.json({ risks });
   } catch (error) {
     console.error('Failed to fetch risks:', error);
@@ -28,54 +25,46 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
-      riskId,
-      name,
-      description,
-      cause,
-      event,
-      impact,
-      category,
-      processId,
-      ownerName,
-      inherentLikelihood,
-      inherentImpact
+      riskId, name, description, cause, event, impact, category, processId,
+      ownerName, inherentLikelihood, inherentImpact
     } = body;
 
-    const defaultInst = await prisma.institution.findFirst();
-    if (!defaultInst) throw new Error('No institution found');
+    const likelihood = Number(inherentLikelihood);
+    const impactValue = Number(inherentImpact);
+    if (
+      !name || !description || !cause || !event || !impact || !category || !processId || !ownerName ||
+      !Number.isInteger(likelihood) || likelihood < 1 || likelihood > 5 ||
+      !Number.isInteger(impactValue) || impactValue < 1 || impactValue > 5
+    ) {
+      return NextResponse.json(
+        { error: 'Complete risk data and a 1-5 inherent likelihood/impact assessment are required.' },
+        { status: 400 }
+      );
+    }
 
-    const score = (inherentLikelihood || 3) * (inherentImpact || 3);
-    let rating = 'Medium';
-    if (score >= 15) rating = 'Critical';
-    else if (score >= 10) rating = 'High';
-    else if (score >= 5) rating = 'Medium';
-    else rating = 'Low';
+    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
+    if (!institution) return NextResponse.json({ error: 'Register an institution before creating risks.' }, { status: 409 });
 
-    const newRisk = await prisma.riskMaster.create({
+    const score = likelihood * impactValue;
+    const rating = riskRating(score);
+    const risk = await prisma.riskMaster.create({
       data: {
-        institutionId: defaultInst.id,
-        riskId: riskId || `RSK-${Date.now().toString().slice(-4)}`,
-        name,
-        description: description || `Due to ${cause}, there is a risk that ${event}, resulting in ${impact}.`,
-        cause: cause || '',
-        event: event || '',
-        impact: impact || '',
-        category: category || 'Operational',
-        processId,
-        ownerName: ownerName || 'Process Owner',
-        inherentLikelihood: inherentLikelihood || 3,
-        inherentImpact: inherentImpact || 3,
+        institutionId: institution.id,
+        riskId: riskId || `RSK-${Date.now().toString(36).toUpperCase()}`,
+        name, description, cause, event, impact, category, processId, ownerName,
+        inherentLikelihood: likelihood,
+        inherentImpact: impactValue,
         inherentScore: score,
         inherentRating: rating,
-        residualLikelihood: Math.max(1, (inherentLikelihood || 3) - 1),
-        residualImpact: Math.max(1, (inherentImpact || 3) - 1),
-        residualScore: Math.max(1, (inherentLikelihood || 3) - 1) * Math.max(1, (inherentImpact || 3) - 1),
-        residualRating: 'Medium',
-        riskTreatment: 'Reduce'
+        residualLikelihood: likelihood,
+        residualImpact: impactValue,
+        residualScore: score,
+        residualRating: rating,
+        riskTreatment: 'Not Assessed'
       }
     });
 
-    return NextResponse.json(newRisk);
+    return NextResponse.json(risk, { status: 201 });
   } catch (error) {
     console.error('Failed to create risk:', error);
     return NextResponse.json({ error: 'Failed to create risk' }, { status: 500 });

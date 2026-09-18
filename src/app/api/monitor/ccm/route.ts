@@ -5,21 +5,10 @@ export async function GET() {
   try {
     const rules = await prisma.monitoringRule.findMany({
       include: {
-        control: {
-          include: {
-            process: true
-          }
-        },
-        runs: {
-          orderBy: { runTimestamp: 'desc' },
-          take: 10,
-          include: {
-            exceptions: true
-          }
-        }
+        control: { include: { process: true } },
+        runs: { orderBy: { runTimestamp: 'desc' }, take: 10, include: { exceptions: true } }
       }
     });
-
     return NextResponse.json({ rules });
   } catch (error) {
     console.error('Failed to fetch CCM rules:', error);
@@ -30,51 +19,46 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { ruleId, simulateFailure } = body;
+    const { ruleId, populationChecked, exceptionsFound, details, exceptions = [] } = body;
 
-    const rule = await prisma.monitoringRule.findUnique({
-      where: { id: ruleId }
+    if (
+      !ruleId ||
+      !Number.isInteger(populationChecked) || populationChecked < 0 ||
+      !Number.isInteger(exceptionsFound) || exceptionsFound < 0
+    ) {
+      return NextResponse.json(
+        { error: 'ruleId, populationChecked, and exceptionsFound from an actual monitoring execution are required.' },
+        { status: 400 }
+      );
+    }
+
+    if (exceptions.length > 0 && exceptionsFound !== exceptions.length) {
+      return NextResponse.json({ error: 'exceptionsFound must match submitted exception records.' }, { status: 400 });
+    }
+
+    const rule = await prisma.monitoringRule.findUnique({ where: { id: ruleId } });
+    if (!rule) return NextResponse.json({ error: 'Rule not found' }, { status: 404 });
+
+    const status = exceptionsFound > 0 ? 'Exception Detected' : 'Healthy';
+    const run = await prisma.monitoringRun.create({
+      data: { ruleId: rule.id, populationChecked, exceptionsFound, status, details: details || null }
     });
-    if (!rule) throw new Error('Rule not found');
 
-    const exceptionsFound = simulateFailure ? 1 : 0;
-    const runStatus = exceptionsFound > 0 ? 'Exception Detected' : 'Healthy';
-
-    const newRun = await prisma.monitoringRun.create({
-      data: {
-        ruleId: rule.id,
-        runTimestamp: new Date(),
-        populationChecked: Math.floor(Math.random() * 50) + 100,
-        exceptionsFound,
-        status: runStatus,
-        details: exceptionsFound > 0
-          ? 'Automated scan detected 1 transaction exceeding limit without dual approval.'
-          : 'Automated scan executed successfully. All scanned transactions compliant with dual approval.'
-      }
-    });
-
-    if (exceptionsFound > 0) {
+    for (const exception of exceptions) {
+      if (!exception.transactionRef || !exception.details) continue;
       await prisma.cCMException.create({
-        data: {
-          runId: newRun.id,
-          transactionRef: `TRX-CCM-${Date.now().toString().slice(-4)}`,
-          details: 'Disbursement of IDR 145,000,000 processed with only 1 signatory approval.'
-        }
+        data: { runId: run.id, transactionRef: exception.transactionRef, details: exception.details }
       });
     }
 
-    // Update rule status
     await prisma.monitoringRule.update({
       where: { id: rule.id },
-      data: {
-        lastRunDate: new Date(),
-        lastStatus: runStatus
-      }
+      data: { lastRunDate: new Date(), lastStatus: status }
     });
 
-    return NextResponse.json(newRun);
+    return NextResponse.json(run, { status: 201 });
   } catch (error) {
-    console.error('Failed to execute CCM run:', error);
-    return NextResponse.json({ error: 'Failed to execute CCM run' }, { status: 500 });
+    console.error('Failed to ingest CCM result:', error);
+    return NextResponse.json({ error: 'Failed to ingest CCM result' }, { status: 500 });
   }
 }
