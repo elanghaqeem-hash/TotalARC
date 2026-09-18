@@ -159,8 +159,8 @@ model BusinessProcess {
   legalEntityId   String?
   orgUnitId       String?
   categoryId      String
-  processId       String   // e.g. PRC-P2P-001
-  name            String   // e.g. Procure to Pay
+  processId       String   // enterprise process identifier
+  name            String   // process name
   level           Int      @default(2) // Level 0 to Level 5
   parentProcessId String?
   description     String?
@@ -170,7 +170,7 @@ model BusinessProcess {
   criticality     String   @default("Critical") // Critical, High, Medium, Low
   classification  String   @default("Core")     // Core, Support, Management, Control
   isIcofrRelevant Boolean  @default(false)
-  status          String   @default("Approved") // Draft, Submitted, Under Review, Approved, Published
+  status          String   @default("Draft") // Draft, Submitted, Under Review, Approved, Published
   version         String   @default("1.0")
   effectiveDate   DateTime @default(now())
   reviewDate      DateTime?
@@ -252,7 +252,7 @@ model RiskMaster {
   institutionId   String
   processId       String
   activityId      String?
-  riskId          String   // e.g. RSK-P2P-001
+  riskId          String   // enterprise risk identifier
   name            String
   description     String
   cause           String
@@ -262,17 +262,17 @@ model RiskMaster {
   ownerName       String
   
   // Inherent Risk
-  inherentLikelihood Int   @default(3) // 1 to 5
-  inherentImpact     Int   @default(4) // 1 to 5
-  inherentScore      Int   @default(12) // Likelihood x Impact
-  inherentRating     String @default("High") // Low, Medium, High, Critical
+  inherentLikelihood Int   // 1 to 5
+  inherentImpact     Int   // 1 to 5
+  inherentScore      Int   // Likelihood x Impact
+  inherentRating     String // Low, Medium, High, Critical
 
   // Residual Risk
-  residualLikelihood Int   @default(2)
-  residualImpact     Int   @default(3)
-  residualScore      Int   @default(6)
-  residualRating     String @default("Medium") // Low, Medium, High, Critical
-  riskTreatment      String @default("Reduce") // Accept, Reduce, Avoid, Transfer
+  residualLikelihood Int
+  residualImpact     Int
+  residualScore      Int
+  residualRating     String // Low, Medium, High, Critical
+  riskTreatment      String @default("Not Assessed") // Accept, Reduce, Avoid, Transfer, Not Assessed
 
   status          String   @default("Active")
   version         String   @default("1.0")
@@ -297,7 +297,7 @@ model ControlMaster {
   institutionId      String
   processId          String
   activityId         String?
-  controlId          String   // e.g. CTRL-P2P-001
+  controlId          String   // enterprise control identifier
   name               String
   description        String
   objective          String
@@ -308,17 +308,17 @@ model ControlMaster {
   nature             String   @default("IT Dependent Manual") // Manual, IT Dependent Manual, Automated
   method             String   @default("Approval") // Approval, Authorization, Reconciliation, Validation, etc.
   frequency          String   @default("Per Transaction") // Real Time, Daily, Weekly, Monthly, Per Transaction, etc.
-  isKeyControl       Boolean  @default(true)
+  isKeyControl       Boolean  @default(false)
   keyControlRationale String?
-  isIcofrKey         Boolean  @default(true)
+  isIcofrKey         Boolean  @default(false)
   isItgc             Boolean  @default(false)
   evidenceRequirement String?
   systemDependency   String?  // e.g. SAP ERP, Oracle
   frameworkMapping   String?  // e.g. COSO Princ. 10, SOX 404, ISO 27001 A.9
   regulationMapping  String?  // e.g. OJK POJK 13
-  designAssessment   String   @default("Effective") // Effective, Partially Effective, Ineffective, Not Assessed
-  operatingStatus    String   @default("Effective") // Effective, Partially Effective, Ineffective, Not Assessed
-  overallHealth      String   @default("Healthy") // Healthy, Attention Required, Deficient, Not Assessed
+  designAssessment   String   @default("Not Assessed") // Effective, Partially Effective, Ineffective, Not Assessed
+  operatingStatus    String   @default("Not Assessed") // Effective, Partially Effective, Ineffective, Not Assessed
+  overallHealth      String   @default("Not Assessed") // Healthy, Attention Required, Deficient, Not Assessed
   healthRationale    String?
   version            String   @default("1.0")
   status             String   @default("Active")
@@ -357,10 +357,10 @@ model AssessmentCampaign {
   institutionId String
   name          String   // e.g. Annual RCSA 2026 Q3
   type          String   @default("RCSA") // RCSA, CSA, ICOFR
-  period        String   @default("2026-Q3")
+  period        String
   startDate     DateTime
   dueDate       DateTime
-  status        String   @default("In Progress") // Draft, In Progress, Review, Completed
+  status        String   @default("Draft") // Draft, In Progress, Review, Completed
   ownerName     String
   approverName  String?
   createdAt     DateTime @default(now())
@@ -373,14 +373,14 @@ model CSAResponse {
   id              String   @id @default(uuid())
   campaignId      String
   controlId       String
-  wasPerformed    Boolean  @default(true)
-  frequencyMet    Boolean  @default(true)
-  evidenceAttached Boolean @default(true)
+  wasPerformed    Boolean  @default(false)
+  frequencyMet    Boolean  @default(false)
+  evidenceAttached Boolean @default(false)
   exceptionsFound Boolean  @default(false)
   exceptionCount  Int      @default(0)
   processChanged  Boolean  @default(false)
   controlChanged  Boolean  @default(false)
-  csaConclusion   String   @default("Effective") // Effective, Partially Effective, Ineffective, Not Performed
+  csaConclusion   String   @default("Not Performed") // Effective, Partially Effective, Ineffective, Not Performed
   assessorNotes   String?
   assessorName    String
   assessedAt      DateTime @default(now())
@@ -400,8 +400,8 @@ model FinancialAccount {
   balanceAmount  Float    @default(0)
   isSignificant  Boolean  @default(false)
   scopingRationale String?
-  fraudExposure  String   @default("Low") // High, Medium, Low
-  complexity     String   @default("Medium")
+  fraudExposure  String   @default("Not Assessed") // High, Medium, Low, Not Assessed
+  complexity     String   @default("Not Assessed")
   createdAt      DateTime @default(now())
 
   assertions     AccountAssertionMapping[]
@@ -411,7 +411,7 @@ model AccountAssertionMapping {
   id         String   @id @default(uuid())
   accountId  String
   assertion  String   // Existence, Completeness, Valuation, Rights & Obligations, Presentation
-  isInScope  Boolean  @default(true)
+  isInScope  Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   account    FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -424,8 +424,8 @@ model IPERegister {
   reportOwner   String
   parameters    String?
   logicSummary  String?
-  completenessTested Boolean @default(true)
-  accuracyTested     Boolean @default(true)
+  completenessTested Boolean @default(false)
+  accuracyTested     Boolean @default(false)
   evidenceDoc   String?
   createdAt     DateTime @default(now())
 }
@@ -442,28 +442,28 @@ model Walkthrough {
   systemsInspected String?
   observations String?
   processChanged Boolean @default(false)
-  conclusion   String   @default("Walkthrough Satisfactory")
+  conclusion   String   @default("Not Assessed")
   createdAt    DateTime @default(now())
 }
 
 model ToDTest {
   id               String   @id @default(uuid())
-  testId           String   // e.g. TOD-P2P-001
+  testId           String   // ToD test identifier
   controlId        String
   processId        String
   riskId           String?
   testerName       String
   reviewerName     String?
-  period           String   @default("2026-Annual")
+  period           String
   testObjective    String
-  objectiveAlignment Boolean @default(true)
-  riskCoverage     Boolean  @default(true)
-  precisionAdequate Boolean @default(true)
-  segregationDuties Boolean @default(true)
-  evidenceSufficiency Boolean @default(true)
+  objectiveAlignment Boolean @default(false)
+  riskCoverage     Boolean  @default(false)
+  precisionAdequate Boolean @default(false)
+  segregationDuties Boolean @default(false)
+  evidenceSufficiency Boolean @default(false)
   observations     String?
-  conclusion       String   @default("Effective Design") // Effective Design, Partially Effective Design, Ineffective Design
-  status           String   @default("Approved") // Draft, Submitted, Approved
+  conclusion       String   @default("Not Assessed") // Effective Design, Partially Effective Design, Ineffective Design, Not Assessed
+  status           String   @default("Draft") // Draft, Submitted, Approved
   testedAt         DateTime @default(now())
 
   control          ControlMaster   @relation(fields: [controlId], references: [id], onDelete: Cascade)
@@ -473,22 +473,22 @@ model ToDTest {
 
 model ToETest {
   id               String   @id @default(uuid())
-  testId           String   // e.g. TOE-P2P-001
+  testId           String   // ToE test identifier
   controlId        String
   processId        String
   riskId           String?
   testerName       String
   reviewerName     String?
-  period           String   @default("2026-Annual")
-  populationSize   Int      @default(450)
-  populationSource String   @default("ERP Payment Run Ledger")
-  samplingMethod   String   @default("Risk-Based Sampling") // Random, Systematic, Judgmental, Risk-Based
-  sampleSize       Int      @default(25)
-  passCount        Int      @default(23)
-  failCount        Int      @default(2)
-  testerConclusion String   @default("Partially Effective") // Effective, Effective with Minor Exception, Partially Effective, Ineffective
-  finalConclusion  String   @default("Partially Effective")
-  status           String   @default("Completed") // Planned, In Progress, Completed, Reviewed
+  period           String
+  populationSize   Int      @default(0)
+  populationSource String   @default("Not Provided")
+  samplingMethod   String   @default("Not Selected") // Random, Systematic, Judgmental, Risk-Based, Not Selected
+  sampleSize       Int      @default(0)
+  passCount        Int      @default(0)
+  failCount        Int      @default(0)
+  testerConclusion String   @default("Not Assessed") // Effective, Effective with Minor Exception, Partially Effective, Ineffective, Not Assessed
+  finalConclusion  String   @default("Not Assessed")
+  status           String   @default("Planned") // Planned, In Progress, Completed, Reviewed
   notes            String?
   testedAt         DateTime @default(now())
 
@@ -503,11 +503,11 @@ model TestSample {
   id             String   @id @default(uuid())
   toeTestId      String
   sampleNumber   Int
-  transactionRef String   // e.g. TRX-2026-0891
+  transactionRef String   // source transaction reference
   transactionDate DateTime
   amount         Float?
   attributesTested String? // JSON or text: Approval verified, amount verified, etc.
-  result         String   @default("Pass") // Pass, Fail, N/A
+  result         String   @default("Not Tested") // Pass, Fail, N/A, Not Tested
   failureReason  String?
   evidenceRef    String?
 
@@ -518,7 +518,7 @@ model TestingException {
   id             String   @id @default(uuid())
   toeTestId      String
   exceptionNumber String  // EXP-001
-  sampleRef      String   // TRX-2026-0891
+  sampleRef      String   // tested sample reference
   description    String
   severity       String   @default("High") // High, Medium, Low
   status         String   @default("Confirmed Exception") // Open, Under Review, Confirmed Exception, False Positive, Resolved
@@ -534,14 +534,14 @@ model TestingException {
 model ControlDeficiency {
   id             String   @id @default(uuid())
   exceptionId    String?
-  deficiencyId   String   // DEF-2026-001
+  deficiencyId   String   // deficiency identifier
   title          String
   description    String
   classification String   @default("Control Deficiency") // Observation, Control Deficiency, Significant Deficiency, Material Weakness
   financialImpact Float?
   regulatoryImpact String?
   compensatingControls String?
-  humanApproved  Boolean  @default(true)
+  humanApproved  Boolean  @default(false)
   approvedBy     String?
   createdAt      DateTime @default(now())
 
@@ -569,7 +569,7 @@ model RootCauseAnalysis {
 model Issue {
   id             String   @id @default(uuid())
   institutionId  String
-  issueId        String   // ISS-2026-001
+  issueId        String   // issue identifier
   source         String   @default("TOE") // CSA, RCSA, TOD, TOE, CCM, Internal Audit
   processId      String
   riskId         String?
@@ -580,7 +580,7 @@ model Issue {
   severity       String   @default("High") // Critical, High, Medium, Low
   ownerName      String
   targetDate     DateTime
-  status         String   @default("Closed") // Open, In Progress, Pending Retest, Closed
+  status         String   @default("Open") // Open, In Progress, Pending Retest, Closed
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -594,7 +594,7 @@ model Issue {
 
 model ManagementActionPlan {
   id               String   @id @default(uuid())
-  mapId            String   // MAP-2026-001
+  mapId            String   // management action plan identifier
   issueId          String
   agreedAction     String
   recommendation   String?
@@ -604,8 +604,8 @@ model ManagementActionPlan {
   revisedDueDate   DateTime?
   extensionCount   Int      @default(0)
   extensionReason  String?
-  progressPercent  Int      @default(100) // 0 to 100
-  status           String   @default("Closed") // Draft, Agreed, In Progress, Pending Validation, Completed by Owner, Pending Retest, Closed, Overdue
+  progressPercent  Int      @default(0) // 0 to 100
+  status           String   @default("Draft") // Draft, Agreed, In Progress, Pending Validation, Completed by Owner, Pending Retest, Closed, Overdue
   completedAt      DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -621,8 +621,8 @@ model MAPMilestone {
   title         String
   owner         String
   dueDate       DateTime
-  status        String   @default("Completed") // Pending, In Progress, Completed
-  progressPercent Int    @default(100)
+  status        String   @default("Pending") // Pending, In Progress, Completed
+  progressPercent Int    @default(0)
   evidenceDoc   String?
   createdAt     DateTime @default(now())
 
@@ -632,13 +632,13 @@ model MAPMilestone {
 model RetestRecord {
   id               String   @id @default(uuid())
   mapId            String
-  retestId         String   // RET-2026-001
-  sampleCount      Int      @default(10)
-  passedCount      Int      @default(10)
+  retestId         String   // retest identifier
+  sampleCount      Int      @default(0)
+  passedCount      Int      @default(0)
   failedCount      Int      @default(0)
   testerName       String
   reviewerName     String
-  result           String   @default("Passed") // Passed, Partially Passed, Failed
+  result           String   @default("Not Assessed") // Passed, Partially Passed, Failed, Not Assessed
   conclusionNotes  String?
   retestedAt       DateTime @default(now())
 
@@ -660,7 +660,7 @@ model MonitoringRule {
   threshold        String   @default("0 Transactions")
   status           String   @default("Active") // Active, Paused
   lastRunDate      DateTime?
-  lastStatus       String   @default("Healthy") // Healthy, Exception Detected, Failed
+  lastStatus       String   @default("Not Run") // Healthy, Exception Detected, Failed, Not Run
   createdAt        DateTime @default(now())
 
   control          ControlMaster   @relation(fields: [controlId], references: [id], onDelete: Cascade)
@@ -671,7 +671,7 @@ model MonitoringRun {
   id               String   @id @default(uuid())
   ruleId           String
   runTimestamp     DateTime @default(now())
-  populationChecked Int     @default(120)
+  populationChecked Int     @default(0)
   exceptionsFound  Int      @default(0)
   status           String   @default("Healthy") // Healthy, Exception Detected, Failed
   details          String?
@@ -696,11 +696,11 @@ model CCMException {
 model ControlCertification {
   id              String   @id @default(uuid())
   controlId       String
-  period          String   // 2026-Annual
+  period          String   // reporting period
   declarationText String
   certifierName   String
   certifierRole   String   // Control Owner
-  status          String   @default("Certified") // Certified, Certified with Exception, Not Certified
+  status          String   @default("Pending") // Pending, Certified, Certified with Exception, Not Certified
   certifiedAt     DateTime @default(now())
 
   control         ControlMaster @relation(fields: [controlId], references: [id], onDelete: Cascade)
@@ -709,13 +709,13 @@ model ControlCertification {
 model ManagementAttestation {
   id              String   @id @default(uuid())
   institutionId   String
-  period          String   @default("2026-Annual")
+  period          String
   scopeSummary    String
-  cfoSignOff      Boolean  @default(true)
-  cfoName         String   @default("Budi Santoso, CFO")
-  croSignOff      Boolean  @default(true)
-  croName         String   @default("Dewi Lestari, CRO")
-  overallOpinion  String   @default("Adequate & Effective with Remediation in Place")
+  cfoSignOff      Boolean  @default(false)
+  cfoName         String?
+  croSignOff      Boolean  @default(false)
+  croName         String?
+  overallOpinion  String?
   attestedAt      DateTime @default(now())
 }
 
@@ -758,7 +758,7 @@ model AuditLog {
   oldValue      String?
   newValue      String?
   reason        String?
-  ipAddress     String?  @default("127.0.0.1")
+  ipAddress     String?
   timestamp     DateTime @default(now())
 
   institution   Institution? @relation(fields: [institutionId], references: [id], onDelete: Cascade)

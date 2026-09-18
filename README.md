@@ -4,81 +4,53 @@ Enterprise Governance, Risk, and Compliance (GRC), Internal Control over Financi
 
 ## Overview
 
-**Total ARC** is an enterprise-grade platform built to streamline the end-to-end lifecycle of risk assessment, control testing (Design & Operating Effectiveness), deficiency tracking, root cause analysis, management remediation (MAP), continuous automated monitoring, and executive attestation.
+**Total ARC** is an enterprise platform for the end-to-end lifecycle of risk assessment, control design and operating-effectiveness testing, deficiency management, remediation, continuous monitoring, and executive attestation.
+
+## Data integrity principle
+
+Operational screens must display records persisted in the connected database. Total ARC does not ship with demo institutions, fake users, simulated transactions, fabricated test results, pre-closed issues, or synthetic monitoring outcomes. The optional seed command below loads reference taxonomy only.
 
 ## Key Features
 
-- **Institution & Multi-Entity Management**: Configurable organizational hierarchy, legal entities, directorates, divisions, and role-based views.
-- **Business Process Architecture**: Multi-level hierarchical process decomposition, SIPOC mapping, and process criticality.
-- **Risk Universe & Assessment**: Inherent vs. residual risk scoring (likelihood x impact), categories, and treatment plans.
-- **Control Master Library & RCM**: Comprehensive Risk & Control Matrix mapping preventive, detective, manual, and automated IT controls.
-- **Testing Engine (Walkthrough, ToD & ToE)**: Test of Design (ToD) evaluation and Test of Operating Effectiveness (ToE) sampling workflows.
-- **Deficiency & Root Cause Analysis**: 5-Whys root cause investigation and deficiency classification (Observation, Control Deficiency, Significant Deficiency, Material Weakness).
-- **Remediation & MAP Tracking**: Management Action Plans with milestone progress, independent retesting, and validation workflows.
-- **Continuous Control Monitoring (CCM)**: Real-time query logic, automated exceptions detection, and transaction run history.
-- **ICOFR & Financial Statement Scoping**: Financial account assertions, significant accounts, and IPE (Information Produced by Entity) registers.
-- **Attestation & Certification**: Control Owner certification, sub-certification, and executive sign-off dashboards.
-- **AI-Powered Governance Assistant**: Integrated interactive AI analysis drawer for risk, control, and remediation inquiries.
+- Institution & multi-entity management
+- Business Process Architecture (BPM)
+- Risk Universe & assessment
+- Control Master Library & relational RCM
+- RCSA / CSA
+- Walkthrough, ToD & ToE
+- Deficiency, Root Cause Analysis & MAP
+- Continuous Control Monitoring
+- ICOFR & financial assertions
+- Certification & attestation
+- Governed AI integration points
 
 ## Tech Stack
 
-- **Framework**: [Next.js 14](https://nextjs.org/) (App Router, React 18, TypeScript)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) with Lucide Icons
-- **Database & ORM**: [SQLite](https://www.sqlite.org/) with [Prisma ORM](https://www.prisma.io/)
-- **UI Components**: Modern responsive design with interactive modals, drawers, and traceability flows
+- Next.js App Router / TypeScript
+- Tailwind CSS
+- Prisma ORM
+- SQLite schema for local development; production persistence must use an explicitly provisioned persistent data service compatible with the deployment architecture
+- OpenNext for Cloudflare
 
 ## Getting Started
 
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (v18 or higher)
-- `npm` or `yarn`
-
-### Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/elanghaqeem-hash/TotalARC.git
-   cd TotalARC
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Database Setup:**
-   ```bash
-   npm run prisma:generate
-   npm run prisma:push
-   node prisma/seed.js
-   ```
-
-4. **Run Development Server:**
-   ```bash
-   npm run dev
-   ```
-
-   Open [http://localhost:3000](http://localhost:3000) in your browser to explore Total ARC.
-
-## Project Structure
-
-```
-├── prisma/
-│   ├── schema.prisma       # Database schema definition
-│   └── seed.js             # Initial enterprise seed data
-├── src/
-│   ├── app/
-│   │   ├── api/            # API endpoints (dashboard, risks, controls, etc.)
-│   │   ├── (modules)/      # Application route pages
-│   │   ├── layout.tsx      # Root layout
-│   │   └── page.tsx        # Command Center Dashboard
-│   ├── components/         # Reusable UI components & layouts
-│   ├── context/            # Role and state management contexts
-│   └── lib/                # Utility helpers & Prisma client
-└── public/                 # Static assets
+```bash
+git clone https://github.com/elanghaqeem-hash/TotalARC.git
+cd TotalARC
+npm install
+npm run prisma:generate
+npm run prisma:push
+npm run prisma:seed-reference
+npm run dev
 ```
 
-## License
+The reference seed loads taxonomy only. Register real institutional and operational data through the application or approved integrations.
 
-ISC License
+## Validation
+
+```bash
+npm run verify:no-dummy
+npm run build
+```
+
+The pull-request workflow blocks known dummy operational-data signatures and verifies the Cloudflare Worker artifact.

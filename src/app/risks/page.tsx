@@ -34,9 +34,9 @@ export default function RisksPage() {
     impact: '',
     category: 'Operational',
     processId: '',
-    ownerName: 'Maya Indira',
-    inherentLikelihood: 4,
-    inherentImpact: 4
+    ownerName: '',
+    inherentLikelihood: 0,
+    inherentImpact: 0
   });
 
   const loadRisks = () => {
@@ -201,7 +201,7 @@ export default function RisksPage() {
                   </p>
 
                   <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                    <span>Process: <strong>{r.process?.name || 'P2P'}</strong></span>
+                    <span>Process: <strong>{r.process?.name || 'Unassigned'}</strong></span>
                     <span className="text-emerald-700 font-semibold flex items-center space-x-1">
                       <TrendingDown className="w-3.5 h-3.5" />
                       <span>Residual: {r.residualScore} ({r.residualRating})</span>
@@ -284,7 +284,7 @@ export default function RisksPage() {
                     <div className="text-3xl font-black text-emerald-800">{selectedRisk.residualScore}</div>
                     <div className="text-xs font-bold text-emerald-700">{selectedRisk.residualRating} Rating</div>
                     <div className="text-[10px] text-emerald-600">
-                      Treatment: {selectedRisk.riskTreatment} (Dual Authorization)
+                      Treatment: {selectedRisk.riskTreatment}
                     </div>
                   </div>
                 </div>
@@ -310,7 +310,7 @@ export default function RisksPage() {
                           </div>
                         </div>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          {m.control?.overallHealth || 'Healthy'}
+                          {m.control?.overallHealth || 'Not Assessed'}
                         </span>
                       </div>
                     ))
@@ -363,9 +363,6 @@ export default function RisksPage() {
                   else if (score >= 10) bg = 'bg-rose-100 border-rose-200 text-rose-800 font-bold';
                   else if (score >= 5) bg = 'bg-amber-50 border-amber-200 text-amber-800';
 
-                  const hasP2P =
-                    (activeTab === 'inherent_heatmap' && l === 4 && i === 4) ||
-                    (activeTab === 'residual_heatmap' && l === 2 && i === 3);
 
                   return (
                     <div
@@ -377,12 +374,12 @@ export default function RisksPage() {
                         <span>I{i}</span>
                       </div>
                       <div className="text-center font-extrabold text-sm">{score}</div>
-                      <div className="text-center">
-                        {hasP2P && (
-                          <span className="inline-block px-1.5 py-0.5 rounded bg-slate-900 text-white text-[9px] font-mono shadow">
-                            RSK-P2P
-                          </span>
-                        )}
+                      <div className="text-center text-[9px] opacity-60">
+                        {risks.filter((risk: any) => {
+                          const likelihood = activeTab === 'inherent_heatmap' ? risk.inherentLikelihood : risk.residualLikelihood;
+                          const impact = activeTab === 'inherent_heatmap' ? risk.inherentImpact : risk.residualImpact;
+                          return likelihood === l && impact === i;
+                        }).length} risk(s)
                       </div>
                     </div>
                   );
@@ -468,6 +465,8 @@ export default function RisksPage() {
                     onChange={e => setFormData({ ...formData, inherentLikelihood: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
+                    <option value={0} disabled>Select level</option>
+                    <option value={0} disabled>Select level</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}

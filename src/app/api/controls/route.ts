@@ -5,25 +5,11 @@ export async function GET() {
   try {
     const controls = await prisma.controlMaster.findMany({
       include: {
-        process: true,
-        activity: true,
-        risks: {
-          include: {
-            risk: true
-          }
-        },
-        todTests: true,
-        toeTests: {
-          include: {
-            exceptions: true
-          }
-        },
-        monitoringRules: true,
-        certifications: true
+        process: true, activity: true, risks: { include: { risk: true } }, todTests: true,
+        toeTests: { include: { exceptions: true } }, monitoringRules: true, certifications: true
       },
       orderBy: { controlId: 'asc' }
     });
-
     return NextResponse.json({ controls });
   } catch (error) {
     console.error('Failed to fetch controls:', error);
@@ -35,51 +21,35 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
-      controlId,
-      name,
-      description,
-      objective,
-      processId,
-      riskId,
-      controlOwner,
-      type,
-      nature,
-      frequency,
-      isKeyControl,
-      isIcofrKey
+      controlId, name, description, objective, processId, riskId, controlOwner,
+      type, nature, frequency, isKeyControl, isIcofrKey
     } = body;
 
-    const defaultInst = await prisma.institution.findFirst();
-    if (!defaultInst) throw new Error('No institution found');
+    if (!name || !description || !objective || !processId || !controlOwner || !type || !nature || !frequency) {
+      return NextResponse.json(
+        { error: 'Complete control definition, ownership, type, nature, and frequency are required.' },
+        { status: 400 }
+      );
+    }
 
-    const newControl = await prisma.controlMaster.create({
+    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
+    if (!institution) return NextResponse.json({ error: 'Register an institution before creating controls.' }, { status: 409 });
+
+    const control = await prisma.controlMaster.create({
       data: {
-        institutionId: defaultInst.id,
-        controlId: controlId || `CTRL-${Date.now().toString().slice(-4)}`,
-        name,
-        description,
-        objective: objective || 'Mitigate identified process risks through consistent execution.',
-        processId,
-        controlOwner: controlOwner || 'Control Owner',
-        type: type || 'Preventive',
-        nature: nature || 'Automated',
-        frequency: frequency || 'Real Time',
+        institutionId: institution.id,
+        controlId: controlId || `CTRL-${Date.now().toString(36).toUpperCase()}`,
+        name, description, objective, processId, controlOwner, type, nature, frequency,
         isKeyControl: Boolean(isKeyControl),
         isIcofrKey: Boolean(isIcofrKey),
-        overallHealth: 'Healthy'
+        designAssessment: 'Not Assessed',
+        operatingStatus: 'Not Assessed',
+        overallHealth: 'Not Assessed'
       }
     });
 
-    if (riskId) {
-      await prisma.controlRiskMapping.create({
-        data: {
-          controlId: newControl.id,
-          riskId
-        }
-      });
-    }
-
-    return NextResponse.json(newControl);
+    if (riskId) await prisma.controlRiskMapping.create({ data: { controlId: control.id, riskId } });
+    return NextResponse.json(control, { status: 201 });
   } catch (error) {
     console.error('Failed to create control:', error);
     return NextResponse.json({ error: 'Failed to create control' }, { status: 500 });

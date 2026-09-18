@@ -3,100 +3,75 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    const [
-      totalProcesses,
-      criticalProcesses,
-      totalRisks,
-      criticalRisks,
-      highRisks,
-      totalControls,
-      keyControls,
-      toeTests,
-      issues,
-      maps,
-      ccmRules,
-      retests,
-      recentAuditLogs
-    ] = await Promise.all([
-      prisma.businessProcess.count(),
-      prisma.businessProcess.count({ where: { criticality: 'Critical' } }),
-      prisma.riskMaster.count(),
-      prisma.riskMaster.count({ where: { inherentRating: 'Critical' } }),
-      prisma.riskMaster.count({ where: { inherentRating: 'High' } }),
-      prisma.controlMaster.count(),
-      prisma.controlMaster.count({ where: { isKeyControl: true } }),
+    const [processes, risks, controls, toeTests, issues, maps, rules, retests, recentAuditLogs] = await Promise.all([
+      prisma.businessProcess.findMany(),
+      prisma.riskMaster.findMany({ include: { controls: true } }),
+      prisma.controlMaster.findMany({ include: { toeTests: true } }),
       prisma.toETest.findMany({ include: { exceptions: true } }),
       prisma.issue.findMany(),
-      prisma.managementActionPlan.findMany({ include: { milestones: true } }),
-      prisma.monitoringRule.findMany({ include: { runs: { take: 1, orderBy: { runTimestamp: 'desc' } } } }),
+      prisma.managementActionPlan.findMany(),
+      prisma.monitoringRule.findMany(),
       prisma.retestRecord.findMany(),
       prisma.auditLog.findMany({ take: 8, orderBy: { timestamp: 'desc' } })
     ]);
 
-    // Calculate dynamic health metrics
-    const failedToEs = toeTests.filter(t => t.finalConclusion === 'Ineffective' || t.finalConclusion === 'Partially Effective').length;
-    const totalExceptions = toeTests.reduce((acc, t) => acc + (t.exceptions?.length || 0), 0);
-    const openIssues = issues.filter(i => i.status !== 'Closed').length;
-    const closedIssues = issues.filter(i => i.status === 'Closed').length;
-    const overdueMAP = maps.filter(m => m.status === 'Overdue').length;
-    const completedMAP = maps.filter(m => m.status === 'Closed').length;
-    const ccmHealthy = ccmRules.filter(r => r.lastStatus === 'Healthy').length;
+    const highCritical = risks.filter((risk) => risk.inherentRating === 'High' || risk.inherentRating === 'Critical');
+    const mappedHighCritical = highCritical.filter((risk) => risk.controls.length > 0);
+    const keyControls = controls.filter((control) => control.isKeyControl);
+    const testedKeyControls = keyControls.filter((control) => control.toeTests.length > 0);
 
-    // Executive answers for Section 106 & 154
+    const metrics = {
+      totalProcesses: processes.length,
+      criticalProcesses: processes.filter((p) => p.criticality === 'Critical').length,
+      totalRisks: risks.length,
+      criticalRisks: risks.filter((r) => r.inherentRating === 'Critical').length,
+      highRisks: risks.filter((r) => r.inherentRating === 'High').length,
+      totalControls: controls.length,
+      keyControls: keyControls.length,
+      failedToEs: toeTests.filter((t) => t.failCount > 0 || ['Partially Effective', 'Ineffective'].includes(t.finalConclusion)).length,
+      totalExceptions: toeTests.reduce((sum, test) => sum + test.exceptions.length, 0),
+      openIssues: issues.filter((issue) => issue.status !== 'Closed').length,
+      closedIssues: issues.filter((issue) => issue.status === 'Closed').length,
+      overdueMAP: maps.filter((map) => map.status === 'Overdue').length,
+      completedMAP: maps.filter((map) => ['Completed by Owner', 'Closed'].includes(map.status)).length,
+      ccmHealthy: rules.filter((rule) => rule.lastStatus === 'Healthy').length,
+      totalRetests: retests.length
+    };
+
     const executiveQandA = [
       {
-        question: 'Are our key risks controlled?',
-        status: 'Adequate',
-        summary: '100% of identified High & Critical Risks are mapped to at least one Preventive or Detective Key Control.',
-        trend: 'improving',
-        badge: 'Controlled'
+        question: 'Are High/Critical risks mapped to controls?',
+        status: highCritical.length ? `${mappedHighCritical.length}/${highCritical.length} mapped` : 'No rated risks',
+        summary: highCritical.length
+          ? `${mappedHighCritical.length} of ${highCritical.length} High/Critical risks have at least one persisted control mapping.`
+          : 'No High/Critical risks are currently registered.',
+        badge: 'Database'
       },
       {
-        question: 'Are our critical controls working?',
-        status: 'Effective Post-Remediation',
-        summary: 'CTRL-P2P-001 operating exception (2/25 samples) remediated via MAP-2026-001 and passed independent retest (10/10). Current CCM status is Healthy.',
-        trend: 'healthy',
-        badge: 'Verified'
+        question: 'Have key controls been tested?',
+        status: keyControls.length ? `${testedKeyControls.length}/${keyControls.length} tested` : 'No key controls',
+        summary: keyControls.length
+          ? `${testedKeyControls.length} of ${keyControls.length} key controls have at least one persisted ToE record.`
+          : 'No key controls are currently registered.',
+        badge: 'Database'
       },
       {
-        question: 'Where are control weaknesses concentrated?',
-        status: 'Finance & Accounts Payable',
-        summary: 'ERP Authorization matrix sync following organizational changes was identified as the primary root cause.',
-        trend: 'resolved',
-        badge: 'Remediated'
+        question: 'How many issues remain open?',
+        status: `${metrics.openIssues} open`,
+        summary: `${metrics.closedIssues} issues are closed and ${metrics.openIssues} remain open.`,
+        badge: 'Database'
       },
       {
         question: 'Which remediation actions are overdue?',
-        status: 'None Overdue',
-        summary: 'All agreed Management Action Plans (MAP-2026-001) are 100% completed on time without requiring extensions.',
-        trend: 'healthy',
-        badge: '0 Overdue'
+        status: `${metrics.overdueMAP} overdue`,
+        summary: `${metrics.overdueMAP} Management Action Plans are currently marked overdue.`,
+        badge: 'Database'
       }
     ];
 
-    return NextResponse.json({
-      metrics: {
-        totalProcesses,
-        criticalProcesses,
-        totalRisks,
-        criticalRisks,
-        highRisks,
-        totalControls,
-        keyControls,
-        failedToEs,
-        totalExceptions,
-        openIssues,
-        closedIssues,
-        overdueMAP,
-        completedMAP,
-        ccmHealthy,
-        totalRetests: retests.length
-      },
-      executiveQandA,
-      recentAuditLogs
-    });
+    return NextResponse.json({ metrics, executiveQandA, recentAuditLogs });
   } catch (error) {
     console.error('Failed to fetch dashboard metrics:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to load dashboard data' }, { status: 500 });
   }
 }

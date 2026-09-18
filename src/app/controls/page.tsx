@@ -33,12 +33,12 @@ export default function ControlsPage() {
     description: '',
     objective: '',
     processId: '',
-    controlOwner: 'Rizky Ananda',
+    controlOwner: '',
     type: 'Preventive',
     nature: 'IT Dependent Manual',
     frequency: 'Per Transaction',
-    isKeyControl: true,
-    isIcofrKey: true
+    isKeyControl: false,
+    isIcofrKey: false
   });
 
   const loadControls = () => {
@@ -258,7 +258,7 @@ export default function ControlsPage() {
                   <div className="pt-2 border-t border-slate-200">
                     <span className="text-slate-500 font-medium">Evidence Requirement:</span>
                     <div className="font-mono text-[11px] text-slate-700 mt-0.5">
-                      {selectedControl.evidenceRequirement || 'SAP S/4HANA Workflow Approval Log with dual digital signatures'}
+                      {selectedControl.evidenceRequirement || 'No evidence requirement recorded'}
                     </div>
                   </div>
                 </div>
@@ -271,19 +271,19 @@ export default function ControlsPage() {
                     <Activity className="w-3.5 h-3.5 text-brand-600" />
                     <span>Control Health 360° Assessment</span>
                   </h3>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    {selectedControl.overallHealth}
+                  <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                    {selectedControl.overallHealth || 'Not Assessed'}
                   </span>
                 </div>
 
-                <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs space-y-2">
-                  <p className="text-emerald-900 leading-relaxed font-medium">
-                    {selectedControl.healthRationale}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
+                  <p className="text-slate-700 leading-relaxed font-medium">
+                    {selectedControl.healthRationale || 'No health rationale recorded.'}
                   </p>
-                  <div className="pt-2 border-t border-emerald-200 flex items-center justify-between text-[11px] text-emerald-800">
-                    <span>Design: <strong>{selectedControl.designAssessment}</strong></span>
-                    <span>ToE Retest: <strong>Passed (10/10)</strong></span>
-                    <span>CCM Status: <strong>Healthy (0 Alert)</strong></span>
+                  <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-700">
+                    <span>Design: <strong>{selectedControl.designAssessment || 'Not Assessed'}</strong></span>
+                    <span>ToE records: <strong>{selectedControl.toeTests?.length || 0}</strong></span>
+                    <span>CCM: <strong>{selectedControl.monitoringRules?.[0]?.lastStatus || 'Not Run'}</strong></span>
                   </div>
                 </div>
               </div>
