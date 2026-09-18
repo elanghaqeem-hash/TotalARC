@@ -39,6 +39,7 @@ jobs:
       PLATFORM_ADMIN_EMAILS: admin@example.com
       AI_ALLOW_EXTERNAL: "false"
       NEXT_TELEMETRY_DISABLED: "1"
+      CI_E2E_PASSWORD: totalarc-ci-${{ github.run_id }}-A1-validation
 
     steps:
       - name: Checkout
@@ -114,6 +115,113 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Create ephemeral two-tenant test fixture
+        run: node scripts/create-ci-tenants.mjs
+
+      - name: Runtime authentication and tenant-isolation smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm start > /tmp/totalarc-server.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" >/dev/null 2>&1 || true' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health > /tmp/health.json; then
+              break
+            fi
+            if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+              cat /tmp/totalarc-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/health.json'))
+          assert data['status']=='ok' and data['database']=='reachable', data
+          PY
+
+          UNAUTH_CODE=$(curl -sS -o /tmp/unauth.json -w "%{http_code}" http://127.0.0.1:3000/api/controls)
+          test "$UNAUTH_CODE" = "401"
+
+          login() {
+            local email="$1"
+            local prefix="$2"
+            local payload
+            payload=$(python3 -c 'import json,os; print(json.dumps({"email":os.environ["LOGIN_EMAIL"],"password":os.environ["CI_E2E_PASSWORD"]}))' LOGIN_EMAIL="$email")
+            curl -sS -D "/tmp/$prefix.headers" -o "/tmp/$prefix.login.json" \
+              -H 'Content-Type: application/json' \
+              -H 'Origin: http://127.0.0.1:3000' \
+              --data "$payload" \
+              http://127.0.0.1:3000/api/auth/login
+          }
+
+          LOGIN_EMAIL='ci-tenant-a@totalarc.test' login "$LOGIN_EMAIL" a
+          LOGIN_EMAIL='ci-tenant-b@totalarc.test' login "$LOGIN_EMAIL" b
+
+          COOKIE_A=$(sed -n 's/^[Ss]et-[Cc]ookie: \(totalarc_session=[^;]*\).*/\1/p' /tmp/a.headers | tr -d '\r' | head -n1)
+          COOKIE_B=$(sed -n 's/^[Ss]et-[Cc]ookie: \(totalarc_session=[^;]*\).*/\1/p' /tmp/b.headers | tr -d '\r' | head -n1)
+          test -n "$COOKIE_A"
+          test -n "$COOKIE_B"
+
+          curl -fsS -H "Cookie: $COOKIE_A" http://127.0.0.1:3000/api/processes > /tmp/a-before.json
+          CATEGORY_ID=$(python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/a-before.json'))
+          assert data['categories'], 'No process category returned'
+          print(data['categories'][0]['id'])
+          PY
+          )
+
+          CREATE_A=$(curl -sS -o /tmp/process-a.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"name\":\"CI Tenant A Process\",\"categoryId\":\"$CATEGORY_ID\",\"ownerName\":\"CI Admin A\",\"processId\":\"PRC-CI-A\",\"criticality\":\"Medium\",\"classification\":\"Core\"}" \
+            http://127.0.0.1:3000/api/processes)
+          test "$CREATE_A" = "201"
+
+          CREATE_B=$(curl -sS -o /tmp/process-b.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_B" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"name\":\"CI Tenant B Process\",\"categoryId\":\"$CATEGORY_ID\",\"ownerName\":\"CI Admin B\",\"processId\":\"PRC-CI-B\",\"criticality\":\"Medium\",\"classification\":\"Core\"}" \
+            http://127.0.0.1:3000/api/processes)
+          test "$CREATE_B" = "201"
+
+          curl -fsS -H "Cookie: $COOKIE_A" http://127.0.0.1:3000/api/processes > /tmp/a-processes.json
+          curl -fsS -H "Cookie: $COOKIE_B" http://127.0.0.1:3000/api/processes > /tmp/b-processes.json
+
+          python3 - <<'PY'
+          import json
+          a={p['processId'] for p in json.load(open('/tmp/a-processes.json'))['processes']}
+          b={p['processId'] for p in json.load(open('/tmp/b-processes.json'))['processes']}
+          assert 'PRC-CI-A' in a and 'PRC-CI-B' not in a, (a,b)
+          assert 'PRC-CI-B' in b and 'PRC-CI-A' not in b, (a,b)
+          PY
+
+          PROCESS_B_ID=$(python3 - <<'PY'
+          import json
+          print(json.load(open('/tmp/process-b.json'))['id'])
+          PY
+          )
+
+          CROSS_TENANT_CODE=$(curl -sS -o /tmp/cross-tenant.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"processId\":\"$PROCESS_B_ID\",\"name\":\"Cross Tenant Attempt\",\"cause\":\"CI\",\"event\":\"CI\",\"impact\":\"CI\",\"category\":\"Operational\",\"ownerName\":\"CI Admin A\",\"inherentLikelihood\":2,\"inherentImpact\":2}" \
+            http://127.0.0.1:3000/api/risks)
+          test "$CROSS_TENANT_CODE" = "404"
+
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/cross-tenant.json'))
+          assert data.get('code')=='PROCESS_NOT_FOUND', data
+          PY
 
       - name: Dependency security audit
         run: npm audit --omit=dev --audit-level=high
