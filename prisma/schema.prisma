@@ -1,6 +1,6 @@
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -48,6 +48,11 @@ model Institution {
   campaigns           AssessmentCampaign[]
   issues              Issue[]
   auditLogs           AuditLog[]
+  financialAccounts   FinancialAccount[]
+  ipeRegisters        IPERegister[]
+  attestations        ManagementAttestation[]
+  tasks               Task[]
+  aiSuggestions       AISuggestion[]
 }
 
 model IndustryClassification {
@@ -99,8 +104,15 @@ model User {
   email         String   @unique
   role          String   // Admin, ProcessOwner, ControlOwner, Tester, Reviewer, Executive, Auditor
   department    String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  active              Boolean  @default(true)
+  passwordHash        String?
+  failedLoginAttempts Int      @default(0)
+  lockedUntil         DateTime?
+  sessionVersion      Int      @default(1)
+  lastLoginAt         DateTime?
+  lastLoginIp         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   tasksAssigned Task[]      @relation("TaskAssignee")
@@ -193,6 +205,10 @@ model BusinessProcess {
   todTests        ToDTest[]
   toeTests        ToETest[]
   issues          Issue[]
+  aiSuggestions   AISuggestion[]
+
+  @@index([institutionId, status])
+  @@index([institutionId, processId])
 }
 
 model ProcessActivity {
@@ -287,6 +303,9 @@ model RiskMaster {
   toeTests        ToETest[]
   issues          Issue[]
   riskAcceptances RiskAcceptance[]
+
+  @@index([institutionId, status])
+  @@index([institutionId, riskId])
 }
 
 // -------------------------------------------------------------
@@ -335,6 +354,9 @@ model ControlMaster {
   issues             Issue[]
   monitoringRules    MonitoringRule[]
   certifications     ControlCertification[]
+
+  @@index([institutionId, status])
+  @@index([institutionId, controlId])
 }
 
 model ControlRiskMapping {
@@ -394,6 +416,7 @@ model CSAResponse {
 // -------------------------------------------------------------
 model FinancialAccount {
   id             String   @id @default(uuid())
+  institutionId  String
   accountCode    String
   accountName    String
   financialStatement String // Balance Sheet, Income Statement, Cash Flow
@@ -404,7 +427,10 @@ model FinancialAccount {
   complexity     String   @default("Medium")
   createdAt      DateTime @default(now())
 
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   assertions     AccountAssertionMapping[]
+
+  @@index([institutionId])
 }
 
 model AccountAssertionMapping {
@@ -419,6 +445,7 @@ model AccountAssertionMapping {
 
 model IPERegister {
   id            String   @id @default(uuid())
+  institutionId String
   reportName    String
   systemSource  String
   reportOwner   String
@@ -428,6 +455,10 @@ model IPERegister {
   accuracyTested     Boolean @default(true)
   evidenceDoc   String?
   createdAt     DateTime @default(now())
+
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId])
 }
 
 // -------------------------------------------------------------
@@ -709,14 +740,20 @@ model ControlCertification {
 model ManagementAttestation {
   id              String   @id @default(uuid())
   institutionId   String
-  period          String   @default("2026-Annual")
+  period          String
   scopeSummary    String
-  cfoSignOff      Boolean  @default(true)
-  cfoName         String   @default("Budi Santoso, CFO")
-  croSignOff      Boolean  @default(true)
-  croName         String   @default("Dewi Lestari, CRO")
-  overallOpinion  String   @default("Adequate & Effective with Remediation in Place")
-  attestedAt      DateTime @default(now())
+  cfoSignOff      Boolean  @default(false)
+  cfoName         String?
+  croSignOff      Boolean  @default(false)
+  croName         String?
+  overallOpinion  String?
+  attestedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId])
 }
 
 model RiskAcceptance {
@@ -734,6 +771,7 @@ model RiskAcceptance {
 
 model Task {
   id              String   @id @default(uuid())
+  institutionId   String
   userId          String?
   title           String
   type            String   // CSA, TOD, TOE, Review, MAP, Retest, Certification
@@ -743,13 +781,42 @@ model Task {
   entityRef       String?  // Control ID, Test ID, etc.
   link            String?
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   user            User?    @relation("TaskAssignee", fields: [userId], references: [id])
+
+  @@index([institutionId, status])
+  @@index([userId, status])
+}
+
+model AISuggestion {
+  id               String   @id @default(uuid())
+  institutionId    String
+  processId         String
+  mode              String
+  category          String
+  description       String
+  recommendation   String?
+  suggestedRisk    String?
+  suggestedControl String?
+  model             String
+  status            String   @default("Pending Review")
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  process          BusinessProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, status])
+  @@index([processId])
 }
 
 model AuditLog {
   id            String   @id @default(uuid())
   institutionId String?
+  userId        String?
   userName      String
   userRole      String
   action        String   // CREATE, UPDATE, APPROVE, RETEST, CLOSE, EXPORT
@@ -758,7 +825,9 @@ model AuditLog {
   oldValue      String?
   newValue      String?
   reason        String?
-  ipAddress     String?  @default("127.0.0.1")
+  ipAddress     String?
+  userAgent     String?
+  correlationId String?
   timestamp     DateTime @default(now())
 
   institution   Institution? @relation(fields: [institutionId], references: [id], onDelete: Cascade)
