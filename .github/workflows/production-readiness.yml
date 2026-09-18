@@ -76,8 +76,32 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Apply schema to ephemeral PostgreSQL
-        run: npx prisma db push --skip-generate
+      - name: Generate baseline migration when missing
+        shell: bash
+        run: |
+          if [ ! -f prisma/migrations/00000000000000_production_baseline/migration.sql ]; then
+            mkdir -p prisma/migrations/00000000000000_production_baseline
+            npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > prisma/migrations/00000000000000_production_baseline/migration.sql
+            printf 'provider = "postgresql"\n' > prisma/migrations/migration_lock.toml
+          fi
+
+      - name: Persist baseline migration
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain prisma/migrations)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add prisma/migrations
+            git commit -m "db: add production baseline migration [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Apply production migration to ephemeral PostgreSQL
+        run: npx prisma migrate deploy
+
+      - name: Verify migration status
+        run: npx prisma migrate status
 
       - name: Seed reference data only
         run: npm run db:seed
