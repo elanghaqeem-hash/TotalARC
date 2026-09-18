@@ -1,151 +1,28 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import {
-  Workflow,
-  CheckCircle2,
-  Shield,
-  Layers,
-  ArrowRight,
-  FileCheck2,
-  UserCheck,
-  AlertTriangle
-} from 'lucide-react';
-import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import React,{useEffect,useState} from 'react';
+import { Workflow, Plus } from 'lucide-react';
 
-export default function ToDPage() {
-  const tod = {
-    testId: 'TOD-P2P-001',
-    controlId: 'CTRL-P2P-001',
-    process: 'Procure to Pay (PRC-P2P-001)',
-    tester: 'Kevin Sanjaya (Internal Control Specialist)',
-    reviewer: 'Dian Sastrowardoyo (Assurance Lead)',
-    period: '2026-Annual',
-    objective: 'Evaluate whether the design of dual electronic authorization adequately mitigates the risk of unauthorized disbursements above IDR 100M.',
-    criteria: [
-      { name: 'Control Objective Alignment', status: true, note: 'Directly aligns with payment validity and authority limit policy.' },
-      { name: 'Risk Coverage', status: true, note: 'Covers RSK-P2P-001 unauthorized release risk completely.' },
-      { name: 'Precision & Threshold Clarity', status: true, note: 'Clear dollar threshold (> IDR 100M) hardcoded in ERP routing table.' },
-      { name: 'Segregation of Duties (SoD)', status: true, note: 'Payment proposer cannot self-approve; dual tier signatories enforced.' },
-      { name: 'Evidence Sufficiency', status: true, note: 'Immutable SAP digital sign-off log with timestamp and user ID.' }
-    ],
-    conclusion: 'Effective Design',
-    walkthrough: {
-      date: '2026-05-14',
-      participants: 'Kevin Sanjaya (Tester), Rizky Ananda (AP Manager), Fajar Nugroho (SAP Basis)',
-      transactionRef: 'TRX-WT-2026-004',
-      systems: 'SAP S/4HANA Workflow Engine & Host-to-Host Banking API',
-      observations: 'Walkthrough confirmed that SAP workflow routes batches > IDR 100M to secondary signatory queue as designed.'
-    }
-  };
+type Test={id:string;testId:string;period:string;testObjective:string;conclusion:string;status:string;testedAt:string;testerName:string;control:{id:string;controlId:string;name:string};process:{processId:string;name:string}};
+type Walk={id:string;controlId:string;date:string;participants?:string|null;transactionRef?:string|null;observations?:string|null;conclusion:string};
+type Control={id:string;controlId:string;name:string};
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-sky-600 uppercase tracking-wider">
-            <Workflow className="w-4 h-4" />
-            <span>Test of Design & Walkthrough (ASSURE)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            Total ARC ToD Workspace
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Section 64 & 65: Evaluate whether control design appropriately addresses target risk through walkthrough documentation and design criteria.
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <Link
-            href="/toe"
-            className="inline-flex items-center space-x-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm shadow-brand-500/20 transition-all"
-          >
-            <span>Proceed to ToE Testing →</span>
-          </Link>
-        </div>
-      </div>
-
-      <TraceabilityFlow currentStep="ToE Test" />
-
-      {/* ToD WORKPAPER */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-        <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded">
-                {tod.testId}
-              </span>
-              <span className="text-xs text-slate-500 font-semibold">{tod.process}</span>
-            </div>
-            <h2 className="text-lg font-bold text-slate-900 mt-1">
-              Test of Design: Dual Authorization on Disbursements &gt; IDR 100M ({tod.controlId})
-            </h2>
-          </div>
-
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-lg">
-            Rating: {tod.conclusion}
-          </span>
-        </div>
-
-        {/* Design Criteria Evaluation Checklist (Section 64) */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Design Criteria Evaluation (Section 64)
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            {tod.criteria.map((c, idx) => (
-              <div
-                key={idx}
-                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-start space-x-3"
-              >
-                <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="font-bold text-slate-900">{c.name}</div>
-                  <p className="text-[11px] text-slate-600 mt-0.5">{c.note}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Walkthrough Documentation (Section 65) */}
-        <div className="space-y-3 border-t border-slate-100 pt-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Walkthrough Documentation (Section 65)
-            </h3>
-            <span className="text-xs font-semibold text-slate-500">
-              Date: <strong>{tod.walkthrough.date}</strong>
-            </span>
-          </div>
-
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
-            <div>
-              <span className="text-slate-400 font-medium">Participants:</span>
-              <div className="font-bold text-slate-800 mt-0.5">{tod.walkthrough.participants}</div>
-            </div>
-            <div>
-              <span className="text-slate-400 font-medium">Sample Transaction Inspected:</span>
-              <div className="font-mono text-brand-700 font-bold mt-0.5">{tod.walkthrough.transactionRef}</div>
-            </div>
-            <div>
-              <span className="text-slate-400 font-medium">Systems Inspected:</span>
-              <div className="text-slate-800 font-medium mt-0.5">{tod.walkthrough.systems}</div>
-            </div>
-            <div className="pt-2 border-t border-slate-200">
-              <span className="text-slate-400 font-medium">Tester Observation:</span>
-              <p className="text-slate-800 leading-relaxed font-medium mt-0.5">
-                {tod.walkthrough.observations}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+export default function ToDPage(){
+ const [tests,setTests]=useState<Test[]>([]);const [walks,setWalks]=useState<Walk[]>([]);const [controls,setControls]=useState<Control[]>([]);const [message,setMessage]=useState('');const [mode,setMode]=useState<'TOD'|'WALK'>('TOD');
+ const [form,setForm]=useState({controlId:'',period:'',testObjective:'',reviewerName:'',observations:'',conclusion:'Not Assessed',objectiveAlignment:false,riskCoverage:false,precisionAdequate:false,segregationDuties:false,evidenceSufficiency:false,participants:'',transactionRef:'',systemsInspected:''});
+ const load=async()=>{const[a,b]=await Promise.all([fetch('/api/tod',{cache:'no-store'}),fetch('/api/controls',{cache:'no-store'})]);const ad=await a.json();const bd=await b.json();if(!a.ok)throw new Error(ad.error||'Unable to load ToD');setTests(ad.tests||[]);setWalks(ad.walkthroughs||[]);setControls((bd.controls||[]).map((x:any)=>({id:x.id,controlId:x.controlId,name:x.name})));setForm(v=>({...v,controlId:v.controlId||bd.controls?.[0]?.id||''}));};
+ useEffect(()=>{load().catch(e=>setMessage(e.message));},[]);
+ const submit=async(e:React.FormEvent)=>{e.preventDefault();const body=mode==='TOD'?{action:'CREATE_TOD',...form}:{action:'CREATE_WALKTHROUGH',controlId:form.controlId,participants:form.participants,transactionRef:form.transactionRef,systemsInspected:form.systemsInspected,observations:form.observations,conclusion:form.conclusion};const r=await fetch('/api/tod',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to save');setMessage('Saved successfully.');await load();};
+ return <div className="space-y-6">
+  <div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><Workflow className="w-5 h-5 text-brand-600"/>Walkthrough & Test of Design</h1><p className="text-xs text-slate-500 mt-1">Testing records are linked to registered controls and processes.</p></div>
+  {message&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}
+  <div className="flex gap-2"><button onClick={()=>setMode('TOD')} className={`text-xs font-bold px-3 py-2 rounded-lg ${mode==='TOD'?'bg-slate-900 text-white':'bg-white border border-slate-200'}`}>New ToD</button><button onClick={()=>setMode('WALK')} className={`text-xs font-bold px-3 py-2 rounded-lg ${mode==='WALK'?'bg-slate-900 text-white':'bg-white border border-slate-200'}`}>New Walkthrough</button></div>
+  <form onSubmit={submit} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 text-xs">
+   <label className="font-semibold text-slate-700 block">Control<select required value={form.controlId} onChange={e=>setForm({...form,controlId:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option value="">Select control</option>{controls.map(c=><option key={c.id} value={c.id}>{c.controlId} — {c.name}</option>)}</select></label>
+   {mode==='TOD'?<><div className="grid md:grid-cols-2 gap-3"><label className="font-semibold text-slate-700">Period<input required value={form.period} onChange={e=>setForm({...form,period:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700">Conclusion<select value={form.conclusion} onChange={e=>setForm({...form,conclusion:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>Not Assessed</option><option>Effective Design</option><option>Partially Effective Design</option><option>Ineffective Design</option></select></label></div><label className="font-semibold text-slate-700 block">Test objective<textarea required value={form.testObjective} onChange={e=>setForm({...form,testObjective:e.target.value})} rows={3} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><div className="flex flex-wrap gap-4">{[['objectiveAlignment','Objective alignment'],['riskCoverage','Risk coverage'],['precisionAdequate','Precision adequate'],['segregationDuties','Segregation of duties'],['evidenceSufficiency','Evidence sufficiency']].map(([k,l])=><label key={k} className="flex items-center gap-2"><input type="checkbox" checked={(form as any)[k]} onChange={e=>setForm({...form,[k]:e.target.checked})}/>{l}</label>)}</div></>:<div className="grid md:grid-cols-2 gap-3"><label className="font-semibold text-slate-700">Participants<input value={form.participants} onChange={e=>setForm({...form,participants:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700">Transaction reference<input value={form.transactionRef} onChange={e=>setForm({...form,transactionRef:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700 md:col-span-2">Systems inspected<input value={form.systemsInspected} onChange={e=>setForm({...form,systemsInspected:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label></div>}
+   <label className="font-semibold text-slate-700 block">Observations<textarea value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} rows={3} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+   <button disabled={!form.controlId} className="inline-flex items-center gap-1.5 bg-brand-600 disabled:opacity-50 text-white font-bold px-4 py-2.5 rounded-lg"><Plus className="w-4 h-4"/>Save {mode==='TOD'?'ToD':'Walkthrough'}</button>
+  </form>
+  <div className="grid xl:grid-cols-2 gap-4"><section className="bg-white border border-slate-200 rounded-xl p-5"><h2 className="text-sm font-bold text-slate-900 mb-3">ToD Tests</h2><div className="space-y-3">{tests.map(t=><div key={t.id} className="border border-slate-100 rounded-lg p-3"><div className="flex justify-between"><span className="text-xs font-bold text-slate-900">{t.testId} — {t.control.controlId}</span><span className="text-[10px] bg-slate-100 px-2 py-1 rounded">{t.status}</span></div><div className="text-[11px] text-slate-500 mt-1">{t.process.processId} • {t.period} • Tester: {t.testerName}</div><div className="text-[11px] text-slate-700 mt-2">{t.conclusion}</div></div>)}{!tests.length&&<div className="text-xs text-slate-400">No ToD test registered.</div>}</div></section><section className="bg-white border border-slate-200 rounded-xl p-5"><h2 className="text-sm font-bold text-slate-900 mb-3">Walkthroughs</h2><div className="space-y-3">{walks.map(w=><div key={w.id} className="border border-slate-100 rounded-lg p-3"><div className="text-xs font-bold text-slate-900">{new Date(w.date).toLocaleDateString('id-ID')}</div><div className="text-[11px] text-slate-500 mt-1">{w.transactionRef||'No transaction reference'} • {w.participants||'Participants not specified'}</div><div className="text-[11px] text-slate-700 mt-2">{w.conclusion}</div></div>)}{!walks.length&&<div className="text-xs text-slate-400">No walkthrough registered.</div>}</div></section></div>
+ </div>;
 }
