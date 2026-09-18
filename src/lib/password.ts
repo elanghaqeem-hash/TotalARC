@@ -4,6 +4,10 @@ import { promisify } from 'node:util';
 const scrypt = promisify(scryptCallback);
 const KEY_LENGTH = 64;
 
+export function generateTemporaryPassword() {
+  return randomBytes(18).toString('base64url');
+}
+
 export function validatePasswordStrength(password: string) {
   if (password.length < 12) throw new Error('Password must be at least 12 characters');
   if (password.length > 256) throw new Error('Password is too long');
