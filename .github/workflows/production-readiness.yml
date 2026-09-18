@@ -223,5 +223,37 @@ jobs:
           assert data.get('code')=='PROCESS_NOT_FOUND', data
           PY
 
+          MISSING_ORIGIN_CODE=$(curl -sS -o /tmp/missing-origin.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            --data '{}' \
+            http://127.0.0.1:3000/api/processes)
+          test "$MISSING_ORIGIN_CODE" = "403"
+
+          for attempt in 1 2 3 4 5; do
+            WRONG_PAYLOAD=$(python3 -c 'import json; print(json.dumps({"email":"ci-tenant-a@totalarc.test","password":"deliberately-wrong-password"}))')
+            WRONG_CODE=$(curl -sS -o "/tmp/wrong-$attempt.json" -w "%{http_code}" \
+              -H 'Content-Type: application/json' \
+              -H 'Origin: http://127.0.0.1:3000' \
+              --data "$WRONG_PAYLOAD" \
+              http://127.0.0.1:3000/api/auth/login)
+            test "$WRONG_CODE" = "401"
+          done
+
+          LOCKED_WRONG_CODE=$(curl -sS -o /tmp/locked-wrong.json -w "%{http_code}" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data '{"email":"ci-tenant-a@totalarc.test","password":"still-wrong-password"}' \
+            http://127.0.0.1:3000/api/auth/login)
+          test "$LOCKED_WRONG_CODE" = "429"
+
+          VALID_LOCKED_PAYLOAD=$(python3 -c 'import json,os; print(json.dumps({"email":"ci-tenant-a@totalarc.test","password":os.environ["CI_E2E_PASSWORD"]}))')
+          LOCKED_VALID_CODE=$(curl -sS -o /tmp/locked-valid.json -w "%{http_code}" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "$VALID_LOCKED_PAYLOAD" \
+            http://127.0.0.1:3000/api/auth/login)
+          test "$LOCKED_VALID_CODE" = "429"
+
       - name: Dependency security audit
         run: npm audit --omit=dev --audit-level=high
