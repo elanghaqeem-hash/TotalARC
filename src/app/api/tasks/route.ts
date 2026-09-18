@@ -4,8 +4,9 @@ import { ApiError, apiError, optionalString, readJson, requireApiUser, requireSt
 import { writeAudit } from '@/lib/audit';
 
 function withEffectiveStatus<T extends { status: string; dueDate: Date }>(task: T) {
-  const overdue = task.status !== 'Completed' && task.dueDate.getTime() < Date.now();
-  return { ...task, status: overdue ? 'Overdue' : task.status };
+  const storedStatus = task.status;
+  const overdue = storedStatus !== 'Completed' && task.dueDate.getTime() < Date.now();
+  return { ...task, storedStatus, status: overdue ? 'Overdue' : storedStatus };
 }
 
 export async function GET(request: Request) {
