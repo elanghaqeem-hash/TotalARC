@@ -42,6 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       items: [
         { name: 'Core Dashboard', href: '/', icon: Activity },
         { name: 'Institution Onboarding', href: '/onboarding', icon: Building2, roles: ['Admin'] },
+        { name: 'User Administration', href: '/users', icon: UserRound, roles: ['Admin'] },
         { name: 'Organization Structure', href: '/organization', icon: FolderTree },
         { name: 'Process Architecture (BPM)', href: '/processes', icon: Layers },
         { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
@@ -75,8 +76,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   ], []);
 
   useEffect(() => {
-    if (pathname === '/login' || loadingUser || currentUser) return;
-    window.location.assign(`/login?next=${encodeURIComponent(pathname || '/')}`);
+    if (pathname === '/login' || loadingUser) return;
+    if (!currentUser) {
+      window.location.assign(`/login?next=${encodeURIComponent(pathname || '/')}`);
+      return;
+    }
+    if (currentUser.mustChangePassword && pathname !== '/change-password') {
+      window.location.assign('/change-password');
+    }
   }, [pathname, loadingUser, currentUser]);
 
   useEffect(() => {
@@ -106,7 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [searchQuery, currentUser]);
 
-  if (pathname === '/login') return <>{children}</>;
+  if (pathname === '/login' || pathname === '/change-password') return <>{children}</>;
 
   if (loadingUser || !currentUser) {
     return (
