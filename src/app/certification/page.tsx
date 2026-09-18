@@ -1,136 +1,25 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import {
-  BadgeCheck,
-  CheckCircle2,
-  FileText,
-  Shield,
-  Layers,
-  ArrowRight,
-  UserCheck,
-  Lock,
-  Building2
-} from 'lucide-react';
-import { useRole } from '@/context/RoleContext';
-import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import React,{useEffect,useState} from 'react';
+import { BadgeCheck } from 'lucide-react';
 
-export default function CertificationPage() {
-  const { currentUser, institutionName } = useRole();
-  const [attested, setAttested] = useState(true);
+type Control={id:string;controlId:string;name:string}; type Cert={id:string;period:string;declarationText:string;certifierName:string;certifierRole:string;status:string;certifiedAt:string;control:Control}; type Att={id:string;period:string;scopeSummary:string;cfoSignOff:boolean;cfoName?:string|null;croSignOff:boolean;croName?:string|null;overallOpinion?:string|null;attestedAt?:string|null};
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-emerald-600 uppercase tracking-wider">
-            <BadgeCheck className="w-4 h-4" />
-            <span>Management Assurance & Attestation (MONITOR)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            Control Certification & Executive Attestation
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Sections 91 & 92: Hierarchical formal sign-off: Control Owner &rarr; Process Owner &rarr; Division Head &rarr; CFO / CRO.
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <span className="inline-flex items-center space-x-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold px-3.5 py-2 rounded-xl">
-            <Lock className="w-4 h-4 text-emerald-600" />
-            <span>Period 2026-Annual Locked</span>
-          </span>
-        </div>
-      </div>
-
-      <TraceabilityFlow currentStep="CCM Monitor" />
-
-      {/* SECTION 1: CONTROL OWNER CERTIFICATION (Section 91) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
-            <span className="text-xs font-bold text-brand-600 uppercase tracking-wider">
-              Control Owner Certification (Section 91)
-            </span>
-            <h3 className="text-base font-bold text-slate-900 mt-0.5">
-              CTRL-P2P-001: Dual Authorization on Disbursements Exceeding Policy Thresholds
-            </h3>
-          </div>
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg">
-            Certified
-          </span>
-        </div>
-
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
-          <span className="text-slate-400 font-bold uppercase text-[10px]">
-            Owner Declaration Text:
-          </span>
-          <p className="text-slate-800 italic leading-relaxed">
-            &ldquo;I hereby certify that CTRL-P2P-001 was operated in accordance with established policies. The operating deficiency DEF-2026-001 identified during interim testing was fully remediated via MAP-2026-001 and successfully retested with 10/10 samples passing. Continuous monitoring rules remain active and healthy.&rdquo;
-          </p>
-          <div className="pt-2 border-t border-slate-200 flex justify-between text-slate-500 text-[11px]">
-            <span>Certifier: <strong>Rizky Ananda (Manager Accounts Payable)</strong></span>
-            <span>Date: <strong>01 September 2026</strong></span>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 2: EXECUTIVE MANAGEMENT ATTESTATION (Section 92) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
-            <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
-              Executive Management Sign-Off (Section 92)
-            </span>
-            <h3 className="text-lg font-bold text-slate-900 mt-0.5">
-              Annual Management Statement on Internal Control over Financial Reporting
-            </h3>
-            <p className="text-xs text-slate-500">
-              For {institutionName} • Reporting Period: FY2026
-            </p>
-          </div>
-
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-lg flex items-center space-x-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Attestation Executed</span>
-          </span>
-        </div>
-
-        <div className="p-5 bg-gradient-to-br from-slate-50 to-emerald-50/40 border border-slate-200 rounded-xl space-y-3 text-xs leading-relaxed text-slate-800">
-          <p className="font-semibold text-slate-900">
-            Management Opinion on Internal Control:
-          </p>
-          <p>
-            &ldquo;Based on our evaluation under the COSO Internal Control — Integrated Framework (2013) and Sarbanes-Oxley Section 404 guidelines, Management concludes that the Company maintained <strong>ADEQUATE & EFFECTIVE</strong> Internal Control over Financial Reporting as of September 2026.&rdquo;
-          </p>
-          <p className="text-slate-600 text-[11px]">
-            The single control deficiency identified in the Procure-to-Pay cycle (ERP delegation matrix mismatch) was systematically remediated through formal Management Action Plan MAP-2026-001, independently retested with 100% pass rate, and reinforced with real-time Continuous Control Monitoring. No Material Weaknesses exist.
-          </p>
-        </div>
-
-        {/* Dual Signatures */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-2">
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
-            <span className="text-[10px] font-bold uppercase text-slate-400">Chief Financial Officer (CFO)</span>
-            <div className="text-base font-bold text-slate-900">Budi Santoso</div>
-            <div className="text-[11px] text-emerald-700 font-semibold flex items-center space-x-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Signed & Digitally Sealed (15 Sep 2026)</span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
-            <span className="text-[10px] font-bold uppercase text-slate-400">Chief Risk Officer (CRO)</span>
-            <div className="text-base font-bold text-slate-900">Dewi Lestari</div>
-            <div className="text-[11px] text-emerald-700 font-semibold flex items-center space-x-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Signed & Digitally Sealed (15 Sep 2026)</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+export default function CertificationPage(){
+ const[certs,setCerts]=useState<Cert[]>([]);const[atts,setAtts]=useState<Att[]>([]);const[controls,setControls]=useState<Control[]>([]);const[message,setMessage]=useState('');
+ const[certForm,setCertForm]=useState({controlId:'',period:'',declarationText:'',status:'Certified'});
+ const[attForm,setAttForm]=useState({period:'',scopeSummary:'',overallOpinion:'',cfoSignOff:false,croSignOff:false,croName:''});
+ const load=async()=>{const[a,b]=await Promise.all([fetch('/api/certification',{cache:'no-store'}),fetch('/api/controls',{cache:'no-store'})]);const ad=await a.json();const bd=await b.json();if(!a.ok)throw new Error(ad.error||'Unable to load certifications');setCerts(ad.certifications||[]);setAtts(ad.attestations||[]);setControls((bd.controls||[]).map((x:any)=>({id:x.id,controlId:x.controlId,name:x.name})));setCertForm(v=>({...v,controlId:v.controlId||bd.controls?.[0]?.id||''}));};
+ useEffect(()=>{load().catch(e=>setMessage(e.message));},[]);
+ const certify=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/certification',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'CERTIFY_CONTROL',...certForm})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to certify');setCertForm(v=>({...v,period:'',declarationText:''}));await load();};
+ const attest=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/certification',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'ATTEST_MANAGEMENT',...attForm})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to attest');await load();};
+ return <div className="space-y-6">
+  <div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><BadgeCheck className="w-5 h-5 text-brand-600"/>Certification & Attestation</h1><p className="text-xs text-slate-500 mt-1">Declarations are recorded by the authenticated actor and tied to live controls or institution periods.</p></div>
+  {message&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}
+  <div className="grid xl:grid-cols-2 gap-5">
+   <form onSubmit={certify} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 text-xs"><h2 className="text-sm font-bold text-slate-900">Control Certification</h2><label className="font-semibold text-slate-700 block">Control<select required value={certForm.controlId} onChange={e=>setCertForm({...certForm,controlId:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option value="">Select control</option>{controls.map(c=><option key={c.id} value={c.id}>{c.controlId} — {c.name}</option>)}</select></label><label className="font-semibold text-slate-700 block">Period<input required value={certForm.period} onChange={e=>setCertForm({...certForm,period:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700 block">Declaration<textarea required value={certForm.declarationText} onChange={e=>setCertForm({...certForm,declarationText:e.target.value})} rows={5} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700 block">Status<select value={certForm.status} onChange={e=>setCertForm({...certForm,status:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>Certified</option><option>Certified with Exception</option><option>Not Certified</option></select></label><button className="bg-brand-600 text-white font-bold px-4 py-2.5 rounded-lg">Record Certification</button></form>
+   <form onSubmit={attest} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 text-xs"><h2 className="text-sm font-bold text-slate-900">Management Attestation</h2><label className="font-semibold text-slate-700 block">Period<input required value={attForm.period} onChange={e=>setAttForm({...attForm,period:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700 block">Scope summary<textarea required value={attForm.scopeSummary} onChange={e=>setAttForm({...attForm,scopeSummary:e.target.value})} rows={3} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700 block">Overall opinion<textarea required value={attForm.overallOpinion} onChange={e=>setAttForm({...attForm,overallOpinion:e.target.value})} rows={3} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><div className="flex gap-4"><label className="flex items-center gap-2"><input type="checkbox" checked={attForm.cfoSignOff} onChange={e=>setAttForm({...attForm,cfoSignOff:e.target.checked})}/>CFO sign-off by current actor</label><label className="flex items-center gap-2"><input type="checkbox" checked={attForm.croSignOff} onChange={e=>setAttForm({...attForm,croSignOff:e.target.checked})}/>CRO sign-off</label></div><label className="font-semibold text-slate-700 block">CRO name (when applicable)<input value={attForm.croName} onChange={e=>setAttForm({...attForm,croName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><button className="bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg">Record Attestation</button></form>
+  </div>
+  <div className="grid xl:grid-cols-2 gap-5"><section className="bg-white border border-slate-200 rounded-xl p-5"><h2 className="text-sm font-bold text-slate-900 mb-3">Control Certifications</h2><div className="space-y-3">{certs.map(c=><div key={c.id} className="border border-slate-100 rounded-lg p-3"><div className="flex justify-between"><span className="text-xs font-bold">{c.control.controlId} — {c.period}</span><span className="text-[10px] bg-slate-100 px-2 py-1 rounded">{c.status}</span></div><div className="text-[11px] text-slate-500 mt-1">{c.certifierName} • {c.certifierRole} • {new Date(c.certifiedAt).toLocaleString('id-ID')}</div><p className="text-[11px] text-slate-700 mt-2">{c.declarationText}</p></div>)}{!certs.length&&<div className="text-xs text-slate-400">No certification recorded.</div>}</div></section><section className="bg-white border border-slate-200 rounded-xl p-5"><h2 className="text-sm font-bold text-slate-900 mb-3">Management Attestations</h2><div className="space-y-3">{atts.map(a=><div key={a.id} className="border border-slate-100 rounded-lg p-3"><div className="text-xs font-bold">{a.period}</div><div className="text-[11px] text-slate-500 mt-1">{a.attestedAt?new Date(a.attestedAt).toLocaleString('id-ID'):'Not attested'}</div><p className="text-[11px] text-slate-700 mt-2">{a.overallOpinion||'No opinion recorded.'}</p></div>)}{!atts.length&&<div className="text-xs text-slate-400">No management attestation recorded.</div>}</div></section></div>
+ </div>;
 }
