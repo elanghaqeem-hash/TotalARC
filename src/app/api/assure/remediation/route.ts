@@ -69,6 +69,10 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { actionType, mapId, extensionReason, newDueDate, approverName } = body;
 
+    if (actionType === 'REQUEST_EXTENSION' && (!mapId || !extensionReason || !newDueDate || !approverName)) {
+      return NextResponse.json({ error: 'mapId, extensionReason, newDueDate, and approverName are required.' }, { status: 400 });
+    }
+
     if (actionType === 'REQUEST_EXTENSION') {
       const existingMap = await prisma.managementActionPlan.findUnique({
         where: { id: mapId }
@@ -82,7 +86,7 @@ export async function POST(request: Request) {
           revisedDueDate: new Date(newDueDate),
           extensionCount: existingMap.extensionCount + 1,
           extensionReason: extensionReason,
-          approverName: approverName || 'Executive Approver'
+          approverName
         }
       });
       return NextResponse.json(updated);
