@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { apiError, requireApiUser } from '@/lib/api';
+import { deriveControlHealth } from '@/lib/control-health';
 
 export async function GET(request: Request) {
   try {
@@ -13,7 +14,16 @@ export async function GET(request: Request) {
           include: {
             todTests: { orderBy: { testedAt: 'desc' }, take: 1 },
             toeTests: { orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
-            issues: { orderBy: { createdAt: 'desc' }, include: { actionPlans: { include: { retests: true } } } },
+            issues: {
+              orderBy: { createdAt: 'desc' },
+              include: {
+                actionPlans: {
+                  orderBy: { createdAt: 'desc' },
+                  include: { retests: { orderBy: { retestedAt: 'desc' } } }
+                }
+              }
+            },
+            monitoringRules: { orderBy: { createdAt: 'desc' } },
             csaResponses: { orderBy: { assessedAt: 'desc' }, take: 1 }
           }
         }
@@ -26,9 +36,10 @@ export async function GET(request: Request) {
       const process = risk.process;
       const toe = control.toeTests[0];
       const tod = control.todTests[0];
-      const issue = control.issues[0];
+      const issue = control.issues.find(i => i.status !== 'Closed') || control.issues[0];
       const map = issue?.actionPlans?.[0];
       const retest = map?.retests?.[0];
+      const controlHealth = deriveControlHealth(control);
       return {
         id: m.id,
         rowNumber: idx + 1,
@@ -62,7 +73,7 @@ export async function GET(request: Request) {
         todConclusion: tod?.conclusion || 'Not Assessed',
         toeConclusion: toe?.finalConclusion || 'Not Tested',
         toePassRatio: toe ? `${toe.passCount}/${toe.sampleSize} Pass` : null,
-        controlHealth: control.overallHealth,
+        controlHealth,
         issueId: issue?.issueId || null,
         issueTitle: issue?.title || null,
         issueSeverity: issue?.severity || null,
