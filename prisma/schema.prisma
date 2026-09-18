@@ -749,6 +749,8 @@ model ControlCertification {
   certifiedAt     DateTime @default(now())
 
   control         ControlMaster @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, period])
 }
 
 model ManagementAttestation {
