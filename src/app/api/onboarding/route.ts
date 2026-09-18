@@ -1,104 +1,82 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isPlatformAdmin } from '@/lib/auth';
+import { ApiError, apiError, optionalString, readJson, requireApiUser, requireString } from '@/lib/api';
+import { writeAudit } from '@/lib/audit';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    await requireApiUser(request);
     const [industries, frameworks, regulations] = await Promise.all([
-      prisma.industryClassification.findMany({ orderBy: { industry: 'asc' } }),
+      prisma.industryClassification.findMany({ orderBy: [{ industry: 'asc' }, { sector: 'asc' }, { subsector: 'asc' }] }),
       prisma.framework.findMany({ orderBy: { name: 'asc' } }),
-      prisma.regulation.findMany({ orderBy: { regulator: 'asc' } })
+      prisma.regulation.findMany({ orderBy: [{ regulator: 'asc' }, { code: 'asc' }] })
     ]);
-
     return NextResponse.json({ industries, frameworks, regulations });
   } catch (error) {
-    console.error('Failed to load onboarding references:', error);
-    return NextResponse.json({ error: 'Failed to load onboarding references' }, { status: 500 });
+    return apiError(error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const {
-      name,
-      legalName,
-      shortName,
-      institutionType,
-      country,
-      city,
-      website,
-      generalEmail,
-      telephone,
-      yearEstablished,
-      taxId,
-      stockExchange,
-      ticker,
-      businessModel,
-      operatingModel,
-      employeeCount,
-      revenueRange
-    } = body;
+    const user = await requireApiUser(request, ['Admin']);
+    if (!isPlatformAdmin(user)) throw new ApiError(403, 'PLATFORM_ADMIN_REQUIRED', 'Platform administrator permission is required');
 
-    const newInst = await prisma.institution.create({
+    const body = await readJson<Record<string, unknown>>(request);
+    const name = requireString(body.name, 'name', 250);
+    const legalName = optionalString(body.legalName, 250) || name;
+    const shortName = requireString(body.shortName, 'shortName', 30).toUpperCase();
+
+    const institution = await prisma.institution.create({
       data: {
         name,
-        legalName: legalName || name,
-        shortName: shortName || name.slice(0, 4).toUpperCase(),
-        institutionType: institutionType || 'Corporation',
-        country: country || 'Indonesia',
-        city: city || 'Jakarta',
-        website,
-        generalEmail,
-        telephone,
-        yearEstablished: yearEstablished ? parseInt(yearEstablished) : 2026,
-        taxId,
-        stockExchange,
-        ticker,
-        businessModel: businessModel || 'B2B',
-        operatingModel: operatingModel || 'Centralized',
-        employeeCount: employeeCount || '500 - 1,000 Employees',
-        revenueRange: revenueRange || 'IDR 500 Billion - IDR 1 Trillion'
+        legalName,
+        shortName,
+        institutionType: requireString(body.institutionType || 'Corporation', 'institutionType', 100),
+        country: requireString(body.country || 'Indonesia', 'country', 100),
+        provinceState: optionalString(body.provinceState, 150),
+        city: optionalString(body.city, 150),
+        registeredAddress: optionalString(body.registeredAddress, 1000),
+        operationalAddress: optionalString(body.operationalAddress, 1000),
+        website: optionalString(body.website, 500),
+        generalEmail: optionalString(body.generalEmail, 254),
+        telephone: optionalString(body.telephone, 80),
+        yearEstablished: body.yearEstablished ? Number(body.yearEstablished) : null,
+        registrationNumber: optionalString(body.registrationNumber, 150),
+        taxId: optionalString(body.taxId, 150),
+        parentCompany: optionalString(body.parentCompany, 250),
+        holdingCompany: optionalString(body.holdingCompany, 250),
+        stockExchange: optionalString(body.stockExchange, 100),
+        ticker: optionalString(body.ticker, 50),
+        employeeCount: optionalString(body.employeeCount, 100),
+        revenueRange: optionalString(body.revenueRange, 100),
+        businessModel: optionalString(body.businessModel, 100),
+        operatingModel: optionalString(body.operatingModel, 100)
       }
     });
 
-    // Create default HQ legal entity
-    const legalEntity = await prisma.legalEntity.create({
+    await prisma.legalEntity.create({
       data: {
-        institutionId: newInst.id,
-        code: `ENT-${newInst.shortName}-HQ`,
-        name: `${newInst.name} (Headquarters)`,
-        country: newInst.country,
-        taxId: newInst.taxId
+        institutionId: institution.id,
+        code: `ENT-${shortName}-HQ`,
+        name: legalName,
+        country: institution.country,
+        taxId: institution.taxId
       }
     });
 
-    // Create default top-level organization unit
-    await prisma.organizationUnit.create({
-      data: {
-        institutionId: newInst.id,
-        legalEntityId: legalEntity.id,
-        type: 'Directorate',
-        code: 'DIR-OPS',
-        name: 'Directorate of Operations & Risk',
-        headName: 'Director of Risk'
-      }
+    await writeAudit(user, request, {
+      action: 'CREATE',
+      entityType: 'Institution',
+      recordId: institution.id,
+      institutionId: institution.id,
+      reason: `Platform administrator onboarded ${institution.name}`,
+      newValue: institution
     });
 
-    await prisma.auditLog.create({
-      data: {
-        institutionId: newInst.id,
-        userName: 'System Onboarding',
-        userRole: 'Admin',
-        action: 'CREATE',
-        entityType: 'Institution',
-        recordId: newInst.id,
-        reason: `Onboarded new institution: ${newInst.name}`
-      }
-    });
-
-    return NextResponse.json({ success: true, institution: newInst });
+    return NextResponse.json({ success: true, institution }, { status: 201 });
   } catch (error) {
-    console.error('Onboarding failed:', error);
-    return NextResponse.json({ error: 'Failed to onboard institution' }, { status: 500 });
+    return apiError(error);
   }
 }
