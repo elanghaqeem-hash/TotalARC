@@ -1,102 +1,102 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiError, requireApiUser } from '@/lib/api';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const [
-      totalProcesses,
-      criticalProcesses,
-      totalRisks,
-      criticalRisks,
-      highRisks,
-      totalControls,
-      keyControls,
-      toeTests,
-      issues,
-      maps,
-      ccmRules,
-      retests,
-      recentAuditLogs
-    ] = await Promise.all([
-      prisma.businessProcess.count(),
-      prisma.businessProcess.count({ where: { criticality: 'Critical' } }),
-      prisma.riskMaster.count(),
-      prisma.riskMaster.count({ where: { inherentRating: 'Critical' } }),
-      prisma.riskMaster.count({ where: { inherentRating: 'High' } }),
-      prisma.controlMaster.count(),
-      prisma.controlMaster.count({ where: { isKeyControl: true } }),
-      prisma.toETest.findMany({ include: { exceptions: true } }),
-      prisma.issue.findMany(),
-      prisma.managementActionPlan.findMany({ include: { milestones: true } }),
-      prisma.monitoringRule.findMany({ include: { runs: { take: 1, orderBy: { runTimestamp: 'desc' } } } }),
-      prisma.retestRecord.findMany(),
-      prisma.auditLog.findMany({ take: 8, orderBy: { timestamp: 'desc' } })
+    const user = await requireApiUser(request);
+    const institutionId = user.institutionId;
+    const now = new Date();
+
+    const [processes, risks, controls, toeTests, issues, maps, ccmRules, retests, recentAuditLogs] = await Promise.all([
+      prisma.businessProcess.findMany({ where: { institutionId }, select: { id: true, criticality: true } }),
+      prisma.riskMaster.findMany({
+        where: { institutionId },
+        include: { controls: { include: { control: { select: { id: true, isKeyControl: true } } } } }
+      }),
+      prisma.controlMaster.findMany({ where: { institutionId }, select: { id: true, isKeyControl: true, overallHealth: true } }),
+      prisma.toETest.findMany({ where: { process: { institutionId } }, include: { exceptions: true } }),
+      prisma.issue.findMany({ where: { institutionId }, include: { process: { select: { name: true } } } }),
+      prisma.managementActionPlan.findMany({ where: { issue: { institutionId } } }),
+      prisma.monitoringRule.findMany({ where: { control: { institutionId } }, include: { runs: { take: 1, orderBy: { runTimestamp: 'desc' } } } }),
+      prisma.retestRecord.findMany({ where: { map: { issue: { institutionId } } } }),
+      prisma.auditLog.findMany({ where: { institutionId }, take: 8, orderBy: { timestamp: 'desc' } })
     ]);
 
-    // Calculate dynamic health metrics
-    const failedToEs = toeTests.filter(t => t.finalConclusion === 'Ineffective' || t.finalConclusion === 'Partially Effective').length;
-    const totalExceptions = toeTests.reduce((acc, t) => acc + (t.exceptions?.length || 0), 0);
-    const openIssues = issues.filter(i => i.status !== 'Closed').length;
-    const closedIssues = issues.filter(i => i.status === 'Closed').length;
-    const overdueMAP = maps.filter(m => m.status === 'Overdue').length;
-    const completedMAP = maps.filter(m => m.status === 'Closed').length;
-    const ccmHealthy = ccmRules.filter(r => r.lastStatus === 'Healthy').length;
+    const highCritical = risks.filter(r => ['High','Critical'].includes(r.inherentRating));
+    const coveredHighCritical = highCritical.filter(r => r.controls.some(m => m.control.isKeyControl));
+    const unhealthyControls = controls.filter(c => ['Deficient','Ineffective'].includes(c.overallHealth));
+    const unassessedControls = controls.filter(c => ['Not Assessed','Unassessed'].includes(c.overallHealth));
+    const openIssues = issues.filter(i => i.status !== 'Closed');
+    const overdueMaps = maps.filter(m => !['Closed','Completed'].includes(m.status) && (m.revisedDueDate || m.originalDueDate) < now);
+    const totalSamples = toeTests.reduce((n, t) => n + t.sampleSize, 0);
+    const passedSamples = toeTests.reduce((n, t) => n + t.passCount, 0);
+    const totalExceptions = toeTests.reduce((n, t) => n + t.exceptions.length, 0);
+    const healthyRules = ccmRules.filter(r => r.lastStatus === 'Healthy').length;
 
-    // Executive answers for Section 106 & 154
+    const coveragePercent = highCritical.length ? Math.round((coveredHighCritical.length / highCritical.length) * 100) : null;
+    const controlTested = controls.length - unassessedControls.length;
+    const controlWorking = controls.length - unhealthyControls.length - unassessedControls.length;
+
+    const concentration = openIssues.reduce<Record<string, number>>((acc, issue) => {
+      const key = issue.process.name;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const topConcentration = Object.entries(concentration).sort((a,b) => b[1] - a[1])[0];
+
     const executiveQandA = [
       {
-        question: 'Are our key risks controlled?',
-        status: 'Adequate',
-        summary: '100% of identified High & Critical Risks are mapped to at least one Preventive or Detective Key Control.',
-        trend: 'improving',
-        badge: 'Controlled'
+        question: 'Are our High & Critical risks mapped to key controls?',
+        status: coveragePercent === null ? 'No Data' : `${coveragePercent}% Covered`,
+        summary: highCritical.length ? `${coveredHighCritical.length} of ${highCritical.length} High/Critical risks have at least one mapped key control.` : 'No High/Critical risks are currently registered.',
+        badge: coveragePercent === 100 ? 'Covered' : 'Review'
       },
       {
-        question: 'Are our critical controls working?',
-        status: 'Effective Post-Remediation',
-        summary: 'CTRL-P2P-001 operating exception (2/25 samples) remediated via MAP-2026-001 and passed independent retest (10/10). Current CCM status is Healthy.',
-        trend: 'healthy',
-        badge: 'Verified'
+        question: 'Are our registered controls assessed as working?',
+        status: controls.length ? `${controlWorking}/${controls.length} Healthy` : 'No Data',
+        summary: controls.length ? `${controlTested} controls have an assessment result; ${unhealthyControls.length} are currently deficient or ineffective.` : 'No controls are currently registered.',
+        badge: unhealthyControls.length ? 'Attention' : 'Current'
       },
       {
-        question: 'Where are control weaknesses concentrated?',
-        status: 'Finance & Accounts Payable',
-        summary: 'ERP Authorization matrix sync following organizational changes was identified as the primary root cause.',
-        trend: 'resolved',
-        badge: 'Remediated'
+        question: 'Where are open control issues concentrated?',
+        status: topConcentration ? topConcentration[0] : 'No Open Issues',
+        summary: topConcentration ? `${topConcentration[1]} open issue(s) are associated with this process, based on current database records.` : 'No open issues are recorded.',
+        badge: topConcentration ? 'Open' : 'Clear'
       },
       {
         question: 'Which remediation actions are overdue?',
-        status: 'None Overdue',
-        summary: 'All agreed Management Action Plans (MAP-2026-001) are 100% completed on time without requiring extensions.',
-        trend: 'healthy',
-        badge: '0 Overdue'
+        status: `${overdueMaps.length} Overdue`,
+        summary: maps.length ? `${overdueMaps.length} of ${maps.length} management action plan(s) are past their effective due date and not closed.` : 'No management action plans are currently registered.',
+        badge: overdueMaps.length ? 'Action' : 'Current'
       }
     ];
 
     return NextResponse.json({
       metrics: {
-        totalProcesses,
-        criticalProcesses,
-        totalRisks,
-        criticalRisks,
-        highRisks,
-        totalControls,
-        keyControls,
-        failedToEs,
+        totalProcesses: processes.length,
+        criticalProcesses: processes.filter(p => p.criticality === 'Critical').length,
+        totalRisks: risks.length,
+        criticalRisks: risks.filter(r => r.inherentRating === 'Critical').length,
+        highRisks: risks.filter(r => r.inherentRating === 'High').length,
+        totalControls: controls.length,
+        keyControls: controls.filter(c => c.isKeyControl).length,
+        failedToEs: toeTests.filter(t => ['Ineffective','Partially Effective'].includes(t.finalConclusion)).length,
         totalExceptions,
-        openIssues,
-        closedIssues,
-        overdueMAP,
-        completedMAP,
-        ccmHealthy,
+        totalSamples,
+        passedSamples,
+        openIssues: openIssues.length,
+        closedIssues: issues.filter(i => i.status === 'Closed').length,
+        overdueMAP: overdueMaps.length,
+        completedMAP: maps.filter(m => ['Closed','Completed'].includes(m.status)).length,
+        ccmHealthy: healthyRules,
+        ccmTotal: ccmRules.length,
         totalRetests: retests.length
       },
       executiveQandA,
       recentAuditLogs
     });
   } catch (error) {
-    console.error('Failed to fetch dashboard metrics:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return apiError(error);
   }
 }
