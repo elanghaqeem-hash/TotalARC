@@ -1,459 +1,110 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useRole } from '@/context/RoleContext';
-import {
-  Building2,
-  CheckCircle2,
-  ChevronRight,
-  ArrowLeft,
-  ArrowRight,
-  Shield,
-  Layers,
-  FileCheck2,
-  Sparkles,
-  AlertCircle
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Building2, CheckCircle2, Copy, ShieldCheck } from 'lucide-react';
+
+type Industry = { id:string; industry:string; sector:string; subsector:string };
+
+const institutionTypes = [
+  'Corporation','Public Company','State-Owned Enterprise','Regional-Owned Enterprise',
+  'Financial Institution','Government Agency','Non-Profit Organization','Educational Institution','Other'
+];
 
 export default function OnboardingPage() {
-  const router = useRouter();
-  const { setInstitutionName } = useRole();
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [industries, setIndustries] = useState<any[]>([]);
-  const [frameworks, setFrameworks] = useState<any[]>([]);
-
-  // Form State
-  const [formData, setFormData] = useState({
-    name: 'PT Nusantara Digital Services',
-    legalName: 'PT Nusantara Digital Services Tbk',
-    shortName: 'NDS',
-    institutionType: 'Public Company',
-    country: 'Indonesia',
-    city: 'Jakarta Selatan',
-    registeredAddress: 'Nusantara Cyber Tower, Lt. 28, Jl. Rasuna Said Kav. 62',
-    website: 'https://www.nusantaradigital.id',
-    generalEmail: 'assurance@nusantaradigital.id',
-    telephone: '+62 21 5290 8800',
-    yearEstablished: 2016,
-    taxId: '01.234.567.8-012.000',
-    stockExchange: 'IDX',
-    ticker: 'NDS.JK',
-    selectedIndustry: 'Technology',
-    selectedSector: 'IT Services',
-    selectedSubsector: 'Digital Transformation & Managed Services',
-    businessModel: 'B2B',
-    operatingModel: 'Hybrid',
-    employeeCount: '2,500 - 5,000 Employees',
-    revenueRange: 'IDR 1 Trillion - IDR 5 Trillion',
-    applicableFrameworks: ['COSO-IC', 'ISO-31000', 'ISO-27001', 'SOX-404']
+  const [industries,setIndustries]=useState<Industry[]>([]);
+  const [message,setMessage]=useState('');
+  const [submitting,setSubmitting]=useState(false);
+  const [result,setResult]=useState<{institutionName:string;adminEmail:string;temporaryPassword:string}|null>(null);
+  const [form,setForm]=useState({
+    name:'',legalName:'',shortName:'',institutionType:'Corporation',country:'Indonesia',
+    provinceState:'',city:'',registeredAddress:'',operationalAddress:'',website:'',generalEmail:'',
+    telephone:'',yearEstablished:'',registrationNumber:'',taxId:'',parentCompany:'',holdingCompany:'',
+    stockExchange:'',ticker:'',employeeCount:'',revenueRange:'',businessModel:'',operatingModel:'',
+    industryId:'',adminName:'',adminEmail:'',adminDepartment:'Administration'
   });
 
-  useEffect(() => {
-    fetch('/api/onboarding')
-      .then(res => res.json())
-      .then(d => {
-        setIndustries(d.industries || []);
-        setFrameworks(d.frameworks || []);
-      })
-      .catch(console.error);
-  }, []);
+  useEffect(()=>{
+    fetch('/api/onboarding',{cache:'no-store'}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to load reference data');setIndustries(d.industries||[]);}).catch(e=>setMessage(e.message));
+  },[]);
 
-  const institutionTypes = [
-    'Corporation',
-    'Public Company',
-    'Private Company',
-    'State-Owned Enterprise',
-    'Regional-Owned Enterprise',
-    'Government Institution',
-    'Financial Institution',
-    'Healthcare Institution',
-    'Educational Institution',
-    'Professional Firm',
-    'Holding Company',
-    'Subsidiary',
-    'Start-up'
-  ];
+  const selectedIndustry=useMemo(()=>industries.find(x=>x.id===form.industryId),[industries,form.industryId]);
 
-  const handleSubmit = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      if (res.ok) {
-        setInstitutionName(formData.name);
-        router.push('/processes');
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+  const submit=async(e:React.FormEvent)=>{
+    e.preventDefault();setSubmitting(true);setMessage('');setResult(null);
+    try{
+      const res=await fetch('/api/onboarding',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.error||'Institution onboarding failed');
+      setResult({institutionName:data.institution.name,adminEmail:data.admin.email,temporaryPassword:data.temporaryPassword});
+    }catch(e){setMessage(e instanceof Error?e.message:'Institution onboarding failed');}
+    finally{setSubmitting(false);}
   };
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-        <div className="flex items-center space-x-2 text-xs font-bold text-brand-600 uppercase tracking-wider">
-          <Building2 className="w-4 h-4" />
-          <span>Institution Registration Wizard</span>
+  if(result){
+    return <div className="max-w-2xl mx-auto space-y-5">
+      <div className="bg-white border border-emerald-200 rounded-2xl p-6 shadow-sm">
+        <div className="flex items-start gap-3"><CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0"/><div><h1 className="text-lg font-black text-slate-900">Institution successfully provisioned</h1><p className="text-xs text-slate-500 mt-1">{result.institutionName} now has its own isolated tenant and initial administrator.</p></div></div>
+        <div className="mt-5 bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-xs">
+          <div><span className="text-slate-500">Administrator email</span><div className="font-bold text-slate-900 mt-0.5">{result.adminEmail}</div></div>
+          <div><span className="text-slate-500">One-time temporary password</span><div className="flex items-center gap-2 mt-0.5"><code className="font-bold text-slate-900 bg-white border border-slate-200 px-2 py-1 rounded">{result.temporaryPassword}</code><button onClick={()=>navigator.clipboard.writeText(result.temporaryPassword)} className="p-1.5 rounded hover:bg-slate-200" title="Copy password"><Copy className="w-4 h-4"/></button></div></div>
+          <div className="flex gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5"><ShieldCheck className="w-4 h-4 shrink-0"/><span>This password is returned only at provisioning/reset time. Share it securely. The administrator must replace it at first sign-in.</span></div>
         </div>
-        <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-          Onboard Your Enterprise to Total ARC
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Configure your legal profile, industry classification, operating model, and applicable frameworks once. All assurance activities will dynamically inherit this master data.
-        </p>
+        <button onClick={()=>{setResult(null);setForm({...form,name:'',legalName:'',shortName:'',adminName:'',adminEmail:''});}} className="mt-5 bg-brand-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg">Onboard another institution</button>
+      </div>
+    </div>;
+  }
 
-        {/* Stepper Progress */}
-        <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+  return <div className="space-y-6">
+    <div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><Building2 className="w-5 h-5 text-brand-600"/>Institution Onboarding</h1><p className="text-xs text-slate-500 mt-1">Create a real isolated tenant and its first administrator. No sample process, risk, control or transaction is generated.</p></div>
+    {message&&<div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">{message}</div>}
+    <form onSubmit={submit} className="space-y-5">
+      <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+        <h2 className="text-sm font-bold text-slate-900">1. Institution Identity</h2>
+        <div className="mt-4 grid md:grid-cols-2 gap-3 text-xs">
+          <label className="font-semibold text-slate-700">Institution name *<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700">Legal name<input value={form.legalName} onChange={e=>setForm({...form,legalName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700">Short name / code *<input required maxLength={30} value={form.shortName} onChange={e=>setForm({...form,shortName:e.target.value.toUpperCase()})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700">Institution type<select value={form.institutionType} onChange={e=>setForm({...form,institutionType:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white">{institutionTypes.map(x=><option key={x}>{x}</option>)}</select></label>
+          <label className="font-semibold text-slate-700">Industry reference<select value={form.industryId} onChange={e=>setForm({...form,industryId:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option value="">Select if applicable</option>{industries.map(x=><option key={x.id} value={x.id}>{x.industry} → {x.sector} → {x.subsector}</option>)}</select></label>
+          <label className="font-semibold text-slate-700">Year established<input type="number" min="1800" max={new Date().getFullYear()} value={form.yearEstablished} onChange={e=>setForm({...form,yearEstablished:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        </div>
+        {selectedIndustry&&<div className="mt-3 text-[11px] text-slate-500">Selected classification: {selectedIndustry.industry} / {selectedIndustry.sector} / {selectedIndustry.subsector}</div>}
+      </section>
+
+      <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+        <h2 className="text-sm font-bold text-slate-900">2. Legal, Location & Contact</h2>
+        <div className="mt-4 grid md:grid-cols-2 gap-3 text-xs">
           {[
-            { num: 1, title: 'Legal Profile' },
-            { num: 2, title: 'Industry & Sector' },
-            { num: 3, title: 'Operating Model' },
-            { num: 4, title: 'Regulatory & Frameworks' },
-            { num: 5, title: 'Review & Activate' }
-          ].map(s => (
-            <div key={s.num} className="flex items-center space-x-2">
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  step === s.num
-                    ? 'bg-brand-600 text-white shadow-md shadow-brand-500/20'
-                    : step > s.num
-                    ? 'bg-emerald-500 text-white'
-                    : 'bg-slate-100 text-slate-400'
-                }`}
-              >
-                {step > s.num ? <CheckCircle2 className="w-4 h-4" /> : s.num}
-              </div>
-              <span
-                className={`hidden sm:inline-block text-xs font-semibold ${
-                  step === s.num ? 'text-slate-900 font-bold' : 'text-slate-400'
-                }`}
-              >
-                {s.title}
-              </span>
-            </div>
-          ))}
+            ['country','Country'],['provinceState','Province / State'],['city','City'],['registrationNumber','Registration number'],
+            ['taxId','Tax ID'],['website','Website'],['generalEmail','General email'],['telephone','Telephone'],
+            ['parentCompany','Parent company'],['holdingCompany','Holding company'],['stockExchange','Stock exchange'],['ticker','Ticker']
+          ].map(([key,label])=><label key={key} className="font-semibold text-slate-700">{label}<input value={(form as any)[key]} onChange={e=>setForm({...form,[key]:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>)}
+          <label className="font-semibold text-slate-700 md:col-span-2">Registered address<textarea value={form.registeredAddress} onChange={e=>setForm({...form,registeredAddress:e.target.value})} rows={2} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700 md:col-span-2">Operational address<textarea value={form.operationalAddress} onChange={e=>setForm({...form,operationalAddress:e.target.value})} rows={2} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
         </div>
-      </div>
+      </section>
 
-      {/* Form Container */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-        {/* Step 1: Legal Profile */}
-        {step === 1 && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              1. Institution Legal Identity (Section 11)
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">
-                  Institution Common Name *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">
-                  Registered Legal Name *
-                </label>
-                <input
-                  type="text"
-                  value={formData.legalName}
-                  onChange={e => setFormData({ ...formData, legalName: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">
-                  Short Name / Ticker Acronym
-                </label>
-                <input
-                  type="text"
-                  value={formData.shortName}
-                  onChange={e => setFormData({ ...formData, shortName: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">
-                  Institution Type *
-                </label>
-                <select
-                  value={formData.institutionType}
-                  onChange={e => setFormData({ ...formData, institutionType: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  {institutionTypes.map(t => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Tax ID (NPWP)</label>
-                <input
-                  type="text"
-                  value={formData.taxId}
-                  onChange={e => setFormData({ ...formData, taxId: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Stock Exchange & Ticker</label>
-                <input
-                  type="text"
-                  value={`${formData.stockExchange}: ${formData.ticker}`}
-                  onChange={e => {
-                    const [exchange, ticker] = e.target.value.split(':');
-                    setFormData({ ...formData, stockExchange: exchange?.trim() || 'IDX', ticker: ticker?.trim() || '' });
-                  }}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Industry Classification */}
-        {step === 2 && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              2. Industry & Sector Classification (Section 12)
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Industry Group</label>
-                <select
-                  value={formData.selectedIndustry}
-                  onChange={e => setFormData({ ...formData, selectedIndustry: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  <option value="Technology">Technology</option>
-                  <option value="Financial Services">Financial Services</option>
-                  <option value="Energy">Energy</option>
-                  <option value="Mining">Mining</option>
-                  <option value="Manufacturing">Manufacturing</option>
-                  <option value="Telecommunications">Telecommunications</option>
-                  <option value="Healthcare">Healthcare</option>
-                  <option value="Retail & Consumer">Retail & Consumer</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Sector</label>
-                <input
-                  type="text"
-                  value={formData.selectedSector}
-                  onChange={e => setFormData({ ...formData, selectedSector: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Subsector</label>
-                <input
-                  type="text"
-                  value={formData.selectedSubsector}
-                  onChange={e => setFormData({ ...formData, selectedSubsector: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-xs text-brand-800 flex items-start space-x-2">
-              <Sparkles className="w-4 h-4 text-brand-600 flex-shrink-0 mt-0.5" />
-              <span>
-                Total ARC contains pre-configured risk taxonomies and control libraries specifically tuned for <strong>{formData.selectedIndustry}</strong>.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Operating Model */}
-        {step === 3 && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              3. Organization Scale & Operating Model (Section 13)
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Business Model</label>
-                <select
-                  value={formData.businessModel}
-                  onChange={e => setFormData({ ...formData, businessModel: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  <option value="B2B">B2B (Business to Business)</option>
-                  <option value="B2C">B2C (Business to Consumer)</option>
-                  <option value="B2B2C">B2B2C (Hybrid Marketplace)</option>
-                  <option value="B2G">B2G (Government Services)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Operating Model</label>
-                <select
-                  value={formData.operatingModel}
-                  onChange={e => setFormData({ ...formData, operatingModel: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  <option value="Centralized">Centralized</option>
-                  <option value="Decentralized">Decentralized</option>
-                  <option value="Federated">Federated</option>
-                  <option value="Shared Service">Shared Service</option>
-                  <option value="Hybrid">Hybrid</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Employee Scale</label>
-                <select
-                  value={formData.employeeCount}
-                  onChange={e => setFormData({ ...formData, employeeCount: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  <option value="100 - 500 Employees">100 - 500 Employees</option>
-                  <option value="500 - 1,000 Employees">500 - 1,000 Employees</option>
-                  <option value="2,500 - 5,000 Employees">2,500 - 5,000 Employees</option>
-                  <option value="> 10,000 Employees">&gt; 10,000 Employees</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Revenue Range</label>
-                <select
-                  value={formData.revenueRange}
-                  onChange={e => setFormData({ ...formData, revenueRange: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  <option value="IDR 100B - IDR 500B">IDR 100 Miliar - IDR 500 Miliar</option>
-                  <option value="IDR 500B - IDR 1T">IDR 500 Miliar - IDR 1 Triliun</option>
-                  <option value="IDR 1 Trillion - IDR 5 Trillion">IDR 1 Triliun - IDR 5 Triliun</option>
-                  <option value="> IDR 10 Trillion">&gt; IDR 10 Triliun</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 4: Regulatory & Frameworks */}
-        {step === 4 && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              4. Governance Frameworks & Standards (Section 15)
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              {[
-                { code: 'COSO-IC', name: 'COSO Internal Control — Integrated Framework', badge: 'Mandatory for ICOFR' },
-                { code: 'ISO-31000', name: 'ISO 31000:2018 Risk Management Guidelines', badge: 'ERM Standard' },
-                { code: 'ISO-27001', name: 'ISO/IEC 27001 Information Security', badge: 'Cybersecurity' },
-                { code: 'SOX-404', name: 'Sarbanes-Oxley Act Sec. 404 (ICOFR)', badge: 'Public Markets' },
-                { code: 'POJK-13', name: 'OJK POJK 13/2017 Integrated Governance', badge: 'Financial Sector' },
-                { code: 'UU-PDP', name: 'UU No. 27/2022 Pelindungan Data Pribadi', badge: 'Privacy' }
-              ].map(f => (
-                <div
-                  key={f.code}
-                  className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-bold text-slate-900">{f.code}</div>
-                    <div className="text-slate-500 text-[11px]">{f.name}</div>
-                  </div>
-                  <span className="text-[10px] font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
-                    {f.badge}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Step 5: Review & Activate */}
-        {step === 5 && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              5. Final Confirmation & Workspace Activation
-            </h2>
-
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Institution Name:</span>
-                <span className="font-bold text-slate-900">{formData.name}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Industry / Sector:</span>
-                <span className="font-bold text-slate-900">{formData.selectedIndustry} → {formData.selectedSector}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Operating Model:</span>
-                <span className="font-bold text-slate-900">{formData.operatingModel} ({formData.businessModel})</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500 font-medium">Default Core Process Seed:</span>
-                <span className="font-bold text-emerald-700">Procure to Pay (PRC-P2P-001) Ready</span>
-              </div>
-            </div>
-
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-              <span>
-                Your enterprise tenant will be created with unified Single Source of Truth architecture. Process, Risk, and Control masters will automatically initialize.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Wizard Navigation Footer */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-          {step > 1 ? (
-            <button
-              onClick={() => setStep(step - 1)}
-              className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Previous</span>
-            </button>
-          ) : (
-            <div></div>
-          )}
-
-          {step < 5 ? (
-            <button
-              onClick={() => setStep(step + 1)}
-              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm shadow-brand-500/20 transition-all"
-            >
-              <span>Continue Step {step + 1}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm shadow-emerald-500/20 transition-all disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{loading ? 'Activating Tenant...' : 'Complete & Activate Platform'}</span>
-            </button>
-          )}
+      <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+        <h2 className="text-sm font-bold text-slate-900">3. Operating Profile</h2>
+        <div className="mt-4 grid md:grid-cols-2 gap-3 text-xs">
+          <label className="font-semibold text-slate-700">Business model<input placeholder="B2B, B2C, marketplace, regulated service, etc." value={form.businessModel} onChange={e=>setForm({...form,businessModel:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700">Operating model<input placeholder="Centralized, federated, decentralized, hybrid" value={form.operatingModel} onChange={e=>setForm({...form,operatingModel:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700">Employee count / range<input value={form.employeeCount} onChange={e=>setForm({...form,employeeCount:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700">Revenue range<input value={form.revenueRange} onChange={e=>setForm({...form,revenueRange:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
         </div>
-      </div>
-    </div>
-  );
+      </section>
+
+      <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+        <h2 className="text-sm font-bold text-slate-900">4. Initial Tenant Administrator</h2>
+        <p className="text-[11px] text-slate-500 mt-1">Total ARC creates one real administrator account with a cryptographically generated temporary password.</p>
+        <div className="mt-4 grid md:grid-cols-2 gap-3 text-xs">
+          <label className="font-semibold text-slate-700">Administrator name *<input required value={form.adminName} onChange={e=>setForm({...form,adminName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700">Administrator email *<input required type="email" value={form.adminEmail} onChange={e=>setForm({...form,adminEmail:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+          <label className="font-semibold text-slate-700 md:col-span-2">Department<input value={form.adminDepartment} onChange={e=>setForm({...form,adminDepartment:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        </div>
+      </section>
+
+      <button disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-bold px-6 py-3 rounded-xl">{submitting?'Provisioning secure tenant…':'Create Institution & Administrator'}</button>
+    </form>
+  </div>;
 }
