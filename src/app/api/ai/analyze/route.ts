@@ -154,9 +154,13 @@ export async function POST(request: Request) {
       'Maximum 12 findings. Use an empty findings array when there is no evidence-based gap.'
     ].join(' ');
 
+    const analysisSensitivity: AiSensitivity = registeredProcess
+      ? 'confidential'
+      : parseSensitivity(body.sensitivity) || 'confidential';
+
     const result = await runAiGateway({
       task: 'process_analysis',
-      sensitivity: parseSensitivity(body.sensitivity),
+      sensitivity: analysisSensitivity,
       systemPrompt,
       prompt: 'Analyze this Total ARC BPM/RCM context:\n' + JSON.stringify(context),
       temperature: 0.15,
