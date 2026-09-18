@@ -10,8 +10,8 @@ export async function GET(request: Request) {
       where: { institutionId: user.institutionId },
       include: {
         process: { select: { processId: true, name: true } },
-        todTests: { orderBy: { testedAt: 'desc' }, take: 1 },
-        toeTests: { orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
+        todTests: { where: { status: 'Approved' }, orderBy: { testedAt: 'desc' }, take: 1 },
+        toeTests: { where: { status: 'Reviewed' }, orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
         issues: { where: { status: { not: 'Closed' } }, orderBy: { createdAt: 'desc' } },
         monitoringRules: { include: { runs: { orderBy: { runTimestamp: 'desc' }, take: 1 } } },
         certifications: { orderBy: { certifiedAt: 'desc' }, take: 1 }
