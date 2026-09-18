@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { ApiError, apiError, clientIp, readJson, requireString } from '@/lib/api';
+import { ApiError, apiError, assertSameOrigin, clientIp, readJson, requireString } from '@/lib/api';
 import { hashPassword, verifyPassword } from '@/lib/password';
 import { createSessionToken, SESSION_COOKIE, sessionCookieOptions } from '@/lib/session-token';
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const user = await getCurrentUser();
     if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'Authentication required');
 
