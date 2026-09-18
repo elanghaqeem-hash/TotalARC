@@ -30,6 +30,19 @@ const industries = [
   ['Professional Services','Advisory','Consulting & Professional Services']
 ];
 
+const processCategories = [
+  ['GOV','Governance & Strategy','Enterprise governance, strategy and oversight',10],
+  ['CORE','Core Operations','Primary value-delivery and operational processes',20],
+  ['FIN','Finance & Accounting','Finance, accounting, treasury and financial reporting',30],
+  ['RISK','Risk, Compliance & Assurance','Risk management, compliance, control and assurance',40],
+  ['HR','People & Human Resources','Workforce and human-capital processes',50],
+  ['IT','Technology & Cybersecurity','Technology, data and cybersecurity processes',60],
+  ['PROC','Procurement & Third Party','Sourcing, procurement and third-party processes',70],
+  ['LEGAL','Legal & Corporate Affairs','Legal, corporate secretariat and related processes',80],
+  ['SALES','Commercial & Customer','Sales, marketing, product and customer processes',90],
+  ['SUPPORT','Corporate Support','Facilities, administration and other support processes',100]
+];
+
 const frameworks = [
   ['COSO-IC','COSO Internal Control — Integrated Framework','Internal Control'],
   ['COSO-ERM','COSO Enterprise Risk Management','Enterprise Risk'],
@@ -47,6 +60,14 @@ async function main() {
       where: { industry_sector_subsector: { industry, sector, subsector } },
       update: {},
       create: { industry, sector, subsector }
+    });
+  }
+
+  for (const [code, name, description, orderIndex] of processCategories) {
+    await prisma.processCategory.upsert({
+      where: { code },
+      update: { name, description, orderIndex },
+      create: { code, name, description, orderIndex }
     });
   }
 
