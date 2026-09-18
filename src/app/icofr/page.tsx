@@ -2,31 +2,35 @@
 
 import React, { useEffect, useState } from 'react';
 import { FileCheck, Plus } from 'lucide-react';
+import { useRole } from '@/context/RoleContext';
 
 type Account = { id:string; accountCode:string; accountName:string; financialStatement:string; balanceAmount:number; isSignificant:boolean; scopingRationale?:string|null; assertions:Array<{id:string;assertion:string;isInScope:boolean}> };
 type IPE = { id:string; reportName:string; systemSource:string; reportOwner:string; completenessTested:boolean; accuracyTested:boolean; evidenceDoc?:string|null };
 
 export default function ICOFRPage() {
+  const { currentUser } = useRole();
   const [accounts,setAccounts]=useState<Account[]>([]);
   const [ipe,setIpe]=useState<IPE[]>([]);
   const [message,setMessage]=useState('');
   const [tab,setTab]=useState<'accounts'|'ipe'>('accounts');
   const [show,setShow]=useState(false);
-  const [accountForm,setAccountForm]=useState({accountCode:'',accountName:'',financialStatement:'Balance Sheet',balanceAmount:'',isSignificant:false,scopingRationale:'',assertions:'Existence,Completeness,Valuation'});
+  const [accountForm,setAccountForm]=useState({accountCode:'',accountName:'',financialStatement:'Balance Sheet',balanceAmount:'',isSignificant:false,scopingRationale:'',assertions:''});
   const [ipeForm,setIpeForm]=useState({reportName:'',systemSource:'',reportOwner:'',parameters:'',logicSummary:'',completenessTested:false,accuracyTested:false,evidenceDoc:''});
+  const canManage=['Admin','ProcessOwner','Reviewer'].includes(currentUser?.role||'');
+  const ipeEvidenceRequired=ipeForm.completenessTested||ipeForm.accuracyTested;
 
   const load=async()=>{const r=await fetch('/api/icofr',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to load ICOFR data');setAccounts(d.accounts||[]);setIpe(d.ipe||[]);};
   useEffect(()=>{load().catch(e=>setMessage(e.message));},[]);
 
-  const createAccount=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/icofr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'CREATE_ACCOUNT',...accountForm,balanceAmount:Number(accountForm.balanceAmount||0),assertions:accountForm.assertions.split(',').map(x=>x.trim()).filter(Boolean)})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to create account');setShow(false);await load();};
-  const createIpe=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/icofr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'CREATE_IPE',...ipeForm})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to create IPE');setShow(false);await load();};
+  const createAccount=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/icofr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'CREATE_ACCOUNT',...accountForm,balanceAmount:Number(accountForm.balanceAmount||0),assertions:accountForm.assertions.split(',').map(x=>x.trim()).filter(Boolean)})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to create account');setAccountForm({accountCode:'',accountName:'',financialStatement:'Balance Sheet',balanceAmount:'',isSignificant:false,scopingRationale:'',assertions:''});setShow(false);await load();};
+  const createIpe=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/icofr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'CREATE_IPE',...ipeForm})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to create IPE');setIpeForm({reportName:'',systemSource:'',reportOwner:'',parameters:'',logicSummary:'',completenessTested:false,accuracyTested:false,evidenceDoc:''});setShow(false);await load();};
 
   return <div className="space-y-6">
-    <div className="flex items-center justify-between"><div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><FileCheck className="w-5 h-5 text-brand-600"/>ICOFR & Financial Assertions</h1><p className="text-xs text-slate-500 mt-1">Significant accounts, assertions and IPE records are stored in the database.</p></div><button onClick={()=>setShow(v=>!v)} className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Plus className="w-4 h-4"/>Add {tab==='accounts'?'Account':'IPE'}</button></div>
+    <div className="flex items-center justify-between"><div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><FileCheck className="w-5 h-5 text-brand-600"/>ICOFR & Financial Assertions</h1><p className="text-xs text-slate-500 mt-1">Significant accounts, assertions and IPE records are stored in the database.</p></div>{canManage&&<button onClick={()=>setShow(v=>!v)} className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Plus className="w-4 h-4"/>Add {tab==='accounts'?'Account':'IPE'}</button>}</div>
     {message&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}
     <div className="flex gap-2"><button onClick={()=>{setTab('accounts');setShow(false)}} className={`text-xs font-bold px-3 py-2 rounded-lg ${tab==='accounts'?'bg-slate-900 text-white':'bg-white border border-slate-200'}`}>Financial Accounts</button><button onClick={()=>{setTab('ipe');setShow(false)}} className={`text-xs font-bold px-3 py-2 rounded-lg ${tab==='ipe'?'bg-slate-900 text-white':'bg-white border border-slate-200'}`}>IPE Register</button></div>
 
-    {show&&tab==='accounts'&&<form onSubmit={createAccount} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
+    {show&&canManage&&tab==='accounts'&&<form onSubmit={createAccount} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
       <label className="font-semibold text-slate-700">Account code<input required value={accountForm.accountCode} onChange={e=>setAccountForm({...accountForm,accountCode:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
       <label className="font-semibold text-slate-700">Account name<input required value={accountForm.accountName} onChange={e=>setAccountForm({...accountForm,accountName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
       <label className="font-semibold text-slate-700">Financial statement<select value={accountForm.financialStatement} onChange={e=>setAccountForm({...accountForm,financialStatement:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>Balance Sheet</option><option>Income Statement</option><option>Cash Flow</option><option>Notes</option></select></label>
@@ -36,14 +40,14 @@ export default function ICOFRPage() {
       <label className="font-semibold text-slate-700 md:col-span-2">Scoping rationale<textarea value={accountForm.scopingRationale} onChange={e=>setAccountForm({...accountForm,scopingRationale:e.target.value})} rows={3} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
       <button className="md:col-span-2 justify-self-start bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg">Create Account</button>
     </form>}
-    {show&&tab==='ipe'&&<form onSubmit={createIpe} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
+    {show&&canManage&&tab==='ipe'&&<form onSubmit={createIpe} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
       <label className="font-semibold text-slate-700">Report name<input required value={ipeForm.reportName} onChange={e=>setIpeForm({...ipeForm,reportName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
       <label className="font-semibold text-slate-700">System source<input required value={ipeForm.systemSource} onChange={e=>setIpeForm({...ipeForm,systemSource:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
       <label className="font-semibold text-slate-700">Report owner<input required value={ipeForm.reportOwner} onChange={e=>setIpeForm({...ipeForm,reportOwner:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
-      <label className="font-semibold text-slate-700">Evidence reference<input value={ipeForm.evidenceDoc} onChange={e=>setIpeForm({...ipeForm,evidenceDoc:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700">Evidence reference{ipeEvidenceRequired?' *':''}<input required={ipeEvidenceRequired} value={ipeForm.evidenceDoc} onChange={e=>setIpeForm({...ipeForm,evidenceDoc:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
       <label className="font-semibold text-slate-700 md:col-span-2">Parameters<textarea value={ipeForm.parameters} onChange={e=>setIpeForm({...ipeForm,parameters:e.target.value})} rows={2} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
       <label className="font-semibold text-slate-700 md:col-span-2">Logic summary<textarea value={ipeForm.logicSummary} onChange={e=>setIpeForm({...ipeForm,logicSummary:e.target.value})} rows={2} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
-      <div className="md:col-span-2 flex gap-5"><label className="flex items-center gap-2"><input type="checkbox" checked={ipeForm.completenessTested} onChange={e=>setIpeForm({...ipeForm,completenessTested:e.target.checked})}/>Completeness tested</label><label className="flex items-center gap-2"><input type="checkbox" checked={ipeForm.accuracyTested} onChange={e=>setIpeForm({...ipeForm,accuracyTested:e.target.checked})}/>Accuracy tested</label></div>
+      <div className="md:col-span-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3">Mark Completeness/Accuracy as tested only when an auditable evidence reference is available.</div><div className="md:col-span-2 flex gap-5"><label className="flex items-center gap-2"><input type="checkbox" checked={ipeForm.completenessTested} onChange={e=>setIpeForm({...ipeForm,completenessTested:e.target.checked})}/>Completeness tested</label><label className="flex items-center gap-2"><input type="checkbox" checked={ipeForm.accuracyTested} onChange={e=>setIpeForm({...ipeForm,accuracyTested:e.target.checked})}/>Accuracy tested</label></div>
       <button className="md:col-span-2 justify-self-start bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg">Create IPE</button>
     </form>}
 
