@@ -16,7 +16,16 @@ export async function GET(request: Request) {
 
     const events = [
       ...campaigns.map(x => ({ id: `campaign-${x.id}`, title: x.name, type: x.type, start: x.startDate, end: x.dueDate, status: x.status, owner: x.ownerName, href: '/rcsa' })),
-      ...tasks.map(x => ({ id: `task-${x.id}`, title: x.title, type: x.type, start: x.dueDate, end: x.dueDate, status: x.status, owner: x.user?.name || 'Unassigned', href: x.link || '/tasks' })),
+      ...tasks.map(x => ({
+        id: `task-${x.id}`,
+        title: x.title,
+        type: x.type,
+        start: x.dueDate,
+        end: x.dueDate,
+        status: x.status !== 'Completed' && x.dueDate.getTime() < Date.now() ? 'Overdue' : x.status,
+        owner: x.user?.name || 'Unassigned',
+        href: x.link || '/tasks'
+      })),
       ...tests.map(x => ({ id: `toe-${x.id}`, title: `${x.testId} — ${x.process.name}`, type: 'ToE', start: x.testedAt, end: x.testedAt, status: x.status, owner: x.testerName, href: '/toe' })),
       ...maps.map(x => ({ id: `map-${x.id}`, title: `${x.mapId} — ${x.issue.title}`, type: 'MAP', start: x.revisedDueDate || x.originalDueDate, end: x.revisedDueDate || x.originalDueDate, status: x.status, owner: x.actionOwner, href: '/remediation' })),
       ...attestations.filter(x => x.attestedAt).map(x => ({ id: `att-${x.id}`, title: `Management Attestation — ${x.period}`, type: 'Attestation', start: x.attestedAt!, end: x.attestedAt!, status: x.cfoSignOff || x.croSignOff ? 'Attested' : 'Draft', owner: [x.cfoName,x.croName].filter(Boolean).join(' / '), href: '/certification' }))
