@@ -1,80 +1,73 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { ApiError, apiError, optionalString, readJson, requireApiUser, requireString } from '@/lib/api';
+import { writeAudit } from '@/lib/audit';
 
-export async function GET() {
+type ExceptionInput = { transactionRef?: unknown; details?: unknown };
+
+export async function GET(request: Request) {
   try {
+    const user = await requireApiUser(request);
     const rules = await prisma.monitoringRule.findMany({
+      where: { control: { institutionId: user.institutionId } },
       include: {
-        control: {
-          include: {
-            process: true
-          }
-        },
-        runs: {
-          orderBy: { runTimestamp: 'desc' },
-          take: 10,
-          include: {
-            exceptions: true
-          }
-        }
+        control: { include: { process: true } },
+        runs: { orderBy: { runTimestamp: 'desc' }, take: 10, include: { exceptions: true } }
       }
     });
-
     return NextResponse.json({ rules });
   } catch (error) {
-    console.error('Failed to fetch CCM rules:', error);
-    return NextResponse.json({ error: 'Failed to fetch CCM rules' }, { status: 500 });
+    return apiError(error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { ruleId, simulateFailure } = body;
+    const user = await requireApiUser(request, ['Admin','Reviewer','Tester']);
+    const body = await readJson<{ ruleId?: unknown; populationChecked?: unknown; details?: unknown; exceptions?: ExceptionInput[] }>(request);
+    const ruleId = requireString(body.ruleId, 'ruleId', 100);
+    const populationChecked = Number(body.populationChecked);
+    if (!Number.isInteger(populationChecked) || populationChecked < 0 || populationChecked > 100_000_000) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'populationChecked must be a non-negative integer');
+    }
+    if (body.exceptions && !Array.isArray(body.exceptions)) throw new ApiError(400, 'VALIDATION_ERROR', 'exceptions must be an array');
+    const exceptions = (body.exceptions || []).slice(0, 10_000).map(item => ({
+      transactionRef: requireString(item.transactionRef, 'transactionRef', 250),
+      details: requireString(item.details, 'exception details', 4000)
+    }));
 
-    const rule = await prisma.monitoringRule.findUnique({
-      where: { id: ruleId }
-    });
-    if (!rule) throw new Error('Rule not found');
+    const rule = await prisma.monitoringRule.findFirst({ where: { id: ruleId, control: { institutionId: user.institutionId } } });
+    if (!rule) throw new ApiError(404, 'RULE_NOT_FOUND', 'Monitoring rule not found');
 
-    const exceptionsFound = simulateFailure ? 1 : 0;
-    const runStatus = exceptionsFound > 0 ? 'Exception Detected' : 'Healthy';
-
-    const newRun = await prisma.monitoringRun.create({
-      data: {
-        ruleId: rule.id,
-        runTimestamp: new Date(),
-        populationChecked: Math.floor(Math.random() * 50) + 100,
-        exceptionsFound,
-        status: runStatus,
-        details: exceptionsFound > 0
-          ? 'Automated scan detected 1 transaction exceeding limit without dual approval.'
-          : 'Automated scan executed successfully. All scanned transactions compliant with dual approval.'
-      }
-    });
-
-    if (exceptionsFound > 0) {
-      await prisma.cCMException.create({
+    const status = exceptions.length > 0 ? 'Exception Detected' : 'Healthy';
+    const run = await prisma.$transaction(async tx => {
+      const created = await tx.monitoringRun.create({
         data: {
-          runId: newRun.id,
-          transactionRef: `TRX-CCM-${Date.now().toString().slice(-4)}`,
-          details: 'Disbursement of IDR 145,000,000 processed with only 1 signatory approval.'
+          ruleId: rule.id,
+          runTimestamp: new Date(),
+          populationChecked,
+          exceptionsFound: exceptions.length,
+          status,
+          details: optionalString(body.details, 4000)
         }
       });
-    }
-
-    // Update rule status
-    await prisma.monitoringRule.update({
-      where: { id: rule.id },
-      data: {
-        lastRunDate: new Date(),
-        lastStatus: runStatus
+      if (exceptions.length) {
+        await tx.cCMException.createMany({ data: exceptions.map(e => ({ runId: created.id, ...e })) });
       }
+      await tx.monitoringRule.update({ where: { id: rule.id }, data: { lastRunDate: new Date(), lastStatus: status } });
+      return created;
     });
 
-    return NextResponse.json(newRun);
+    await writeAudit(user, request, {
+      action: 'CCM_RUN',
+      entityType: 'MonitoringRule',
+      recordId: rule.id,
+      reason: 'Recorded verified monitoring execution',
+      newValue: { populationChecked, exceptionsFound: exceptions.length, status }
+    });
+
+    return NextResponse.json(run, { status: 201 });
   } catch (error) {
-    console.error('Failed to execute CCM run:', error);
-    return NextResponse.json({ error: 'Failed to execute CCM run' }, { status: 500 });
+    return apiError(error);
   }
 }
