@@ -13,8 +13,8 @@ export async function GET(request: Request) {
         process: true,
         activity: true,
         risks: { include: { risk: true } },
-        todTests: { orderBy: { testedAt: 'desc' }, take: 1 },
-        toeTests: { orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
+        todTests: { where: { status: 'Approved' }, orderBy: { testedAt: 'desc' }, take: 1 },
+        toeTests: { where: { status: 'Reviewed' }, orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
         issues: { orderBy: { createdAt: 'desc' } },
         monitoringRules: { orderBy: { createdAt: 'desc' } },
         certifications: { orderBy: { certifiedAt: 'desc' }, take: 1 }
