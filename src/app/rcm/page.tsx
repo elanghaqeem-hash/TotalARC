@@ -18,7 +18,7 @@ import {
   Eye,
   SlidersHorizontal
 } from 'lucide-react';
-import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
+import { csvCell, getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
 
 export default function RCMWorkspacePage() {
   const [rcmRows, setRcmRows] = useState<any[]>([]);
@@ -53,7 +53,7 @@ export default function RCMWorkspacePage() {
     return matchSearch;
   });
 
-  // Client CSV Export
+  // Client CSV Export with spreadsheet formula-injection protection.
   const exportToCSV = () => {
     const headers = [
       'Row',
@@ -75,40 +75,46 @@ export default function RCMWorkspacePage() {
       'ToE Conclusion',
       'Residual Score',
       'Issue ID',
-      'MAP Status'
+      'Issue Status',
+      'MAP Status',
+      'Retest Result'
     ];
 
     const rows = filtered.map(r => [
       r.rowNumber,
-      `"${r.processId}"`,
-      `"${r.processName}"`,
-      `"${r.processObjective?.replace(/"/g, '""')}"`,
-      `"${r.riskId}"`,
-      `"${r.riskName?.replace(/"/g, '""')}"`,
-      `"${r.riskCause?.replace(/"/g, '""')}"`,
-      `"${r.riskImpact?.replace(/"/g, '""')}"`,
-      `"${r.inherentScore} (${r.inherentRating})"`,
-      `"${r.controlId}"`,
-      `"${r.controlName?.replace(/"/g, '""')}"`,
-      `"${r.controlOwner}"`,
-      `"${r.controlType}"`,
-      `"${r.controlNature}"`,
-      `"${r.controlFrequency}"`,
+      r.processId,
+      r.processName,
+      r.processObjective,
+      r.riskId,
+      r.riskName,
+      r.riskCause,
+      r.riskImpact,
+      `${r.inherentScore} (${r.inherentRating})`,
+      r.controlId,
+      r.controlName,
+      r.controlOwner,
+      r.controlType,
+      r.controlNature,
+      r.controlFrequency,
       r.isKeyControl ? 'Yes' : 'No',
-      `"${r.toeConclusion}"`,
-      `"${r.residualScore} (${r.residualRating})"`,
-      r.issueId || 'None',
-      r.mapStatus || 'None'
+      r.toeConclusion,
+      `${r.residualScore} (${r.residualRating})`,
+      r.issueId || '',
+      r.issueStatus || '',
+      r.mapStatus || '',
+      r.retestResult || ''
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csv = [headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Total_ARC_RCM_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.href = url;
+    link.download = `Total_ARC_RCM_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -325,12 +331,12 @@ export default function RCMWorkspacePage() {
                               {row.mapAgreedAction}
                             </div>
                             <div className="text-[10px] text-emerald-600 font-bold flex items-center space-x-1">
-                              <span>Retest: {row.retestResult || 'Passed'}</span>
-                              <span>• Issue Closed</span>
+                              <span>Retest: {row.retestResult || 'Not Retested'}</span>
+                              <span>• {row.issueStatus || 'Issue Status Unknown'}</span>
                             </div>
                           </div>
                         ) : (
-                          <span className="text-slate-400 text-[11px]">No open issues</span>
+                          <span className="text-slate-400 text-[11px]">{row.issueId ? 'Issue recorded — no MAP' : 'No issue recorded'}</span>
                         )}
                       </td>
                     </tr>
