@@ -3,13 +3,15 @@ import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword } from '@/lib/password';
 import { createSessionToken, SESSION_COOKIE, sessionCookieOptions } from '@/lib/session-token';
-import { ApiError, apiError, clientIp, readJson, requireString } from '@/lib/api';
+import { ApiError, apiError, assertSameOrigin, clientIp, readJson, requireString } from '@/lib/api';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
+const DUMMY_PASSWORD_HASH = 'scrypt$00000000000000000000000000000000$00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const body = await readJson<{ email?: unknown; password?: unknown }>(request, 16_000);
     const email = requireString(body.email, 'email', 254).toLowerCase();
     const password = requireString(body.password, 'password', 256);
@@ -17,24 +19,22 @@ export async function POST(request: Request) {
     const user = await prisma.user.findUnique({ where: { email }, include: { institution: true } });
     const now = new Date();
 
-    if (!user || !user.active || !user.passwordHash) {
+    const valid = await verifyPassword(password, user?.passwordHash || DUMMY_PASSWORD_HASH);
+    if (!user || !user.active || !user.passwordHash || !valid) {
+      if (user?.active) {
+        const attempts = user.failedLoginAttempts + 1;
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            failedLoginAttempts: attempts >= MAX_FAILED_ATTEMPTS ? 0 : attempts,
+            lockedUntil: attempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null
+          }
+        });
+      }
       throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
     if (user.lockedUntil && user.lockedUntil > now) {
       throw new ApiError(429, 'ACCOUNT_LOCKED', 'Account temporarily locked after repeated failed sign-in attempts');
-    }
-
-    const valid = await verifyPassword(password, user.passwordHash);
-    if (!valid) {
-      const attempts = user.failedLoginAttempts + 1;
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedLoginAttempts: attempts >= MAX_FAILED_ATTEMPTS ? 0 : attempts,
-          lockedUntil: attempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null
-        }
-      });
-      throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
     const updated = await prisma.user.update({
