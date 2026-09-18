@@ -108,6 +108,8 @@ model User {
   department    String?
   active              Boolean  @default(true)
   passwordHash        String?
+  mustChangePassword Boolean  @default(false)
+  passwordChangedAt   DateTime?
   failedLoginAttempts Int      @default(0)
   lockedUntil         DateTime?
   sessionVersion      Int      @default(1)
