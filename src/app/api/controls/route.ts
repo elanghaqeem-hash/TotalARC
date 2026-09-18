@@ -12,10 +12,10 @@ export async function GET(request: Request) {
         process: true,
         activity: true,
         risks: { include: { risk: true } },
-        todTests: true,
-        toeTests: { include: { exceptions: true } },
-        monitoringRules: true,
-        certifications: true
+        todTests: { orderBy: { testedAt: 'desc' }, take: 1 },
+        toeTests: { orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
+        monitoringRules: { orderBy: { createdAt: 'desc' } },
+        certifications: { orderBy: { certifiedAt: 'desc' }, take: 1 }
       },
       orderBy: { controlId: 'asc' }
     });
@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       riskId = requireString(body.riskId, 'riskId', 100);
       const risk = await prisma.riskMaster.findFirst({ where: { id: riskId, institutionId: user.institutionId } });
       if (!risk) throw new ApiError(404, 'RISK_NOT_FOUND', 'Risk not found in your institution');
+      if (risk.processId !== processId) throw new ApiError(400, 'RISK_PROCESS_MISMATCH', 'Risk must belong to the same process as the control');
     }
 
     const control = await prisma.controlMaster.create({
