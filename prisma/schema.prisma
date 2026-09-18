@@ -420,6 +420,8 @@ model CSAResponse {
 
   campaign        AssessmentCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   control         ControlMaster      @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, controlId])
 }
 
 // -------------------------------------------------------------
