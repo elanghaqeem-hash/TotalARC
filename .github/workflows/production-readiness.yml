@@ -151,7 +151,7 @@ jobs:
             local email="$1"
             local prefix="$2"
             local payload
-            payload=$(python3 -c 'import json,os; print(json.dumps({"email":os.environ["LOGIN_EMAIL"],"password":os.environ["CI_E2E_PASSWORD"]}))' LOGIN_EMAIL="$email")
+            payload=$(python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2]}))' "$email" "$CI_E2E_PASSWORD")
             curl -sS -D "/tmp/$prefix.headers" -o "/tmp/$prefix.login.json" \
               -H 'Content-Type: application/json' \
               -H 'Origin: http://127.0.0.1:3000' \
@@ -159,8 +159,8 @@ jobs:
               http://127.0.0.1:3000/api/auth/login
           }
 
-          LOGIN_EMAIL='ci-tenant-a@totalarc.test' login "$LOGIN_EMAIL" a
-          LOGIN_EMAIL='ci-tenant-b@totalarc.test' login "$LOGIN_EMAIL" b
+          login 'ci-tenant-a@totalarc.test' a
+          login 'ci-tenant-b@totalarc.test' b
 
           COOKIE_A=$(sed -n 's/^[Ss]et-[Cc]ookie: \(totalarc_session=[^;]*\).*/\1/p' /tmp/a.headers | tr -d '\r' | head -n1)
           COOKIE_B=$(sed -n 's/^[Ss]et-[Cc]ookie: \(totalarc_session=[^;]*\).*/\1/p' /tmp/b.headers | tr -d '\r' | head -n1)
