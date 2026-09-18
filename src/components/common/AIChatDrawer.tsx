@@ -1,7 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sparkles, X, AlertCircle, CheckCircle2, ShieldAlert, Cpu, ArrowRight } from 'lucide-react';
+
+interface AiMeta {
+  requestId: string;
+  provider: string;
+  model: string;
+  fallbackUsed: boolean;
+  durationMs: number;
+}
 
 interface Finding {
   id: string;
@@ -21,19 +29,45 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
   const [analyzing, setAnalyzing] = useState(false);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [activeTab, setActiveTab] = useState<'audit' | 'suggest_risk' | 'root_cause'>('audit');
+  const [aiMeta, setAiMeta] = useState<AiMeta | null>(null);
+  const [configuredProviders, setConfiguredProviders] = useState(0);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    fetch('/api/ai/status')
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error('AI status unavailable'))))
+      .then(data => {
+        const providers = Array.isArray(data.providers) ? data.providers : [];
+        setConfiguredProviders(providers.filter((provider: { configured?: boolean }) => provider.configured).length);
+      })
+      .catch(() => setConfiguredProviders(0));
+  }, [isOpen]);
 
   const runAnalysis = async () => {
     setAnalyzing(true);
+    setErrorMessage('');
     try {
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processName: 'Procure to Pay' })
+        body: JSON.stringify({
+          processName: 'Procure to Pay',
+          sensitivity: 'confidential'
+        })
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || 'AI analysis failed');
+      }
       setFindings(data.findings || []);
+      setAiMeta(data.ai || null);
     } catch (e) {
       console.error(e);
+      setFindings([]);
+      setAiMeta(null);
+      setErrorMessage(e instanceof Error ? e.message : 'AI analysis failed');
     } finally {
       setAnalyzing(false);
     }
@@ -58,11 +92,15 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               <div className="flex items-center space-x-2">
                 <h3 className="font-bold text-base text-white">Total ARC AI Assistant</h3>
                 <span className="text-[10px] bg-brand-400/20 text-sky-200 px-2 py-0.5 rounded-full border border-sky-300/30">
-                  v2.4
+                  v3.0
                 </span>
               </div>
               <p className="text-xs text-brand-200">
-                Cognitive Process, Risk & Control Quality Advisory
+                {aiMeta
+                  ? aiMeta.provider + ' · ' + aiMeta.model
+                  : configuredProviders > 0
+                    ? configuredProviders + ' AI provider(s) ready'
+                    : 'Secure multi-provider AI gateway'}
               </p>
             </div>
           </div>
@@ -119,6 +157,21 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {errorMessage && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              <strong>AI unavailable:</strong> {errorMessage}
+            </div>
+          )}
+
+          {aiMeta && !analyzing && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center justify-between gap-3 text-[11px] text-slate-600">
+              <span>
+                Provider: <strong className="text-slate-800">{aiMeta.provider}</strong>
+                {aiMeta.fallbackUsed ? ' (fallback)' : ''}
+              </span>
+              <span>{aiMeta.durationMs} ms</span>
+            </div>
+          )}
           {findings.length === 0 && !analyzing && (
             <div className="text-center py-12 px-4">
               <div className="w-12 h-12 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-3">
