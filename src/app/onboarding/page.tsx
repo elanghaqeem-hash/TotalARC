@@ -26,28 +26,28 @@ export default function OnboardingPage() {
 
   // Form State
   const [formData, setFormData] = useState({
-    name: 'PT Nusantara Digital Services',
-    legalName: 'PT Nusantara Digital Services Tbk',
-    shortName: 'NDS',
-    institutionType: 'Public Company',
+    name: '',
+    legalName: '',
+    shortName: '',
+    institutionType: '',
     country: 'Indonesia',
-    city: 'Jakarta Selatan',
-    registeredAddress: 'Nusantara Cyber Tower, Lt. 28, Jl. Rasuna Said Kav. 62',
-    website: 'https://www.nusantaradigital.id',
-    generalEmail: 'assurance@nusantaradigital.id',
-    telephone: '+62 21 5290 8800',
-    yearEstablished: 2016,
-    taxId: '01.234.567.8-012.000',
-    stockExchange: 'IDX',
-    ticker: 'NDS.JK',
-    selectedIndustry: 'Technology',
-    selectedSector: 'IT Services',
-    selectedSubsector: 'Digital Transformation & Managed Services',
-    businessModel: 'B2B',
-    operatingModel: 'Hybrid',
-    employeeCount: '2,500 - 5,000 Employees',
-    revenueRange: 'IDR 1 Trillion - IDR 5 Trillion',
-    applicableFrameworks: ['COSO-IC', 'ISO-31000', 'ISO-27001', 'SOX-404']
+    city: '',
+    registeredAddress: '',
+    website: '',
+    generalEmail: '',
+    telephone: '',
+    yearEstablished: '',
+    taxId: '',
+    stockExchange: '',
+    ticker: '',
+    selectedIndustry: '',
+    selectedSector: '',
+    selectedSubsector: '',
+    businessModel: '',
+    operatingModel: '',
+    employeeCount: '',
+    revenueRange: '',
+    applicableFrameworks: [] as string[]
   });
 
   useEffect(() => {
@@ -406,15 +406,15 @@ export default function OnboardingPage() {
                 <span className="font-bold text-slate-900">{formData.operatingModel} ({formData.businessModel})</span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-slate-500 font-medium">Default Core Process Seed:</span>
-                <span className="font-bold text-emerald-700">Procure to Pay (PRC-P2P-001) Ready</span>
+                <span className="text-slate-500 font-medium">Operational Seed Data:</span>
+                <span className="font-bold text-slate-700">None — real records only</span>
               </div>
             </div>
 
             <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start space-x-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
               <span>
-                Your enterprise tenant will be created with unified Single Source of Truth architecture. Process, Risk, and Control masters will automatically initialize.
+                Your institution record will be created with an empty operational workspace. Processes, risks, controls, assessments, tests, and monitoring results are added only from real user input or approved integrations.
               </span>
             </div>
           </div>

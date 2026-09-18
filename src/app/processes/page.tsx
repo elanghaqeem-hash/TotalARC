@@ -430,7 +430,7 @@ export default function ProcessesPage() {
                   <input
                     type="text"
                     required
-                    placeholder="Maya Indira"
+                    placeholder="Enter process owner name"
                     value={formData.ownerName}
                     onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"

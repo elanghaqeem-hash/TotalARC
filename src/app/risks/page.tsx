@@ -34,9 +34,9 @@ export default function RisksPage() {
     impact: '',
     category: 'Operational',
     processId: '',
-    ownerName: 'Maya Indira',
-    inherentLikelihood: 4,
-    inherentImpact: 4
+    ownerName: '',
+    inherentLikelihood: 0,
+    inherentImpact: 0
   });
 
   const loadRisks = () => {
@@ -465,6 +465,8 @@ export default function RisksPage() {
                     onChange={e => setFormData({ ...formData, inherentLikelihood: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
+                    <option value={0} disabled>Select level</option>
+                    <option value={0} disabled>Select level</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}

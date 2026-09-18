@@ -159,8 +159,8 @@ model BusinessProcess {
   legalEntityId   String?
   orgUnitId       String?
   categoryId      String
-  processId       String   // e.g. PRC-P2P-001
-  name            String   // e.g. Procure to Pay
+  processId       String   // enterprise process identifier
+  name            String   // process name
   level           Int      @default(2) // Level 0 to Level 5
   parentProcessId String?
   description     String?
@@ -252,7 +252,7 @@ model RiskMaster {
   institutionId   String
   processId       String
   activityId      String?
-  riskId          String   // e.g. RSK-P2P-001
+  riskId          String   // enterprise risk identifier
   name            String
   description     String
   cause           String
@@ -297,7 +297,7 @@ model ControlMaster {
   institutionId      String
   processId          String
   activityId         String?
-  controlId          String   // e.g. CTRL-P2P-001
+  controlId          String   // enterprise control identifier
   name               String
   description        String
   objective          String
@@ -448,7 +448,7 @@ model Walkthrough {
 
 model ToDTest {
   id               String   @id @default(uuid())
-  testId           String   // e.g. TOD-P2P-001
+  testId           String   // ToD test identifier
   controlId        String
   processId        String
   riskId           String?
@@ -473,13 +473,13 @@ model ToDTest {
 
 model ToETest {
   id               String   @id @default(uuid())
-  testId           String   // e.g. TOE-P2P-001
+  testId           String   // ToE test identifier
   controlId        String
   processId        String
   riskId           String?
   testerName       String
   reviewerName     String?
-  period           String   @default("2026-Annual")
+  period           String
   populationSize   Int      @default(0)
   populationSource String   @default("Not Provided")
   samplingMethod   String   @default("Not Selected") // Random, Systematic, Judgmental, Risk-Based, Not Selected
@@ -503,7 +503,7 @@ model TestSample {
   id             String   @id @default(uuid())
   toeTestId      String
   sampleNumber   Int
-  transactionRef String   // e.g. TRX-2026-0891
+  transactionRef String   // source transaction reference
   transactionDate DateTime
   amount         Float?
   attributesTested String? // JSON or text: Approval verified, amount verified, etc.
@@ -518,7 +518,7 @@ model TestingException {
   id             String   @id @default(uuid())
   toeTestId      String
   exceptionNumber String  // EXP-001
-  sampleRef      String   // TRX-2026-0891
+  sampleRef      String   // tested sample reference
   description    String
   severity       String   @default("High") // High, Medium, Low
   status         String   @default("Confirmed Exception") // Open, Under Review, Confirmed Exception, False Positive, Resolved
@@ -534,7 +534,7 @@ model TestingException {
 model ControlDeficiency {
   id             String   @id @default(uuid())
   exceptionId    String?
-  deficiencyId   String   // DEF-2026-001
+  deficiencyId   String   // deficiency identifier
   title          String
   description    String
   classification String   @default("Control Deficiency") // Observation, Control Deficiency, Significant Deficiency, Material Weakness
@@ -569,7 +569,7 @@ model RootCauseAnalysis {
 model Issue {
   id             String   @id @default(uuid())
   institutionId  String
-  issueId        String   // ISS-2026-001
+  issueId        String   // issue identifier
   source         String   @default("TOE") // CSA, RCSA, TOD, TOE, CCM, Internal Audit
   processId      String
   riskId         String?
@@ -594,7 +594,7 @@ model Issue {
 
 model ManagementActionPlan {
   id               String   @id @default(uuid())
-  mapId            String   // MAP-2026-001
+  mapId            String   // management action plan identifier
   issueId          String
   agreedAction     String
   recommendation   String?
@@ -632,7 +632,7 @@ model MAPMilestone {
 model RetestRecord {
   id               String   @id @default(uuid())
   mapId            String
-  retestId         String   // RET-2026-001
+  retestId         String   // retest identifier
   sampleCount      Int      @default(0)
   passedCount      Int      @default(0)
   failedCount      Int      @default(0)
@@ -696,7 +696,7 @@ model CCMException {
 model ControlCertification {
   id              String   @id @default(uuid())
   controlId       String
-  period          String   // 2026-Annual
+  period          String   // reporting period
   declarationText String
   certifierName   String
   certifierRole   String   // Control Owner
