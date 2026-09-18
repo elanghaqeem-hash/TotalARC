@@ -26,9 +26,9 @@ export default function OnboardingPage() {
 
   // Form State
   const [formData, setFormData] = useState({
-    name: '',
-    legalName: '',
-    shortName: '',
+    name: 'Bank Kalbar',
+    legalName: 'PT. Bank Pembangunan Daerah Kalimantan Barat',
+    shortName: 'Bank Kalbar',
     institutionType: '',
     country: 'Indonesia',
     city: '',
