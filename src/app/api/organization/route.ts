@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const user = await requireApiUser(request, ['Admin','ProcessOwner']);
+    const user = await requireApiUser(request, ['Admin']);
     const body = await readJson<Record<string, unknown>>(request);
     const legalEntityId = body.legalEntityId ? requireString(body.legalEntityId, 'legalEntityId', 100) : null;
     const parentId = body.parentId ? requireString(body.parentId, 'parentId', 100) : null;
