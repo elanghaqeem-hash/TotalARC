@@ -1,82 +1,20 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
-import {
-  Download,
-  FileText,
-  FileSpreadsheet,
-  CheckCircle2,
-  Printer,
-  Shield,
-  Layers,
-  ArrowRight
-} from 'lucide-react';
+import React,{useState} from 'react';
+import { Download, FileSpreadsheet } from 'lucide-react';
 
-export default function ReportsPage() {
-  const reports = [
-    { title: 'Dynamic Risk Control Matrix (RCM)', desc: 'Complete multi-dimensional matrix containing process, risk, control, ToE testing, and MAP remediation.', format: 'CSV / Excel', href: '/rcm' },
-    { title: 'ToE Testing Workpaper (TOE-P2P-001)', desc: '25-sample audit testing workpaper with attributes checklist, failure logs, and tester sign-off.', format: 'Interactive Grid', href: '/toe' },
-    { title: 'Deficiency & MAP Remediation Dossier', desc: 'Control deficiency DEF-2026-001, 5-Why root cause analysis, milestones, and passed retest record.', format: 'Audit Dossier', href: '/remediation' },
-    { title: 'Executive Management Attestation Statement', desc: 'Formal CFO and CRO signed statement on internal control over financial reporting for FY2026.', format: 'Attestation Document', href: '/certification' },
-    { title: 'Continuous Control Monitoring (CCM) Log', desc: 'Real-time automated transaction query logs, rule thresholds, and healthy execution certificates.', format: 'Real-time Log', href: '/ccm' },
-    { title: 'Process Architecture & SIPOC Register', desc: 'Levels 0–5 enterprise process hierarchy, SIPOC models, and activity-level performers.', format: 'BPM Register', href: '/processes' }
-  ];
+function downloadCsv(name:string, rows:any[]) {
+  if(!rows.length) return false;
+  const keys=Array.from(new Set(rows.flatMap(r=>Object.keys(r).filter(k=>typeof r[k]!=='object'))));
+  const esc=(v:any)=>`"${String(v??'').replace(/"/g,'""')}"`;
+  const csv=[keys.map(esc).join(','),...rows.map(r=>keys.map(k=>esc(r[k])).join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);return true;
+}
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-emerald-600 uppercase tracking-wider">
-            <Download className="w-4 h-4" />
-            <span>Reporting & Workpapers (MONITOR)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            Assurance Workpapers & Export Center
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Sections 117–119: Generate audit-ready workpapers, RCM workbooks, deficiency reports, and executive assurance summaries.
-          </p>
-        </div>
-      </div>
-
-      {/* Reports Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {reports.map((r, idx) => (
-          <div
-            key={idx}
-            className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3 hover:border-brand-400 hover:shadow-md transition-all flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">
-                  Report #{idx + 1}
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200">
-                  {r.format}
-                </span>
-              </div>
-              <h3 className="font-bold text-sm text-slate-900 mt-1">{r.title}</h3>
-              <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{r.desc}</p>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-              <span className="text-emerald-700 text-xs font-semibold flex items-center space-x-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Audit Ready</span>
-              </span>
-              <Link
-                href={r.href}
-                className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
-              >
-                <span>Open Workpaper</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+export default function ReportsPage(){
+ const[message,setMessage]=useState('');
+ const exportEndpoint=async(label:string,url:string,key:string)=>{setMessage('');try{const r=await fetch(url,{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to export');const rows=d[key]||[];if(!downloadCsv(`TotalARC_${label}_${new Date().toISOString().slice(0,10)}.csv`,rows))setMessage(`No ${label} data is available to export.`);}catch(e){setMessage(e instanceof Error?e.message:'Export failed');}};
+ const items=[['RCM','/api/rcm','rcm'],['Risks','/api/risks','risks'],['Controls','/api/controls','controls'],['Processes','/api/processes','processes']];
+ return <div className="space-y-6"><div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-brand-600"/>Workpapers & Export Center</h1><p className="text-xs text-slate-500 mt-1">Exports are generated from current tenant database records. Empty datasets produce no fabricated report.</p></div>{message&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}<div className="grid md:grid-cols-2 gap-4">{items.map(([label,url,key])=><article key={label} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><h2 className="text-sm font-bold text-slate-900">{label} Export</h2><p className="text-[11px] text-slate-500 mt-1">CSV generated on demand from authenticated database records.</p><button onClick={()=>exportEndpoint(label,url,key)} className="mt-4 inline-flex items-center gap-2 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Download className="w-4 h-4"/>Export CSV</button></article>)}</div></div>;
 }
