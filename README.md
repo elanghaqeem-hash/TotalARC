@@ -54,3 +54,49 @@ npm run build
 ```
 
 The pull-request workflow blocks known dummy operational-data signatures and verifies the Cloudflare Worker artifact.
+
+
+## AI Gateway
+
+Total ARC includes a server-side multi-provider AI Gateway. API keys are never exposed to client-side code.
+
+### Routing policy
+
+- **Cloudflare Workers AI** processes `confidential` and `restricted` workloads by default.
+- **Google Gemini** is the primary reasoning provider for eligible non-sensitive or sanitized complex analysis.
+- **Groq** handles fast chat, classification, summarization, and lightweight inference.
+- **OpenRouter** is the last-resort free-model fallback.
+
+The gateway caps request size, applies timeout and retry logic, fails over on provider/quota errors, redacts common identifiers and secrets before eligible external-provider calls, and logs provider metadata without logging prompts or model output.
+
+Default privacy controls:
+
+```text
+AI_DEFAULT_SENSITIVITY=confidential
+AI_ALLOW_EXTERNAL_FOR_SENSITIVE=false
+AI_REDACT_EXTERNAL=true
+```
+
+Under this default, confidential/restricted data is not silently forwarded to Gemini, Groq, or OpenRouter when Workers AI is unavailable.
+
+### Provider configuration
+
+Cloudflare Workers AI uses the native `AI` binding declared in `wrangler.jsonc`; it does not require a provider API key.
+
+For local development, copy `.dev.vars.example` to `.dev.vars` and add only the keys you intend to use. For production, configure Gemini, Groq, and OpenRouter keys as Cloudflare runtime secrets/environment variables.
+
+Available variables and model defaults are documented in `.env.example`.
+
+After changing Cloudflare bindings, regenerate environment types if needed:
+
+```bash
+npm run cf-typegen
+```
+
+### Governed AI endpoints
+
+- `GET /api/ai/status` returns provider readiness without exposing secrets.
+- `POST /api/ai/chat` provides the general Total ARC copilot.
+- `POST /api/ai/analyze` performs evidence-based process/control analysis using persisted BPM/RCM context.
+
+The AI layer is advisory only and does not autonomously mutate assurance records.
