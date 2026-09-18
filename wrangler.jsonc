@@ -13,8 +13,5 @@
   },
   "observability": {
     "enabled": true
-  },
-  "build": {
-    "command": "npm run build:cloudflare"
   }
 }
