@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     const likelihood = Number(inherentLikelihood);
     const impactValue = Number(inherentImpact);
     if (
-      !name || !description || !cause || !event || !impact || !category || !processId || !ownerName ||
+      !name || !cause || !event || !impact || !category || !processId || !ownerName ||
       !Number.isInteger(likelihood) || likelihood < 1 || likelihood > 5 ||
       !Number.isInteger(impactValue) || impactValue < 1 || impactValue > 5
     ) {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       data: {
         institutionId: institution.id,
         riskId: riskId || `RSK-${Date.now().toString(36).toUpperCase()}`,
-        name, description, cause, event, impact, category, processId, ownerName,
+        name, description: description || `Due to ${cause}, there is a risk that ${event}, resulting in ${impact}.`, cause, event, impact, category, processId, ownerName,
         inherentLikelihood: likelihood,
         inherentImpact: impactValue,
         inherentScore: score,
