@@ -1,232 +1,52 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import {
-  FileCheck,
-  Shield,
-  Layers,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowRight,
-  Database,
-  FileSpreadsheet,
-  Building2,
-  DollarSign
-} from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
-import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import React, { useEffect, useState } from 'react';
+import { FileCheck, Plus } from 'lucide-react';
+
+type Account = { id:string; accountCode:string; accountName:string; financialStatement:string; balanceAmount:number; isSignificant:boolean; scopingRationale?:string|null; assertions:Array<{id:string;assertion:string;isInScope:boolean}> };
+type IPE = { id:string; reportName:string; systemSource:string; reportOwner:string; completenessTested:boolean; accuracyTested:boolean; evidenceDoc?:string|null };
 
 export default function ICOFRPage() {
-  const [activeTab, setActiveTab] = useState<'scoping' | 'assertions' | 'ipe' | 'itgc'>('scoping');
+  const [accounts,setAccounts]=useState<Account[]>([]);
+  const [ipe,setIpe]=useState<IPE[]>([]);
+  const [message,setMessage]=useState('');
+  const [tab,setTab]=useState<'accounts'|'ipe'>('accounts');
+  const [show,setShow]=useState(false);
+  const [accountForm,setAccountForm]=useState({accountCode:'',accountName:'',financialStatement:'Balance Sheet',balanceAmount:'',isSignificant:false,scopingRationale:'',assertions:'Existence,Completeness,Valuation'});
+  const [ipeForm,setIpeForm]=useState({reportName:'',systemSource:'',reportOwner:'',parameters:'',logicSummary:'',completenessTested:false,accuracyTested:false,evidenceDoc:''});
 
-  const significantAccount = {
-    code: '2110-001',
-    name: 'Trade Accounts Payable & Accrued Expenses',
-    statement: 'Balance Sheet',
-    balance: 485000000000,
-    materialityThreshold: 25000000000,
-    isSignificant: true,
-    scopingRationale: 'Account balance exceeds quantitative planning materiality (IDR 25B) by 19.4x. Core operational disbursement cycle.',
-    assertions: ['Existence', 'Occurrence', 'Completeness', 'Accuracy', 'Cut-off']
-  };
+  const load=async()=>{const r=await fetch('/api/icofr',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to load ICOFR data');setAccounts(d.accounts||[]);setIpe(d.ipe||[]);};
+  useEffect(()=>{load().catch(e=>setMessage(e.message));},[]);
 
-  const ipeItem = {
-    reportName: 'ZFI_DISB_RUN_REPORT (Disbursement Run Audit Register)',
-    systemSource: 'SAP S/4HANA ERP Module FI-AP',
-    reportOwner: 'IT Enterprise Applications Team',
-    parameters: 'Company Code = 1000, Fiscal Year = 2026, Run Date range',
-    logicSummary: 'Extracts all cleared vendor payment proposal batches with approver user ID, timestamp, and amount.',
-    completenessTested: true,
-    accuracyTested: true,
-    evidenceDoc: 'DOC-IPE-SAP-001.pdf'
-  };
+  const createAccount=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/icofr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'CREATE_ACCOUNT',...accountForm,balanceAmount:Number(accountForm.balanceAmount||0),assertions:accountForm.assertions.split(',').map(x=>x.trim()).filter(Boolean)})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to create account');setShow(false);await load();};
+  const createIpe=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch('/api/icofr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'CREATE_IPE',...ipeForm})});const d=await r.json();if(!r.ok)return setMessage(d.error||'Unable to create IPE');setShow(false);await load();};
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-sky-600 uppercase tracking-wider">
-            <FileCheck className="w-4 h-4" />
-            <span>Internal Control over Financial Reporting (ASSURE)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            ICOFR Scoping, Financial Assertions & IPE
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Sections 56–63: Financial Statement &rarr; Significant Account &rarr; Assertion &rarr; Significant Process &rarr; Financial Reporting Key Control &rarr; Certification.
-          </p>
-        </div>
+  return <div className="space-y-6">
+    <div className="flex items-center justify-between"><div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><FileCheck className="w-5 h-5 text-brand-600"/>ICOFR & Financial Assertions</h1><p className="text-xs text-slate-500 mt-1">Significant accounts, assertions and IPE records are stored in the database.</p></div><button onClick={()=>setShow(v=>!v)} className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Plus className="w-4 h-4"/>Add {tab==='accounts'?'Account':'IPE'}</button></div>
+    {message&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}
+    <div className="flex gap-2"><button onClick={()=>{setTab('accounts');setShow(false)}} className={`text-xs font-bold px-3 py-2 rounded-lg ${tab==='accounts'?'bg-slate-900 text-white':'bg-white border border-slate-200'}`}>Financial Accounts</button><button onClick={()=>{setTab('ipe');setShow(false)}} className={`text-xs font-bold px-3 py-2 rounded-lg ${tab==='ipe'?'bg-slate-900 text-white':'bg-white border border-slate-200'}`}>IPE Register</button></div>
 
-        <div className="flex items-center space-x-3">
-          <span className="text-xs font-bold text-sky-800 bg-sky-50 border border-sky-200 px-3 py-1.5 rounded-xl">
-            Framework: SOX-404 / COSO
-          </span>
-        </div>
-      </div>
+    {show&&tab==='accounts'&&<form onSubmit={createAccount} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
+      <label className="font-semibold text-slate-700">Account code<input required value={accountForm.accountCode} onChange={e=>setAccountForm({...accountForm,accountCode:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700">Account name<input required value={accountForm.accountName} onChange={e=>setAccountForm({...accountForm,accountName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700">Financial statement<select value={accountForm.financialStatement} onChange={e=>setAccountForm({...accountForm,financialStatement:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>Balance Sheet</option><option>Income Statement</option><option>Cash Flow</option><option>Notes</option></select></label>
+      <label className="font-semibold text-slate-700">Balance amount<input type="number" value={accountForm.balanceAmount} onChange={e=>setAccountForm({...accountForm,balanceAmount:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700 md:col-span-2">Assertions (comma separated)<input value={accountForm.assertions} onChange={e=>setAccountForm({...accountForm,assertions:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="md:col-span-2 flex items-center gap-2 font-semibold text-slate-700"><input type="checkbox" checked={accountForm.isSignificant} onChange={e=>setAccountForm({...accountForm,isSignificant:e.target.checked})}/>Significant account</label>
+      <label className="font-semibold text-slate-700 md:col-span-2">Scoping rationale<textarea value={accountForm.scopingRationale} onChange={e=>setAccountForm({...accountForm,scopingRationale:e.target.value})} rows={3} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <button className="md:col-span-2 justify-self-start bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg">Create Account</button>
+    </form>}
+    {show&&tab==='ipe'&&<form onSubmit={createIpe} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
+      <label className="font-semibold text-slate-700">Report name<input required value={ipeForm.reportName} onChange={e=>setIpeForm({...ipeForm,reportName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700">System source<input required value={ipeForm.systemSource} onChange={e=>setIpeForm({...ipeForm,systemSource:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700">Report owner<input required value={ipeForm.reportOwner} onChange={e=>setIpeForm({...ipeForm,reportOwner:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700">Evidence reference<input value={ipeForm.evidenceDoc} onChange={e=>setIpeForm({...ipeForm,evidenceDoc:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700 md:col-span-2">Parameters<textarea value={ipeForm.parameters} onChange={e=>setIpeForm({...ipeForm,parameters:e.target.value})} rows={2} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <label className="font-semibold text-slate-700 md:col-span-2">Logic summary<textarea value={ipeForm.logicSummary} onChange={e=>setIpeForm({...ipeForm,logicSummary:e.target.value})} rows={2} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+      <div className="md:col-span-2 flex gap-5"><label className="flex items-center gap-2"><input type="checkbox" checked={ipeForm.completenessTested} onChange={e=>setIpeForm({...ipeForm,completenessTested:e.target.checked})}/>Completeness tested</label><label className="flex items-center gap-2"><input type="checkbox" checked={ipeForm.accuracyTested} onChange={e=>setIpeForm({...ipeForm,accuracyTested:e.target.checked})}/>Accuracy tested</label></div>
+      <button className="md:col-span-2 justify-self-start bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg">Create IPE</button>
+    </form>}
 
-      <TraceabilityFlow currentStep="RCM" />
-
-      {/* Tabs */}
-      <div className="flex items-center space-x-2 border-b border-slate-200 bg-white px-4 py-2 rounded-xl shadow-sm text-xs font-semibold">
-        <button
-          onClick={() => setActiveTab('scoping')}
-          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-            activeTab === 'scoping'
-              ? 'bg-brand-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <DollarSign className="w-3.5 h-3.5" />
-          <span>Significant Accounts & Scoping (Section 57)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('assertions')}
-          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-            activeTab === 'assertions'
-              ? 'bg-brand-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Shield className="w-3.5 h-3.5" />
-          <span>Financial Assertions (Section 58)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('ipe')}
-          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-            activeTab === 'ipe'
-              ? 'bg-brand-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
-        >
-          <Database className="w-3.5 h-3.5" />
-          <span>IPE Register (Section 61)</span>
-        </button>
-      </div>
-
-      {/* TAB 1: SCOPING & SIGNIFICANT ACCOUNTS */}
-      {activeTab === 'scoping' && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-            <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="font-mono text-xs font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded">
-                    {significantAccount.code}
-                  </span>
-                  <span className="text-xs text-slate-500 font-semibold">{significantAccount.statement}</span>
-                </div>
-                <h2 className="text-lg font-bold text-slate-900 mt-1">{significantAccount.name}</h2>
-              </div>
-
-              <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-lg">
-                In Scope: Significant Account
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                <span className="text-slate-400 font-bold uppercase text-[10px]">Account Balance</span>
-                <div className="text-2xl font-black text-slate-900 mt-1 font-mono">
-                  {formatCurrency(significantAccount.balance)}
-                </div>
-                <span className="text-slate-500 text-[10px]">As of FY2026</span>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                <span className="text-slate-400 font-bold uppercase text-[10px]">Planning Materiality</span>
-                <div className="text-2xl font-black text-slate-700 mt-1 font-mono">
-                  {formatCurrency(significantAccount.materialityThreshold)}
-                </div>
-                <span className="text-slate-500 text-[10px]">Threshold basis: 5% PBT</span>
-              </div>
-
-              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
-                <span className="text-emerald-700 font-bold uppercase text-[10px]">Materiality Ratio</span>
-                <div className="text-2xl font-black text-emerald-800 mt-1">19.4×</div>
-                <span className="text-emerald-700 text-[10px] font-bold">Clearly exceeds threshold</span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-              <span className="text-slate-400 font-bold uppercase text-[10px]">Scoping Rationale (Section 57):</span>
-              <p className="text-slate-800 font-medium leading-relaxed">
-                {significantAccount.scopingRationale}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: FINANCIAL ASSERTIONS */}
-      {activeTab === 'assertions' && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="text-base font-bold text-slate-900">
-              Financial Statement Assertions Mapping (Section 58)
-            </h3>
-            <p className="text-xs text-slate-500">
-              Account &rarr; Assertion &rarr; Risk &rarr; Key Control Mapping
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-            {significantAccount.assertions.map(a => (
-              <div
-                key={a}
-                className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-slate-900">{a}</span>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                    Covered
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-600">
-                  Mitigated by CTRL-P2P-001 (Dual Authorization) and CTRL-P2P-002 (3-Way Matching).
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: IPE REGISTER */}
-      {activeTab === 'ipe' && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-          <div className="border-b border-slate-100 pb-3">
-            <span className="text-xs font-bold text-brand-600 uppercase tracking-wider">
-              Information Produced by Entity (Section 61)
-            </span>
-            <h3 className="text-base font-bold text-slate-900 mt-0.5">
-              IPE Register & Data Completeness Testing
-            </h3>
-          </div>
-
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-3">
-            <div className="font-bold text-slate-900 text-sm font-mono">{ipeItem.reportName}</div>
-            <div className="grid grid-cols-2 gap-3 text-slate-600">
-              <div>System: <strong>{ipeItem.systemSource}</strong></div>
-              <div>Owner: <strong>{ipeItem.reportOwner}</strong></div>
-            </div>
-            <div>Parameters: <span className="font-mono text-[11px] text-slate-800">{ipeItem.parameters}</span></div>
-            <p className="text-slate-600 text-[11px]">{ipeItem.logicSummary}</p>
-            <div className="pt-2 border-t border-slate-200 flex items-center space-x-4 font-bold text-emerald-700 text-xs">
-              <span className="flex items-center space-x-1">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Completeness Validated</span>
-              </span>
-              <span className="flex items-center space-x-1">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Accuracy Validated</span>
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    {tab==='accounts'?<div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-50 text-slate-500"><tr><th className="text-left p-3">Account</th><th className="text-left p-3">Statement</th><th className="text-right p-3">Balance</th><th className="text-left p-3">Significant</th><th className="text-left p-3">Assertions</th></tr></thead><tbody className="divide-y divide-slate-100">{accounts.map(a=><tr key={a.id}><td className="p-3"><div className="font-bold text-slate-900">{a.accountCode}</div><div className="text-slate-500">{a.accountName}</div></td><td className="p-3">{a.financialStatement}</td><td className="p-3 text-right">{a.balanceAmount.toLocaleString('id-ID')}</td><td className="p-3">{a.isSignificant?'Yes':'No'}</td><td className="p-3">{a.assertions.map(x=>x.assertion).join(', ')||'—'}</td></tr>)}{!accounts.length&&<tr><td colSpan={5} className="p-8 text-center text-slate-400">No financial account registered.</td></tr>}</tbody></table></div>:<div className="grid md:grid-cols-2 gap-4">{ipe.map(x=><article key={x.id} className="bg-white border border-slate-200 rounded-xl p-4"><h3 className="text-sm font-bold text-slate-900">{x.reportName}</h3><div className="text-[11px] text-slate-500 mt-2">Source: {x.systemSource} • Owner: {x.reportOwner}</div><div className="mt-3 flex gap-2 text-[10px]"><span className="bg-slate-100 px-2 py-1 rounded">Completeness: {x.completenessTested?'Tested':'Not tested'}</span><span className="bg-slate-100 px-2 py-1 rounded">Accuracy: {x.accuracyTested?'Tested':'Not tested'}</span></div></article>)}{!ipe.length&&<div className="md:col-span-2 border border-dashed border-slate-300 rounded-xl p-8 text-xs text-slate-500">No IPE record registered.</div>}</div>}
+  </div>;
 }
