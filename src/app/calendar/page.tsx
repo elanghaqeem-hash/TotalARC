@@ -27,7 +27,7 @@ export default function CalendarPage() {
         <p className="text-xs text-slate-500 mt-1">Schedule entries are composed from actual campaign, testing, remediation, retest, certification, and attestation records.</p>
       </div>
       {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
-      {loading ? <div className="text-xs text-slate-500">Loading…</div> : events.length === 0 ? "<div className=\"p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl\"><div className=\"font-bold text-slate-700\">No records available</div><p className=\"text-xs text-slate-500 mt-1\">This module will populate only from persisted database records.</p></div>" : (
+      {loading ? <div className="text-xs text-slate-500">Loading…</div> : events.length === 0 ? (<div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl"><div className="font-bold text-slate-700">No records available</div><p className="text-xs text-slate-500 mt-1">This module will populate only from persisted database records.</p></div>) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           {events.map((event) => (
             <div key={event.id} className="p-4 border-b border-slate-100 last:border-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">

@@ -16,7 +16,7 @@ export default function RCSAPage() {
         <p className="text-xs text-slate-500 mt-1">Campaign and control self-assessment results are shown only when recorded.</p>
       </div>
       {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
-      {loading ? <div className="text-xs text-slate-500">Loading…</div> : campaigns.length === 0 ? "<div className=\"p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl\"><div className=\"font-bold text-slate-700\">No records available</div><p className=\"text-xs text-slate-500 mt-1\">This module will populate only from persisted database records.</p></div>" : (
+      {loading ? <div className="text-xs text-slate-500">Loading…</div> : campaigns.length === 0 ? (<div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl"><div className="font-bold text-slate-700">No records available</div><p className="text-xs text-slate-500 mt-1">This module will populate only from persisted database records.</p></div>) : (
         <div className="space-y-4">
           {campaigns.map((campaign:any) => (
             <div key={campaign.id} className="bg-white border border-slate-200 rounded-2xl p-5">

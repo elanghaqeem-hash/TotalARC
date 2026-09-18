@@ -12,7 +12,7 @@ export default function HealthPage() {
     <div className="space-y-6">
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm"><div className="flex items-center gap-2 text-xs font-bold text-emerald-600 uppercase"><Activity className="w-4 h-4" />Control Health</div><h1 className="text-2xl font-black text-slate-900 mt-1">Control Health Cockpit</h1><p className="text-xs text-slate-500 mt-1">Health is never inferred from empty evidence; stored assessment, testing, issue, monitoring, and certification records are presented transparently.</p></div>
       {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
-      {loading ? <div className="text-xs text-slate-500">Loading…</div> : controls.length === 0 ? "<div className=\"p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl\"><div className=\"font-bold text-slate-700\">No records available</div><p className=\"text-xs text-slate-500 mt-1\">This module will populate only from persisted database records.</p></div>" : (
+      {loading ? <div className="text-xs text-slate-500">Loading…</div> : controls.length === 0 ? (<div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl"><div className="font-bold text-slate-700">No records available</div><p className="text-xs text-slate-500 mt-1">This module will populate only from persisted database records.</p></div>) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {controls.map((control:any) => {
             const latestRun = control.monitoringRules?.flatMap((r:any)=>r.runs || [])[0];
