@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { apiError, requireApiUser } from '@/lib/api';
+import { deriveControlHealth } from '@/lib/control-health';
 
 export async function GET(request: Request) {
   try {
@@ -14,7 +15,15 @@ export async function GET(request: Request) {
         where: { institutionId },
         include: { controls: { include: { control: { select: { id: true, isKeyControl: true } } } } }
       }),
-      prisma.controlMaster.findMany({ where: { institutionId }, select: { id: true, isKeyControl: true, overallHealth: true } }),
+      prisma.controlMaster.findMany({
+        where: { institutionId },
+        include: {
+          todTests: { orderBy: { testedAt: 'desc' }, take: 1 },
+          toeTests: { orderBy: { testedAt: 'desc' }, take: 1 },
+          issues: { orderBy: { createdAt: 'desc' } },
+          monitoringRules: { orderBy: { createdAt: 'desc' } }
+        }
+      }),
       prisma.toETest.findMany({ where: { process: { institutionId } }, include: { exceptions: true } }),
       prisma.issue.findMany({ where: { institutionId }, include: { process: { select: { name: true } } } }),
       prisma.managementActionPlan.findMany({ where: { issue: { institutionId } } }),
@@ -25,8 +34,11 @@ export async function GET(request: Request) {
 
     const highCritical = risks.filter(r => ['High','Critical'].includes(r.inherentRating));
     const coveredHighCritical = highCritical.filter(r => r.controls.some(m => m.control.isKeyControl));
-    const unhealthyControls = controls.filter(c => ['Deficient','Ineffective'].includes(c.overallHealth));
-    const unassessedControls = controls.filter(c => ['Not Assessed','Unassessed'].includes(c.overallHealth));
+    const controlsWithHealth = controls.map(control => ({ control, health: deriveControlHealth(control) }));
+    const unhealthyControls = controlsWithHealth.filter(c => c.health === 'Deficient');
+    const attentionControls = controlsWithHealth.filter(c => c.health === 'Attention Required');
+    const unassessedControls = controlsWithHealth.filter(c => c.health === 'Not Assessed');
+    const healthyControls = controlsWithHealth.filter(c => c.health === 'Healthy');
     const openIssues = issues.filter(i => i.status !== 'Closed');
     const overdueMaps = maps.filter(m => !['Closed','Completed'].includes(m.status) && (m.revisedDueDate || m.originalDueDate) < now);
     const totalSamples = toeTests.reduce((n, t) => n + t.sampleSize, 0);
@@ -36,7 +48,7 @@ export async function GET(request: Request) {
 
     const coveragePercent = highCritical.length ? Math.round((coveredHighCritical.length / highCritical.length) * 100) : null;
     const controlTested = controls.length - unassessedControls.length;
-    const controlWorking = controls.length - unhealthyControls.length - unassessedControls.length;
+    const controlWorking = healthyControls.length;
 
     const concentration = openIssues.reduce<Record<string, number>>((acc, issue) => {
       const key = issue.process.name;
@@ -55,8 +67,8 @@ export async function GET(request: Request) {
       {
         question: 'Are our registered controls assessed as working?',
         status: controls.length ? `${controlWorking}/${controls.length} Healthy` : 'No Data',
-        summary: controls.length ? `${controlTested} controls have an assessment result; ${unhealthyControls.length} are currently deficient or ineffective.` : 'No controls are currently registered.',
-        badge: unhealthyControls.length ? 'Attention' : 'Current'
+        summary: controls.length ? `${controlTested} controls have assurance evidence; ${healthyControls.length} are Healthy, ${attentionControls.length} need Attention, and ${unhealthyControls.length} are Deficient.` : 'No controls are currently registered.',
+        badge: unhealthyControls.length || attentionControls.length ? 'Attention' : 'Current'
       },
       {
         question: 'Where are open control issues concentrated?',
