@@ -81,6 +81,14 @@ export async function POST(request: Request) {
       if (id === actor.id && !active) throw new ApiError(400, 'SELF_DEACTIVATION', 'You cannot deactivate your own account');
       const target = await prisma.user.findFirst({ where: { id, institutionId: actor.institutionId } });
       if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+      if (!active && target.role === 'Admin' && target.active) {
+        const activeAdmins = await prisma.user.count({
+          where: { institutionId: actor.institutionId, role: 'Admin', active: true }
+        });
+        if (activeAdmins <= 1) {
+          throw new ApiError(400, 'LAST_ADMIN', 'The last active tenant administrator cannot be deactivated');
+        }
+      }
       const updated = await prisma.user.update({ where: { id }, data: { active, sessionVersion: { increment: 1 } } });
       await writeAudit(actor, request, { action: active ? 'ACTIVATE' : 'DEACTIVATE', entityType: 'User', recordId: id, reason: `${active ? 'Activated' : 'Deactivated'} ${target.email}` });
       return NextResponse.json({ user: { id: updated.id, active: updated.active } });
