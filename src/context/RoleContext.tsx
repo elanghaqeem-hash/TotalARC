@@ -19,6 +19,7 @@ export interface UserProfile {
   email: string;
   role: UserRole | string;
   department: string | null;
+  mustChangePassword: boolean;
 }
 
 interface RoleContextType {
