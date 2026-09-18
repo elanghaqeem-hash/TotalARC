@@ -35,3 +35,9 @@ yarn-error.log*
 /.open-next/
 /.wrangler/
 .dev.vars
+
+# local Prisma / SQLite runtime data
+prisma/dev.db
+prisma/dev.db-journal
+prisma/*.db
+prisma/*.db-journal

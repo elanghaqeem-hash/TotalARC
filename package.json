@@ -9,6 +9,8 @@
     "start": "next start",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
+    "prisma:seed-reference": "node prisma/seed.js",
+    "verify:no-dummy": "node scripts/verify-no-dummy-data.js",
     "build:cloudflare": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
