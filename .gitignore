@@ -39,7 +39,9 @@ yarn-error.log*
 
 # deployment
 .vercel
-.wrangler
+/.open-next/
+/.wrangler/
+.dev.vars
 
 # typescript
 *.tsbuildinfo
