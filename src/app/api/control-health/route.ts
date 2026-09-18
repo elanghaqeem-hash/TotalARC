@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { apiError, requireApiUser } from '@/lib/api';
+import { deriveControlHealth, deriveDesignAssessment, deriveOperatingStatus } from '@/lib/control-health';
 
 export async function GET(request: Request) {
   try {
@@ -21,22 +22,7 @@ export async function GET(request: Request) {
     const rows = controls.map(control => {
       const tod = control.todTests[0] || null;
       const toe = control.toeTests[0] || null;
-      const ccmException = control.monitoringRules.some(rule => rule.lastStatus === 'Exception Detected');
-      const criticalIssue = control.issues.some(issue => ['Critical','High'].includes(issue.severity));
-
-      let derivedHealth = 'Not Assessed';
-      if (criticalIssue || toe?.finalConclusion === 'Ineffective') derivedHealth = 'Deficient';
-      else if (
-        toe?.finalConclusion === 'Partially Effective' ||
-        tod?.conclusion === 'Partially Effective Design' ||
-        tod?.conclusion === 'Ineffective Design' ||
-        ccmException
-      ) derivedHealth = 'Attention Required';
-      else if (
-        tod?.conclusion === 'Effective Design' &&
-        ['Effective','Effective with Minor Exception'].includes(toe?.finalConclusion || '') &&
-        control.issues.length === 0
-      ) derivedHealth = 'Healthy';
+      const derivedHealth = deriveControlHealth(control);
 
       return {
         id: control.id,
@@ -45,6 +31,8 @@ export async function GET(request: Request) {
         owner: control.controlOwner,
         process: control.process,
         isKeyControl: control.isKeyControl,
+        designAssessment: deriveDesignAssessment(control),
+        operatingStatus: deriveOperatingStatus(control),
         derivedHealth,
         tod: tod ? { conclusion: tod.conclusion, testedAt: tod.testedAt, status: tod.status } : null,
         toe: toe ? { conclusion: toe.finalConclusion, testedAt: toe.testedAt, passCount: toe.passCount, failCount: toe.failCount, sampleSize: toe.sampleSize } : null,
