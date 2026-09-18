@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 export type UserRole =
   | 'Admin'
@@ -8,105 +8,74 @@ export type UserRole =
   | 'ControlOwner'
   | 'Tester'
   | 'Reviewer'
-  | 'Executive';
+  | 'Executive'
+  | 'Auditor';
 
 export interface UserProfile {
   id: string;
+  institutionId: string;
+  institutionName: string;
   name: string;
-  role: UserRole;
-  roleTitle: string;
   email: string;
-  department: string;
+  role: UserRole | string;
+  department: string | null;
 }
 
-export const USERS: Record<UserRole, UserProfile> = {
-  Admin: {
-    id: 'user-admin',
-    name: 'Satria Pratama',
-    role: 'Admin',
-    roleTitle: 'Platform Administrator',
-    email: 'satria.admin@nusantaradigital.id',
-    department: 'Enterprise GRC & Architecture'
-  },
-  ProcessOwner: {
-    id: 'user-po',
-    name: 'Maya Indira',
-    role: 'ProcessOwner',
-    roleTitle: 'Process Owner (VP Finance & Ops)',
-    email: 'maya.indira@nusantaradigital.id',
-    department: 'Finance & Treasury'
-  },
-  ControlOwner: {
-    id: 'user-co',
-    name: 'Rizky Ananda',
-    role: 'ControlOwner',
-    roleTitle: 'Control Owner (AP Manager)',
-    email: 'rizky.ananda@nusantaradigital.id',
-    department: 'Accounts Payable'
-  },
-  Tester: {
-    id: 'user-tester',
-    name: 'Kevin Sanjaya',
-    role: 'Tester',
-    roleTitle: 'Independent Control Tester',
-    email: 'kevin.tester@nusantaradigital.id',
-    department: 'Internal Control'
-  },
-  Reviewer: {
-    id: 'user-reviewer',
-    name: 'Dian Sastrowardoyo',
-    role: 'Reviewer',
-    roleTitle: 'Assurance Lead & Reviewer',
-    email: 'dian.reviewer@nusantaradigital.id',
-    department: 'Internal Audit & Assurance'
-  },
-  Executive: {
-    id: 'user-exec',
-    name: 'Budi Santoso',
-    role: 'Executive',
-    roleTitle: 'Chief Financial Officer (CFO)',
-    email: 'budi.cfo@nusantaradigital.id',
-    department: 'Executive Board'
-  }
-};
-
 interface RoleContextType {
-  currentUser: UserProfile;
-  setRole: (role: UserRole) => void;
+  currentUser: UserProfile | null;
   institutionName: string;
+  loadingUser: boolean;
+  refreshUser: () => Promise<void>;
   setInstitutionName: (name: string) => void;
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [currentRole, setCurrentRole] = useState<UserRole>('Admin');
-  const [institutionName, setInstitutionName] = useState<string>('PT Nusantara Digital Services');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [localInstitutionName, setLocalInstitutionName] = useState('');
 
-  const currentUser = USERS[currentRole];
-
-  const setRole = (role: UserRole) => {
-    setCurrentRole(role);
+  const refreshUser = async () => {
+    setLoadingUser(true);
+    try {
+      const res = await fetch('/api/auth/me', { cache: 'no-store' });
+      if (!res.ok) {
+        setCurrentUser(null);
+        setLocalInstitutionName('');
+        return;
+      }
+      const data = await res.json();
+      setCurrentUser(data.user || null);
+      setLocalInstitutionName(data.user?.institutionName || '');
+    } catch {
+      setCurrentUser(null);
+      setLocalInstitutionName('');
+    } finally {
+      setLoadingUser(false);
+    }
   };
 
-  return (
-    <RoleContext.Provider
-      value={{
-        currentUser,
-        setRole,
-        institutionName,
-        setInstitutionName
-      }}
-    >
-      {children}
-    </RoleContext.Provider>
+  useEffect(() => {
+    void refreshUser();
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      currentUser,
+      institutionName: localInstitutionName || currentUser?.institutionName || '',
+      loadingUser,
+      refreshUser,
+      setInstitutionName: setLocalInstitutionName
+    }),
+    [currentUser, localInstitutionName, loadingUser]
   );
+
+  return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
 }
 
 export function useRole() {
   const context = useContext(RoleContext);
-  if (!context) {
-    throw new Error('useRole must be used within a RoleProvider');
-  }
+  if (!context) throw new Error('useRole must be used within a RoleProvider');
   return context;
 }
