@@ -66,3 +66,11 @@ export function getHealthBadgeClasses(health: string | undefined): { bg: string;
       return { bg: 'bg-slate-100 text-slate-700 border-slate-200', text: 'text-slate-700', dot: 'bg-slate-400' };
   }
 }
+
+
+export function csvCell(value: unknown): string {
+  let raw = String(value ?? '');
+  // Neutralize spreadsheet formula injection while preserving the displayed value as text.
+  if (/^[=+\-@\t\r]/.test(raw)) raw = "'" + raw;
+  return `"${raw.replace(/"/g, '""')}"`;
+}
