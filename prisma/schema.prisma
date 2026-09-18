@@ -161,7 +161,7 @@ model SystemApplication {
 // -------------------------------------------------------------
 model ProcessCategory {
   id          String   @id @default(uuid())
-  code        String
+  code        String   @unique
   name        String
   description String?
   orderIndex  Int      @default(0)
