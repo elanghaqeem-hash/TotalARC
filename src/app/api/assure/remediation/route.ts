@@ -86,6 +86,7 @@ export async function POST(request: Request) {
     const actionType = requireString(body.actionType, 'actionType', 60);
 
     if (actionType === 'CREATE_DEFICIENCY') {
+      if (!['Admin','Tester','Reviewer'].includes(user.role)) throw new ApiError(403, 'FORBIDDEN', 'Deficiency classification requires Tester or Reviewer permission');
       const exceptionId = requireString(body.exceptionId, 'exceptionId', 100);
       const exception = await prisma.testingException.findFirst({
         where: { id: exceptionId, toeTest: { process: { institutionId: user.institutionId } } },
@@ -133,6 +134,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'CREATE_RCA') {
+      if (!['Admin','Reviewer','ProcessOwner','ControlOwner'].includes(user.role)) throw new ApiError(403, 'FORBIDDEN', 'Root-cause analysis requires accountable owner or Reviewer permission');
       const deficiencyId = requireString(body.deficiencyId, 'deficiencyId', 100);
       const deficiency = await prisma.controlDeficiency.findFirst({
         where: {
@@ -165,6 +167,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'CREATE_ISSUE') {
+      if (!['Admin','Reviewer'].includes(user.role)) throw new ApiError(403, 'FORBIDDEN', 'Formal issue creation requires Reviewer permission');
       const deficiencyId = requireString(body.deficiencyId, 'deficiencyId', 100);
       const deficiency = await prisma.controlDeficiency.findFirst({
         where: { id: deficiencyId, exception: { toeTest: { process: { institutionId: user.institutionId } } } },
@@ -219,6 +222,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'UPDATE_MAP') {
+      if (!['Admin','Reviewer','ProcessOwner','ControlOwner'].includes(user.role)) throw new ApiError(403, 'FORBIDDEN', 'MAP updates require accountable owner or Reviewer permission');
       const mapId = requireString(body.mapId, 'mapId', 100);
       const map = await prisma.managementActionPlan.findFirst({ where: { id: mapId, issue: { institutionId: user.institutionId } } });
       if (!map) throw new ApiError(404, 'MAP_NOT_FOUND', 'Management action plan not found');
