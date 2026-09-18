@@ -8,7 +8,12 @@
     "build": "next build",
     "start": "next start",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push"
+    "prisma:push": "prisma db push",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "keywords": [],
   "author": "",
@@ -18,19 +23,22 @@
     "@prisma/client": "5.21.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.47.0",
-    "next": "14.2.35",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "next": "15.5.25",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "tailwind-merge": "^3.7.0",
     "tailwindcss-merge": "^0.0.1-security"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",
-    "@types/react": "^18.3.12",
+    "@types/react": "^19.2.17",
     "autoprefixer": "^10.6.1",
     "postcss": "^8.5.28",
     "prisma": "5.21.1",
     "tailwindcss": "^3.4.14",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@opennextjs/cloudflare": "1.20.6",
+    "wrangler": "4.135.0",
+    "@types/react-dom": "^19.2.3"
   }
 }
