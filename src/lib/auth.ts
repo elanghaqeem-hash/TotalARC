@@ -10,6 +10,7 @@ export type AuthUser = {
   email: string;
   role: string;
   department: string | null;
+  mustChangePassword: boolean;
   sessionVersion: number;
 };
 
@@ -33,6 +34,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     email: user.email,
     role: user.role,
     department: user.department,
+    mustChangePassword: user.mustChangePassword,
     sessionVersion: user.sessionVersion
   };
 }
