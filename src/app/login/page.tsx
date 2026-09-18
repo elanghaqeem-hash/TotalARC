@@ -24,6 +24,10 @@ export default function LoginPage() {
         setError(data.error || 'Sign-in failed');
         return;
       }
+      if (data.user?.mustChangePassword) {
+        window.location.assign('/change-password');
+        return;
+      }
       const next = new URLSearchParams(window.location.search).get('next');
       window.location.assign(next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
     } catch {
