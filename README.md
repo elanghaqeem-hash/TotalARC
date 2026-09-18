@@ -82,3 +82,51 @@ Enterprise Governance, Risk, and Compliance (GRC), Internal Control over Financi
 ## License
 
 ISC License
+
+
+## AI Gateway
+
+Total ARC uses a server-side multi-provider AI Gateway. AI provider keys are never exposed to browser code.
+
+### Routing
+
+- **Cloudflare Workers AI**: default for `confidential` and `restricted` data.
+- **Google Gemini**: primary complex reasoning for non-sensitive/sanitized workloads.
+- **Groq**: fast chat, classification and lightweight inference.
+- **OpenRouter**: last-resort free-model fallback.
+
+The gateway retries transient failures, fails over on quota/provider errors, caps input/output size, redacts common identifiers and secrets before calls to external providers, and records provider metadata without logging prompts or model output.
+
+### Privacy policy
+
+The default is:
+
+```text
+AI_DEFAULT_SENSITIVITY=confidential
+AI_ALLOW_EXTERNAL_FOR_SENSITIVE=false
+AI_REDACT_EXTERNAL=true
+```
+
+With this policy, confidential/restricted content is processed only through the Cloudflare Workers AI binding. If that binding is unavailable, Total ARC returns an AI-unavailable response instead of silently sending sensitive data to another provider.
+
+### Cloudflare setup
+
+Workers AI is configured through the `AI` binding in `wrangler.jsonc`. No API key is required for the binding itself.
+
+For Gemini, Groq and OpenRouter, copy `.dev.vars.example` to `.dev.vars` for local development and set the actual secrets there. For production, store the same values as Cloudflare runtime secrets/environment variables; never commit them.
+
+Required/optional values are documented in `.env.example`.
+
+After changing Cloudflare bindings, regenerate types when needed:
+
+```bash
+npm run cf-typegen
+```
+
+### AI endpoints
+
+- `GET /api/ai/status` — reports configured providers and models without exposing secrets.
+- `POST /api/ai/chat` — generic governed Total ARC copilot endpoint.
+- `POST /api/ai/analyze` — evidence-based BPM/RCM process and control-gap analysis using registered database context.
+
+AI suggestions remain advisory. They cannot autonomously approve processes, change risk ratings, change ToD/ToE conclusions, close issues, or create/approve remediation.
