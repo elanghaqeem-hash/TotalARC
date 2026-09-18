@@ -70,7 +70,8 @@ export async function POST(request: Request) {
         role: user.role,
         department: user.department,
         institutionId: user.institutionId,
-        institutionName: user.institution.name
+        institutionName: user.institution.name,
+        mustChangePassword: updated.mustChangePassword
       }
     });
   } catch (error) {
