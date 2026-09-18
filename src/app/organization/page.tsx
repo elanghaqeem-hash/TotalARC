@@ -8,12 +8,13 @@ type Unit = { id: string; code: string; name: string; type: string; headName?: s
 type Entity = { id: string; code: string; name: string };
 
 export default function OrganizationPage() {
-  const { institutionName } = useRole();
+  const { institutionName, currentUser } = useRole();
   const [units, setUnits] = useState<Unit[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [message, setMessage] = useState('');
   const [form, setForm] = useState({ type: 'Division', code: '', name: '', legalEntityId: '', parentId: '', headName: '', headEmail: '' });
+  const canManage = currentUser?.role === 'Admin';
 
   const load = async () => {
     const res = await fetch('/api/organization', { cache: 'no-store' });
@@ -36,10 +37,10 @@ export default function OrganizationPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><Building2 className="w-5 h-5 text-brand-600" />Organization Structure</h1><p className="text-xs text-slate-500 mt-1">{institutionName} • Legal entities and organization units from database.</p></div>
-        <button onClick={() => setShowForm(v => !v)} className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Plus className="w-4 h-4" />Add Unit</button>
+        {canManage && <button onClick={() => setShowForm(v => !v)} className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Plus className="w-4 h-4" />Add Unit</button>}
       </div>
       {message && <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}
-      {showForm && (
+      {showForm && canManage && (
         <form onSubmit={create} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
           <label className="font-semibold text-slate-700">Unit type<select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>Directorate</option><option>Division</option><option>Department</option><option>Unit</option><option>Team</option></select></label>
           <label className="font-semibold text-slate-700">Code<input required value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5" /></label>
@@ -64,7 +65,7 @@ export default function OrganizationPage() {
             </div>
           </article>
         ))}
-        {!units.length && <div className="md:col-span-2 xl:col-span-3 border border-dashed border-slate-300 rounded-xl p-8 text-xs text-slate-500">No organization unit exists yet. Add the first unit using the button above.</div>}
+        {!units.length && <div className="md:col-span-2 xl:col-span-3 border border-dashed border-slate-300 rounded-xl p-8 text-xs text-slate-500">{canManage ? 'No organization unit exists yet. Add the first unit using the button above.' : 'No organization unit exists yet. A tenant Admin can create organization master data.'}</div>}
       </div>
     </div>
   );
