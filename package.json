@@ -9,7 +9,7 @@
     "start": "next start",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
-    "build:cloudflare": "opennextjs-cloudflare build --skipNextBuild",
+    "build:cloudflare": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
