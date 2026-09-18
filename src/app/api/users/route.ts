@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const user = await requireApiUser(request);
     const users = await prisma.user.findMany({
       where: { institutionId: user.institutionId, active: true },
-      select: { id: true, name: true, email: true, role: true, department: true },
+      select: { id: true, name: true, role: true, department: true },
       orderBy: { name: 'asc' }
     });
     return NextResponse.json({ users });
