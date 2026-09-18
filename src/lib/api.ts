@@ -17,7 +17,12 @@ export async function requireApiUser(request: Request, roles?: string[]): Promis
 
 export function assertSameOrigin(request: Request) {
   const origin = request.headers.get('origin');
-  if (!origin) return;
+  if (!origin) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ApiError(403, 'INVALID_ORIGIN', 'Request origin is required for state-changing browser requests');
+    }
+    return;
+  }
   const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
   if (!forwardedHost) throw new ApiError(403, 'INVALID_ORIGIN', 'Request origin cannot be verified');
 
