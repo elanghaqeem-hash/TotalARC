@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ApiError, apiError, readJson, requireApiUser, requireString } from '@/lib/api';
 import { writeAudit } from '@/lib/audit';
+import { deriveControlHealth } from '@/lib/control-health';
 
 function cleanJson(text: string) {
   return text.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/i, '').trim();
@@ -28,7 +29,15 @@ export async function POST(request: Request) {
         activities: true,
         objectives: true,
         risks: true,
-        controls: { include: { risks: { include: { risk: true } } } }
+        controls: {
+          include: {
+            risks: { include: { risk: true } },
+            todTests: { where: { status: 'Approved' }, orderBy: { testedAt: 'desc' }, take: 1 },
+            toeTests: { where: { status: 'Reviewed' }, orderBy: { testedAt: 'desc' }, take: 1 },
+            issues: { orderBy: { createdAt: 'desc' } },
+            monitoringRules: { orderBy: { createdAt: 'desc' } }
+          }
+        }
       }
     });
     if (!businessProcess) throw new ApiError(404, 'PROCESS_NOT_FOUND', 'Process not found');
@@ -46,7 +55,7 @@ export async function POST(request: Request) {
         type: c.type,
         nature: c.nature,
         frequency: c.frequency,
-        health: c.overallHealth,
+        health: deriveControlHealth(c),
         mappedRisks: c.risks.map(m => m.risk.riskId)
       }))
     };
