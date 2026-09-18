@@ -18,7 +18,21 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: totalarc
+          POSTGRES_PASSWORD: totalarc
+          POSTGRES_DB: totalarc_validation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U totalarc -d totalarc_validation"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://totalarc:totalarc@localhost:5432/totalarc_validation
       SESSION_SECRET: ci-only-session-secret-please-replace-in-production-0123456789abcdef
@@ -28,13 +42,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "24"
 
@@ -61,6 +75,15 @@ jobs:
 
       - name: Generate Prisma client
         run: npx prisma generate
+
+      - name: Apply schema to ephemeral PostgreSQL
+        run: npx prisma db push --skip-generate
+
+      - name: Seed reference data only
+        run: npm run db:seed
+
+      - name: Verify database connectivity and no demo transactions
+        run: node scripts/verify-database.mjs
 
       - name: TypeScript check
         run: npx tsc --noEmit
