@@ -1,160 +1,87 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import {
-  ClipboardCheck,
-  CheckCircle2,
-  Shield,
-  Layers,
-  AlertTriangle,
-  ArrowRight,
-  FileCheck2,
-  HelpCircle,
-  Clock,
-  Sparkles
-} from 'lucide-react';
-import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import React, { useEffect, useState } from 'react';
+import { ClipboardCheck, Plus } from 'lucide-react';
+
+type Campaign = { id: string; name: string; type: string; period: string; startDate: string; dueDate: string; status: string; ownerName: string; csaResponses: Array<{ id: string; csaConclusion: string; assessorName: string; assessedAt: string; control: { id: string; controlId: string; name: string } }> };
+type Control = { id: string; controlId: string; name: string };
 
 export default function RCSAPage() {
-  const [activeTab, setActiveTab] = useState<'campaign' | 'questionnaire'>('questionnaire');
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [controls, setControls] = useState<Control[]>([]);
+  const [message, setMessage] = useState('');
+  const [showCampaign, setShowCampaign] = useState(false);
+  const [campaignForm, setCampaignForm] = useState({ name: '', type: 'RCSA', period: '', startDate: '', dueDate: '', approverName: '' });
+  const [responseForm, setResponseForm] = useState({ campaignId: '', controlId: '', csaConclusion: 'Effective', wasPerformed: true, frequencyMet: true, evidenceAttached: false, exceptionsFound: false, exceptionCount: 0, processChanged: false, controlChanged: false, assessorNotes: '' });
 
-  const [questions, setQuestions] = useState({
-    wasPerformed: true,
-    frequencyMet: true,
-    evidenceAttached: true,
-    exceptionsFound: false,
-    processChanged: false,
-    controlChanged: false,
-    csaConclusion: 'Effective',
-    notes: 'Control performed per policy for all payment runs. Digital SAP approval logs archived in workflow repository.'
-  });
+  const load = async () => {
+    const [a,b] = await Promise.all([fetch('/api/rcsa', { cache: 'no-store' }), fetch('/api/controls', { cache: 'no-store' })]);
+    const ad = await a.json(); const bd = await b.json();
+    if (!a.ok) throw new Error(ad.error || 'Unable to load RCSA');
+    setCampaigns(ad.campaigns || []);
+    setControls((bd.controls || []).map((x:any) => ({ id: x.id, controlId: x.controlId, name: x.name })));
+    setResponseForm(v => ({ ...v, campaignId: v.campaignId || ad.campaigns?.[0]?.id || '', controlId: v.controlId || bd.controls?.[0]?.id || '' }));
+  };
+  useEffect(() => { load().catch(err => setMessage(err.message)); }, []);
+
+  const createCampaign = async (e: React.FormEvent) => {
+    e.preventDefault(); setMessage('');
+    const res = await fetch('/api/rcsa', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ action:'CREATE_CAMPAIGN', ...campaignForm }) });
+    const data = await res.json(); if(!res.ok) return setMessage(data.error || 'Unable to create campaign');
+    setShowCampaign(false); setCampaignForm({ name:'', type:'RCSA', period:'', startDate:'', dueDate:'', approverName:'' }); await load();
+  };
+
+  const submitCsa = async (e: React.FormEvent) => {
+    e.preventDefault(); setMessage('');
+    const res = await fetch('/api/rcsa', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ action:'SUBMIT_CSA', ...responseForm }) });
+    const data = await res.json(); if(!res.ok) return setMessage(data.error || 'Unable to submit CSA');
+    setResponseForm(v => ({ ...v, assessorNotes:'', exceptionsFound:false, exceptionCount:0 })); await load();
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-sky-600 uppercase tracking-wider">
-            <ClipboardCheck className="w-4 h-4" />
-            <span>Risk & Control Self Assessment (ASSURE)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            RCSA Campaigns & Control Self-Assessment (CSA)
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Section 50 Principle: RCSA uses existing Process, Risk, Control, and RCM master data. Zero duplicate data entry.
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <span className="text-xs font-bold text-brand-700 bg-brand-50 border border-brand-200 px-3 py-1.5 rounded-xl">
-            Campaign: FY2026-Q3
-          </span>
-        </div>
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><ClipboardCheck className="w-5 h-5 text-brand-600" />RCSA & CSA Workspace</h1><p className="text-xs text-slate-500 mt-1">Campaigns and control self-assessments are persisted to the shared control library.</p></div>
+        <button onClick={() => setShowCampaign(v=>!v)} className="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Plus className="w-4 h-4" />New Campaign</button>
       </div>
+      {message && <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}
 
-      <TraceabilityFlow currentStep="CSA" />
+      {showCampaign && <form onSubmit={createCampaign} className="bg-white border border-slate-200 rounded-xl p-5 grid md:grid-cols-2 gap-3 text-xs">
+        <label className="font-semibold text-slate-700 md:col-span-2">Campaign name<input required value={campaignForm.name} onChange={e=>setCampaignForm({...campaignForm,name:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <label className="font-semibold text-slate-700">Period<input required value={campaignForm.period} onChange={e=>setCampaignForm({...campaignForm,period:e.target.value})} placeholder="e.g. 2027-Q1" className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <label className="font-semibold text-slate-700">Type<select value={campaignForm.type} onChange={e=>setCampaignForm({...campaignForm,type:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>RCSA</option><option>CSA</option><option>ICOFR</option></select></label>
+        <label className="font-semibold text-slate-700">Start date<input required type="date" value={campaignForm.startDate} onChange={e=>setCampaignForm({...campaignForm,startDate:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <label className="font-semibold text-slate-700">Due date<input required type="date" value={campaignForm.dueDate} onChange={e=>setCampaignForm({...campaignForm,dueDate:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <button className="md:col-span-2 justify-self-start bg-slate-900 text-white font-bold px-4 py-2.5 rounded-lg">Create Campaign</button>
+      </form>}
 
-      {/* CSA QUESTIONNAIRE ENGINE (Section 53 & 55) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-        <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
-                CTRL-P2P-001
-              </span>
-              <span className="text-xs text-slate-500 font-semibold">
-                Procure to Pay (PRC-P2P-001)
-              </span>
-            </div>
-            <h2 className="text-lg font-bold text-slate-900 mt-1">
-              Control Self-Assessment: Dual Authorization on Disbursements &gt; IDR 100M
-            </h2>
-          </div>
-
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg">
-            Owner Assessment: {questions.csaConclusion}
-          </span>
+      <form onSubmit={submitCsa} className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <h2 className="text-sm font-bold text-slate-900">Submit Control Self-Assessment</h2>
+        <div className="grid md:grid-cols-2 gap-3 text-xs">
+          <label className="font-semibold text-slate-700">Campaign<select required value={responseForm.campaignId} onChange={e=>setResponseForm({...responseForm,campaignId:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option value="">Select campaign</option>{campaigns.map(x=><option key={x.id} value={x.id}>{x.period} — {x.name}</option>)}</select></label>
+          <label className="font-semibold text-slate-700">Control<select required value={responseForm.controlId} onChange={e=>setResponseForm({...responseForm,controlId:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option value="">Select control</option>{controls.map(x=><option key={x.id} value={x.id}>{x.controlId} — {x.name}</option>)}</select></label>
+          <label className="font-semibold text-slate-700">Conclusion<select value={responseForm.csaConclusion} onChange={e=>setResponseForm({...responseForm,csaConclusion:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option>Effective</option><option>Partially Effective</option><option>Ineffective</option><option>Not Performed</option></select></label>
+          <label className="font-semibold text-slate-700">Exception count<input type="number" min="0" value={responseForm.exceptionCount} onChange={e=>setResponseForm({...responseForm,exceptionCount:Number(e.target.value),exceptionsFound:Number(e.target.value)>0})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
         </div>
-
-        {/* Questionnaire Form */}
-        <div className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-900">1. Was the control performed?</span>
-                <p className="text-slate-500 text-[11px] mt-0.5">Executed consistently during the period.</p>
-              </div>
-              <span className="font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-                Yes
-              </span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-900">2. Was required frequency met?</span>
-                <p className="text-slate-500 text-[11px] mt-0.5">Enforced per transaction prior to release.</p>
-              </div>
-              <span className="font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-                Yes
-              </span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-900">3. Was audit evidence available?</span>
-                <p className="text-slate-500 text-[11px] mt-0.5">SAP digital sign-off and banking logs.</p>
-              </div>
-              <span className="font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-                Yes
-              </span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-900">4. Were exceptions self-identified?</span>
-                <p className="text-slate-500 text-[11px] mt-0.5">Deviations noted by control owner.</p>
-              </div>
-              <span className="font-bold text-slate-700 bg-slate-200 px-3 py-1 rounded-full">
-                No
-              </span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-900">5. Has process or control changed?</span>
-                <p className="text-slate-500 text-[11px] mt-0.5">Organizational or system amendments.</p>
-              </div>
-              <span className="font-bold text-slate-700 bg-slate-200 px-3 py-1 rounded-full">
-                No
-              </span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-900">6. Final Self-Assessment Rating</span>
-                <p className="text-slate-500 text-[11px] mt-0.5">Owner conclusion on effectiveness.</p>
-              </div>
-              <span className="font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-                Effective
-              </span>
-            </div>
-          </div>
-
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-            <span className="text-[10px] font-bold uppercase text-slate-400">
-              Assessor Commentary & Audit Reference
-            </span>
-            <p className="text-slate-800 font-medium leading-relaxed">
-              {questions.notes}
-            </p>
-            <div className="pt-2 border-t border-slate-200 flex justify-between text-slate-500 text-[11px]">
-              <span>Assessor: <strong>Rizky Ananda (Control Owner)</strong></span>
-              <span>Reviewer Challenge: <strong>Dian Sastrowardoyo (Assurance Lead)</strong></span>
-            </div>
-          </div>
+        <div className="flex flex-wrap gap-4 text-xs text-slate-700">
+          {[
+            ['wasPerformed','Performed'],['frequencyMet','Frequency met'],['evidenceAttached','Evidence attached'],['processChanged','Process changed'],['controlChanged','Control changed']
+          ].map(([key,label])=><label key={key} className="flex items-center gap-2"><input type="checkbox" checked={(responseForm as any)[key]} onChange={e=>setResponseForm({...responseForm,[key]:e.target.checked})}/>{label}</label>)}
         </div>
+        <label className="block text-xs font-semibold text-slate-700">Assessment notes<textarea value={responseForm.assessorNotes} onChange={e=>setResponseForm({...responseForm,assessorNotes:e.target.value})} rows={3} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <button disabled={!responseForm.campaignId || !responseForm.controlId} className="bg-brand-600 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-lg">Submit CSA</button>
+      </form>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {campaigns.map(c=><article key={c.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <div className="flex justify-between gap-3"><div><div className="text-[10px] font-mono text-slate-400">{c.period}</div><h3 className="text-sm font-bold text-slate-900">{c.name}</h3></div><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-full h-fit">{c.status}</span></div>
+          <div className="text-[11px] text-slate-500 mt-2">{new Date(c.startDate).toLocaleDateString('id-ID')} – {new Date(c.dueDate).toLocaleDateString('id-ID')} • Owner: {c.ownerName}</div>
+          <div className="mt-3 border-t border-slate-100 pt-3 space-y-2">
+            {c.csaResponses.map(r=><div key={r.id} className="text-[11px] flex justify-between gap-3"><span className="text-slate-700">{r.control.controlId} — {r.control.name}</span><span className="font-semibold text-slate-600">{r.csaConclusion}</span></div>)}
+            {!c.csaResponses.length && <div className="text-xs text-slate-400">No CSA response submitted.</div>}
+          </div>
+        </article>)}
+        {!campaigns.length && <div className="xl:col-span-2 border border-dashed border-slate-300 rounded-xl p-8 text-xs text-slate-500">No RCSA/CSA campaign exists yet.</div>}
       </div>
     </div>
   );
