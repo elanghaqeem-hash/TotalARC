@@ -20,26 +20,28 @@ export async function POST(request: Request) {
     const now = new Date();
 
     const valid = await verifyPassword(password, user?.passwordHash || DUMMY_PASSWORD_HASH);
-    const usableUser = Boolean(user?.active && user.passwordHash);
-    const isLocked = Boolean(usableUser && user?.lockedUntil && user.lockedUntil > now);
 
-    if (isLocked) {
+    // Always perform a password hash verification before rejecting an unknown/inactive account
+    // so login timing does not trivially reveal whether the email exists.
+    if (!user || !user.active || !user.passwordHash) {
+      throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+    }
+
+    if (user.lockedUntil && user.lockedUntil > now) {
       throw new ApiError(429, 'ACCOUNT_LOCKED', 'Account temporarily locked after repeated failed sign-in attempts');
     }
 
-    if (!usableUser || !valid) {
-      if (user?.active && user.passwordHash) {
-        const priorAttempts = user.lockedUntil && user.lockedUntil <= now ? 0 : user.failedLoginAttempts;
-        const attempts = priorAttempts + 1;
-        const shouldLock = attempts >= MAX_FAILED_ATTEMPTS;
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            failedLoginAttempts: shouldLock ? MAX_FAILED_ATTEMPTS : attempts,
-            lockedUntil: shouldLock ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null
-          }
-        });
-      }
+    if (!valid) {
+      const priorAttempts = user.lockedUntil && user.lockedUntil <= now ? 0 : user.failedLoginAttempts;
+      const attempts = priorAttempts + 1;
+      const shouldLock = attempts >= MAX_FAILED_ATTEMPTS;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: shouldLock ? MAX_FAILED_ATTEMPTS : attempts,
+          lockedUntil: shouldLock ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null
+        }
+      });
       throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
