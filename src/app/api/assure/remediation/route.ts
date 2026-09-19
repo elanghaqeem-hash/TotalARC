@@ -82,19 +82,19 @@ export async function POST(request: Request) {
 
     const orgUnitForAction = (() => {
       if (actionType === 'CREATE_DEFICIENCY') {
-        const item = remediationData.exceptions.find(row => row.id === textValue(body, 'exceptionId'));
+        const item = remediationData.exceptions.find(row => (row as Record<string, unknown>).id === textValue(body, 'exceptionId'));
         return (item?.process as Record<string, unknown> | null)?.orgUnitId;
       }
       if (actionType === 'CREATE_ISSUE') {
-        const item = remediationData.deficiencies.find(row => row.id === textValue(body, 'deficiencyId'));
+        const item = remediationData.deficiencies.find(row => (row as Record<string, unknown>).id === textValue(body, 'deficiencyId'));
         return (item?.process as Record<string, unknown> | null)?.orgUnitId;
       }
       if (actionType === 'CREATE_MAP') {
-        const item = remediationData.issues.find(row => row.id === textValue(body, 'issueId'));
+        const item = remediationData.issues.find(row => (row as Record<string, unknown>).id === textValue(body, 'issueId'));
         return (item?.process as Record<string, unknown> | null)?.orgUnitId;
       }
       if (['CREATE_MILESTONE', 'CREATE_RETEST', 'REQUEST_EXTENSION'].includes(actionType)) {
-        const item = remediationData.maps.find(row => row.id === textValue(body, 'mapId'));
+        const item = remediationData.maps.find(row => (row as Record<string, unknown>).id === textValue(body, 'mapId'));
         return (
           ((item?.issue as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId
         );
