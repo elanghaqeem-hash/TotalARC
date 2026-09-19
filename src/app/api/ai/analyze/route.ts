@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
 import { findBusinessProcessForAi, recordAiAnalysisAudit } from '@/lib/d1-core';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 type Finding = {
   id: string;
@@ -63,7 +63,7 @@ function normalizeFindings(value: unknown): Finding[] {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         ? await findBusinessProcessForAi({
             processId: processId || undefined,
             processName: processName || undefined
-          })
+          }, auth.user.institutionId)
         : null;
 
     const suppliedActivities = Array.isArray(body.activities) ? body.activities : [];
@@ -161,10 +161,7 @@ export async function POST(request: Request) {
     if (registeredProcess) {
       try {
         await recordAiAnalysisAudit({
-          institutionId:
-            typeof registeredProcess.institutionId === 'string'
-              ? registeredProcess.institutionId
-              : null,
+          institutionId: auth.user.institutionId,
           processId: String(registeredProcess.id),
           requestId: result.requestId,
           provider: result.provider,

@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
-    const { processes, categories } = await listBusinessProcesses();
+    const { processes, categories } = await listBusinessProcesses(auth.user.institutionId);
     return NextResponse.json({
       processes,
       categories,
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(request, ['Admin', 'ProcessOwner']);
+  const auth = await authorizeTenantApi(request, ['Admin', 'ProcessOwner']);
   if (auth.response) return auth.response;
 
   try {
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       ownerName,
       criticality,
       classification
-    });
+    }, auth.user.institutionId);
 
     return NextResponse.json(process, { status: 201 });
   } catch (error) {

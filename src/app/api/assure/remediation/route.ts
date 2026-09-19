@@ -8,16 +8,16 @@ import {
   listRemediationData,
   requestMapExtension
 } from '@/lib/d1-assurance';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
-    const data = await listRemediationData();
+    const data = await listRemediationData(auth.user.institutionId);
     return NextResponse.json({ ...data, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 remediation data:', error);
@@ -33,7 +33,7 @@ function textValue(body: Record<string, unknown>, key: string) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(request, ['Admin', 'Reviewer', 'Tester', 'ProcessOwner']);
+  const auth = await authorizeTenantApi(request, ['Admin', 'Reviewer', 'Tester', 'ProcessOwner']);
   if (auth.response) return auth.response;
 
   try {
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
         regulatoryImpact: textValue(body, 'regulatoryImpact') || null,
         compensatingControls: textValue(body, 'compensatingControls') || null,
         approvedBy
-      });
+      }, auth.user.institutionId);
       return NextResponse.json(deficiency, { status: 201 });
     }
 
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
         severity,
         ownerName,
         targetDate
-      });
+      }, auth.user.institutionId);
       return NextResponse.json(issue, { status: 201 });
     }
 
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
         actionOwner,
         approverName,
         originalDueDate
-      });
+      }, auth.user.institutionId);
       return NextResponse.json(map, { status: 201 });
     }
 
@@ -152,7 +152,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const milestone = await createMapMilestone({ mapId, title, owner, dueDate });
+      const milestone = await createMapMilestone({ mapId, title, owner, dueDate }, auth.user.institutionId);
       return NextResponse.json(milestone, { status: 201 });
     }
 
@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         testerName,
         reviewerName,
         conclusionNotes: textValue(body, 'conclusionNotes') || null
-      });
+      }, auth.user.institutionId);
       return NextResponse.json(retest, { status: 201 });
     }
 
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
         extensionReason,
         newDueDate,
         approverName
-      });
+      }, auth.user.institutionId);
       return NextResponse.json(updated);
     }
 

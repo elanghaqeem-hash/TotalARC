@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getPrimaryInstitution } from '@/lib/d1';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { getInstitutionById } from '@/lib/d1';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
-    const institution = await getPrimaryInstitution();
+    const institution = await getInstitutionById(auth.user.institutionId);
 
     return NextResponse.json({
       institution: institution

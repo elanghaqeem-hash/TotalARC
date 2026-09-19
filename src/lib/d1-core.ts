@@ -336,19 +336,6 @@ export async function ensureCoreDomainSchema() {
   return db;
 }
 
-async function primaryInstitution(db: D1DatabaseLike) {
-  const exists = await first<{ count?: number }>(
-    db,
-    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='Institution'"
-  );
-  if (!Number(exists?.count || 0)) return null;
-
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1'
-  );
-}
-
 async function writeAudit(
   db: D1DatabaseLike,
   input: {
@@ -476,11 +463,11 @@ async function hydrateProcess(
   } as D1BusinessProcess;
 }
 
-export async function listBusinessProcesses() {
+export async function listBusinessProcesses(institutionId: string) {
   const db = await ensureCoreDomainSchema();
   const [categories, rows] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY processId ASC')
+    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess WHERE institutionId = ? ORDER BY processId ASC', [institutionId])
   ]);
   const categoryMap = new Map(categories.map(category => [String(category.id), category]));
   const processes = await Promise.all(rows.map(row => hydrateProcess(db, row, categoryMap)));
@@ -490,32 +477,36 @@ export async function listBusinessProcesses() {
 export async function findBusinessProcessForAi(identifier: {
   processId?: string;
   processName?: string;
-}) {
+}, institutionId: string) {
   const db = await ensureCoreDomainSchema();
   let row: Record<string, unknown> | null = null;
 
   if (identifier.processId) {
     row = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM BusinessProcess WHERE id = ? OR processId = ? LIMIT 1',
-      [identifier.processId, identifier.processId]
+      'SELECT * FROM BusinessProcess WHERE institutionId = ? AND (id = ? OR processId = ?) LIMIT 1',
+      [institutionId, identifier.processId, identifier.processId]
     );
   }
 
   if (!row && identifier.processName) {
     row = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM BusinessProcess WHERE name = ? LIMIT 1',
-      [identifier.processName]
+      'SELECT * FROM BusinessProcess WHERE institutionId = ? AND name = ? LIMIT 1',
+      [institutionId, identifier.processName]
     );
   }
 
   return row ? hydrateProcess(db, row) : null;
 }
 
-export async function createBusinessProcess(input: Record<string, unknown>) {
+export async function createBusinessProcess(input: Record<string, unknown>, institutionId: string) {
   const db = await ensureCoreDomainSchema();
-  const institution = await primaryInstitution(db);
+  const institution = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [institutionId]
+  );
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const category = await first<Record<string, unknown>>(
@@ -584,11 +575,12 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
   return hydrateProcess(db, created);
 }
 
-export async function listRisks() {
+export async function listRisks(institutionId: string) {
   const db = await ensureCoreDomainSchema();
   const rows = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM RiskMaster ORDER BY riskId ASC'
+    'SELECT * FROM RiskMaster WHERE institutionId = ? ORDER BY riskId ASC',
+    [institutionId]
   );
 
   return Promise.all(
@@ -596,8 +588,8 @@ export async function listRisks() {
       const [process, activity, mappings] = await Promise.all([
         first<Record<string, unknown>>(
           db,
-          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? LIMIT 1',
-          [row.processId]
+          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+          [row.processId, institutionId]
         ),
         row.activityId
           ? first<Record<string, unknown>>(
@@ -615,9 +607,9 @@ export async function listRisks() {
                   c.isKeyControl, c.isIcofrKey, c.overallHealth
              FROM ControlRiskMapping m
              JOIN ControlMaster c ON c.id = m.controlId
-            WHERE m.riskId = ?
+            WHERE m.riskId = ? AND c.institutionId = ?
             ORDER BY c.controlId ASC`,
-          [row.id]
+          [row.id, institutionId]
         )
       ]);
 
@@ -651,12 +643,12 @@ export async function listRisks() {
   );
 }
 
-export async function createRisk(input: Record<string, unknown>) {
+export async function createRisk(input: Record<string, unknown>, institutionId: string) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [input.processId]
+    'SELECT * FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.processId, institutionId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -668,7 +660,7 @@ export async function createRisk(input: Record<string, unknown>) {
   const duplicate = await first<Record<string, unknown>>(
     db,
     'SELECT id FROM RiskMaster WHERE institutionId = ? AND riskId = ? LIMIT 1',
-    [process.institutionId, enterpriseId]
+    [institutionId, enterpriseId]
   );
   if (duplicate) throw new Error('RISK_ID_CONFLICT');
 
@@ -693,7 +685,7 @@ export async function createRisk(input: Record<string, unknown>) {
     ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Not Assessed', 'Active', '1.0', ?, ?)`,
     [
       id,
-      process.institutionId,
+      institutionId,
       process.id,
       enterpriseId,
       input.name,
@@ -724,7 +716,7 @@ export async function createRisk(input: Record<string, unknown>) {
   if (!created) throw new Error('RISK_CREATE_FAILED');
 
   await writeAudit(db, {
-    institutionId: String(process.institutionId),
+    institutionId,
     action: 'CREATE',
     entityType: 'Risk',
     recordId: id,
@@ -745,11 +737,12 @@ export async function createRisk(input: Record<string, unknown>) {
   };
 }
 
-export async function listControls() {
+export async function listControls(institutionId: string) {
   const db = await ensureCoreDomainSchema();
   const rows = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM ControlMaster ORDER BY controlId ASC'
+    'SELECT * FROM ControlMaster WHERE institutionId = ? ORDER BY controlId ASC',
+    [institutionId]
   );
 
   return Promise.all(
@@ -757,8 +750,8 @@ export async function listControls() {
       const [process, activity, mappings] = await Promise.all([
         first<Record<string, unknown>>(
           db,
-          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? LIMIT 1',
-          [row.processId]
+          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+          [row.processId, institutionId]
         ),
         row.activityId
           ? first<Record<string, unknown>>(
@@ -775,9 +768,9 @@ export async function listControls() {
                   r.inherentScore, r.inherentRating, r.residualScore, r.residualRating
              FROM ControlRiskMapping m
              JOIN RiskMaster r ON r.id = m.riskId
-            WHERE m.controlId = ?
+            WHERE m.controlId = ? AND r.institutionId = ?
             ORDER BY r.riskId ASC`,
-          [row.id]
+          [row.id, institutionId]
         )
       ]);
 
@@ -811,12 +804,12 @@ export async function listControls() {
   );
 }
 
-export async function createControl(input: Record<string, unknown>) {
+export async function createControl(input: Record<string, unknown>, institutionId: string) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [input.processId]
+    'SELECT * FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.processId, institutionId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -824,8 +817,8 @@ export async function createControl(input: Record<string, unknown>) {
   if (input.riskId) {
     risk = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM RiskMaster WHERE id = ? LIMIT 1',
-      [input.riskId]
+      'SELECT * FROM RiskMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+      [input.riskId, institutionId]
     );
     if (!risk) throw new Error('RISK_NOT_FOUND');
     if (String(risk.processId) !== String(process.id)) throw new Error('RISK_PROCESS_MISMATCH');
@@ -839,7 +832,7 @@ export async function createControl(input: Record<string, unknown>) {
   const duplicate = await first<Record<string, unknown>>(
     db,
     'SELECT id FROM ControlMaster WHERE institutionId = ? AND controlId = ? LIMIT 1',
-    [process.institutionId, enterpriseId]
+    [institutionId, enterpriseId]
   );
   if (duplicate) throw new Error('CONTROL_ID_CONFLICT');
 
@@ -857,7 +850,7 @@ export async function createControl(input: Record<string, unknown>) {
     ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 'Approval', ?, ?, NULL, ?, 0, NULL, NULL, NULL, NULL, 'Not Assessed', 'Not Assessed', 'Not Assessed', NULL, '1.0', 'Active', ?, ?)`,
     [
       id,
-      process.institutionId,
+      institutionId,
       process.id,
       enterpriseId,
       input.name,
@@ -892,7 +885,7 @@ export async function createControl(input: Record<string, unknown>) {
   if (!created) throw new Error('CONTROL_CREATE_FAILED');
 
   await writeAudit(db, {
-    institutionId: String(process.institutionId),
+    institutionId,
     action: 'CREATE',
     entityType: 'Control',
     recordId: id,
@@ -926,7 +919,7 @@ export async function createControl(input: Record<string, unknown>) {
   };
 }
 
-export async function listRcmRows() {
+export async function listRcmRows(institutionId: string) {
   const db = await ensureCoreDomainSchema();
   const rows = await all<Record<string, unknown>>(
     db,
@@ -966,7 +959,9 @@ export async function listRcmRows() {
       JOIN BusinessProcess p ON p.id = r.processId
       LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
       JOIN ControlMaster c ON c.id = m.controlId
-      ORDER BY p.processId ASC, r.riskId ASC, c.controlId ASC`
+      WHERE p.institutionId = ? AND r.institutionId = ? AND c.institutionId = ?
+      ORDER BY p.processId ASC, r.riskId ASC, c.controlId ASC`,
+    [institutionId, institutionId, institutionId]
   );
 
   const rcm = await Promise.all(
@@ -1045,7 +1040,7 @@ async function count(
   return Number(row?.count || 0);
 }
 
-export async function getCoreDashboardData() {
+export async function getCoreDashboardData(institutionId: string) {
   const db = await ensureCoreDomainSchema();
 
   const [
@@ -1060,27 +1055,30 @@ export async function getCoreDashboardData() {
     highCritical,
     recentAuditLogs
   ] = await Promise.all([
-    count(db, 'SELECT COUNT(*) AS count FROM BusinessProcess'),
-    count(db, "SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RiskMaster'),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'"),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'"),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster'),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1'),
+    count(db, 'SELECT COUNT(*) AS count FROM BusinessProcess WHERE institutionId = ?', [institutionId]),
+    count(db, "SELECT COUNT(*) AS count FROM BusinessProcess WHERE institutionId = ? AND criticality = 'Critical'", [institutionId]),
+    count(db, 'SELECT COUNT(*) AS count FROM RiskMaster WHERE institutionId = ?', [institutionId]),
+    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE institutionId = ? AND inherentRating = 'Critical'", [institutionId]),
+    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE institutionId = ? AND inherentRating = 'High'", [institutionId]),
+    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId = ?', [institutionId]),
+    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId = ? AND isKeyControl = 1', [institutionId]),
     count(
       db,
       `SELECT COUNT(DISTINCT r.id) AS count
          FROM RiskMaster r
          JOIN ControlRiskMapping m ON m.riskId = r.id
-        WHERE r.inherentRating IN ('High', 'Critical')`
+        WHERE r.institutionId = ? AND r.inherentRating IN ('High', 'Critical')`,
+      [institutionId]
     ),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating IN ('High', 'Critical')"
+      "SELECT COUNT(*) AS count FROM RiskMaster WHERE institutionId = ? AND inherentRating IN ('High', 'Critical')",
+      [institutionId]
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM AuditLog ORDER BY timestamp DESC LIMIT 8'
+      'SELECT * FROM AuditLog WHERE institutionId = ? ORDER BY timestamp DESC LIMIT 8',
+      [institutionId]
     )
   ]);
 
@@ -1143,7 +1141,7 @@ export async function getCoreDashboardData() {
 }
 
 export async function recordAiAnalysisAudit(input: {
-  institutionId?: string | null;
+  institutionId: string;
   processId: string;
   requestId: string;
   provider: string;
@@ -1152,7 +1150,7 @@ export async function recordAiAnalysisAudit(input: {
 }) {
   const db = await ensureCoreDomainSchema();
   await writeAudit(db, {
-    institutionId: input.institutionId || null,
+    institutionId: input.institutionId,
     userName: 'Total ARC AI',
     userRole: 'AI Assistant',
     action: 'AI_ANALYZE',

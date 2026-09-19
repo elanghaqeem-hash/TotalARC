@@ -4,16 +4,16 @@ import {
   ingestMonitoringRun,
   listMonitoringRules
 } from '@/lib/d1-assurance';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
-    const rules = await listMonitoringRules();
+    const rules = await listMonitoringRules(auth.user.institutionId);
     return NextResponse.json({ rules, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 CCM rules:', error);
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(request, ['Admin', 'ControlOwner']);
+  const auth = await authorizeTenantApi(request, ['Admin', 'ControlOwner']);
   if (auth.response) return auth.response;
 
   try {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const rule = await createMonitoringRule({ ...body, controlId, name, description, dataSource, queryLogic });
+      const rule = await createMonitoringRule({ ...body, controlId, name, description, dataSource, queryLogic }, auth.user.institutionId);
       return NextResponse.json(rule, { status: 201 });
     }
 
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
       exceptionsFound,
       details,
       exceptions
-    });
+    }, auth.user.institutionId);
 
     return NextResponse.json(run, { status: 201 });
   } catch (error) {

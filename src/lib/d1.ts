@@ -159,30 +159,44 @@ export async function getInstitutionByLegalName(legalName: string): Promise<Inst
     .first<InstitutionRecord>();
 }
 
-export async function getPrimaryInstitution(): Promise<InstitutionRecord | null> {
+export async function getInstitutionById(id: string): Promise<InstitutionRecord | null> {
   const db = await getD1();
   await ensureSchema(db);
-  return db.prepare('SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1')
+  return db.prepare('SELECT * FROM Institution WHERE id = ? LIMIT 1')
+    .bind(id)
     .first<InstitutionRecord>();
 }
 
 export async function upsertInstitution(
   input: InstitutionInput,
-  reason = 'Institution saved through Total ARC.'
+  reason = 'Institution saved through Total ARC.',
+  institutionId: string | null = null
 ): Promise<InstitutionRecord> {
   const db = await getD1();
   await ensureSchema(db);
 
-  const existing = await db.prepare('SELECT * FROM Institution WHERE legalName = ? LIMIT 1')
-    .bind(input.legalName)
-    .first<InstitutionRecord>();
-
   const now = new Date().toISOString();
 
-  if (existing) {
+  if (institutionId) {
+    const existing = await db.prepare('SELECT * FROM Institution WHERE id = ? LIMIT 1')
+      .bind(institutionId)
+      .first<InstitutionRecord>();
+
+    if (!existing) {
+      throw new Error('INSTITUTION_CONTEXT_NOT_FOUND');
+    }
+
+    const duplicateLegalName = await db.prepare(
+      'SELECT id FROM Institution WHERE legalName = ? AND id <> ? LIMIT 1'
+    ).bind(input.legalName, institutionId).first<{ id?: string }>();
+
+    if (duplicateLegalName?.id) {
+      throw new Error('INSTITUTION_LEGAL_NAME_CONFLICT');
+    }
+
     await db.prepare(`
       UPDATE Institution SET
-        name = ?, shortName = ?, institutionType = ?, country = ?,
+        name = ?, legalName = ?, shortName = ?, institutionType = ?, country = ?,
         provinceState = ?, city = ?, registeredAddress = ?, operationalAddress = ?,
         website = ?, generalEmail = ?, telephone = ?, yearEstablished = ?,
         registrationNumber = ?, taxId = ?, parentCompany = ?, holdingCompany = ?,
@@ -191,6 +205,7 @@ export async function upsertInstitution(
       WHERE id = ?
     `).bind(
       input.name,
+      input.legalName,
       input.shortName,
       input.institutionType,
       input.country,
@@ -214,21 +229,27 @@ export async function upsertInstitution(
       nullable(input.businessModel),
       nullable(input.operatingModel),
       now,
-      existing.id
+      institutionId
     ).run();
 
-    const updated = await db.prepare('SELECT * FROM Institution WHERE id = ?')
-      .bind(existing.id)
+    const updated = await db.prepare('SELECT * FROM Institution WHERE id = ? LIMIT 1')
+      .bind(institutionId)
       .first<InstitutionRecord>();
 
-    if (!updated) throw new Error('Institution update could not be verified.');
+    if (!updated) throw new Error('INSTITUTION_UPDATE_FAILED');
 
-    const before = JSON.stringify(existing);
-    const after = JSON.stringify(updated);
-    if (before !== after) {
-      await insertAudit(db, existing.id, 'UPDATE', existing, updated, reason);
+    if (JSON.stringify(existing) !== JSON.stringify(updated)) {
+      await insertAudit(db, institutionId, 'UPDATE', existing, updated, reason);
     }
+
     return updated;
+  }
+
+  const existingInstitution = await db.prepare('SELECT id FROM Institution LIMIT 1')
+    .first<{ id?: string }>();
+
+  if (existingInstitution?.id) {
+    throw new Error('INSTITUTION_CONTEXT_REQUIRED');
   }
 
   const id = crypto.randomUUID();
@@ -270,11 +291,11 @@ export async function upsertInstitution(
     now
   ).run();
 
-  const created = await db.prepare('SELECT * FROM Institution WHERE id = ?')
+  const created = await db.prepare('SELECT * FROM Institution WHERE id = ? LIMIT 1')
     .bind(id)
     .first<InstitutionRecord>();
 
-  if (!created) throw new Error('Institution insert could not be verified.');
+  if (!created) throw new Error('INSTITUTION_CREATE_FAILED');
   await insertAudit(db, id, 'CREATE', null, created, reason);
   return created;
 }
@@ -332,12 +353,12 @@ export async function getD1Health() {
   };
 }
 
-export async function getRecentInstitutionAuditLogs(limit = 8) {
+export async function getRecentInstitutionAuditLogs(institutionId: string, limit = 8) {
   const db = await getD1();
   await ensureSchema(db);
   const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
   const result = await db.prepare(
-    `SELECT * FROM AuditLog WHERE entityType = 'Institution' ORDER BY timestamp DESC LIMIT ${safeLimit}`
-  ).all<Record<string, unknown>>();
+    `SELECT * FROM AuditLog WHERE institutionId = ? AND entityType = 'Institution' ORDER BY timestamp DESC LIMIT ${safeLimit}`
+  ).bind(institutionId).all<Record<string, unknown>>();
   return result.results || [];
 }

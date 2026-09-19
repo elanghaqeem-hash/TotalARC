@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createControl, listControls } from '@/lib/d1-core';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
-    const controls = await listControls();
+    const controls = await listControls(auth.user.institutionId);
     return NextResponse.json({ controls, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 controls:', error);
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(request, ['Admin', 'ControlOwner', 'ProcessOwner']);
+  const auth = await authorizeTenantApi(request, ['Admin', 'ControlOwner', 'ProcessOwner']);
   if (auth.response) return auth.response;
 
   try {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       type,
       nature,
       frequency
-    });
+    }, auth.user.institutionId);
 
     return NextResponse.json(control, { status: 201 });
   } catch (error) {

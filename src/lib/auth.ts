@@ -202,11 +202,6 @@ async function provisionBootstrapAdmin(
   );
   if (Number(existingCount?.count || 0) !== 0) return null;
 
-  const institution = await first<{ id?: string }>(
-    db,
-    'SELECT id FROM Institution ORDER BY createdAt ASC LIMIT 1'
-  );
-
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   await run(
@@ -215,7 +210,7 @@ async function provisionBootstrapAdmin(
       id, institutionId, email, name, role, department, active,
       createdAt, updatedAt, lastAuthenticatedAt
     ) VALUES (?, ?, ?, ?, 'Admin', NULL, 1, ?, ?, ?)`,
-    [id, institution?.id || null, email, name, now, now, now]
+    [id, null, email, name, now, now, now]
   );
 
   return first<AccessUserRow>(
@@ -223,32 +218,6 @@ async function provisionBootstrapAdmin(
     'SELECT * FROM AccessUser WHERE id = ? LIMIT 1',
     [id]
   );
-}
-
-async function bindAdminToPrimaryInstitution(
-  db: D1DatabaseLike,
-  row: AccessUserRow
-): Promise<AccessUserRow> {
-  if (row.institutionId || row.role !== 'Admin') return row;
-
-  const institution = await first<{ id?: string }>(
-    db,
-    'SELECT id FROM Institution ORDER BY createdAt ASC LIMIT 1'
-  );
-  if (!institution?.id) return row;
-
-  const now = new Date().toISOString();
-  await run(
-    db,
-    'UPDATE AccessUser SET institutionId = ?, updatedAt = ? WHERE id = ?',
-    [institution.id, now, row.id]
-  );
-
-  return {
-    ...row,
-    institutionId: institution.id,
-    updatedAt: now
-  };
 }
 
 export async function authenticateRequest(request: Request): Promise<AuthenticatedUser> {
@@ -326,8 +295,6 @@ export async function authenticateRequest(request: Request): Promise<Authenticat
     );
   }
 
-  row = await bindAdminToPrimaryInstitution(db, row);
-
   const now = new Date().toISOString();
   await run(
     db,
@@ -339,6 +306,97 @@ export async function authenticateRequest(request: Request): Promise<Authenticat
     ...row,
     lastAuthenticatedAt: now
   });
+}
+
+export async function bindBootstrapAdminToInstitution(
+  user: AuthenticatedUser,
+  institutionId: string
+): Promise<AuthenticatedUser> {
+  if (user.role !== 'Admin') {
+    throw new AuthorizationError(
+      403,
+      'ROLE_NOT_AUTHORIZED',
+      'Only an administrator can bind the initial institution.'
+    );
+  }
+
+  if (!institutionId.trim()) {
+    throw new AuthorizationError(
+      400,
+      'INSTITUTION_ID_REQUIRED',
+      'A valid institution identifier is required.'
+    );
+  }
+
+  if (user.institutionId) {
+    if (user.institutionId !== institutionId) {
+      throw new AuthorizationError(
+        403,
+        'CROSS_TENANT_BIND_BLOCKED',
+        'An administrator already bound to an institution cannot be rebound.'
+      );
+    }
+    return user;
+  }
+
+  const { db } = await getAuthEnvironment();
+  await ensureAuthSchema(db);
+
+  const target = await first<{ id?: string }>(
+    db,
+    'SELECT id FROM Institution WHERE id = ? LIMIT 1',
+    [institutionId]
+  );
+  if (!target?.id) {
+    throw new AuthorizationError(
+      404,
+      'INSTITUTION_NOT_FOUND',
+      'The institution selected for binding does not exist.'
+    );
+  }
+
+  const current = await first<AccessUserRow>(
+    db,
+    'SELECT * FROM AccessUser WHERE id = ? LIMIT 1',
+    [user.id]
+  );
+  if (!current || current.role !== 'Admin' || !Number(current.active)) {
+    throw new AuthorizationError(
+      403,
+      'BOOTSTRAP_ADMIN_INVALID',
+      'The bootstrap administrator account is not valid for institution binding.'
+    );
+  }
+
+  if (current.institutionId && current.institutionId !== institutionId) {
+    throw new AuthorizationError(
+      403,
+      'CROSS_TENANT_BIND_BLOCKED',
+      'An administrator already bound to an institution cannot be rebound.'
+    );
+  }
+
+  const now = new Date().toISOString();
+  await run(
+    db,
+    'UPDATE AccessUser SET institutionId = ?, updatedAt = ? WHERE id = ? AND institutionId IS NULL',
+    [institutionId, now, user.id]
+  );
+
+  const updated = await first<AccessUserRow>(
+    db,
+    'SELECT * FROM AccessUser WHERE id = ? LIMIT 1',
+    [user.id]
+  );
+  if (!updated || updated.institutionId !== institutionId) {
+    throw new AuthorizationError(
+      409,
+      'INSTITUTION_BIND_FAILED',
+      'The administrator could not be bound to the institution.'
+    );
+  }
+
+  return mapUser(updated);
 }
 
 export async function requireRoles(
@@ -380,15 +438,16 @@ export async function listProvisionedUsers(request: Request) {
         `SELECT id, institutionId, email, name, role, department, active,
                 createdAt, updatedAt, lastAuthenticatedAt
            FROM AccessUser
-          WHERE institutionId = ? OR institutionId IS NULL
+          WHERE institutionId = ?
           ORDER BY name ASC, email ASC`
       ).bind(admin.institutionId)
     : db.prepare(
         `SELECT id, institutionId, email, name, role, department, active,
                 createdAt, updatedAt, lastAuthenticatedAt
            FROM AccessUser
+          WHERE id = ?
           ORDER BY name ASC, email ASC`
-      );
+      ).bind(admin.id);
 
   const result = await statement.all<Record<string, unknown>>();
   return result.results || [];
@@ -490,11 +549,12 @@ export async function updateProvisionedUser(
     throw new AuthorizationError(404, 'USER_NOT_FOUND', 'Total ARC user was not found.');
   }
 
-  if (
-    admin.institutionId &&
-    existing.institutionId &&
-    admin.institutionId !== existing.institutionId
-  ) {
+  const canManage =
+    admin.institutionId
+      ? existing.institutionId === admin.institutionId
+      : existing.id === admin.id && existing.institutionId === null;
+
+  if (!canManage) {
     throw new AuthorizationError(
       403,
       'CROSS_TENANT_USER_UPDATE',
