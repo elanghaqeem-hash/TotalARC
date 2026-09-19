@@ -33,6 +33,8 @@ jobs:
               .database == "cloudflare-d1" and
               .mutationPerformed == false and
               (.counts.institutions | type) == "number" and
+              (.counts.processCategories | type) == "number" and
+              .referenceDataReady == true and
               (.counts.processes | type) == "number" and
               (.counts.risks | type) == "number" and
               (.counts.controls | type) == "number"
@@ -44,6 +46,7 @@ jobs:
                 persistent,
                 mutationPerformed,
                 counts,
+                referenceDataReady,
                 latestAuditTimestamp
               }'
               exit 0
