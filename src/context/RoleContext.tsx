@@ -1,68 +1,78 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
-export type UserRole = 'Admin' | 'ProcessOwner' | 'ControlOwner' | 'Tester' | 'Reviewer' | 'Executive';
+export type UserRole =
+  | 'Admin'
+  | 'ProcessOwner'
+  | 'ControlOwner'
+  | 'Tester'
+  | 'Reviewer'
+  | 'Executive'
+  | 'Auditor';
 
 export interface UserProfile {
   id: string;
+  institutionId: string;
+  institutionName: string;
   name: string;
-  role: UserRole;
-  roleTitle: string;
   email: string;
-  department: string;
+  role: UserRole | string;
+  department: string | null;
+  mustChangePassword: boolean;
 }
 
-const titles: Record<UserRole, string> = {
-  Admin: 'Administrator View',
-  ProcessOwner: 'Process Owner View',
-  ControlOwner: 'Control Owner View',
-  Tester: 'Independent Tester View',
-  Reviewer: 'Reviewer View',
-  Executive: 'Executive View'
-};
-
-export const USERS = Object.fromEntries(
-  (Object.keys(titles) as UserRole[]).map((role) => [
-    role,
-    {
-      id: `role-${role.toLowerCase()}`,
-      name: 'No authenticated user',
-      role,
-      roleTitle: titles[role],
-      email: '',
-      department: ''
-    }
-  ])
-) as Record<UserRole, UserProfile>;
-
 interface RoleContextType {
-  currentUser: UserProfile;
-  setRole: (role: UserRole) => void;
+  currentUser: UserProfile | null;
   institutionName: string;
+  loadingUser: boolean;
+  refreshUser: () => Promise<void>;
   setInstitutionName: (name: string) => void;
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [currentRole, setCurrentRole] = useState<UserRole>('Admin');
-  const [institutionName, setInstitutionName] = useState('No institution registered');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [localInstitutionName, setLocalInstitutionName] = useState('');
+
+  const refreshUser = async () => {
+    setLoadingUser(true);
+    try {
+      const res = await fetch('/api/auth/me', { cache: 'no-store' });
+      if (!res.ok) {
+        setCurrentUser(null);
+        setLocalInstitutionName('');
+        return;
+      }
+      const data = await res.json();
+      setCurrentUser(data.user || null);
+      setLocalInstitutionName(data.user?.institutionName || '');
+    } catch {
+      setCurrentUser(null);
+      setLocalInstitutionName('');
+    } finally {
+      setLoadingUser(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/assurance')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Unable to load institution')))
-      .then((data) => setInstitutionName(data.institution?.name || 'No institution registered'))
-      .catch(() => setInstitutionName('No institution registered'));
+    void refreshUser();
   }, []);
 
-  return (
-    <RoleContext.Provider
-      value={{ currentUser: USERS[currentRole], setRole: setCurrentRole, institutionName, setInstitutionName }}
-    >
-      {children}
-    </RoleContext.Provider>
+  const value = useMemo(
+    () => ({
+      currentUser,
+      institutionName: localInstitutionName || currentUser?.institutionName || '',
+      loadingUser,
+      refreshUser,
+      setInstitutionName: setLocalInstitutionName
+    }),
+    [currentUser, localInstitutionName, loadingUser]
   );
+
+  return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
 }
 
 export function useRole() {

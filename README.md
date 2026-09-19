@@ -1,102 +1,197 @@
-# Total ARC (Total Assurance, Risk & Control)
+# Total ARC — Total Assurance, Risk & Control
 
-Enterprise Governance, Risk, and Compliance (GRC), Internal Control over Financial Reporting (ICOFR), and Continuous Control Monitoring (CCM) Command Center.
+Total ARC is a multi-tenant enterprise platform for Business Process Management, Risk & Control Matrix (RCM), RCSA/CSA, ICOFR, Test of Design (ToD), Test of Operating Effectiveness (ToE), remediation, Management Action Plans (MAP), retesting, Continuous Control Monitoring (CCM), certification, attestation, tasks, reporting, and auditable governance workflows.
 
-## Overview
+The production-hardening branch is designed around **real PostgreSQL persistence, authenticated tenant isolation, evidence-based assurance conclusions, immutable audit events, and fail-closed behavior when an external integration is not configured**.
 
-**Total ARC** is an enterprise platform for the end-to-end lifecycle of risk assessment, control design and operating-effectiveness testing, deficiency management, remediation, continuous monitoring, and executive attestation.
+## Current architecture
 
-## Data integrity principle
+- **Framework:** Next.js 15.5.25 Maintenance LTS (Cloudflare/OpenNext-compatible App Router)
+- **UI:** React 19.2.8, TypeScript, Tailwind CSS, Lucide
+- **Database:** PostgreSQL
+- **Cloud deployment adapter:** OpenNext for Cloudflare 1.20.6 + Wrangler
+- **ORM:** Prisma 6.19.3 with Rust-free `engineType="client"` and `@prisma/adapter-pg` for Cloudflare Workers
+- **Authentication:** signed HttpOnly session cookie, password hashing with scrypt, account lockout, session-version invalidation
+- **Authorization:** server-side role checks plus institution/tenant scoping on protected APIs
+- **Security controls:** same-origin mutation checks, CSP/security headers, audit logging, dependency audit, CSV formula-injection protection, tenant-isolation CI testing
+- **AI:** governed multi-provider gateway (Cloudflare Workers AI, Gemini, Groq, OpenRouter) with sensitivity routing, external redaction, provider provenance, human review, and fail-closed behavior
+- **Seed behavior:** reference/master taxonomy only; no transactional demo process, risk, control, testing, issue, MAP, CCM run, or certification data is seeded
 
-Operational screens must display records persisted in the connected database. Total ARC does not ship with demo institutions, fake users, simulated transactions, fabricated test results, pre-closed issues, or synthetic monitoring outcomes. The optional seed command below loads reference taxonomy only.
+## Functional lifecycle
 
-## Key Features
+Total ARC is intended to preserve a single source of truth across the assurance lifecycle:
 
-- Institution & multi-entity management
-- Business Process Architecture (BPM)
-- Risk Universe & assessment
-- Control Master Library & relational RCM
-- RCSA / CSA
-- Walkthrough, ToD & ToE
-- Deficiency, Root Cause Analysis & MAP
-- Continuous Control Monitoring
-- ICOFR & financial assertions
-- Certification & attestation
-- Governed AI integration points
+`Institution → Organization → BPM → Risk → Control → RCM → RCSA/CSA → ToD → ToE → Exception → Deficiency → RCA → Issue → MAP → Retest → CCM → Certification / Attestation`
 
-## Tech Stack
+Important workflow rules in the hardening branch include:
 
-- Next.js App Router / TypeScript
-- Tailwind CSS
-- Prisma ORM
-- SQLite schema for local development; production persistence must use an explicitly provisioned persistent data service compatible with the deployment architecture
-- OpenNext for Cloudflare
+- Risk and control data are scoped to the authenticated institution.
+- ToD uses **Draft → Submitted → Approved**; only reviewer-approved ToD can affect control health.
+- ToE uses **Planned/In Progress → Completed → Reviewed**; only reviewer-reviewed ToE can affect control health.
+- Control Health is derived from approved ToD, reviewed ToE, open issues, and CCM evidence instead of optimistic defaults.
+- Testing exceptions feed deficiency, root-cause analysis, issue, MAP, retest, and closure workflows.
+- CCM does not generate random populations or simulated failures. Runs record supplied verified execution data.
+- Certification eligibility is constrained by evidence-derived control health.
+- RCSA campaigns use an explicit lifecycle and one current response per campaign/control pair.
 
-## Getting Started
+## Production database setup
+
+Create a PostgreSQL database and configure the required environment variables. Start from:
 
 ```bash
-git clone https://github.com/elanghaqeem-hash/TotalARC.git
-cd TotalARC
-npm install
+cp .env.example .env.local
+```
+
+At minimum configure:
+
+```env
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/totalarc?sslmode=require"
+SESSION_SECRET="replace-with-a-unique-high-entropy-value-at-least-32-characters"
+PLATFORM_ADMIN_EMAILS="admin@example.com"
+```
+
+Do **not** commit real database credentials, session secrets, bootstrap passwords, or AI provider keys.
+
+Install dependencies:
+
+```bash
+npm ci
+```
+
+Validate the Prisma schema and generate the client:
+
+```bash
+npm run prisma:validate
 npm run prisma:generate
-npm run prisma:push
-npm run prisma:seed-reference
+```
+
+For production, apply committed migrations:
+
+```bash
+npm run prisma:migrate
+```
+
+Then seed **reference data only**:
+
+```bash
+npm run db:seed
+```
+
+Create the first administrator only when required:
+
+```bash
+npm run db:bootstrap-admin
+```
+
+The bootstrap command reads the `BOOTSTRAP_*` environment variables. Change the temporary password immediately after first login.
+
+## Development
+
+Run:
+
+```bash
 npm run dev
 ```
 
-The reference seed loads taxonomy only. Register real institutional and operational data through the application or approved integrations.
+Use PostgreSQL in development as well. `prisma db push` is available for disposable development environments only; production deployments should use `prisma migrate deploy`.
 
-## Validation
+## Build and verification
+
+Local checks:
 
 ```bash
-npm run verify:no-dummy
+npm run prisma:validate
+npx tsc --noEmit
 npm run build
+npm run security:audit
 ```
 
-The pull-request workflow blocks known dummy operational-data signatures and verifies the Cloudflare Worker artifact.
+The **Production Readiness** GitHub Actions workflow additionally verifies:
 
+- PostgreSQL service startup
+- Prisma migration deployment and migration status
+- reference-only seed integrity
+- database connectivity
+- zero transactional/demo data immediately after reference seed
+- TypeScript
+- Next.js production build
+- unauthenticated API rejection
+- authenticated two-tenant isolation
+- cross-tenant mutation rejection
+- missing-Origin mutation rejection
+- persistent account-lockout behavior
+- AI fail-closed behavior when no eligible provider is configured
+- idempotent, audited Bank Kalbar institution-master persistence
+- high-severity production dependency audit
 
-## AI Gateway
+A branch should not be treated as release-ready until the latest workflow run passes.
 
-Total ARC includes a server-side multi-provider AI Gateway. API keys are never exposed to client-side code.
+## Environment variables
 
-### Routing policy
+See `.env.example`. Important variables include:
 
-- **Cloudflare Workers AI** processes `confidential` and `restricted` workloads by default.
-- **Google Gemini** is the primary reasoning provider for eligible non-sensitive or sanitized complex analysis.
-- **Groq** handles fast chat, classification, summarization, and lightweight inference.
-- **OpenRouter** is the last-resort free-model fallback.
+- `DATABASE_URL` — PostgreSQL connection string
+- `SESSION_SECRET` — session signing secret
+- `PLATFORM_ADMIN_EMAILS` — allowlist for platform-level institution administration
+- `ALLOWED_ORIGINS` — optional additional trusted browser origins
+- `CLOUDFLARE_AI_MODEL` — Cloudflare Workers AI model used through the Worker `AI` binding
+- `GEMINI_API_KEY` + `GEMINI_MODEL` — optional Gemini provider
+- `GROQ_API_KEY` + `GROQ_MODEL` — optional Groq provider
+- `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` — optional OpenRouter provider
+- `AI_DEFAULT_SENSITIVITY` — default information classification for gateway routing
+- `AI_ALLOW_EXTERNAL_FOR_SENSITIVE` — explicit opt-in required before confidential/restricted data can fall back to an external provider
+- `AI_REDACT_EXTERNAL` — redacts common identifiers/secrets before external calls when enabled
+- `BOOTSTRAP_*` — one-time initial administrator creation
 
-The gateway caps request size, applies timeout and retry logic, fails over on provider/quota errors, redacts common identifiers and secrets before eligible external-provider calls, and logs provider metadata without logging prompts or model output.
+## Data integrity and demo-data policy
 
-Default privacy controls:
+The repository must not ship transactional “showcase” data that can be mistaken for real assurance evidence. Reference taxonomies such as industries, frameworks, regulations, and process categories are permitted. Business processes, risks, controls, assessment results, test samples, deficiencies, issues, MAPs, monitoring runs, certifications, and management attestations must originate from authenticated user activity, approved integrations, or verified imported source data.
+
+## Cloudflare deployment
+
+The application uses the Rust-free Prisma client engine with the PostgreSQL driver adapter so database access can run in the Worker runtime without a native Prisma query-engine binary. Configure `DATABASE_URL` as a Cloudflare secret/environment variable; do not place the production connection string in `wrangler.jsonc`.
+
+The repository includes `open-next.config.ts`, `wrangler.jsonc`, and a dedicated Cloudflare validation workflow. Keep the normal `npm run build` command as the native Next.js production build used by the production-readiness gate. Use `npm run build:cloudflare` to generate the OpenNext Worker artifact, and `npm run deploy:cloudflare` only from an authorized deployment environment with production secrets configured outside Git.
+
+## Deployment notes
+
+Before internet-facing production deployment:
+
+1. Provision a managed PostgreSQL database with encrypted transport, backups, restore testing, and appropriate connection pooling.
+2. Store `DATABASE_URL`, `SESSION_SECRET`, bootstrap credentials, and AI keys in the deployment platform's secret manager.
+3. Run `prisma migrate deploy` before starting the application.
+4. Run `db:seed` only for reference data.
+5. Run `npm run db:ensure-bank-kalbar` when Bank Kalbar must be synchronized into the hardened PostgreSQL institution master, then verify with `npm run db:verify-bank-kalbar`.
+6. Bootstrap the initial administrator, log in, change the temporary password, and remove bootstrap credentials from the environment.
+7. Confirm both Production Readiness and Cloudflare validation workflows are green for the exact commit being deployed.
+8. Configure HTTPS and ensure production security headers are preserved by the reverse proxy/CDN.
+
+## Repository structure
 
 ```text
-AI_DEFAULT_SENSITIVITY=confidential
-AI_ALLOW_EXTERNAL_FOR_SENSITIVE=false
-AI_REDACT_EXTERNAL=true
+prisma/
+  schema.prisma
+  migrations/
+  seed.js
+scripts/
+  bootstrap-admin.mjs
+  verify-database.mjs
+src/
+  app/
+    api/
+    ...
+  components/
+  context/
+  lib/
+.github/
+  workflows/
+    production-readiness.yml
 ```
 
-Under this default, confidential/restricted data is not silently forwarded to Gemini, Groq, or OpenRouter when Workers AI is unavailable.
+## Security reporting
 
-### Provider configuration
+Do not open a public issue containing credentials, database URLs, tokens, personal data, or exploit payloads against a live deployment. Use the repository owner's private security/contact process for sensitive reports.
 
-Cloudflare Workers AI uses the native `AI` binding declared in `wrangler.jsonc`; it does not require a provider API key.
+## License
 
-For local development, copy `.dev.vars.example` to `.dev.vars` and add only the keys you intend to use. For production, configure Gemini, Groq, and OpenRouter keys as Cloudflare runtime secrets/environment variables.
-
-Available variables and model defaults are documented in `.env.example`.
-
-After changing Cloudflare bindings, regenerate environment types if needed:
-
-```bash
-npm run cf-typegen
-```
-
-### Governed AI endpoints
-
-- `GET /api/ai/status` returns provider readiness without exposing secrets.
-- `POST /api/ai/chat` provides the general Total ARC copilot.
-- `POST /api/ai/analyze` performs evidence-based process/control analysis using persisted BPM/RCM context.
-
-The AI layer is advisory only and does not autonomously mutate assurance records.
+ISC License.

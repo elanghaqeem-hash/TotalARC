@@ -1,72 +1,80 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { ApiError, apiError, optionalString, readJson, requireApiUser, requireString } from '@/lib/api';
+import { writeAudit } from '@/lib/audit';
 
-function riskRating(score: number) {
+function rating(score: number) {
   if (score >= 15) return 'Critical';
   if (score >= 10) return 'High';
   if (score >= 5) return 'Medium';
   return 'Low';
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const user = await requireApiUser(request);
     const risks = await prisma.riskMaster.findMany({
-      include: { process: true, activity: true, controls: { include: { control: true } }, issues: true },
+      where: { institutionId: user.institutionId },
+      include: {
+        process: true,
+        activity: true,
+        controls: { include: { control: true } },
+        issues: true
+      },
       orderBy: { riskId: 'asc' }
     });
     return NextResponse.json({ risks });
   } catch (error) {
-    console.error('Failed to fetch risks:', error);
-    return NextResponse.json({ error: 'Failed to fetch risks' }, { status: 500 });
+    return apiError(error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const {
-      riskId, name, description, cause, event, impact, category, processId,
-      ownerName, inherentLikelihood, inherentImpact
-    } = body;
+    const user = await requireApiUser(request, ['Admin','ProcessOwner','Reviewer']);
+    const body = await readJson<Record<string, unknown>>(request);
+    const processId = requireString(body.processId, 'processId', 100);
+    const process = await prisma.businessProcess.findFirst({ where: { id: processId, institutionId: user.institutionId } });
+    if (!process) throw new ApiError(404, 'PROCESS_NOT_FOUND', 'Process not found in your institution');
 
-    const likelihood = Number(inherentLikelihood);
-    const impactValue = Number(inherentImpact);
-    if (
-      !name || !cause || !event || !impact || !category || !processId || !ownerName ||
-      !Number.isInteger(likelihood) || likelihood < 1 || likelihood > 5 ||
-      !Number.isInteger(impactValue) || impactValue < 1 || impactValue > 5
-    ) {
-      return NextResponse.json(
-        { error: 'Complete risk data and a 1-5 inherent likelihood/impact assessment are required.' },
-        { status: 400 }
-      );
+    const name = requireString(body.name, 'name', 250);
+    const cause = optionalString(body.cause, 2000) || '';
+    const event = optionalString(body.event, 2000) || '';
+    const impact = optionalString(body.impact, 2000) || '';
+    const likelihood = Number(body.inherentLikelihood ?? 3);
+    const impactScore = Number(body.inherentImpact ?? 3);
+    if (!Number.isInteger(likelihood) || likelihood < 1 || likelihood > 5 || !Number.isInteger(impactScore) || impactScore < 1 || impactScore > 5) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Risk likelihood and impact must be integers from 1 to 5');
     }
+    const inherentScore = likelihood * impactScore;
 
-    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (!institution) return NextResponse.json({ error: 'Register an institution before creating risks.' }, { status: 409 });
-
-    const score = likelihood * impactValue;
-    const rating = riskRating(score);
     const risk = await prisma.riskMaster.create({
       data: {
-        institutionId: institution.id,
-        riskId: riskId || `RSK-${Date.now().toString(36).toUpperCase()}`,
-        name, description: description || `Due to ${cause}, there is a risk that ${event}, resulting in ${impact}.`, cause, event, impact, category, processId, ownerName,
+        institutionId: user.institutionId,
+        riskId: optionalString(body.riskId, 80) || `RSK-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        name,
+        description: optionalString(body.description, 4000) || [cause, event, impact].filter(Boolean).join(' | '),
+        cause,
+        event,
+        impact,
+        category: optionalString(body.category, 100) || 'Operational',
+        processId,
+        ownerName: optionalString(body.ownerName, 250) || user.name,
         inherentLikelihood: likelihood,
-        inherentImpact: impactValue,
-        inherentScore: score,
-        inherentRating: rating,
+        inherentImpact: impactScore,
+        inherentScore,
+        inherentRating: rating(inherentScore),
         residualLikelihood: likelihood,
-        residualImpact: impactValue,
-        residualScore: score,
-        residualRating: rating,
-        riskTreatment: 'Not Assessed'
+        residualImpact: impactScore,
+        residualScore: inherentScore,
+        residualRating: rating(inherentScore),
+        riskTreatment: 'Reduce'
       }
     });
 
+    await writeAudit(user, request, { action: 'CREATE', entityType: 'Risk', recordId: risk.id, reason: `Registered risk ${risk.riskId}`, newValue: risk });
     return NextResponse.json(risk, { status: 201 });
   } catch (error) {
-    console.error('Failed to create risk:', error);
-    return NextResponse.json({ error: 'Failed to create risk' }, { status: 500 });
+    return apiError(error);
   }
 }

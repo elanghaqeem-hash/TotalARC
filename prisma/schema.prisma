@@ -1,10 +1,11 @@
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "client"
 }
 
 // -------------------------------------------------------------
@@ -32,6 +33,7 @@ model Institution {
   stockExchange       String?
   ticker              String?
   logo                String?
+  industryClassificationId String?
   employeeCount       String?
   revenueRange        String?
   businessModel       String?  // B2B, B2C, etc.
@@ -48,6 +50,16 @@ model Institution {
   campaigns           AssessmentCampaign[]
   issues              Issue[]
   auditLogs           AuditLog[]
+  financialAccounts   FinancialAccount[]
+  ipeRegisters        IPERegister[]
+  attestations        ManagementAttestation[]
+  tasks               Task[]
+  aiSuggestions       AISuggestion[]
+  industryClassification IndustryClassification? @relation(fields: [industryClassificationId], references: [id])
+
+  @@index([industryClassificationId])
+  @@unique([legalName])
+  @@unique([shortName])
 }
 
 model IndustryClassification {
@@ -57,6 +69,9 @@ model IndustryClassification {
   subsector String
   code      String?
   createdAt DateTime @default(now())
+  institutions Institution[]
+
+  @@unique([industry, sector, subsector])
 }
 
 model LegalEntity {
@@ -70,6 +85,8 @@ model LegalEntity {
   institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   orgUnits      OrganizationUnit[]
   processes     BusinessProcess[]
+
+  @@unique([institutionId, code])
 }
 
 model OrganizationUnit {
@@ -90,6 +107,8 @@ model OrganizationUnit {
   parent        OrganizationUnit? @relation("OrgHierarchy", fields: [parentId], references: [id])
   children      OrganizationUnit[] @relation("OrgHierarchy")
   processes     BusinessProcess[]
+
+  @@unique([institutionId, code])
 }
 
 model User {
@@ -99,8 +118,17 @@ model User {
   email         String   @unique
   role          String   // Admin, ProcessOwner, ControlOwner, Tester, Reviewer, Executive, Auditor
   department    String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  active              Boolean  @default(true)
+  passwordHash        String?
+  mustChangePassword Boolean  @default(false)
+  passwordChangedAt   DateTime?
+  failedLoginAttempts Int      @default(0)
+  lockedUntil         DateTime?
+  sessionVersion      Int      @default(1)
+  lastLoginAt         DateTime?
+  lastLoginIp         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   tasksAssigned Task[]      @relation("TaskAssignee")
@@ -108,7 +136,7 @@ model User {
 
 model Framework {
   id          String   @id @default(uuid())
-  code        String   // COSO-IC, ISO-31000, ISO-27001, SOX, COBIT, NIST-CSF
+  code        String   @unique // COSO-IC, ISO-31000, ISO-27001, SOX, COBIT, NIST-CSF
   name        String
   category    String
   description String?
@@ -125,6 +153,8 @@ model Regulation {
   requirement  String?
   frequency    String?  // Monthly, Quarterly, Annual
   createdAt    DateTime @default(now())
+
+  @@unique([regulator, code])
 }
 
 model SystemApplication {
@@ -145,7 +175,7 @@ model SystemApplication {
 // -------------------------------------------------------------
 model ProcessCategory {
   id          String   @id @default(uuid())
-  code        String
+  code        String   @unique
   name        String
   description String?
   orderIndex  Int      @default(0)
@@ -159,8 +189,8 @@ model BusinessProcess {
   legalEntityId   String?
   orgUnitId       String?
   categoryId      String
-  processId       String   // enterprise process identifier
-  name            String   // process name
+  processId       String   // e.g. PRC-P2P-001
+  name            String   // e.g. Procure to Pay
   level           Int      @default(2) // Level 0 to Level 5
   parentProcessId String?
   description     String?
@@ -170,7 +200,7 @@ model BusinessProcess {
   criticality     String   @default("Critical") // Critical, High, Medium, Low
   classification  String   @default("Core")     // Core, Support, Management, Control
   isIcofrRelevant Boolean  @default(false)
-  status          String   @default("Draft") // Draft, Submitted, Under Review, Approved, Published
+  status          String   @default("Approved") // Draft, Submitted, Under Review, Approved, Published
   version         String   @default("1.0")
   effectiveDate   DateTime @default(now())
   reviewDate      DateTime?
@@ -193,6 +223,10 @@ model BusinessProcess {
   todTests        ToDTest[]
   toeTests        ToETest[]
   issues          Issue[]
+  aiSuggestions   AISuggestion[]
+
+  @@index([institutionId, status])
+  @@unique([institutionId, processId])
 }
 
 model ProcessActivity {
@@ -252,7 +286,7 @@ model RiskMaster {
   institutionId   String
   processId       String
   activityId      String?
-  riskId          String   // enterprise risk identifier
+  riskId          String   // e.g. RSK-P2P-001
   name            String
   description     String
   cause           String
@@ -262,17 +296,17 @@ model RiskMaster {
   ownerName       String
   
   // Inherent Risk
-  inherentLikelihood Int   // 1 to 5
-  inherentImpact     Int   // 1 to 5
-  inherentScore      Int   // Likelihood x Impact
-  inherentRating     String // Low, Medium, High, Critical
+  inherentLikelihood Int   @default(3) // 1 to 5
+  inherentImpact     Int   @default(4) // 1 to 5
+  inherentScore      Int   @default(12) // Likelihood x Impact
+  inherentRating     String @default("High") // Low, Medium, High, Critical
 
   // Residual Risk
-  residualLikelihood Int
-  residualImpact     Int
-  residualScore      Int
-  residualRating     String // Low, Medium, High, Critical
-  riskTreatment      String @default("Not Assessed") // Accept, Reduce, Avoid, Transfer, Not Assessed
+  residualLikelihood Int   @default(2)
+  residualImpact     Int   @default(3)
+  residualScore      Int   @default(6)
+  residualRating     String @default("Medium") // Low, Medium, High, Critical
+  riskTreatment      String @default("Reduce") // Accept, Reduce, Avoid, Transfer
 
   status          String   @default("Active")
   version         String   @default("1.0")
@@ -287,6 +321,9 @@ model RiskMaster {
   toeTests        ToETest[]
   issues          Issue[]
   riskAcceptances RiskAcceptance[]
+
+  @@index([institutionId, status])
+  @@unique([institutionId, riskId])
 }
 
 // -------------------------------------------------------------
@@ -297,7 +334,7 @@ model ControlMaster {
   institutionId      String
   processId          String
   activityId         String?
-  controlId          String   // enterprise control identifier
+  controlId          String   // e.g. CTRL-P2P-001
   name               String
   description        String
   objective          String
@@ -335,6 +372,9 @@ model ControlMaster {
   issues             Issue[]
   monitoringRules    MonitoringRule[]
   certifications     ControlCertification[]
+
+  @@index([institutionId, status])
+  @@unique([institutionId, controlId])
 }
 
 model ControlRiskMapping {
@@ -380,13 +420,15 @@ model CSAResponse {
   exceptionCount  Int      @default(0)
   processChanged  Boolean  @default(false)
   controlChanged  Boolean  @default(false)
-  csaConclusion   String   @default("Not Performed") // Effective, Partially Effective, Ineffective, Not Performed
+  csaConclusion   String   @default("Not Assessed") // Effective, Partially Effective, Ineffective, Not Performed
   assessorNotes   String?
   assessorName    String
   assessedAt      DateTime @default(now())
 
   campaign        AssessmentCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   control         ControlMaster      @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, controlId])
 }
 
 // -------------------------------------------------------------
@@ -394,24 +436,29 @@ model CSAResponse {
 // -------------------------------------------------------------
 model FinancialAccount {
   id             String   @id @default(uuid())
+  institutionId  String
   accountCode    String
   accountName    String
   financialStatement String // Balance Sheet, Income Statement, Cash Flow
   balanceAmount  Float    @default(0)
   isSignificant  Boolean  @default(false)
   scopingRationale String?
-  fraudExposure  String   @default("Not Assessed") // High, Medium, Low, Not Assessed
-  complexity     String   @default("Not Assessed")
+  fraudExposure  String   @default("Low") // High, Medium, Low
+  complexity     String   @default("Medium")
   createdAt      DateTime @default(now())
 
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   assertions     AccountAssertionMapping[]
+
+  @@index([institutionId])
+  @@unique([institutionId, accountCode])
 }
 
 model AccountAssertionMapping {
   id         String   @id @default(uuid())
   accountId  String
   assertion  String   // Existence, Completeness, Valuation, Rights & Obligations, Presentation
-  isInScope  Boolean  @default(false)
+  isInScope  Boolean  @default(true)
   createdAt  DateTime @default(now())
 
   account    FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -419,6 +466,7 @@ model AccountAssertionMapping {
 
 model IPERegister {
   id            String   @id @default(uuid())
+  institutionId String
   reportName    String
   systemSource  String
   reportOwner   String
@@ -428,6 +476,11 @@ model IPERegister {
   accuracyTested     Boolean @default(false)
   evidenceDoc   String?
   createdAt     DateTime @default(now())
+
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId])
+  @@unique([institutionId, reportName])
 }
 
 // -------------------------------------------------------------
@@ -442,13 +495,13 @@ model Walkthrough {
   systemsInspected String?
   observations String?
   processChanged Boolean @default(false)
-  conclusion   String   @default("Not Assessed")
+  conclusion   String   @default("Pending Review")
   createdAt    DateTime @default(now())
 }
 
 model ToDTest {
   id               String   @id @default(uuid())
-  testId           String   // ToD test identifier
+  testId           String   // e.g. TOD-P2P-001
   controlId        String
   processId        String
   riskId           String?
@@ -462,18 +515,20 @@ model ToDTest {
   segregationDuties Boolean @default(false)
   evidenceSufficiency Boolean @default(false)
   observations     String?
-  conclusion       String   @default("Not Assessed") // Effective Design, Partially Effective Design, Ineffective Design, Not Assessed
+  conclusion       String   @default("Not Assessed") // Effective Design, Partially Effective Design, Ineffective Design
   status           String   @default("Draft") // Draft, Submitted, Approved
   testedAt         DateTime @default(now())
 
   control          ControlMaster   @relation(fields: [controlId], references: [id], onDelete: Cascade)
   process          BusinessProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
   risk             RiskMaster?     @relation(fields: [riskId], references: [id])
+
+  @@unique([controlId, testId])
 }
 
 model ToETest {
   id               String   @id @default(uuid())
-  testId           String   // ToE test identifier
+  testId           String   // e.g. TOE-P2P-001
   controlId        String
   processId        String
   riskId           String?
@@ -481,12 +536,12 @@ model ToETest {
   reviewerName     String?
   period           String
   populationSize   Int      @default(0)
-  populationSource String   @default("Not Provided")
-  samplingMethod   String   @default("Not Selected") // Random, Systematic, Judgmental, Risk-Based, Not Selected
+  populationSource String
+  samplingMethod   String   @default("Not Defined") // Random, Systematic, Judgmental, Risk-Based
   sampleSize       Int      @default(0)
   passCount        Int      @default(0)
   failCount        Int      @default(0)
-  testerConclusion String   @default("Not Assessed") // Effective, Effective with Minor Exception, Partially Effective, Ineffective, Not Assessed
+  testerConclusion String   @default("Not Assessed") // Effective, Effective with Minor Exception, Partially Effective, Ineffective
   finalConclusion  String   @default("Not Assessed")
   status           String   @default("Planned") // Planned, In Progress, Completed, Reviewed
   notes            String?
@@ -497,17 +552,19 @@ model ToETest {
   risk             RiskMaster?     @relation(fields: [riskId], references: [id])
   samples          TestSample[]
   exceptions       TestingException[]
+
+  @@unique([controlId, testId])
 }
 
 model TestSample {
   id             String   @id @default(uuid())
   toeTestId      String
   sampleNumber   Int
-  transactionRef String   // source transaction reference
+  transactionRef String   // e.g. TRX-2026-0891
   transactionDate DateTime
   amount         Float?
   attributesTested String? // JSON or text: Approval verified, amount verified, etc.
-  result         String   @default("Not Tested") // Pass, Fail, N/A, Not Tested
+  result         String   @default("Not Tested") // Pass, Fail, N/A
   failureReason  String?
   evidenceRef    String?
 
@@ -518,7 +575,7 @@ model TestingException {
   id             String   @id @default(uuid())
   toeTestId      String
   exceptionNumber String  // EXP-001
-  sampleRef      String   // tested sample reference
+  sampleRef      String   // TRX-2026-0891
   description    String
   severity       String   @default("High") // High, Medium, Low
   status         String   @default("Confirmed Exception") // Open, Under Review, Confirmed Exception, False Positive, Resolved
@@ -534,7 +591,7 @@ model TestingException {
 model ControlDeficiency {
   id             String   @id @default(uuid())
   exceptionId    String?
-  deficiencyId   String   // deficiency identifier
+  deficiencyId   String   // DEF-2026-001
   title          String
   description    String
   classification String   @default("Control Deficiency") // Observation, Control Deficiency, Significant Deficiency, Material Weakness
@@ -569,7 +626,7 @@ model RootCauseAnalysis {
 model Issue {
   id             String   @id @default(uuid())
   institutionId  String
-  issueId        String   // issue identifier
+  issueId        String   // ISS-2026-001
   source         String   @default("TOE") // CSA, RCSA, TOD, TOE, CCM, Internal Audit
   processId      String
   riskId         String?
@@ -594,7 +651,7 @@ model Issue {
 
 model ManagementActionPlan {
   id               String   @id @default(uuid())
-  mapId            String   // management action plan identifier
+  mapId            String   // MAP-2026-001
   issueId          String
   agreedAction     String
   recommendation   String?
@@ -613,6 +670,8 @@ model ManagementActionPlan {
   issue            Issue         @relation(fields: [issueId], references: [id], onDelete: Cascade)
   milestones       MAPMilestone[]
   retests          RetestRecord[]
+
+  @@unique([issueId, mapId])
 }
 
 model MAPMilestone {
@@ -632,13 +691,13 @@ model MAPMilestone {
 model RetestRecord {
   id               String   @id @default(uuid())
   mapId            String
-  retestId         String   // retest identifier
+  retestId         String   // RET-2026-001
   sampleCount      Int      @default(0)
   passedCount      Int      @default(0)
   failedCount      Int      @default(0)
   testerName       String
   reviewerName     String
-  result           String   @default("Not Assessed") // Passed, Partially Passed, Failed, Not Assessed
+  result           String   @default("Not Assessed") // Passed, Partially Passed, Failed
   conclusionNotes  String?
   retestedAt       DateTime @default(now())
 
@@ -660,11 +719,13 @@ model MonitoringRule {
   threshold        String   @default("0 Transactions")
   status           String   @default("Active") // Active, Paused
   lastRunDate      DateTime?
-  lastStatus       String   @default("Not Run") // Healthy, Exception Detected, Failed, Not Run
+  lastStatus       String   @default("Not Run") // Healthy, Exception Detected, Failed
   createdAt        DateTime @default(now())
 
   control          ControlMaster   @relation(fields: [controlId], references: [id], onDelete: Cascade)
   runs             MonitoringRun[]
+
+  @@unique([controlId, ruleId])
 }
 
 model MonitoringRun {
@@ -673,7 +734,7 @@ model MonitoringRun {
   runTimestamp     DateTime @default(now())
   populationChecked Int     @default(0)
   exceptionsFound  Int      @default(0)
-  status           String   @default("Healthy") // Healthy, Exception Detected, Failed
+  status           String   @default("Not Run") // Healthy, Exception Detected, Failed
   details          String?
 
   rule             MonitoringRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
@@ -696,14 +757,16 @@ model CCMException {
 model ControlCertification {
   id              String   @id @default(uuid())
   controlId       String
-  period          String   // reporting period
+  period          String   // 2026-Annual
   declarationText String
   certifierName   String
   certifierRole   String   // Control Owner
-  status          String   @default("Pending") // Pending, Certified, Certified with Exception, Not Certified
+  status          String   @default("Draft") // Certified, Certified with Exception, Not Certified
   certifiedAt     DateTime @default(now())
 
   control         ControlMaster @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, period])
 }
 
 model ManagementAttestation {
@@ -716,7 +779,14 @@ model ManagementAttestation {
   croSignOff      Boolean  @default(false)
   croName         String?
   overallOpinion  String?
-  attestedAt      DateTime @default(now())
+  attestedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId])
+  @@unique([institutionId, period])
 }
 
 model RiskAcceptance {
@@ -734,6 +804,7 @@ model RiskAcceptance {
 
 model Task {
   id              String   @id @default(uuid())
+  institutionId   String
   userId          String?
   title           String
   type            String   // CSA, TOD, TOE, Review, MAP, Retest, Certification
@@ -743,13 +814,47 @@ model Task {
   entityRef       String?  // Control ID, Test ID, etc.
   link            String?
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   user            User?    @relation("TaskAssignee", fields: [userId], references: [id])
+
+  @@index([institutionId, status])
+  @@index([userId, status])
+}
+
+model AISuggestion {
+  id               String   @id @default(uuid())
+  institutionId    String
+  processId         String
+  mode              String
+  category          String
+  description       String
+  recommendation   String?
+  suggestedRisk    String?
+  suggestedControl String?
+  provider          String?
+  model             String
+  requestId         String?
+  redactions        Int      @default(0)
+  fallbackUsed      Boolean  @default(false)
+  status            String   @default("Pending Review")
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  process          BusinessProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, status])
+  @@index([processId])
+  @@index([requestId])
 }
 
 model AuditLog {
   id            String   @id @default(uuid())
   institutionId String?
+  userId        String?
   userName      String
   userRole      String
   action        String   // CREATE, UPDATE, APPROVE, RETEST, CLOSE, EXPORT
@@ -759,6 +864,8 @@ model AuditLog {
   newValue      String?
   reason        String?
   ipAddress     String?
+  userAgent     String?
+  correlationId String?
   timestamp     DateTime @default(now())
 
   institution   Institution? @relation(fields: [institutionId], references: [id], onDelete: Cascade)

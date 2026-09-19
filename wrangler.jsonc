@@ -1,31 +1,21 @@
-// TotalARC Cloudflare Workers deployment configuration.
+// Total ARC Cloudflare Workers deployment configuration.
+// Production secrets such as DATABASE_URL and SESSION_SECRET must be configured
+// with Cloudflare secrets/environment settings and never committed here.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "totalarc",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-09-18",
   "compatibility_flags": [
-    "nodejs_compat",
-    "global_fetch_strictly_public"
+    "nodejs_compat"
   ],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
-  "services": [
-    {
-      "binding": "WORKER_SELF_REFERENCE",
-      "service": "totalarc"
-    }
-  ],
   "ai": {
     "binding": "AI"
   },
-  "d1_databases": [
-    {
-      "binding": "DB"
-    }
-  ],
   "observability": {
     "enabled": true
   },

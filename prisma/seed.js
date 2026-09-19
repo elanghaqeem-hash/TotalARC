@@ -1,72 +1,85 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+import { createPrismaClient } from '../scripts/prisma-client.mjs';
 
-// Reference taxonomy only. This script must never create institutions,
-// users, transactions, test results, findings, remediation records, or
-// monitoring results.
+const prisma = createPrismaClient();
+
 const industries = [
-  ['Technology','IT Services','Digital Transformation & Managed Services'],
-  ['Technology','Software','SaaS & Cloud Platforms'],
-  ['Technology','Cybersecurity','Information Security Services'],
-  ['Financial Services','Commercial Banking','Corporate & Retail Banking'],
-  ['Financial Services','Insurance','Life & General Insurance'],
-  ['Financial Services','Fintech','Payment Gateway & E-Wallet'],
-  ['Energy','Power Generation','Renewable Energy'],
-  ['Energy','Oil & Gas','Upstream, Midstream & Downstream'],
-  ['Mining','Mineral Processing','Mining & Smelting'],
-  ['Manufacturing','Industrial Manufacturing','Discrete & Process Manufacturing'],
-  ['Telecommunications','Telecom Operator','Mobile, Fixed & Fiber'],
-  ['Transportation & Logistics','Supply Chain','Freight, Port & Warehousing'],
-  ['Healthcare','Healthcare Provider','Hospital & Diagnostics'],
-  ['Retail & Consumer','Retail','Omnichannel & E-Commerce'],
-  ['Property & Construction','Construction & Property','Infrastructure & Real Estate'],
-  ['Government & Public Sector','Government Agency','Public Administration'],
-  ['Professional Services','Consulting','Audit, Advisory & Professional Services']
-];
-
-const frameworks = [
-  ['COSO-IC','COSO Internal Control - Integrated Framework','Internal Control','Applicable'],
-  ['COSO-ERM','COSO Enterprise Risk Management','Risk Management','Applicable'],
-  ['ISO-31000','ISO 31000:2018 Risk Management Guidelines','Risk Management','Applicable'],
-  ['ISO-27001','ISO/IEC 27001:2022 Information Security','Cybersecurity','Applicable'],
-  ['SOX-404','Sarbanes-Oxley Section 404 (ICOFR)','Financial Reporting','Reference'],
-  ['COBIT-2019','COBIT 2019 Framework for IT Governance','IT Governance','Reference'],
-  ['NIST-CSF','NIST Cybersecurity Framework 2.0','Cybersecurity','Reference']
+  ['Financial Services','Banking','Commercial & Retail Banking'],
+  ['Financial Services','Banking','Islamic Banking'],
+  ['Financial Services','Capital Markets','Securities & Brokerage'],
+  ['Financial Services','Insurance','Life Insurance'],
+  ['Financial Services','Insurance','General Insurance'],
+  ['Financial Services','Fintech','Payments & Digital Finance'],
+  ['Technology','IT Services','Software & Managed Services'],
+  ['Technology','Telecommunications','Telecommunications'],
+  ['Energy & Resources','Oil & Gas','Upstream Oil & Gas'],
+  ['Energy & Resources','Oil & Gas','Midstream & Downstream'],
+  ['Energy & Resources','Mining','Minerals & Mining'],
+  ['Energy & Resources','Utilities','Electricity & Utilities'],
+  ['Industrial','Manufacturing','General Manufacturing'],
+  ['Industrial','Automotive','Automotive & Components'],
+  ['Consumer','Retail','Retail & E-Commerce'],
+  ['Consumer','Food & Beverage','Food & Beverage'],
+  ['Healthcare','Healthcare Providers','Hospitals & Clinical Services'],
+  ['Healthcare','Pharmaceuticals','Pharmaceuticals'],
+  ['Transportation & Logistics','Logistics','Logistics & Warehousing'],
+  ['Transportation & Logistics','Maritime','Ports & Maritime'],
+  ['Infrastructure','Construction','Engineering & Construction'],
+  ['Real Estate','Property','Property & Real Estate'],
+  ['Public Sector','Government','Government & Public Administration'],
+  ['Education','Education Services','Schools & Higher Education'],
+  ['Professional Services','Advisory','Consulting & Professional Services']
 ];
 
 const processCategories = [
-  ['CAT-GOV','Governance & Strategy',1],
-  ['CAT-CORE','Core Business Operations',2],
-  ['CAT-FIN','Finance & Treasury',3],
-  ['CAT-IT','Information Technology & Cyber',4],
-  ['CAT-PROC','Procurement & Vendor Management',5],
-  ['CAT-HR','Human Resources & People',6]
+  ['GOV','Governance & Strategy','Enterprise governance, strategy and oversight',10],
+  ['CORE','Core Operations','Primary value-delivery and operational processes',20],
+  ['FIN','Finance & Accounting','Finance, accounting, treasury and financial reporting',30],
+  ['RISK','Risk, Compliance & Assurance','Risk management, compliance, control and assurance',40],
+  ['HR','People & Human Resources','Workforce and human-capital processes',50],
+  ['IT','Technology & Cybersecurity','Technology, data and cybersecurity processes',60],
+  ['PROC','Procurement & Third Party','Sourcing, procurement and third-party processes',70],
+  ['LEGAL','Legal & Corporate Affairs','Legal, corporate secretariat and related processes',80],
+  ['SALES','Commercial & Customer','Sales, marketing, product and customer processes',90],
+  ['SUPPORT','Corporate Support','Facilities, administration and other support processes',100]
+];
+
+const frameworks = [
+  ['COSO-IC','COSO Internal Control — Integrated Framework','Internal Control'],
+  ['COSO-ERM','COSO Enterprise Risk Management','Enterprise Risk'],
+  ['ISO-31000','ISO 31000 Risk Management','Risk Management'],
+  ['ISO-27001','ISO/IEC 27001 Information Security Management','Cybersecurity'],
+  ['ISO-22301','ISO 22301 Business Continuity Management','Resilience'],
+  ['COBIT-2019','COBIT 2019','IT Governance'],
+  ['NIST-CSF-2','NIST Cybersecurity Framework 2.0','Cybersecurity'],
+  ['SOX-404','Sarbanes-Oxley Section 404','Financial Reporting']
 ];
 
 async function main() {
   for (const [industry, sector, subsector] of industries) {
-    const exists = await prisma.industryClassification.findFirst({ where: { industry, sector, subsector } });
-    if (!exists) await prisma.industryClassification.create({ data: { industry, sector, subsector } });
+    await prisma.industryClassification.upsert({
+      where: { industry_sector_subsector: { industry, sector, subsector } },
+      update: {},
+      create: { industry, sector, subsector }
+    });
   }
 
-  for (const [code, name, category, applicability] of frameworks) {
-    const exists = await prisma.framework.findFirst({ where: { code } });
-    if (!exists) await prisma.framework.create({ data: { code, name, category, applicability } });
+  for (const [code, name, description, orderIndex] of processCategories) {
+    await prisma.processCategory.upsert({
+      where: { code },
+      update: { name, description, orderIndex },
+      create: { code, name, description, orderIndex }
+    });
   }
 
-  for (const [code, name, orderIndex] of processCategories) {
-    const exists = await prisma.processCategory.findFirst({ where: { code } });
-    if (!exists) await prisma.processCategory.create({ data: { code, name, orderIndex } });
+  for (const [code, name, category] of frameworks) {
+    await prisma.framework.upsert({
+      where: { code },
+      update: { name, category },
+      create: { code, name, category, applicability: 'Reference' }
+    });
   }
 
-  console.log('Reference taxonomy ready. No operational/demo records were created.');
+  console.log('Reference data seeded. No demo institutions, users, tests, issues or transactions were created.');
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().finally(() => prisma.$disconnect());

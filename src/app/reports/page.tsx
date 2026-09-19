@@ -1,31 +1,20 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
-import { Download } from 'lucide-react';
-import { useAssuranceData } from '@/hooks/useAssuranceData';
+import React,{useState} from 'react';
+import { Download, FileSpreadsheet } from 'lucide-react';
+import { csvCell } from '@/lib/utils';
 
-export default function ReportsPage() {
-  const { data, loading, error } = useAssuranceData();
+function downloadCsv(name:string, rows:any[]) {
+  if(!rows.length) return false;
+  const keys=Array.from(new Set(rows.flatMap(r=>Object.keys(r).filter(k=>typeof r[k]!=='object'))));
+  const csv=[keys.map(csvCell).join(','),...rows.map(r=>keys.map(k=>csvCell(r[k])).join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);return true;
+}
 
-  const sources = data ? [
-    { title: 'ToE workpapers', count: data.toeTests?.length || 0, href: '/toe' },
-    { title: 'Issues & remediation', count: data.actionPlans?.length || 0, href: '/remediation' },
-    { title: 'Control certifications', count: data.certifications?.length || 0, href: '/certification' },
-    { title: 'Management attestations', count: data.attestations?.length || 0, href: '/certification' },
-    { title: 'RCSA / CSA campaigns', count: data.campaigns?.length || 0, href: '/rcsa' },
-    { title: 'ICOFR financial accounts', count: data.financialAccounts?.length || 0, href: '/icofr' }
-  ] : [];
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm"><div className="flex items-center gap-2 text-xs font-bold text-emerald-600 uppercase"><Download className="w-4 h-4" />Workpapers & Export</div><h1 className="text-2xl font-black text-slate-900 mt-1">Report Source Center</h1><p className="text-xs text-slate-500 mt-1">Available report sources reflect records currently stored in the database.</p></div>
-      {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
-      {loading ? <div className="text-xs text-slate-500">Loading…</div> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {sources.map((source) => <Link key={source.title} href={source.href} className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-brand-300"><div className="text-sm font-bold text-slate-900">{source.title}</div><div className="text-2xl font-black text-brand-600 mt-2">{source.count}</div><div className="text-[11px] text-slate-500">persisted record(s)</div></Link>)}
-        </div>
-      )}
-    </div>
-  );
+export default function ReportsPage(){
+ const[message,setMessage]=useState('');
+ const exportEndpoint=async(label:string,url:string,key:string)=>{setMessage('');try{const r=await fetch(url,{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to export');const rows=d[key]||[];if(!downloadCsv(`TotalARC_${label}_${new Date().toISOString().slice(0,10)}.csv`,rows))setMessage(`No ${label} data is available to export.`);}catch(e){setMessage(e instanceof Error?e.message:'Export failed');}};
+ const items=[['RCM','/api/rcm','rcm'],['Risks','/api/risks','risks'],['Controls','/api/controls','controls'],['Processes','/api/processes','processes']];
+ return <div className="space-y-6"><div><h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-brand-600"/>Workpapers & Export Center</h1><p className="text-xs text-slate-500 mt-1">Exports are generated from current tenant database records. Empty datasets produce no fabricated report.</p></div>{message&&<div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">{message}</div>}<div className="grid md:grid-cols-2 gap-4">{items.map(([label,url,key])=><article key={label} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><h2 className="text-sm font-bold text-slate-900">{label} Export</h2><p className="text-[11px] text-slate-500 mt-1">CSV generated on demand from authenticated database records.</p><button onClick={()=>exportEndpoint(label,url,key)} className="mt-4 inline-flex items-center gap-2 bg-brand-600 text-white text-xs font-bold px-3 py-2 rounded-lg"><Download className="w-4 h-4"/>Export CSV</button></article>)}</div></div>;
 }

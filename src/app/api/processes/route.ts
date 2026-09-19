@@ -1,69 +1,71 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiError, optionalString, readJson, requireApiUser, requireString } from '@/lib/api';
+import { writeAudit } from '@/lib/audit';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const processes = await prisma.businessProcess.findMany({
-      include: {
-        category: true, orgUnit: true, objectives: true, sipoc: true,
-        activities: { orderBy: { orderIndex: 'asc' } }, risks: true, controls: true
-      },
-      orderBy: { processId: 'asc' }
-    });
-    const categories = await prisma.processCategory.findMany({ orderBy: { orderIndex: 'asc' } });
+    const user = await requireApiUser(request);
+    const [processes, categories] = await Promise.all([
+      prisma.businessProcess.findMany({
+        where: { institutionId: user.institutionId },
+        include: {
+          category: true,
+          orgUnit: true,
+          objectives: true,
+          sipoc: true,
+          activities: { orderBy: { orderIndex: 'asc' } },
+          risks: true,
+          controls: true
+        },
+        orderBy: { processId: 'asc' }
+      }),
+      prisma.processCategory.findMany({ orderBy: { orderIndex: 'asc' } })
+    ]);
     return NextResponse.json({ processes, categories });
   } catch (error) {
-    console.error('Failed to fetch processes:', error);
-    return NextResponse.json({ error: 'Failed to fetch processes' }, { status: 500 });
+    return apiError(error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { name, processId, categoryId, ownerName, criticality, classification, isIcofrRelevant, description } = body;
+    const user = await requireApiUser(request, ['Admin','ProcessOwner','Reviewer']);
+    const body = await readJson<Record<string, unknown>>(request);
+    const name = requireString(body.name, 'name', 250);
+    const categoryId = requireString(body.categoryId, 'categoryId', 100);
+    const ownerName = requireString(body.ownerName || user.name, 'ownerName', 250);
+    const requestedId = optionalString(body.processId, 80);
 
-    if (!name || !categoryId || !ownerName || !criticality || !classification) {
-      return NextResponse.json(
-        { error: 'name, categoryId, ownerName, criticality, and classification are required.' },
-        { status: 400 }
-      );
-    }
-
-    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (!institution) return NextResponse.json({ error: 'Register an institution before creating processes.' }, { status: 409 });
+    const category = await prisma.processCategory.findUnique({ where: { id: categoryId } });
+    if (!category) throw new Error('Process category not found');
 
     const process = await prisma.businessProcess.create({
       data: {
-        institutionId: institution.id,
-        processId: processId || `PRC-${Date.now().toString(36).toUpperCase()}`,
+        institutionId: user.institutionId,
+        processId: requestedId || `PRC-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
         name,
         categoryId,
         ownerName,
-        criticality,
-        classification,
-        isIcofrRelevant: Boolean(isIcofrRelevant),
-        description: description || null,
+        criticality: optionalString(body.criticality, 30) || 'Medium',
+        classification: optionalString(body.classification, 30) || 'Core',
+        isIcofrRelevant: body.isIcofrRelevant === true,
+        description: optionalString(body.description, 4000),
         status: 'Draft',
         version: '1.0'
       }
     });
 
-    await prisma.auditLog.create({
-      data: {
-        institutionId: institution.id,
-        userName: 'System',
-        userRole: 'System',
-        action: 'CREATE',
-        entityType: 'Process',
-        recordId: process.id,
-        reason: 'Business process registered.'
-      }
+    await writeAudit(user, request, {
+      action: 'CREATE',
+      entityType: 'Process',
+      recordId: process.id,
+      reason: `Registered business process ${process.processId}`,
+      newValue: process
     });
 
     return NextResponse.json(process, { status: 201 });
   } catch (error) {
-    console.error('Failed to create process:', error);
-    return NextResponse.json({ error: 'Failed to create process' }, { status: 500 });
+    return apiError(error);
   }
 }

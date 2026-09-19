@@ -33,15 +33,15 @@ const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
     role: 'Private/sensitive inference and low-cost internal processing'
   },
   gemini: {
-    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    model: process.env.GEMINI_MODEL || '',
     role: 'Primary complex reasoning and structured GRC analysis'
   },
   groq: {
-    model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+    model: process.env.GROQ_MODEL || '',
     role: 'Fast inference, classification and assistant responses'
   },
   openrouter: {
-    model: process.env.OPENROUTER_MODEL || 'openrouter/free',
+    model: process.env.OPENROUTER_MODEL || '',
     role: 'Last-resort free-model fallback'
   }
 };
@@ -81,9 +81,9 @@ function getWorkersAiBinding(): WorkersAiBinding | null {
 
 function configured(provider: AiProvider): boolean {
   if (provider === 'cloudflare') return Boolean(getWorkersAiBinding());
-  if (provider === 'gemini') return Boolean(process.env.GEMINI_API_KEY);
-  if (provider === 'groq') return Boolean(process.env.GROQ_API_KEY);
-  if (provider === 'openrouter') return Boolean(process.env.OPENROUTER_API_KEY);
+  if (provider === 'gemini') return Boolean(process.env.GEMINI_API_KEY && PROVIDER_CONFIG.gemini.model);
+  if (provider === 'groq') return Boolean(process.env.GROQ_API_KEY && PROVIDER_CONFIG.groq.model);
+  if (provider === 'openrouter') return Boolean(process.env.OPENROUTER_API_KEY && PROVIDER_CONFIG.openrouter.model);
   return false;
 }
 

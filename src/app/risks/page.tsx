@@ -1,511 +1,119 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import {
-  AlertTriangle,
-  Plus,
-  Search,
-  Filter,
-  ArrowRight,
-  Shield,
-  Layers,
-  Sparkles,
-  CheckCircle2,
-  TrendingDown,
-  X,
-  FileSpreadsheet
-} from 'lucide-react';
-import { getRiskBadgeClasses } from '@/lib/utils';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Plus, Search, Shield, X } from 'lucide-react';
+import { useRole } from '@/context/RoleContext';
 
-export default function RisksPage() {
-  const [risks, setRisks] = useState<any[]>([]);
-  const [selectedRisk, setSelectedRisk] = useState<any>(null);
-  const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'register' | 'inherent_heatmap' | 'residual_heatmap'>('register');
-  const [newRiskModal, setNewRiskModal] = useState(false);
+type ProcessRow={id:string;processId:string;name:string};
+type RiskRow={
+  id:string;riskId:string;name:string;description:string;cause:string;event:string;impact:string;category:string;ownerName:string;
+  inherentLikelihood:number;inherentImpact:number;inherentScore:number;inherentRating:string;
+  residualLikelihood:number;residualImpact:number;residualScore:number;residualRating:string;riskTreatment:string;status:string;
+  process:ProcessRow;controls:Array<{id:string;control:{id:string;controlId:string;name:string;type:string;nature:string;overallHealth:string}}>;
+  issues:any[];
+};
 
-  // Form State
-  const [formData, setFormData] = useState({
-    riskId: '',
-    name: '',
-    cause: '',
-    event: '',
-    impact: '',
-    category: 'Operational',
-    processId: '',
-    ownerName: '',
-    inherentLikelihood: 0,
-    inherentImpact: 0
+export default function RisksPage(){
+  const { currentUser }=useRole();
+  const [risks,setRisks]=useState<RiskRow[]>([]);
+  const [processes,setProcesses]=useState<ProcessRow[]>([]);
+  const [selectedId,setSelectedId]=useState('');
+  const [search,setSearch]=useState('');
+  const [activeTab,setActiveTab]=useState<'register'|'inherent_heatmap'|'residual_heatmap'>('register');
+  const [modal,setModal]=useState(false);
+  const [message,setMessage]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [form,setForm]=useState({
+    riskId:'',name:'',cause:'',event:'',impact:'',category:'Operational',processId:'',ownerName:'',
+    inherentLikelihood:3,inherentImpact:3
   });
 
-  const loadRisks = () => {
-    fetch('/api/risks')
-      .then(res => res.json())
-      .then(d => {
-        setRisks(d.risks || []);
-        if (d.risks?.length > 0 && !selectedRisk) {
-          setSelectedRisk(d.risks[0]);
-          setFormData(prev => ({ ...prev, processId: d.risks[0].processId }));
-        }
-      })
-      .catch(console.error);
+  const load=async()=>{
+    const [a,b]=await Promise.all([fetch('/api/risks',{cache:'no-store'}),fetch('/api/processes',{cache:'no-store'})]);
+    const ad=await a.json();const bd=await b.json();
+    if(!a.ok)throw new Error(ad.error||'Unable to load risks');
+    if(!b.ok)throw new Error(bd.error||'Unable to load processes');
+    setRisks(ad.risks||[]);
+    setProcesses((bd.processes||[]).map((p:any)=>({id:p.id,processId:p.processId,name:p.name})));
+    setSelectedId(v=>v&&(ad.risks||[]).some((r:RiskRow)=>r.id===v)?v:ad.risks?.[0]?.id||'');
+    setForm(v=>({...v,processId:v.processId||bd.processes?.[0]?.id||'',ownerName:v.ownerName||currentUser?.name||''}));
+  };
+  useEffect(()=>{load().catch(e=>setMessage(e.message));},[currentUser?.name]);
+
+  const selected=useMemo(()=>risks.find(r=>r.id===selectedId)||null,[risks,selectedId]);
+  const filtered=useMemo(()=>risks.filter(r=>{
+    const q=search.trim().toLowerCase();
+    return !q||r.name.toLowerCase().includes(q)||r.riskId.toLowerCase().includes(q)||r.category.toLowerCase().includes(q)||r.process?.name?.toLowerCase().includes(q);
+  }),[risks,search]);
+
+  const create=async(e:React.FormEvent)=>{
+    e.preventDefault();setBusy(true);setMessage('');
+    try{
+      const r=await fetch('/api/risks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});
+      const d=await r.json();if(!r.ok)throw new Error(d.error||'Unable to create risk');
+      setModal(false);
+      setForm(v=>({...v,riskId:'',name:'',cause:'',event:'',impact:'',inherentLikelihood:3,inherentImpact:3}));
+      await load();setSelectedId(d.id);
+    }catch(e){setMessage(e instanceof Error?e.message:'Unable to create risk');}
+    finally{setBusy(false);}
   };
 
-  useEffect(() => {
-    loadRisks();
-  }, []);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch('/api/risks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      if (res.ok) {
-        setNewRiskModal(false);
-        loadRisks();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const filtered = risks.filter(r => {
-    return (
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.riskId.toLowerCase().includes(search.toLowerCase()) ||
-      r.category.toLowerCase().includes(search.toLowerCase())
-    );
-  });
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-amber-600 uppercase tracking-wider">
-            <AlertTriangle className="w-4 h-4" />
-            <span>Risk Universe (MANAGE)</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            Enterprise Risk Register & Heatmaps
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Structured Cause → Event → Impact risk articulation. Interactive 5x5 Likelihood × Impact matrices.
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => setNewRiskModal(true)}
-            className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Identify New Risk</span>
-          </button>
-        </div>
-      </div>
-
-      {/* View Switcher & Search Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by Risk ID, Category, or Title..."
-            className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-          />
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setActiveTab('register')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === 'register'
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Risk Register ({risks.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('inherent_heatmap')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === 'inherent_heatmap'
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            5×5 Inherent Heatmap
-          </button>
-          <button
-            onClick={() => setActiveTab('residual_heatmap')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === 'residual_heatmap'
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            5×5 Residual Heatmap
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      {activeTab === 'register' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: Risk List (5 cols) */}
-          <div className="lg:col-span-5 space-y-3">
-            {filtered.map(r => {
-              const isSelected = selectedRisk?.id === r.id;
-              const badge = getRiskBadgeClasses(r.inherentRating);
-              return (
-                <div
-                  key={r.id}
-                  onClick={() => setSelectedRisk(r)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-amber-50/50 border-amber-500 shadow-md ring-1 ring-amber-400'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
-                          {r.riskId}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                          {r.category}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-sm text-slate-900 mt-1.5">
-                        {r.name}
-                      </h3>
-                    </div>
-
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}
-                    >
-                      Score: {r.inherentScore} ({r.inherentRating})
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-600 mt-2 line-clamp-2 leading-relaxed">
-                    {r.description}
-                  </p>
-
-                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                    <span>Process: <strong>{r.process?.name || 'Unassigned'}</strong></span>
-                    <span className="text-emerald-700 font-semibold flex items-center space-x-1">
-                      <TrendingDown className="w-3.5 h-3.5" />
-                      <span>Residual: {r.residualScore} ({r.residualRating})</span>
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Right: Risk 360 View (7 cols) */}
-          <div className="lg:col-span-7">
-            {selectedRisk ? (
-              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
-                <div className="border-b border-slate-100 pb-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono text-sm font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded border border-amber-200">
-                        {selectedRisk.riskId}
-                      </span>
-                      <span className="text-xs text-slate-500 font-semibold">
-                        Category: {selectedRisk.category}
-                      </span>
-                    </div>
-                    <Link
-                      href="/rcm"
-                      className="text-xs font-bold text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-200 flex items-center space-x-1"
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      <span>View in RCM</span>
-                    </Link>
-                  </div>
-
-                  <h2 className="text-xl font-black text-slate-900 mt-2">
-                    {selectedRisk.name}
-                  </h2>
-                </div>
-
-                {/* Structured Cause - Event - Impact (Section 29) */}
-                <div className="space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Cause → Event → Impact Syntax (Section 29)
-                  </h3>
-
-                  <div className="space-y-2 text-xs">
-                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <span className="text-slate-500 font-bold uppercase text-[10px]">Due to Cause:</span>
-                      <p className="text-slate-800 font-medium mt-0.5">{selectedRisk.cause}</p>
-                    </div>
-
-                    <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200">
-                      <span className="text-amber-700 font-bold uppercase text-[10px]">There is a Risk that (Event):</span>
-                      <p className="text-amber-900 font-medium mt-0.5">{selectedRisk.event}</p>
-                    </div>
-
-                    <div className="p-3 bg-rose-50/60 rounded-lg border border-rose-200">
-                      <span className="text-rose-700 font-bold uppercase text-[10px]">Resulting in (Impact):</span>
-                      <p className="text-rose-900 font-medium mt-0.5">{selectedRisk.impact}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Inherent vs Residual Score Grid (Section 31 & 37) */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl bg-rose-50/80 border border-rose-200 text-center space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-rose-600 tracking-wider">
-                      Inherent Risk
-                    </span>
-                    <div className="text-3xl font-black text-rose-800">{selectedRisk.inherentScore}</div>
-                    <div className="text-xs font-bold text-rose-700">{selectedRisk.inherentRating} Rating</div>
-                    <div className="text-[10px] text-rose-600">
-                      Likelihood {selectedRisk.inherentLikelihood} × Impact {selectedRisk.inherentImpact}
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 text-center space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
-                      Residual Risk (Post-Control)
-                    </span>
-                    <div className="text-3xl font-black text-emerald-800">{selectedRisk.residualScore}</div>
-                    <div className="text-xs font-bold text-emerald-700">{selectedRisk.residualRating} Rating</div>
-                    <div className="text-[10px] text-emerald-600">
-                      Treatment: {selectedRisk.riskTreatment}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mitigating Controls in Library */}
-                <div className="space-y-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Linked Mitigating Controls (Single Control Library)
-                  </h3>
-                  {selectedRisk.controls?.length > 0 ? (
-                    selectedRisk.controls.map((m: any) => (
-                      <div
-                        key={m.id}
-                        className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between text-xs"
-                      >
-                        <div className="flex items-center space-x-2.5">
-                          <Shield className="w-4 h-4 text-brand-600" />
-                          <div>
-                            <div className="font-bold text-slate-900">{m.control?.controlId}: {m.control?.name}</div>
-                            <div className="text-[11px] text-slate-500">
-                              Type: {m.control?.type} • Nature: {m.control?.nature}
-                            </div>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          {m.control?.overallHealth || 'Not Assessed'}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center space-x-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-600" />
-                      <span>Warning: No active control mapped to this risk. Control gap identified.</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 text-xs">
-                Select a risk from the register to inspect its 360° profile.
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* 5x5 Heatmap Matrix */
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                5×5 {activeTab === 'inherent_heatmap' ? 'Inherent' : 'Residual'} Risk Matrix
-              </h2>
-              <p className="text-xs text-slate-500">
-                Likelihood (Vertical Axis, 1–5) × Impact (Horizontal Axis, 1–5). Click on cells to inspect mapped risks.
-              </p>
-            </div>
-            <div className="flex items-center space-x-2 text-xs">
-              <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></span>
-              <span className="text-slate-500 text-[11px]">Low (1-4)</span>
-              <span className="w-3 h-3 rounded bg-amber-100 border border-amber-300"></span>
-              <span className="text-slate-500 text-[11px]">Medium (5-9)</span>
-              <span className="w-3 h-3 rounded bg-rose-100 border border-rose-300"></span>
-              <span className="text-slate-500 text-[11px]">High (10-14)</span>
-              <span className="w-3 h-3 rounded bg-red-200 border border-red-400"></span>
-              <span className="text-slate-500 text-[11px]">Critical (15-25)</span>
-            </div>
-          </div>
-
-          <div className="max-w-xl mx-auto py-4">
-            <div className="grid grid-cols-5 gap-2">
-              {[5, 4, 3, 2, 1].map(l =>
-                [1, 2, 3, 4, 5].map(i => {
-                  const score = l * i;
-                  let bg = 'bg-emerald-50 border-emerald-200 text-emerald-800';
-                  if (score >= 15) bg = 'bg-red-100 border-red-300 text-red-900 font-black';
-                  else if (score >= 10) bg = 'bg-rose-100 border-rose-200 text-rose-800 font-bold';
-                  else if (score >= 5) bg = 'bg-amber-50 border-amber-200 text-amber-800';
-
-
-                  return (
-                    <div
-                      key={`${l}-${i}`}
-                      className={`h-20 rounded-xl border p-2 flex flex-col justify-between transition-all hover:scale-105 cursor-pointer shadow-sm ${bg}`}
-                    >
-                      <div className="flex justify-between text-[10px] opacity-70">
-                        <span>L{l}</span>
-                        <span>I{i}</span>
-                      </div>
-                      <div className="text-center font-extrabold text-sm">{score}</div>
-                      <div className="text-center text-[9px] opacity-60">
-                        {risks.filter((risk: any) => {
-                          const likelihood = activeTab === 'inherent_heatmap' ? risk.inherentLikelihood : risk.residualLikelihood;
-                          const impact = activeTab === 'inherent_heatmap' ? risk.inherentImpact : risk.residualImpact;
-                          return likelihood === l && impact === i;
-                        }).length} risk(s)
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            <div className="flex justify-between text-xs font-bold text-slate-500 mt-3 px-2">
-              <span>Impact 1 (Insignificant)</span>
-              <span>Impact 5 (Catastrophic)</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Identify New Risk Modal */}
-      {newRiskModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-100">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-base text-slate-900">Identify New Risk Master</h3>
-              <button
-                onClick={() => setNewRiskModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Risk Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Unreconciled FX Hedging Settlement"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Due to Cause: *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Manual trade ticket entry without automated feed validation"
-                  value={formData.cause}
-                  onChange={e => setFormData({ ...formData, cause: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">There is a Risk that (Event): *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Discrepant currency rates are executed"
-                  value={formData.event}
-                  onChange={e => setFormData({ ...formData, event: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Resulting in (Impact): *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Direct forex variance loss and inaccurate quarterly revaluation"
-                  value={formData.impact}
-                  onChange={e => setFormData({ ...formData, impact: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Inherent Likelihood (1-5)</label>
-                  <select
-                    value={formData.inherentLikelihood}
-                    onChange={e => setFormData({ ...formData, inherentLikelihood: parseInt(e.target.value) })}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                  >
-                    <option value={0} disabled>Select level</option>
-                    <option value={0} disabled>Select level</option>
-                    {[1, 2, 3, 4, 5].map(v => (
-                      <option key={v} value={v}>Level {v}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Inherent Impact (1-5)</label>
-                  <select
-                    value={formData.inherentImpact}
-                    onChange={e => setFormData({ ...formData, inherentImpact: parseInt(e.target.value) })}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                  >
-                    {[1, 2, 3, 4, 5].map(v => (
-                      <option key={v} value={v}>Level {v}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setNewRiskModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm"
-                >
-                  Save Risk Master
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+  return <div className="space-y-6">
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div><div className="flex items-center gap-2 text-xs font-bold text-amber-600 uppercase tracking-wider"><AlertTriangle className="w-4 h-4"/>Risk Universe</div><h1 className="text-2xl font-black text-slate-900 mt-1">Enterprise Risk Register & Heatmaps</h1><p className="text-xs text-slate-500 mt-1">Risk ratings and heatmap positions are calculated exclusively from registered risk records.</p></div>
+      <button onClick={()=>setModal(true)} className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl"><Plus className="w-4 h-4"/>Identify New Risk</button>
     </div>
-  );
+    {message&&<div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">{message}</div>}
+
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="relative flex-1 max-w-md"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search risk, category or process…" className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+      <div className="flex gap-2">{[
+        ['register','Risk Register'],['inherent_heatmap','Inherent Heatmap'],['residual_heatmap','Residual Heatmap']
+      ].map(([k,label])=><button key={k} onClick={()=>setActiveTab(k as any)} className={activeTab===k?'text-xs font-bold px-3 py-2 rounded-lg bg-slate-900 text-white':'text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 text-slate-600'}>{label}</button>)}</div>
+    </div>
+
+    {activeTab==='register'?<div className="grid lg:grid-cols-12 gap-5">
+      <div className="lg:col-span-5 space-y-3">
+        {filtered.map(r=><button key={r.id} onClick={()=>setSelectedId(r.id)} className={selectedId===r.id?'w-full text-left p-4 rounded-xl border bg-amber-50/50 border-amber-400 shadow-sm':'w-full text-left p-4 rounded-xl border bg-white border-slate-200 hover:border-slate-300'}>
+          <div className="flex items-start justify-between gap-2"><div><div className="text-[10px] font-mono text-slate-400">{r.riskId}</div><div className="text-sm font-bold text-slate-900">{r.name}</div><div className="text-[11px] text-slate-500 mt-1">{r.process?.processId} • {r.category}</div></div><span className="text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-1 rounded-full">{r.inherentRating} {r.inherentScore}</span></div>
+        </button>)}
+        {!filtered.length&&<div className="border border-dashed border-slate-300 rounded-xl p-8 text-xs text-slate-500">No risk matches this view.</div>}
+      </div>
+      <div className="lg:col-span-7">
+        {selected?<div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-5">
+          <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-mono text-slate-400">{selected.riskId}</div><h2 className="text-base font-bold text-slate-900">{selected.name}</h2><div className="text-[11px] text-slate-500 mt-1">{selected.process?.processId} — {selected.process?.name} • Owner: {selected.ownerName}</div></div><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-full">{selected.status}</span></div>
+          <div className="grid md:grid-cols-3 gap-3 text-xs"><Box label="Cause" value={selected.cause}/><Box label="Event" value={selected.event}/><Box label="Impact" value={selected.impact}/></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3"><Metric label="Inherent L" value={selected.inherentLikelihood}/><Metric label="Inherent I" value={selected.inherentImpact}/><Metric label="Inherent Score" value={selected.inherentScore}/><Metric label="Residual Score" value={selected.residualScore}/></div>
+          <div><h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Linked Controls</h3><div className="mt-2 space-y-2">{selected.controls?.map(m=><div key={m.id} className="p-3 border border-slate-200 rounded-lg bg-slate-50 flex items-center justify-between gap-3 text-xs"><div className="flex items-center gap-2"><Shield className="w-4 h-4 text-brand-600"/><div><div className="font-bold text-slate-900">{m.control.controlId} — {m.control.name}</div><div className="text-[11px] text-slate-500">{m.control.type} • {m.control.nature}</div></div></div><span className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded">{m.control.overallHealth||'Not Assessed'}</span></div>)}{!selected.controls?.length&&<div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">No control is mapped to this risk.</div>}</div></div>
+          <div className="text-[11px] text-slate-500">Open/closed issues linked to this risk: {selected.issues?.length||0}</div>
+        </div>:<div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-xs text-slate-500">Select a risk to inspect its profile.</div>}
+      </div>
+    </div>:<Heatmap risks={risks} mode={activeTab==='inherent_heatmap'?'inherent':'residual'}/>}
+
+    {modal&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"><div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-3"><h2 className="font-bold text-slate-900">Identify Risk</h2><button onClick={()=>setModal(false)} className="p-1 text-slate-400"><X className="w-5 h-5"/></button></div>
+      <form onSubmit={create} className="mt-4 space-y-3 text-xs">
+        <label className="block font-semibold text-slate-700">Business Process *<select required value={form.processId} onChange={e=>setForm({...form,processId:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white"><option value="">Select process</option>{processes.map(p=><option key={p.id} value={p.id}>{p.processId} — {p.name}</option>)}</select></label>
+        <div className="grid md:grid-cols-2 gap-3"><label className="font-semibold text-slate-700">Risk ID (optional)<input value={form.riskId} onChange={e=>setForm({...form,riskId:e.target.value})} placeholder="Leave blank for generated ID" className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label><label className="font-semibold text-slate-700">Category<input value={form.category} onChange={e=>setForm({...form,category:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label></div>
+        <label className="block font-semibold text-slate-700">Risk Name *<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <label className="block font-semibold text-slate-700">Cause *<textarea required rows={2} value={form.cause} onChange={e=>setForm({...form,cause:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <label className="block font-semibold text-slate-700">Risk Event *<textarea required rows={2} value={form.event} onChange={e=>setForm({...form,event:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <label className="block font-semibold text-slate-700">Impact *<textarea required rows={2} value={form.impact} onChange={e=>setForm({...form,impact:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <label className="block font-semibold text-slate-700">Risk Owner *<input required value={form.ownerName} onChange={e=>setForm({...form,ownerName:e.target.value})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5"/></label>
+        <div className="grid grid-cols-2 gap-3"><label className="font-semibold text-slate-700">Likelihood<select value={form.inherentLikelihood} onChange={e=>setForm({...form,inherentLikelihood:Number(e.target.value)})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white">{[1,2,3,4,5].map(v=><option key={v} value={v}>{v}</option>)}</select></label><label className="font-semibold text-slate-700">Impact<select value={form.inherentImpact} onChange={e=>setForm({...form,inherentImpact:Number(e.target.value)})} className="mt-1 w-full border border-slate-200 rounded-lg p-2.5 bg-white">{[1,2,3,4,5].map(v=><option key={v} value={v}>{v}</option>)}</select></label></div>
+        <div className="pt-3 flex justify-end gap-2"><button type="button" onClick={()=>setModal(false)} className="px-4 py-2 bg-slate-100 rounded-lg font-semibold">Cancel</button><button disabled={busy||!processes.length} className="px-4 py-2 bg-brand-600 text-white rounded-lg font-bold disabled:opacity-50">Save Risk</button></div>
+      </form>
+    </div></div>}
+  </div>;
 }
+
+function Heatmap({risks,mode}:{risks:RiskRow[];mode:'inherent'|'residual'}){
+ return <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><h2 className="text-sm font-bold text-slate-900">5×5 {mode==='inherent'?'Inherent':'Residual'} Risk Matrix</h2><p className="text-[11px] text-slate-500 mt-1">Each cell shows actual registered risks at the selected likelihood and impact.</p><div className="max-w-3xl mx-auto mt-5 grid grid-cols-5 gap-2">{[5,4,3,2,1].flatMap(l=>[1,2,3,4,5].map(i=>{
+   const rows=risks.filter(r=>mode==='inherent'?r.inherentLikelihood===l&&r.inherentImpact===i:r.residualLikelihood===l&&r.residualImpact===i);
+   const score=l*i;
+   const style=score>=15?'bg-red-100 border-red-300':score>=10?'bg-rose-50 border-rose-200':score>=5?'bg-amber-50 border-amber-200':'bg-emerald-50 border-emerald-200';
+   return <div key={l+'-'+i} className={'min-h-24 rounded-xl border p-2 '+style}><div className="flex justify-between text-[9px] text-slate-500"><span>L{l}</span><span>I{i}</span></div><div className="text-center font-black text-sm mt-1">{score}</div><div className="mt-1 text-center text-[9px] font-bold text-slate-700">{rows.length} risk{rows.length===1?'':'s'}</div><div className="mt-1 space-y-0.5">{rows.slice(0,2).map(r=><div key={r.id} className="truncate text-[8px] font-mono bg-white/70 rounded px-1 py-0.5">{r.riskId}</div>)}</div></div>;
+ }))}</div><div className="max-w-3xl mx-auto mt-2 flex justify-between text-[10px] text-slate-400"><span>Impact 1</span><span>Impact 5</span></div></div>;
+}
+function Metric({label,value}:{label:string;value:number|string}){return <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><div className="text-[10px] uppercase font-bold text-slate-400">{label}</div><div className="text-xl font-black text-slate-900 mt-0.5">{value}</div></div>}
+function Box({label,value}:{label:string;value:string}){return <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><div className="text-[10px] uppercase font-bold text-slate-400">{label}</div><div className="text-[11px] text-slate-700 mt-1 leading-relaxed">{value||'Not recorded'}</div></div>}

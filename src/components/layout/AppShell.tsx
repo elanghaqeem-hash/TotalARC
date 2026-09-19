@@ -1,31 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useRole, USERS, type UserRole } from '@/context/RoleContext';
+import { useRole } from '@/context/RoleContext';
 import {
-  Activity,
-  AlertTriangle,
-  BadgeCheck,
-  BarChart3,
-  Building2,
-  Calendar,
-  CheckSquare,
-  ChevronDown,
-  ClipboardCheck,
-  Cpu,
-  Download,
-  FileCheck,
-  FileSpreadsheet,
-  FolderTree,
-  Layers,
-  Menu,
-  Plus,
-  Shield,
-  Sparkles,
-  Workflow,
-  X
+  Shield, Layers, FileCheck, ClipboardCheck, Activity, Calendar, CheckSquare,
+  Search, Plus, Sparkles, Building2, Menu, X, FileSpreadsheet, Cpu,
+  AlertTriangle, FolderTree, BadgeCheck, Workflow, Download, LogOut, UserRound
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 
@@ -33,107 +15,142 @@ interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
-  badge?: string;
+  roles?: string[];
 }
 
-interface NavGroup {
+interface SearchResult {
+  id: string;
+  type: string;
+  code: string;
   title: string;
-  subtitle: string;
-  items: NavItem[];
+  href: string;
 }
-
-const navGroups: NavGroup[] = [
-  {
-    title: 'MANAGE',
-    subtitle: 'Define & govern',
-    items: [
-      { name: 'Core Dashboard', href: '/', icon: Activity },
-      { name: 'Institution Onboarding', href: '/onboarding', icon: Building2 },
-      { name: 'Organization Structure', href: '/organization', icon: FolderTree },
-      { name: 'Process Architecture (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
-      { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
-      { name: 'Single Control Library', href: '/controls', icon: Shield },
-      { name: 'Relational RCM Workspace', href: '/rcm', icon: FileSpreadsheet }
-    ]
-  },
-  {
-    title: 'ASSURE',
-    subtitle: 'Assess & validate',
-    items: [
-      { name: 'RCSA & CSA Workspace', href: '/rcsa', icon: ClipboardCheck },
-      { name: 'ICOFR & Assertions', href: '/icofr', icon: FileCheck },
-      { name: 'Walkthrough & ToD', href: '/tod', icon: Workflow },
-      { name: 'ToE Testing & Samples', href: '/toe', icon: Cpu },
-      { name: 'Remediation & MAP', href: '/remediation', icon: BadgeCheck }
-    ]
-  },
-  {
-    title: 'MONITOR',
-    subtitle: 'Monitor & respond',
-    items: [
-      { name: 'Control Health Cockpit', href: '/health', icon: Activity },
-      { name: 'Continuous Monitoring (CCM)', href: '/ccm', icon: Cpu },
-      { name: 'Certification & Attestation', href: '/certification', icon: BadgeCheck },
-      { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
-      { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
-      { name: 'Workpapers & Export Center', href: '/reports', icon: Download }
-    ]
-  }
-];
-
-const topLinks = [
-  { name: 'Dashboard', href: '/', icon: Activity },
-  { name: 'Processes', href: '/processes', icon: Layers },
-  { name: 'Analytics', href: '/reports', icon: BarChart3 }
-];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, setRole, institutionName } = useRole();
+  const { currentUser, institutionName, loadingUser } = useRole();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
 
-  const Nav = ({ mobile = false }: { mobile?: boolean }) => (
-    <div className="space-y-4">
-      {navGroups.map((group) => (
-        <section key={group.title} className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
-          <div className="px-2.5 pb-2 pt-1">
-            <div className="text-[11px] font-black tracking-[0.12em] text-slate-800">{group.title}</div>
-            <div className="mt-0.5 text-[10px] text-slate-400">{group.subtitle}</div>
+  const pillars = useMemo(() => [
+    {
+      title: 'MANAGE',
+      subtitle: 'Define and Govern',
+      items: [
+        { name: 'Core Dashboard', href: '/', icon: Activity },
+        { name: 'Institution Onboarding', href: '/onboarding', icon: Building2, roles: ['Admin'] },
+        { name: 'User Administration', href: '/users', icon: UserRound, roles: ['Admin'] },
+        { name: 'Organization Structure', href: '/organization', icon: FolderTree },
+        { name: 'Process Architecture (BPM)', href: '/processes', icon: Layers },
+        { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
+        { name: 'Single Control Library', href: '/controls', icon: Shield },
+        { name: 'Relational RCM Workspace', href: '/rcm', icon: FileSpreadsheet }
+      ] as NavItem[]
+    },
+    {
+      title: 'ASSURE',
+      subtitle: 'Assess and Validate',
+      items: [
+        { name: 'RCSA & CSA Workspace', href: '/rcsa', icon: ClipboardCheck },
+        { name: 'ICOFR & Assertions', href: '/icofr', icon: FileCheck },
+        { name: 'Walkthrough & ToD', href: '/tod', icon: Workflow },
+        { name: 'ToE Testing & Samples', href: '/toe', icon: Cpu },
+        { name: 'Remediation & MAP', href: '/remediation', icon: BadgeCheck }
+      ] as NavItem[]
+    },
+    {
+      title: 'MONITOR',
+      subtitle: 'Monitor and Respond',
+      items: [
+        { name: 'Control Health Cockpit', href: '/health', icon: Activity },
+        { name: 'Continuous Monitoring (CCM)', href: '/ccm', icon: Cpu },
+        { name: 'Certification & Attestation', href: '/certification', icon: BadgeCheck },
+        { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
+        { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
+        { name: 'Workpapers & Export Center', href: '/reports', icon: Download }
+      ] as NavItem[]
+    }
+  ], []);
+
+  useEffect(() => {
+    if (pathname === '/login' || loadingUser) return;
+    if (!currentUser) {
+      window.location.assign(`/login?next=${encodeURIComponent(pathname || '/')}`);
+      return;
+    }
+    if (currentUser.mustChangePassword && pathname !== '/change-password') {
+      window.location.assign('/change-password');
+    }
+  }, [pathname, loadingUser, currentUser]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2 || !currentUser) {
+      setSearchResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: controller.signal, cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          setSearchResults(data.results || []);
+        }
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') console.error(error);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, currentUser]);
+
+  if (pathname === '/login' || pathname === '/change-password') return <>{children}</>;
+
+  if (loadingUser || !currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-sm font-semibold text-slate-600">Validating secure session…</div>
+      </div>
+    );
+  }
+
+  const allowed = (item: NavItem) => !item.roles || item.roles.includes(currentUser.role);
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.assign('/login');
+  };
+
+  const Sidebar = ({ mobile = false }: { mobile?: boolean }) => (
+    <div className="space-y-5">
+      {pillars.map(pillar => (
+        <section key={pillar.title}>
+          <div className="px-3 py-1">
+            <div className="text-[10px] font-black tracking-widest text-slate-900">{pillar.title}</div>
+            <div className="text-[10px] text-slate-400">{pillar.subtitle}</div>
           </div>
-
-          <div className="space-y-1">
-            {group.items.map((item) => {
+          <div className="mt-1 space-y-0.5">
+            {pillar.items.filter(allowed).map(item => {
               const Icon = item.icon;
               const active = pathname === item.href;
-
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={() => mobile && setMobileMenuOpen(false)}
-                  className={`group flex items-center justify-between rounded-xl px-2.5 py-2.5 text-[11px] transition-all ${
-                    active
-                      ? 'bg-gradient-to-r from-brand-600 to-sky-500 font-bold text-white shadow-md shadow-sky-100'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
+                  className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-colors ${active ? 'bg-brand-600 text-white font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
                 >
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                        active ? 'bg-white/15' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-brand-700'
-                      }`}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="truncate">{item.name}</span>
-                  </span>
-                  {item.badge && (
-                    <span className={`ml-2 shrink-0 text-[9px] font-bold ${active ? 'text-white/80' : 'text-slate-400'}`}>
-                      {item.badge}
-                    </span>
-                  )}
+                  <Icon className="w-4 h-4" />
+                  <span>{item.name}</span>
                 </Link>
               );
             })}
@@ -144,189 +161,97 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur">
-        <div className="mx-auto flex h-[72px] max-w-[1600px] items-center justify-between gap-4 px-3 sm:px-5 lg:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 lg:hidden"
-              aria-label="Open navigation"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center gap-4">
+          <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Open navigation">
+            <Menu className="w-5 h-5" />
+          </button>
 
-            <Link href="/" className="flex min-w-0 items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-brand-700 text-white shadow-lg shadow-sky-200">
-                <Shield className="h-6 w-6" />
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-lg font-black tracking-tight text-slate-950 sm:text-xl">
-                  TOTAL <span className="text-brand-600">ARC</span>
-                </div>
-                <div className="hidden text-[10px] font-medium text-slate-400 sm:block">Total Assurance, Risk & Control</div>
-              </div>
-            </Link>
+          <Link href="/" className="flex items-center gap-3 min-w-fit">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-600 via-sky-500 to-cyan-400 flex items-center justify-center text-white shadow-sm">
+              <Shield className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="font-extrabold text-lg tracking-tight text-slate-900">TOTAL <span className="text-brand-600">ARC</span></div>
+              <div className="text-[10px] text-slate-500 hidden sm:block">Total Assurance, Risk & Control</div>
+            </div>
+          </Link>
+
+          <div className="hidden md:flex items-center gap-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-xs min-w-0">
+            <Building2 className="w-4 h-4 text-brand-600 shrink-0" />
+            <span className="font-semibold text-slate-700 truncate max-w-48">{institutionName}</span>
           </div>
 
-          <nav className="hidden items-center gap-1 rounded-xl bg-slate-100 p-1 lg:flex">
-            {topLinks.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href;
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-bold transition ${
-                    active ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {item.name}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="hidden max-w-[280px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 xl:flex">
-              <Building2 className="h-4 w-4 shrink-0 text-brand-600" />
-              <div className="min-w-0">
-                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Active institution</div>
-                <div className="truncate text-[11px] font-bold text-slate-700">{institutionName}</div>
+          <div className="hidden lg:block flex-1 max-w-md relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search process, risk, control, issue…"
+              className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            {(searchResults.length > 0 || searching) && (
+              <div className="absolute top-11 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-50">
+                {searching && <div className="px-3 py-2 text-xs text-slate-500">Searching…</div>}
+                {searchResults.map(item => (
+                  <Link key={`${item.type}-${item.id}`} href={item.href} onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="block px-3 py-2 hover:bg-slate-50 border-t border-slate-100 first:border-t-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-slate-900 truncate">{item.title}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{item.type}</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-400">{item.code}</div>
+                  </Link>
+                ))}
               </div>
-            </div>
+            )}
+          </div>
 
-            <Link
-              href="/onboarding"
-              className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 transition hover:border-brand-200 hover:text-brand-700 md:flex"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Institution
+          <div className="ml-auto flex items-center gap-2">
+            <Link href="/processes" className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50">
+              <Plus className="w-3.5 h-3.5" /> New Record
             </Link>
-
-            <button
-              onClick={() => setAiDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-3 py-2.5 text-[11px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">ARC AI</span>
+            <button onClick={() => setAiDrawerOpen(true)} className="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-3 py-2 rounded-lg">
+              <Sparkles className="w-3.5 h-3.5" /> ARC AI
             </button>
-
-            <div className="relative">
-              <button
-                onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50"
-              >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-xs font-black text-brand-700 ring-1 ring-brand-100">
-                  {currentUser.role.charAt(0)}
-                </div>
-                <div className="hidden max-w-[150px] text-left sm:block">
-                  <div className="truncate text-[11px] font-black text-slate-800">{currentUser.role}</div>
-                  <div className="truncate text-[9px] text-slate-400">{currentUser.roleTitle}</div>
-                </div>
-                <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
+            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200">
+              <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center">
+                <UserRound className="w-4 h-4" />
+              </div>
+              <div className="max-w-36">
+                <div className="text-xs font-bold text-slate-800 truncate">{currentUser.name}</div>
+                <div className="text-[10px] text-slate-500 truncate">{currentUser.role}</div>
+              </div>
+              <button onClick={logout} className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50" title="Sign out" aria-label="Sign out">
+                <LogOut className="w-4 h-4" />
               </button>
-
-              {roleDropdownOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10">
-                  <div className="px-2.5 pb-2 pt-1">
-                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">View as role</div>
-                    <div className="mt-1 text-[10px] leading-4 text-slate-500">Ubah perspektif tampilan tanpa membuat identitas pengguna palsu.</div>
-                  </div>
-
-                  {(Object.keys(USERS) as UserRole[]).map((role) => (
-                    <button
-                      key={role}
-                      onClick={() => {
-                        setRole(role);
-                        setRoleDropdownOpen(false);
-                      }}
-                      className={`w-full rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-50 ${
-                        currentUser.role === role ? 'bg-brand-50 text-brand-800' : 'text-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{role}</div>
-                      <div className="mt-0.5 text-[10px] text-slate-500">{USERS[role].roleTitle}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-[1600px] gap-5 px-3 py-4 sm:px-5 lg:px-6 lg:py-6">
-        <aside className="sticky top-[96px] hidden h-[calc(100vh-112px)] w-[272px] shrink-0 overflow-y-auto pb-4 lg:block">
-          <Nav />
-          <div className="mt-4 rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 p-4 text-white shadow-lg">
-            <div className="flex items-center gap-2 text-[11px] font-black text-emerald-300">
-              <Shield className="h-4 w-4" />
-              Data integrity
-            </div>
-            <p className="mt-2 text-[10px] leading-5 text-slate-300">
-              Operational records ditampilkan hanya ketika tersimpan pada database terhubung. Tidak ada transaksi demo atau assurance result simulasi.
-            </p>
-          </div>
-        </aside>
-
-        <main className="min-w-0 flex-1 pb-20 lg:pb-6">{children}</main>
+      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex gap-6">
+        <aside className="hidden lg:block w-64 shrink-0"><Sidebar /></aside>
+        <main className="flex-1 min-w-0">{children}</main>
       </div>
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm lg:hidden">
-          <div className="h-full w-[86vw] max-w-sm overflow-y-auto bg-slate-50 p-4 shadow-2xl">
-            <div className="sticky top-0 z-10 mb-4 flex items-center justify-between border-b border-slate-200 bg-slate-50 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
-                  <Shield className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-black text-slate-900">Total ARC</div>
-                  <div className="text-[10px] text-slate-400">Navigation</div>
-                </div>
+        <div className="fixed inset-0 z-50 bg-slate-950/50 lg:hidden" onClick={() => setMobileMenuOpen(false)}>
+          <div className="w-80 max-w-[88vw] bg-white h-full p-4 overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-4">
+              <div>
+                <div className="font-bold text-slate-900">{currentUser.name}</div>
+                <div className="text-xs text-slate-500">{institutionName} • {currentUser.role}</div>
               </div>
-              <button
-                onClick={() => setMobileMenuOpen(false)}
-                className="rounded-xl p-2 text-slate-500 hover:bg-white"
-                aria-label="Close navigation"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5" /></button>
             </div>
-            <Nav mobile />
+            <Sidebar mobile />
+            <button onClick={logout} className="mt-6 w-full flex items-center justify-center gap-2 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg py-2.5">
+              <LogOut className="w-4 h-4" /> Sign out
+            </button>
           </div>
         </div>
       )}
-
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex justify-around border-t border-slate-200 bg-white/95 px-2 py-2 shadow-[0_-8px_30px_-20px_rgba(15,23,42,0.45)] backdrop-blur lg:hidden">
-        {[
-          ['Home', '/', Activity],
-          ['Process', '/processes', Layers],
-          ['Controls', '/controls', Shield],
-          ['Tasks', '/tasks', CheckSquare]
-        ].map(([label, href, Icon]: any) => (
-          <Link
-            key={href}
-            href={href}
-            className={`flex min-w-[56px] flex-col items-center rounded-xl px-2 py-1 text-[9px] font-bold ${
-              pathname === href ? 'bg-brand-50 text-brand-700' : 'text-slate-500'
-            }`}
-          >
-            <Icon className="h-[18px] w-[18px]" />
-            <span className="mt-0.5">{label}</span>
-          </Link>
-        ))}
-        <button
-          onClick={() => setMobileMenuOpen(true)}
-          className="flex min-w-[56px] flex-col items-center rounded-xl px-2 py-1 text-[9px] font-bold text-slate-500"
-        >
-          <Menu className="h-[18px] w-[18px]" />
-          <span className="mt-0.5">More</span>
-        </button>
-      </nav>
 
       <AIChatDrawer isOpen={aiDrawerOpen} onClose={() => setAiDrawerOpen(false)} />
     </div>

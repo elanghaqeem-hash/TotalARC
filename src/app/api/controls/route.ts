@@ -1,57 +1,81 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { ApiError, apiError, optionalString, readJson, requireApiUser, requireString } from '@/lib/api';
+import { writeAudit } from '@/lib/audit';
+import { deriveControlHealth, deriveDesignAssessment, deriveOperatingStatus } from '@/lib/control-health';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const user = await requireApiUser(request);
     const controls = await prisma.controlMaster.findMany({
+      where: { institutionId: user.institutionId },
       include: {
-        process: true, activity: true, risks: { include: { risk: true } }, todTests: true,
-        toeTests: { include: { exceptions: true } }, monitoringRules: true, certifications: true
+        process: true,
+        activity: true,
+        risks: { include: { risk: true } },
+        todTests: { where: { status: 'Approved' }, orderBy: { testedAt: 'desc' }, take: 1 },
+        toeTests: { where: { status: 'Reviewed' }, orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
+        issues: { orderBy: { createdAt: 'desc' } },
+        monitoringRules: { orderBy: { createdAt: 'desc' } },
+        certifications: { orderBy: { certifiedAt: 'desc' }, take: 1 }
       },
       orderBy: { controlId: 'asc' }
     });
-    return NextResponse.json({ controls });
+    const derived = controls.map(control => ({
+      ...control,
+      designAssessment: deriveDesignAssessment(control),
+      operatingStatus: deriveOperatingStatus(control),
+      overallHealth: deriveControlHealth(control)
+    }));
+    return NextResponse.json({ controls: derived });
   } catch (error) {
-    console.error('Failed to fetch controls:', error);
-    return NextResponse.json({ error: 'Failed to fetch controls' }, { status: 500 });
+    return apiError(error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const {
-      controlId, name, description, objective, processId, riskId, controlOwner,
-      type, nature, frequency, isKeyControl, isIcofrKey
-    } = body;
+    const user = await requireApiUser(request, ['Admin','ControlOwner','ProcessOwner','Reviewer']);
+    const body = await readJson<Record<string, unknown>>(request);
+    const processId = requireString(body.processId, 'processId', 100);
+    const process = await prisma.businessProcess.findFirst({ where: { id: processId, institutionId: user.institutionId } });
+    if (!process) throw new ApiError(404, 'PROCESS_NOT_FOUND', 'Process not found in your institution');
 
-    if (!name || !description || !objective || !processId || !controlOwner || !type || !nature || !frequency) {
-      return NextResponse.json(
-        { error: 'Complete control definition, ownership, type, nature, and frequency are required.' },
-        { status: 400 }
-      );
+    let riskId: string | null = null;
+    if (body.riskId) {
+      riskId = requireString(body.riskId, 'riskId', 100);
+      const risk = await prisma.riskMaster.findFirst({ where: { id: riskId, institutionId: user.institutionId } });
+      if (!risk) throw new ApiError(404, 'RISK_NOT_FOUND', 'Risk not found in your institution');
+      if (risk.processId !== processId) throw new ApiError(400, 'RISK_PROCESS_MISMATCH', 'Risk must belong to the same process as the control');
     }
-
-    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (!institution) return NextResponse.json({ error: 'Register an institution before creating controls.' }, { status: 409 });
 
     const control = await prisma.controlMaster.create({
       data: {
-        institutionId: institution.id,
-        controlId: controlId || `CTRL-${Date.now().toString(36).toUpperCase()}`,
-        name, description, objective, processId, controlOwner, type, nature, frequency,
-        isKeyControl: Boolean(isKeyControl),
-        isIcofrKey: Boolean(isIcofrKey),
+        institutionId: user.institutionId,
+        controlId: optionalString(body.controlId, 80) || `CTRL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        name: requireString(body.name, 'name', 250),
+        description: requireString(body.description, 'description', 4000),
+        objective: optionalString(body.objective, 2000) || 'Control objective pending owner confirmation.',
+        processId,
+        controlOwner: optionalString(body.controlOwner, 250) || user.name,
+        type: optionalString(body.type, 50) || 'Preventive',
+        nature: optionalString(body.nature, 80) || 'Manual',
+        frequency: optionalString(body.frequency, 80) || 'Per Transaction',
+        isKeyControl: body.isKeyControl === true,
+        isIcofrKey: body.isIcofrKey === true,
         designAssessment: 'Not Assessed',
         operatingStatus: 'Not Assessed',
         overallHealth: 'Not Assessed'
       }
     });
 
-    if (riskId) await prisma.controlRiskMapping.create({ data: { controlId: control.id, riskId } });
+    if (riskId) {
+      await prisma.controlRiskMapping.create({ data: { controlId: control.id, riskId } });
+    }
+
+    await writeAudit(user, request, { action: 'CREATE', entityType: 'Control', recordId: control.id, reason: `Registered control ${control.controlId}`, newValue: control });
     return NextResponse.json(control, { status: 201 });
   } catch (error) {
-    console.error('Failed to create control:', error);
-    return NextResponse.json({ error: 'Failed to create control' }, { status: 500 });
+    return apiError(error);
   }
 }

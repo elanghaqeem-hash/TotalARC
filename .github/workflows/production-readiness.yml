@@ -1,0 +1,269 @@
+name: Production Readiness
+
+on:
+  push:
+    branches:
+      - hardening/production-readiness
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-production-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: totalarc
+          POSTGRES_PASSWORD: totalarc
+          POSTGRES_DB: totalarc_validation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U totalarc -d totalarc_validation"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://totalarc:totalarc@localhost:5432/totalarc_validation
+      SESSION_SECRET: ci-only-session-secret-please-replace-in-production-0123456789abcdef
+      PLATFORM_ADMIN_EMAILS: admin@example.com
+      AI_ALLOW_EXTERNAL: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+      CI_E2E_PASSWORD: totalarc-ci-${{ github.run_id }}-A1-validation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Install dependencies from committed lockfile
+        run: npm ci
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Verify committed migrations exist
+        shell: bash
+        run: |
+          test -f prisma/migrations/migration_lock.toml
+          test -f prisma/migrations/00000000000000_production_baseline/migration.sql
+          test -n "$(find prisma/migrations -mindepth 2 -maxdepth 2 -name migration.sql -print -quit)"
+
+      - name: Apply production migration to ephemeral PostgreSQL
+        run: npx prisma migrate deploy
+
+      - name: Verify migration status
+        run: npx prisma migrate status
+
+      - name: Verify database schema matches Prisma datamodel
+        run: npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
+
+      - name: Seed reference data only
+        run: npm run db:seed
+
+      - name: Verify database connectivity and no demo transactions
+        run: node scripts/verify-database.mjs
+
+      - name: Bootstrap Bank Kalbar institution master twice
+        run: |
+          npm run db:ensure-bank-kalbar
+          npm run db:ensure-bank-kalbar
+
+      - name: Verify Bank Kalbar persistence is unique and audited
+        run: npm run db:verify-bank-kalbar
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+
+      - name: Create ephemeral two-tenant test fixture
+        run: node scripts/create-ci-tenants.mjs
+
+      - name: Runtime authentication and tenant-isolation smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm start > /tmp/totalarc-server.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" >/dev/null 2>&1 || true' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health > /tmp/health.json; then
+              break
+            fi
+            if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+              cat /tmp/totalarc-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/health.json'))
+          assert data['status']=='ok' and data['database']=='reachable', data
+          PY
+
+          UNAUTH_CODE=$(curl -sS -o /tmp/unauth.json -w "%{http_code}" http://127.0.0.1:3000/api/controls)
+          test "$UNAUTH_CODE" = "401"
+
+          login() {
+            local email="$1"
+            local prefix="$2"
+            local payload
+            payload=$(python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2]}))' "$email" "$CI_E2E_PASSWORD")
+            curl -sS -D "/tmp/$prefix.headers" -o "/tmp/$prefix.login.json" \
+              -H 'Content-Type: application/json' \
+              -H 'Origin: http://127.0.0.1:3000' \
+              --data "$payload" \
+              http://127.0.0.1:3000/api/auth/login
+          }
+
+          login 'ci-tenant-a@totalarc.test' a
+          login 'ci-tenant-b@totalarc.test' b
+
+          COOKIE_A=$(sed -n 's/^[Ss]et-[Cc]ookie: \(totalarc_session=[^;]*\).*/\1/p' /tmp/a.headers | tr -d '\r' | head -n1)
+          COOKIE_B=$(sed -n 's/^[Ss]et-[Cc]ookie: \(totalarc_session=[^;]*\).*/\1/p' /tmp/b.headers | tr -d '\r' | head -n1)
+          test -n "$COOKIE_A"
+          test -n "$COOKIE_B"
+
+          curl -fsS -H "Cookie: $COOKIE_A" http://127.0.0.1:3000/api/processes > /tmp/a-before.json
+          CATEGORY_ID=$(python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/a-before.json'))
+          assert data['categories'], 'No process category returned'
+          print(data['categories'][0]['id'])
+          PY
+          )
+
+          CREATE_A=$(curl -sS -o /tmp/process-a.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"name\":\"CI Tenant A Process\",\"categoryId\":\"$CATEGORY_ID\",\"ownerName\":\"CI Admin A\",\"processId\":\"PRC-CI-A\",\"criticality\":\"Medium\",\"classification\":\"Core\"}" \
+            http://127.0.0.1:3000/api/processes)
+          test "$CREATE_A" = "201"
+
+          CREATE_B=$(curl -sS -o /tmp/process-b.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_B" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"name\":\"CI Tenant B Process\",\"categoryId\":\"$CATEGORY_ID\",\"ownerName\":\"CI Admin B\",\"processId\":\"PRC-CI-B\",\"criticality\":\"Medium\",\"classification\":\"Core\"}" \
+            http://127.0.0.1:3000/api/processes)
+          test "$CREATE_B" = "201"
+
+          PROCESS_A_ID=$(python3 - <<'PY'
+          import json
+          print(json.load(open('/tmp/process-a.json'))['id'])
+          PY
+          )
+
+          curl -fsS -H "Cookie: $COOKIE_A" http://127.0.0.1:3000/api/ai/status > /tmp/ai-status.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/ai-status.json'))
+          providers=data.get('providers') or []
+          assert providers, data
+          assert not any(bool(p.get('configured')) for p in providers), providers
+          PY
+
+          AI_CODE=$(curl -sS -o /tmp/ai-analysis.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"processId\":\"$PROCESS_A_ID\",\"mode\":\"control_gap\"}" \
+            http://127.0.0.1:3000/api/ai/analyze)
+          test "$AI_CODE" = "503"
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/ai-analysis.json'))
+          assert data.get('code')=='AI_UNAVAILABLE', data
+          PY
+
+          curl -fsS -H "Cookie: $COOKIE_A" http://127.0.0.1:3000/api/processes > /tmp/a-processes.json
+          curl -fsS -H "Cookie: $COOKIE_B" http://127.0.0.1:3000/api/processes > /tmp/b-processes.json
+
+          python3 - <<'PY'
+          import json
+          a={p['processId'] for p in json.load(open('/tmp/a-processes.json'))['processes']}
+          b={p['processId'] for p in json.load(open('/tmp/b-processes.json'))['processes']}
+          assert 'PRC-CI-A' in a and 'PRC-CI-B' not in a, (a,b)
+          assert 'PRC-CI-B' in b and 'PRC-CI-A' not in b, (a,b)
+          PY
+
+          PROCESS_B_ID=$(python3 - <<'PY'
+          import json
+          print(json.load(open('/tmp/process-b.json'))['id'])
+          PY
+          )
+
+          CROSS_TENANT_CODE=$(curl -sS -o /tmp/cross-tenant.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"processId\":\"$PROCESS_B_ID\",\"name\":\"Cross Tenant Attempt\",\"cause\":\"CI\",\"event\":\"CI\",\"impact\":\"CI\",\"category\":\"Operational\",\"ownerName\":\"CI Admin A\",\"inherentLikelihood\":2,\"inherentImpact\":2}" \
+            http://127.0.0.1:3000/api/risks)
+          test "$CROSS_TENANT_CODE" = "404"
+
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/cross-tenant.json'))
+          assert data.get('code')=='PROCESS_NOT_FOUND', data
+          PY
+
+          MISSING_ORIGIN_CODE=$(curl -sS -o /tmp/missing-origin.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            --data '{}' \
+            http://127.0.0.1:3000/api/processes)
+          test "$MISSING_ORIGIN_CODE" = "403"
+
+          for attempt in 1 2 3 4 5; do
+            WRONG_PAYLOAD=$(python3 -c 'import json; print(json.dumps({"email":"ci-tenant-a@totalarc.test","password":"deliberately-wrong-password"}))')
+            WRONG_CODE=$(curl -sS -o "/tmp/wrong-$attempt.json" -w "%{http_code}" \
+              -H 'Content-Type: application/json' \
+              -H 'Origin: http://127.0.0.1:3000' \
+              --data "$WRONG_PAYLOAD" \
+              http://127.0.0.1:3000/api/auth/login)
+            test "$WRONG_CODE" = "401"
+          done
+
+          LOCKED_WRONG_CODE=$(curl -sS -o /tmp/locked-wrong.json -w "%{http_code}" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data '{"email":"ci-tenant-a@totalarc.test","password":"still-wrong-password"}' \
+            http://127.0.0.1:3000/api/auth/login)
+          test "$LOCKED_WRONG_CODE" = "429"
+
+          VALID_LOCKED_PAYLOAD=$(python3 -c 'import json,os; print(json.dumps({"email":"ci-tenant-a@totalarc.test","password":os.environ["CI_E2E_PASSWORD"]}))')
+          LOCKED_VALID_CODE=$(curl -sS -o /tmp/locked-valid.json -w "%{http_code}" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "$VALID_LOCKED_PAYLOAD" \
+            http://127.0.0.1:3000/api/auth/login)
+          test "$LOCKED_VALID_CODE" = "429"
+
+      - name: Dependency security audit
+        run: npm audit --omit=dev --audit-level=high

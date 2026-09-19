@@ -1,40 +1,30 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { apiError, requireApiUser } from '@/lib/api';
+import { deriveControlHealth } from '@/lib/control-health';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Dynamically query Process + Risk + Control mappings + Assessment + Testing + Issues + MAP
+    const user = await requireApiUser(request);
     const mappings = await prisma.controlRiskMapping.findMany({
+      where: { control: { institutionId: user.institutionId } },
       include: {
-        risk: {
-          include: {
-            process: {
-              include: {
-                category: true,
-                objectives: true
-              }
-            },
-            activity: true
-          }
-        },
+        risk: { include: { process: { include: { category: true, objectives: true } }, activity: true } },
         control: {
           include: {
-            todTests: true,
-            toeTests: {
-              include: {
-                exceptions: true
-              }
-            },
+            todTests: { where: { status: 'Approved' }, orderBy: { testedAt: 'desc' }, take: 1 },
+            toeTests: { where: { status: 'Reviewed' }, orderBy: { testedAt: 'desc' }, take: 1, include: { exceptions: true } },
             issues: {
+              orderBy: { createdAt: 'desc' },
               include: {
                 actionPlans: {
-                  include: {
-                    retests: true
-                  }
+                  orderBy: { createdAt: 'desc' },
+                  include: { retests: { orderBy: { retestedAt: 'desc' } } }
                 }
               }
             },
-            csaResponses: true
+            monitoringRules: { orderBy: { createdAt: 'desc' } },
+            csaResponses: { orderBy: { assessedAt: 'desc' }, take: 1 }
           }
         }
       }
@@ -44,24 +34,20 @@ export async function GET() {
       const risk = m.risk;
       const control = m.control;
       const process = risk.process;
-      const objective = process.objectives?.[0]?.objective || 'Process integrity and financial assurance';
-      const toe = control.toeTests?.[0];
-      const tod = control.todTests?.[0];
-      const issue = control.issues?.[0];
+      const toe = control.toeTests[0];
+      const tod = control.todTests[0];
+      const issue = control.issues.find(i => i.status !== 'Closed') || control.issues[0];
       const map = issue?.actionPlans?.[0];
       const retest = map?.retests?.[0];
-
+      const controlHealth = deriveControlHealth(control);
       return {
         id: m.id,
         rowNumber: idx + 1,
-        // Process
         processId: process.processId,
         processName: process.name,
-        processCategory: process.category?.name || 'General',
-        activityName: risk.activity?.name || 'All Activities',
-        processObjective: objective,
-
-        // Risk
+        processCategory: process.category?.name || null,
+        activityName: risk.activity?.name || null,
+        processObjective: process.objectives?.[0]?.objective || null,
         riskId: risk.riskId,
         riskName: risk.name,
         riskCause: risk.cause,
@@ -72,8 +58,6 @@ export async function GET() {
         inherentRating: risk.inherentRating,
         residualScore: risk.residualScore,
         residualRating: risk.residualRating,
-
-        // Control
         controlId: control.controlId,
         controlName: control.name,
         controlDescription: control.description,
@@ -82,22 +66,18 @@ export async function GET() {
         controlType: control.type,
         controlNature: control.nature,
         controlFrequency: control.frequency,
-        evidenceRequirement: control.evidenceRequirement || 'Standard Audit Log',
+        evidenceRequirement: control.evidenceRequirement,
         isKeyControl: control.isKeyControl,
         isIcofrKey: control.isIcofrKey,
-
-        // Assurance / Testing
-        csaStatus: control.csaResponses?.[0]?.csaConclusion || 'Effective',
-        todConclusion: tod?.conclusion || 'Effective Design',
-        toeConclusion: toe?.finalConclusion || 'Effective',
-        toePassRatio: toe ? `${toe.passCount}/${toe.sampleSize} Pass` : 'Not Tested',
-        controlHealth: control.overallHealth,
-
-        // Remediation & Action Plan
+        csaStatus: control.csaResponses[0]?.csaConclusion || 'Not Assessed',
+        todConclusion: tod?.conclusion || 'Not Assessed',
+        toeConclusion: toe?.finalConclusion || 'Not Tested',
+        toePassRatio: toe ? `${toe.passCount}/${toe.sampleSize} Pass` : null,
+        controlHealth,
         issueId: issue?.issueId || null,
         issueTitle: issue?.title || null,
         issueSeverity: issue?.severity || null,
-        issueStatus: issue?.status || 'No Issue',
+        issueStatus: issue?.status || null,
         mapId: map?.mapId || null,
         mapAgreedAction: map?.agreedAction || null,
         mapStatus: map?.status || null,
@@ -108,7 +88,6 @@ export async function GET() {
 
     return NextResponse.json({ rcm: rcmRows, total: rcmRows.length });
   } catch (error) {
-    console.error('Failed to generate dynamic RCM:', error);
-    return NextResponse.json({ error: 'Failed to generate dynamic RCM' }, { status: 500 });
+    return apiError(error);
   }
 }
