@@ -45,12 +45,22 @@ export default function ProcessesPage() {
     fetch('/api/processes')
       .then(res => res.json())
       .then(data => {
-        setProcesses(data.processes || []);
-        setCategories(data.categories || []);
-        if (data.processes?.length > 0 && !selectedProcess) {
-          setSelectedProcess(data.processes[0]);
-          setFormData(prev => ({ ...prev, categoryId: data.categories?.[0]?.id || '' }));
+        const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
+        const nextCategories = Array.isArray(data.categories) ? data.categories : [];
+        setProcesses(nextProcesses);
+        setCategories(nextCategories);
+
+        if (nextProcesses.length > 0 && !selectedProcess) {
+          setSelectedProcess(nextProcesses[0]);
         }
+
+        setFormData(prev => ({
+          ...prev,
+          categoryId:
+            prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
+              ? prev.categoryId
+              : nextCategories[0]?.id || ''
+        }));
       })
       .catch(console.error);
   };
@@ -275,13 +285,13 @@ export default function ProcessesPage() {
                       <div>
                         <span className="text-slate-400 font-medium">Target KPI:</span>
                         <div className="font-bold text-slate-700">
-                          {selectedProcess.objectives[0].kpi || 'Disbursement Accuracy >= 99.9%'}
+                          {selectedProcess.objectives[0].kpi || 'Not provided'}
                         </div>
                       </div>
                       <div>
                         <span className="text-slate-400 font-medium">Key Risk Indicator (KRI):</span>
                         <div className="font-bold text-rose-700">
-                          {selectedProcess.objectives[0].kri || 'Zero unauthorized payments'}
+                          {selectedProcess.objectives[0].kri || 'Not provided'}
                         </div>
                       </div>
                     </div>

@@ -1,29 +1,30 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createControl, listControls } from '@/lib/d1-core';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const controls = await prisma.controlMaster.findMany({
-      include: {
-        process: true, activity: true, risks: { include: { risk: true } }, todTests: true,
-        toeTests: { include: { exceptions: true } }, monitoringRules: true, certifications: true
-      },
-      orderBy: { controlId: 'asc' }
-    });
-    return NextResponse.json({ controls });
+    const controls = await listControls();
+    return NextResponse.json({ controls, storage: 'cloudflare-d1' });
   } catch (error) {
-    console.error('Failed to fetch controls:', error);
-    return NextResponse.json({ error: 'Failed to fetch controls' }, { status: 500 });
+    console.error('Failed to fetch D1 controls:', error);
+    return NextResponse.json({ error: 'Failed to fetch controls from persistent database.' }, { status: 503 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const {
-      controlId, name, description, objective, processId, riskId, controlOwner,
-      type, nature, frequency, isKeyControl, isIcofrKey
-    } = body;
+    const body = (await request.json()) as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const description = typeof body.description === 'string' ? body.description.trim() : '';
+    const objective = typeof body.objective === 'string' ? body.objective.trim() : '';
+    const processId = typeof body.processId === 'string' ? body.processId.trim() : '';
+    const riskId = typeof body.riskId === 'string' ? body.riskId.trim() : '';
+    const controlOwner = typeof body.controlOwner === 'string' ? body.controlOwner.trim() : '';
+    const type = typeof body.type === 'string' ? body.type.trim() : '';
+    const nature = typeof body.nature === 'string' ? body.nature.trim() : '';
+    const frequency = typeof body.frequency === 'string' ? body.frequency.trim() : '';
 
     if (!name || !description || !objective || !processId || !controlOwner || !type || !nature || !frequency) {
       return NextResponse.json(
@@ -32,26 +33,36 @@ export async function POST(request: Request) {
       );
     }
 
-    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (!institution) return NextResponse.json({ error: 'Register an institution before creating controls.' }, { status: 409 });
-
-    const control = await prisma.controlMaster.create({
-      data: {
-        institutionId: institution.id,
-        controlId: controlId || `CTRL-${Date.now().toString(36).toUpperCase()}`,
-        name, description, objective, processId, controlOwner, type, nature, frequency,
-        isKeyControl: Boolean(isKeyControl),
-        isIcofrKey: Boolean(isIcofrKey),
-        designAssessment: 'Not Assessed',
-        operatingStatus: 'Not Assessed',
-        overallHealth: 'Not Assessed'
-      }
+    const control = await createControl({
+      ...body,
+      name,
+      description,
+      objective,
+      processId,
+      riskId: riskId || null,
+      controlOwner,
+      type,
+      nature,
+      frequency
     });
 
-    if (riskId) await prisma.controlRiskMapping.create({ data: { controlId: control.id, riskId } });
     return NextResponse.json(control, { status: 201 });
   } catch (error) {
-    console.error('Failed to create control:', error);
-    return NextResponse.json({ error: 'Failed to create control' }, { status: 500 });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'PROCESS_NOT_FOUND') {
+      return NextResponse.json({ error: 'Select a registered business process before creating a control.' }, { status: 400 });
+    }
+    if (code === 'RISK_NOT_FOUND') {
+      return NextResponse.json({ error: 'Selected risk does not exist.' }, { status: 400 });
+    }
+    if (code === 'RISK_PROCESS_MISMATCH') {
+      return NextResponse.json({ error: 'Selected risk belongs to a different business process.' }, { status: 400 });
+    }
+    if (code === 'CONTROL_ID_CONFLICT') {
+      return NextResponse.json({ error: 'Control ID already exists for this institution.' }, { status: 409 });
+    }
+
+    console.error('Failed to create D1 control:', error);
+    return NextResponse.json({ error: 'Failed to create control in persistent database.' }, { status: 500 });
   }
 }

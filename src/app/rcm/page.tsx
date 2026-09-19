@@ -379,8 +379,8 @@ export default function RCMWorkspacePage() {
                               {row.mapAgreedAction}
                             </div>
                             <div className="text-[10px] text-emerald-600 font-bold flex items-center space-x-1">
-                              <span>Retest: {row.retestResult || 'Passed'}</span>
-                              <span>• Issue Closed</span>
+                              <span>Retest: {row.retestResult || 'Not Retested'}</span>
+                              <span>• {row.issueStatus || 'Status not recorded'}</span>
                             </div>
                           </div>
                         ) : (
@@ -444,7 +444,7 @@ export default function RCMWorkspacePage() {
                 </div>
                 <div>
                   <span className="text-slate-400 text-[10px]">Remediation:</span>
-                  <div className="font-bold text-emerald-700">{row.mapStatus || 'Healthy'}</div>
+                  <div className="font-bold text-emerald-700">{row.mapStatus || 'No MAP'}</div>
                 </div>
                 <div>
                   <span className="text-slate-400 text-[10px]">Residual:</span>

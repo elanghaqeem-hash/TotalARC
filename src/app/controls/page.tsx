@@ -22,6 +22,8 @@ import { getHealthBadgeClasses } from '@/lib/utils';
 
 export default function ControlsPage() {
   const [controls, setControls] = useState<any[]>([]);
+  const [processes, setProcesses] = useState<any[]>([]);
+  const [risks, setRisks] = useState<any[]>([]);
   const [selectedControl, setSelectedControl] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [newControlModal, setNewControlModal] = useState(false);
@@ -33,6 +35,7 @@ export default function ControlsPage() {
     description: '',
     objective: '',
     processId: '',
+    riskId: '',
     controlOwner: '',
     type: 'Preventive',
     nature: 'IT Dependent Manual',
@@ -42,14 +45,48 @@ export default function ControlsPage() {
   });
 
   const loadControls = () => {
-    fetch('/api/controls')
-      .then(res => res.json())
-      .then(d => {
-        setControls(d.controls || []);
-        if (d.controls?.length > 0 && !selectedControl) {
-          setSelectedControl(d.controls[0]);
-          setFormData(prev => ({ ...prev, processId: d.controls[0].processId }));
+    Promise.all([
+      fetch('/api/controls').then(res => {
+        if (!res.ok) throw new Error('Unable to load controls.');
+        return res.json();
+      }),
+      fetch('/api/processes').then(res => {
+        if (!res.ok) throw new Error('Unable to load processes.');
+        return res.json();
+      }),
+      fetch('/api/risks').then(res => {
+        if (!res.ok) throw new Error('Unable to load risks.');
+        return res.json();
+      })
+    ])
+      .then(([controlData, processData, riskData]) => {
+        const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
+        const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
+        const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
+
+        setControls(nextControls);
+        setProcesses(nextProcesses);
+        setRisks(nextRisks);
+
+        if (nextControls.length > 0 && !selectedControl) {
+          setSelectedControl(nextControls[0]);
         }
+
+        setFormData(prev => {
+          const nextProcessId =
+            prev.processId && nextProcesses.some((process: any) => process.id === prev.processId)
+              ? prev.processId
+              : nextProcesses[0]?.id || '';
+          const riskStillValid = nextRisks.some(
+            (risk: any) => risk.id === prev.riskId && risk.processId === nextProcessId
+          );
+
+          return {
+            ...prev,
+            processId: nextProcessId,
+            riskId: riskStillValid ? prev.riskId : ''
+          };
+        });
       })
       .catch(console.error);
   };
@@ -82,6 +119,8 @@ export default function ControlsPage() {
       c.type.toLowerCase().includes(search.toLowerCase())
     );
   });
+
+  const availableRisks = risks.filter(risk => risk.processId === formData.processId);
 
   return (
     <div className="space-y-6">
@@ -311,6 +350,77 @@ export default function ControlsPage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Control ID</label>
+                  <input
+                    type="text"
+                    placeholder="Auto-generated if blank"
+                    value={formData.controlId}
+                    onChange={e => setFormData({ ...formData, controlId: e.target.value })}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Frequency *</label>
+                  <select
+                    required
+                    value={formData.frequency}
+                    onChange={e => setFormData({ ...formData, frequency: e.target.value })}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  >
+                    <option value="Real Time">Real Time</option>
+                    <option value="Per Transaction">Per Transaction</option>
+                    <option value="Daily">Daily</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Monthly">Monthly</option>
+                    <option value="Quarterly">Quarterly</option>
+                    <option value="Annual">Annual</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Business Process *</label>
+                <select
+                  required
+                  value={formData.processId}
+                  onChange={e =>
+                    setFormData({ ...formData, processId: e.target.value, riskId: '' })
+                  }
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                >
+                  {processes.length === 0 ? (
+                    <option value="">Register a business process first</option>
+                  ) : (
+                    processes.map(process => (
+                      <option key={process.id} value={process.id}>
+                        {process.processId} — {process.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Related Risk</label>
+                <select
+                  value={formData.riskId}
+                  onChange={e => setFormData({ ...formData, riskId: e.target.value })}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                >
+                  <option value="">No risk mapping yet</option>
+                  {availableRisks.map(risk => (
+                    <option key={risk.id} value={risk.id}>
+                      {risk.riskId} — {risk.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Select a risk to create the persisted RCM relationship at the same time.
+                </p>
+              </div>
+
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Control Name *</label>
                 <input
@@ -331,6 +441,30 @@ export default function ControlsPage() {
                   placeholder="Describe control activities, criteria, and execution mechanism..."
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Control Objective *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="State the specific risk/control objective"
+                  value={formData.objective}
+                  onChange={e => setFormData({ ...formData, objective: e.target.value })}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Control Owner *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Enter accountable control owner"
+                  value={formData.controlOwner}
+                  onChange={e => setFormData({ ...formData, controlOwner: e.target.value })}
                   className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
@@ -395,7 +529,8 @@ export default function ControlsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm"
+                  disabled={processes.length === 0}
+                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save Control Master
                 </button>
