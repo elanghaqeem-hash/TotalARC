@@ -22,6 +22,7 @@ export async function GET(request: Request) {
       organization: {
         legalEntities: organization.legalEntities,
         organizationUnits: organization.organizationUnits,
+        positions: organization.positions,
         users: organization.users
       },
       storage: 'cloudflare-d1'
