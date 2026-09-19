@@ -137,7 +137,6 @@ jobs:
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
           FALLBACK_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
-          AI_PROBE_TOKEN: ${{ env.AI_PROBE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
