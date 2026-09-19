@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
+import { findBusinessProcessForAi, recordAiAnalysisAudit } from '@/lib/d1-core';
 
 type Finding = {
   id: string;
@@ -72,22 +72,9 @@ export async function POST(request: Request) {
 
     const registeredProcess =
       processId || processName
-        ? await prisma.businessProcess.findFirst({
-            where: {
-              OR: [
-                ...(processId ? [{ id: processId }, { processId }] : []),
-                ...(processName ? [{ name: processName }] : [])
-              ]
-            },
-            include: {
-              category: true,
-              orgUnit: true,
-              objectives: true,
-              sipoc: true,
-              activities: { orderBy: { orderIndex: 'asc' } },
-              risks: true,
-              controls: true
-            }
+        ? await findBusinessProcessForAi({
+            processId: processId || undefined,
+            processName: processName || undefined
           })
         : null;
 
@@ -169,23 +156,16 @@ export async function POST(request: Request) {
 
     if (registeredProcess) {
       try {
-        await prisma.auditLog.create({
-          data: {
-            institutionId: registeredProcess.institutionId,
-            userName: 'Total ARC AI',
-            userRole: 'AI Assistant',
-            action: 'AI_ANALYZE',
-            entityType: 'BusinessProcess',
-            recordId: registeredProcess.id,
-            newValue: JSON.stringify({
-              requestId: result.requestId,
-              provider: result.provider,
-              model: result.model,
-              findingsCount: findings.length,
-              humanReviewRequired: true
-            }),
-            reason: 'Advisory BPM/RCM control-gap analysis; no autonomous record mutation.'
-          }
+        await recordAiAnalysisAudit({
+          institutionId:
+            typeof registeredProcess.institutionId === 'string'
+              ? registeredProcess.institutionId
+              : null,
+          processId: String(registeredProcess.id),
+          requestId: result.requestId,
+          provider: result.provider,
+          model: result.model,
+          findingsCount: findings.length
         });
       } catch (auditError) {
         console.warn('AI audit log persistence failed:', auditError);
@@ -193,8 +173,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      processAnalyzed: registeredProcess?.name || processName || 'Ad-hoc process',
-      processId: registeredProcess?.processId || processId || null,
+      processAnalyzed: (registeredProcess?.name as string | undefined) || processName || 'Ad-hoc process',
+      processId: (registeredProcess?.processId as string | undefined) || processId || null,
       disclaimer: 'AI Suggested — Human Review Required',
       analysisNote,
       findingsCount: findings.length,
