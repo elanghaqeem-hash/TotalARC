@@ -110,6 +110,22 @@ export async function POST(request: Request) {
     const selectedOwner = ownerUserId
       ? organization.users.find(user => user.id === ownerUserId && user.active)
       : null;
+    const scopedUnitIds = access.unrestricted ? null : new Set(access.unitIds);
+    const scopedPositions = scopedUnitIds
+      ? organization.positions.filter(position => scopedUnitIds.has(position.orgUnitId))
+      : organization.positions;
+    const scopedUnits = scopedUnitIds
+      ? organization.organizationUnits.filter(unit => scopedUnitIds.has(unit.id))
+      : organization.organizationUnits;
+    const scopedUserIds = new Set<string>([
+      auth.user.id,
+      ...scopedUnits
+        .map(unit => unit.headUserId)
+        .filter((value): value is string => Boolean(value)),
+      ...scopedPositions
+        .map(position => position.assignedUserId)
+        .filter((value): value is string => Boolean(value))
+    ]);
 
     if (activeUnits.length > 0 && !orgUnitId) {
       return NextResponse.json(
@@ -176,6 +192,35 @@ export async function POST(request: Request) {
           code: 'PROCESS_OWNER_INVALID'
         },
         { status: 400 }
+      );
+    }
+
+    if (
+      selectedOwner
+      && !access.unrestricted
+      && !scopedUserIds.has(selectedOwner.id)
+      && !(typeof selectedOwner.orgUnitId === 'string' && scopedUnitIds?.has(selectedOwner.orgUnitId))
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Selected process owner is outside your organization access scope.',
+          code: 'PROCESS_OWNER_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
+      );
+    }
+
+    if (
+      selectedEntity
+      && !access.unrestricted
+      && selectedUnit?.legalEntityId !== selectedEntity.id
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Selected legal entity is outside the allowed organization scope.',
+          code: 'PROCESS_LEGAL_ENTITY_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
       );
     }
 
