@@ -47,10 +47,20 @@ jobs:
           fi
           echo "Cloudflare deployment credentials are configured."
 
+      - name: Verify no dummy data or unsafe persistence
+        run: npm run verify:no-dummy
+
       - name: Build OpenNext Worker
         run: npm run build
 
-      - name: Deploy Worker and provision Cloudflare bindings
+      - name: Apply Cloudflare D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply DB --remote
+
+      - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
