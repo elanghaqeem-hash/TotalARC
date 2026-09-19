@@ -123,9 +123,6 @@ export default function RCMWorkspacePage() {
           <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
             Enterprise Risk Control Matrix (RCM)
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Section 38: Generated dynamically from relational Process, Risk, and Control data. Never duplicate master entries.
-          </p>
         </div>
 
         <div className="flex items-center space-x-3">
