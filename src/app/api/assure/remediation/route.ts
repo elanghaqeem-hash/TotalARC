@@ -9,6 +9,7 @@ import {
   requestMapExtension
 } from '@/lib/d1-assurance';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { recordMutationAudit } from '@/lib/d1-core';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
@@ -19,8 +20,37 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const data = await listRemediationData(auth.user.institutionId);
-    return NextResponse.json({ ...data, storage: 'cloudflare-d1' });
+    const [data, authorizedOrgUnitIds] = await Promise.all([
+      listRemediationData(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
+    ]);
+
+    const allowed = (orgUnitId: unknown) =>
+      isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        typeof orgUnitId === 'string' ? orgUnitId : null
+      );
+
+    return NextResponse.json({
+      exceptions: data.exceptions.filter(item =>
+        allowed((item.process as Record<string, unknown> | null)?.orgUnitId)
+      ),
+      deficiencies: data.deficiencies.filter(item =>
+        allowed((item.process as Record<string, unknown> | null)?.orgUnitId)
+      ),
+      issues: data.issues.filter(item =>
+        allowed((item.process as Record<string, unknown> | null)?.orgUnitId)
+      ),
+      maps: data.maps.filter(item =>
+        allowed(
+          ((item.issue as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId
+        )
+      ),
+      retests: data.retests.filter(item =>
+        allowed((item.process as Record<string, unknown> | null)?.orgUnitId)
+      ),
+      storage: 'cloudflare-d1'
+    });
   } catch (error) {
     console.error('Failed to fetch D1 remediation data:', error);
     return NextResponse.json(
@@ -44,6 +74,49 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = textValue(body, 'actionType');
+
+    const [authorizedOrgUnitIds, remediationData] = await Promise.all([
+      resolveAuthorizedOrgUnitIds(auth.user),
+      listRemediationData(auth.user.institutionId)
+    ]);
+
+    const orgUnitForAction = (() => {
+      if (actionType === 'CREATE_DEFICIENCY') {
+        const item = remediationData.exceptions.find(row => row.id === textValue(body, 'exceptionId'));
+        return (item?.process as Record<string, unknown> | null)?.orgUnitId;
+      }
+      if (actionType === 'CREATE_ISSUE') {
+        const item = remediationData.deficiencies.find(row => row.id === textValue(body, 'deficiencyId'));
+        return (item?.process as Record<string, unknown> | null)?.orgUnitId;
+      }
+      if (actionType === 'CREATE_MAP') {
+        const item = remediationData.issues.find(row => row.id === textValue(body, 'issueId'));
+        return (item?.process as Record<string, unknown> | null)?.orgUnitId;
+      }
+      if (['CREATE_MILESTONE', 'CREATE_RETEST', 'REQUEST_EXTENSION'].includes(actionType)) {
+        const item = remediationData.maps.find(row => row.id === textValue(body, 'mapId'));
+        return (
+          ((item?.issue as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId
+        );
+      }
+      return undefined;
+    })();
+
+    if (
+      orgUnitForAction !== undefined
+      && !isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        typeof orgUnitForAction === 'string' ? orgUnitForAction : null
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Your account is not authorized for this remediation organization unit.',
+          code: 'REMEDIATION_ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
+      );
+    }
 
     if (actionType === 'CREATE_DEFICIENCY') {
       const exceptionId = textValue(body, 'exceptionId');
