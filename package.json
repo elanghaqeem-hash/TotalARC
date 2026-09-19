@@ -19,7 +19,8 @@
     "build:next": "next build",
     "verify:tenant-isolation": "node scripts/verify-tenant-isolation.js",
     "verify:mutation-security": "node scripts/verify-mutation-security.js",
-    "verify:organization-integrity": "node scripts/verify-organization-integrity.js"
+    "verify:organization-integrity": "node scripts/verify-organization-integrity.js",
+    "verify:organization-scope": "node scripts/verify-organization-scope.js"
   },
   "keywords": [],
   "author": "",
