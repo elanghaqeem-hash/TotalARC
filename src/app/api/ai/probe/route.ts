@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { runAiGateway } from '@/lib/ai/gateway';
+import { probeAiProviders } from '@/lib/ai/gateway';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,31 +43,23 @@ export async function POST(request: Request) {
     );
   }
 
-  try {
-    const result = await runAiGateway({
-      task: 'classification',
-      sensitivity: 'confidential',
-      systemPrompt: 'You are a production connectivity probe for Total ARC. Return a short acknowledgement only.',
-      prompt: 'Confirm that the private Total ARC AI provider can perform inference.',
-      temperature: 0,
-      maxOutputTokens: 64
-    });
+  const providers = await probeAiProviders();
+  const privateProvider = providers.find(provider => provider.provider === 'cloudflare');
+  const privateReady = Boolean(privateProvider?.configured && privateProvider.ok);
+  const configuredExternalFailures = providers.filter(
+    provider => provider.provider !== 'cloudflare' && provider.configured && !provider.ok
+  );
 
-    return NextResponse.json(
-      {
-        ok: true,
-        provider: result.provider,
-        model: result.model,
-        fallbackUsed: result.fallbackUsed,
-        durationMs: result.durationMs
-      },
-      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
-    );
-  } catch (error) {
-    console.error('AI production probe failed:', error);
-    return NextResponse.json(
-      { ok: false, error: 'Private AI inference failed.' },
-      { status: 503, headers: { 'Cache-Control': 'no-store, max-age=0' } }
-    );
-  }
+  return NextResponse.json(
+    {
+      ok: privateReady,
+      privateProviderReady: privateReady,
+      configuredExternalProvidersHealthy: configuredExternalFailures.length === 0,
+      providers
+    },
+    {
+      status: privateReady ? 200 : 503,
+      headers: { 'Cache-Control': 'no-store, max-age=0' }
+    }
+  );
 }
