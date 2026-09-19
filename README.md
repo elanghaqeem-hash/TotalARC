@@ -10,11 +10,11 @@ The production-hardening branch is designed around **real PostgreSQL persistence
 - **UI:** React 19.2.8, TypeScript, Tailwind CSS, Lucide
 - **Database:** PostgreSQL
 - **Cloud deployment adapter:** OpenNext for Cloudflare 1.20.6 + Wrangler
-- **ORM:** Prisma 6.19.3
+- **ORM:** Prisma 6.19.3 with Rust-free `engineType="client"` and `@prisma/adapter-pg` for Cloudflare Workers
 - **Authentication:** signed HttpOnly session cookie, password hashing with scrypt, account lockout, session-version invalidation
 - **Authorization:** server-side role checks plus institution/tenant scoping on protected APIs
 - **Security controls:** same-origin mutation checks, CSP/security headers, audit logging, dependency audit, CSV formula-injection protection, tenant-isolation CI testing
-- **AI:** optional OpenAI-compatible provider; AI routes fail closed when no provider is configured
+- **AI:** governed multi-provider gateway (Cloudflare Workers AI, Gemini, Groq, OpenRouter) with sensitivity routing, external redaction, provider provenance, human review, and fail-closed behavior
 - **Seed behavior:** reference/master taxonomy only; no transactional demo process, risk, control, testing, issue, MAP, CCM run, or certification data is seeded
 
 ## Functional lifecycle
@@ -118,6 +118,10 @@ The **Production Readiness** GitHub Actions workflow additionally verifies:
 - unauthenticated API rejection
 - authenticated two-tenant isolation
 - cross-tenant mutation rejection
+- missing-Origin mutation rejection
+- persistent account-lockout behavior
+- AI fail-closed behavior when no eligible provider is configured
+- idempotent, audited Bank Kalbar institution-master persistence
 - high-severity production dependency audit
 
 A branch should not be treated as release-ready until the latest workflow run passes.
@@ -130,8 +134,13 @@ See `.env.example`. Important variables include:
 - `SESSION_SECRET` — session signing secret
 - `PLATFORM_ADMIN_EMAILS` — allowlist for platform-level institution administration
 - `ALLOWED_ORIGINS` — optional additional trusted browser origins
-- `AI_ALLOW_EXTERNAL` — must be explicitly enabled before external AI calls are allowed
-- `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` — optional AI provider configuration
+- `CLOUDFLARE_AI_MODEL` — Cloudflare Workers AI model used through the Worker `AI` binding
+- `GEMINI_API_KEY` + `GEMINI_MODEL` — optional Gemini provider
+- `GROQ_API_KEY` + `GROQ_MODEL` — optional Groq provider
+- `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` — optional OpenRouter provider
+- `AI_DEFAULT_SENSITIVITY` — default information classification for gateway routing
+- `AI_ALLOW_EXTERNAL_FOR_SENSITIVE` — explicit opt-in required before confidential/restricted data can fall back to an external provider
+- `AI_REDACT_EXTERNAL` — redacts common identifiers/secrets before external calls when enabled
 - `BOOTSTRAP_*` — one-time initial administrator creation
 
 ## Data integrity and demo-data policy
@@ -139,6 +148,8 @@ See `.env.example`. Important variables include:
 The repository must not ship transactional “showcase” data that can be mistaken for real assurance evidence. Reference taxonomies such as industries, frameworks, regulations, and process categories are permitted. Business processes, risks, controls, assessment results, test samples, deficiencies, issues, MAPs, monitoring runs, certifications, and management attestations must originate from authenticated user activity, approved integrations, or verified imported source data.
 
 ## Cloudflare deployment
+
+The application uses the Rust-free Prisma client engine with the PostgreSQL driver adapter so database access can run in the Worker runtime without a native Prisma query-engine binary. Configure `DATABASE_URL` as a Cloudflare secret/environment variable; do not place the production connection string in `wrangler.jsonc`.
 
 The repository includes `open-next.config.ts`, `wrangler.jsonc`, and a dedicated Cloudflare validation workflow. Keep the normal `npm run build` command as the native Next.js production build used by the production-readiness gate. Use `npm run build:cloudflare` to generate the OpenNext Worker artifact, and `npm run deploy:cloudflare` only from an authorized deployment environment with production secrets configured outside Git.
 
@@ -150,9 +161,10 @@ Before internet-facing production deployment:
 2. Store `DATABASE_URL`, `SESSION_SECRET`, bootstrap credentials, and AI keys in the deployment platform's secret manager.
 3. Run `prisma migrate deploy` before starting the application.
 4. Run `db:seed` only for reference data.
-5. Bootstrap the initial administrator, log in, change the temporary password, and remove bootstrap credentials from the environment.
-6. Confirm the Production Readiness workflow is green for the exact commit being deployed.
-7. Configure HTTPS and ensure production security headers are preserved by the reverse proxy/CDN.
+5. Run `npm run db:ensure-bank-kalbar` when Bank Kalbar must be synchronized into the hardened PostgreSQL institution master, then verify with `npm run db:verify-bank-kalbar`.
+6. Bootstrap the initial administrator, log in, change the temporary password, and remove bootstrap credentials from the environment.
+7. Confirm both Production Readiness and Cloudflare validation workflows are green for the exact commit being deployed.
+8. Configure HTTPS and ensure production security headers are preserved by the reverse proxy/CDN.
 
 ## Repository structure
 
