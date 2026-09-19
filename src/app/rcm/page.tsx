@@ -158,25 +158,25 @@ export default function RCMWorkspacePage() {
 
       {/* Search & Filter Bar */}
       <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="relative min-w-0 flex-1 xl:max-w-lg">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <div className="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.72fr)] 2xl:items-stretch">
+          <div className="relative min-w-0">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search process, risk, control, or control ID"
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
             />
           </div>
 
-          <div className="min-w-0 xl:flex-1">
-            <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 xl:hidden">
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 2xl:hidden">
               <Filter className="h-3.5 w-3.5" />
               Filter view
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:justify-end">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {[
                 {
                   key: 'ALL',
@@ -210,27 +210,30 @@ export default function RCMWorkspacePage() {
                   <button
                     key={option.key}
                     type="button"
+                    title={option.label}
                     onClick={() => setFilterType(option.key)}
                     aria-pressed={active}
-                    className={`group flex min-h-[46px] min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-all sm:min-h-[44px] xl:min-w-[132px] ${
+                    className={`group flex min-h-[58px] min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all ${
                       active
                         ? 'border-brand-600 bg-brand-600 text-white shadow-md shadow-sky-100'
                         : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-brand-200 hover:bg-brand-50/60 hover:text-brand-800'
                     }`}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                          active ? 'bg-white/15 text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200 group-hover:text-brand-700'
-                        }`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        active
+                          ? 'bg-white/15 text-white'
+                          : 'bg-white text-slate-500 ring-1 ring-slate-200 group-hover:text-brand-700'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block whitespace-normal break-words text-[10px] font-bold leading-4 sm:text-[11px]">
+                        {option.label}
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[11px] font-bold leading-4">{option.label}</span>
-                        <span className={`block text-[9px] leading-3 ${active ? 'text-white/75' : 'text-slate-400'}`}>
-                          {option.count} record{option.count === 1 ? '' : 's'}
-                        </span>
+                      <span className={`mt-0.5 block text-[9px] leading-3 ${active ? 'text-white/75' : 'text-slate-400'}`}>
+                        {option.count} record{option.count === 1 ? '' : 's'}
                       </span>
                     </span>
                   </button>
