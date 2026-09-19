@@ -298,6 +298,15 @@ async function tenantUser(db: D1DatabaseLike, institutionId: string, id: string)
   return user;
 }
 
+async function tableExists(db: D1DatabaseLike, tableName: string) {
+  const row = await first<{ name?: string }>(
+    db,
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+    [tableName]
+  );
+  return Boolean(row?.name);
+}
+
 async function assertEntityParentSafe(
   db: D1DatabaseLike,
   institutionId: string,
@@ -360,9 +369,54 @@ export async function getOrganizationData(institutionId: string) {
     )
   ]);
 
+  const businessProcessReady = await tableExists(db, 'BusinessProcess');
+  const [unitProcessRows, entityProcessRows] = businessProcessReady
+    ? await Promise.all([
+        all<{ orgUnitId?: string; processCount?: number }>(
+          db,
+          `SELECT orgUnitId, COUNT(*) AS processCount
+             FROM BusinessProcess
+            WHERE institutionId = ? AND orgUnitId IS NOT NULL
+            GROUP BY orgUnitId`,
+          [institutionId]
+        ),
+        all<{ legalEntityId?: string; processCount?: number }>(
+          db,
+          `SELECT legalEntityId, COUNT(*) AS processCount
+             FROM BusinessProcess
+            WHERE institutionId = ? AND legalEntityId IS NOT NULL
+            GROUP BY legalEntityId`,
+          [institutionId]
+        )
+      ])
+    : [[], []];
+
   const entityById = new Map(legalEntities.map(item => [item.id, item]));
   const unitById = new Map(organizationUnits.map(item => [item.id, item]));
   const userById = new Map(users.map(item => [item.id, item]));
+  const processCountByUnit = new Map(
+    unitProcessRows.map(item => [String(item.orgUnitId || ''), Number(item.processCount || 0)])
+  );
+  const processCountByEntity = new Map(
+    entityProcessRows.map(item => [String(item.legalEntityId || ''), Number(item.processCount || 0)])
+  );
+  const positionCountByUnit = new Map<string, number>();
+  const childUnitCountByUnit = new Map<string, number>();
+
+  for (const position of positions) {
+    positionCountByUnit.set(
+      position.orgUnitId,
+      (positionCountByUnit.get(position.orgUnitId) || 0) + 1
+    );
+  }
+
+  for (const unit of organizationUnits) {
+    if (!unit.parentId) continue;
+    childUnitCountByUnit.set(
+      unit.parentId,
+      (childUnitCountByUnit.get(unit.parentId) || 0) + 1
+    );
+  }
 
   return {
     institution,
@@ -370,7 +424,8 @@ export async function getOrganizationData(institutionId: string) {
       ...entity,
       parentEntityName: entity.parentEntityId
         ? entityById.get(entity.parentEntityId)?.name || null
-        : null
+        : null,
+      processCount: processCountByEntity.get(entity.id) || 0
     })),
     organizationUnits: organizationUnits.map(unit => ({
       ...unit,
@@ -383,7 +438,10 @@ export async function getOrganizationData(institutionId: string) {
         : unit.headName,
       headUserEmail: unit.headUserId
         ? userById.get(unit.headUserId)?.email || unit.headEmail
-        : unit.headEmail
+        : unit.headEmail,
+      processCount: processCountByUnit.get(unit.id) || 0,
+      positionCount: positionCountByUnit.get(unit.id) || 0,
+      childUnitCount: childUnitCountByUnit.get(unit.id) || 0
     })),
     positions: positions.map(position => ({
       ...position,
