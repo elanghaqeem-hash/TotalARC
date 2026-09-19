@@ -144,6 +144,7 @@ jobs:
 
           check_json "remediation" "/api/assure/remediation" '
             .storage == "cloudflare-d1" and
+            (.exceptions | type) == "array" and
             (.deficiencies | type) == "array" and
             (.issues | type) == "array" and
             (.maps | type) == "array" and
