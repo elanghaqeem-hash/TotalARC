@@ -146,7 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur">
-        <div className="mx-auto flex h-[72px] max-w-[1600px] items-center justify-between gap-4 px-3 sm:px-5 lg:px-6">
+        <div className="mx-auto flex h-[72px] max-w-[1600px] items-center justify-between gap-2.5 px-3 sm:gap-4 sm:px-5 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -160,11 +160,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-brand-700 text-white shadow-lg shadow-sky-200">
                 <Shield className="h-6 w-6" />
               </div>
-              <div className="min-w-0">
-                <div className="truncate text-lg font-black tracking-tight text-slate-950 sm:text-xl">
-                  TOTAL <span className="text-brand-600">ARC</span>
+              <div className="min-w-0 leading-none">
+                <div className="text-[15px] font-black tracking-tight text-slate-950 sm:text-lg">
+                  <span className="block">TOTAL</span>
+                  <span className="mt-1 block text-brand-600">ARC</span>
                 </div>
-                <div className="hidden text-[10px] font-medium text-slate-400 sm:block">Total Assurance, Risk & Control</div>
+                <div className="mt-1 hidden text-[9px] font-medium leading-none text-slate-400 md:block">Total Assurance, Risk & Control</div>
               </div>
             </Link>
           </div>
@@ -208,10 +209,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <button
               onClick={() => setAiDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-3 py-2.5 text-[11px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-2.5 py-2.5 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:px-3 sm:text-[11px]"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">ARC AI</span>
+              <span>ARC AI</span>
             </button>
 
             <div className="relative">
