@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../scripts/prisma-client.mjs';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const industries = [
   ['Financial Services','Banking','Commercial & Retail Banking'],
