@@ -386,6 +386,65 @@ async function callProvider(
   );
 }
 
+export type AiProviderProbe = {
+  provider: AiProvider;
+  configured: boolean;
+  ok: boolean;
+  model: string;
+  durationMs?: number;
+  retryable?: boolean;
+};
+
+export async function probeAiProviders(): Promise<AiProviderProbe[]> {
+  const providers = Object.keys(PROVIDER_CONFIG) as AiProvider[];
+  const results: AiProviderProbe[] = [];
+
+  for (const provider of providers) {
+    if (!configured(provider)) {
+      results.push({
+        provider,
+        configured: false,
+        ok: false,
+        model: PROVIDER_CONFIG[provider].model
+      });
+      continue;
+    }
+
+    const startedAt = Date.now();
+    try {
+      await withRetry(() =>
+        callProvider(
+          provider,
+          'You are a Total ARC production connectivity probe. Reply briefly.',
+          'Return the word OK.',
+          0,
+          64,
+          false
+        )
+      );
+
+      results.push({
+        provider,
+        configured: true,
+        ok: true,
+        model: PROVIDER_CONFIG[provider].model,
+        durationMs: Date.now() - startedAt
+      });
+    } catch (error) {
+      results.push({
+        provider,
+        configured: true,
+        ok: false,
+        model: PROVIDER_CONFIG[provider].model,
+        durationMs: Date.now() - startedAt,
+        retryable: error instanceof ProviderError ? error.retryable : false
+      });
+    }
+  }
+
+  return results;
+}
+
 export function getAiGatewayStatus(): AiGatewayStatus {
   return {
     defaultSensitivity: DEFAULT_SENSITIVITY,
