@@ -145,7 +145,7 @@ requirePatterns(rcmRoutePath, rcmRoute, [
   /getOrganizationData\(auth\.user\.institutionId\)/,
   /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
   /isOrgUnitAuthorized\(authorizedOrgUnitIds/,
-  /organizationUnits:\s*scopedUnits/
+  /organizationUnits:\s*scopedOrganization\.organizationUnits/
 ]);
 
 const rcmPage = requireFile(rcmPagePath);
