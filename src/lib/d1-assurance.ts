@@ -532,6 +532,359 @@ export async function addToeSample(input: {
   );
 }
 
+export async function createTestingExceptionFromSample(input: {
+  toeTestId: string;
+  sampleId: string;
+  severity: string;
+  description?: string | null;
+}) {
+  const db = await ensureAssuranceSchema();
+  const test = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
+    [input.toeTestId]
+  );
+  if (!test) throw new Error('TOE_TEST_NOT_FOUND');
+
+  const sample = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM TestSample WHERE id = ? AND toeTestId = ? LIMIT 1',
+    [input.sampleId, input.toeTestId]
+  );
+  if (!sample) throw new Error('SAMPLE_NOT_FOUND');
+  if (sample.result !== 'Fail') throw new Error('SAMPLE_NOT_FAILED');
+
+  const failureReason =
+    typeof sample.failureReason === 'string' ? sample.failureReason.trim() : '';
+  const description = input.description?.trim() || failureReason;
+  if (!description) throw new Error('EXCEPTION_DESCRIPTION_REQUIRED');
+
+  const severity = ['Critical', 'High', 'Medium', 'Low'].includes(input.severity)
+    ? input.severity
+    : 'High';
+
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM TestingException WHERE toeTestId = ? AND sampleRef = ? LIMIT 1',
+    [input.toeTestId, sample.transactionRef]
+  );
+  if (duplicate) throw new Error('EXCEPTION_ALREADY_EXISTS');
+
+  const id = crypto.randomUUID();
+  const exceptionNumber = 'EXC-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+
+  await run(
+    db,
+    `INSERT INTO TestingException (
+      id, toeTestId, exceptionNumber, sampleRef, description, severity, status, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, 'Confirmed Exception', ?)`,
+    [
+      id,
+      input.toeTestId,
+      exceptionNumber,
+      sample.transactionRef,
+      description,
+      severity,
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM TestingException WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createControlDeficiency(input: {
+  exceptionId: string;
+  title: string;
+  description: string;
+  classification: string;
+  financialImpact?: number | null;
+  regulatoryImpact?: string | null;
+  compensatingControls?: string | null;
+  approvedBy: string;
+}) {
+  const db = await ensureAssuranceSchema();
+  const exception = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM TestingException WHERE id = ? LIMIT 1',
+    [input.exceptionId]
+  );
+  if (!exception) throw new Error('EXCEPTION_NOT_FOUND');
+
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ControlDeficiency WHERE exceptionId = ? LIMIT 1',
+    [input.exceptionId]
+  );
+  if (existing) throw new Error('DEFICIENCY_ALREADY_EXISTS');
+
+  const classification = [
+    'Control Deficiency',
+    'Significant Deficiency',
+    'Material Weakness',
+    'Observation'
+  ].includes(input.classification)
+    ? input.classification
+    : 'Control Deficiency';
+
+  const id = crypto.randomUUID();
+  const deficiencyId = 'DEF-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+
+  await run(
+    db,
+    `INSERT INTO ControlDeficiency (
+      id, exceptionId, deficiencyId, title, description, classification,
+      financialImpact, regulatoryImpact, compensatingControls,
+      humanApproved, approvedBy, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    [
+      id,
+      input.exceptionId,
+      deficiencyId,
+      input.title,
+      input.description,
+      classification,
+      input.financialImpact === null || input.financialImpact === undefined
+        ? null
+        : input.financialImpact,
+      nullable(input.regulatoryImpact),
+      nullable(input.compensatingControls),
+      input.approvedBy,
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlDeficiency WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createIssueFromDeficiency(input: {
+  deficiencyId: string;
+  title: string;
+  description: string;
+  severity: string;
+  ownerName: string;
+  targetDate: string;
+}) {
+  const db = await ensureAssuranceSchema();
+  const deficiency = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlDeficiency WHERE id = ? LIMIT 1',
+    [input.deficiencyId]
+  );
+  if (!deficiency) throw new Error('DEFICIENCY_NOT_FOUND');
+  if (deficiency.humanApproved !== 1) throw new Error('DEFICIENCY_NOT_APPROVED');
+
+  const exception = deficiency.exceptionId
+    ? await first<Record<string, unknown>>(
+        db,
+        'SELECT * FROM TestingException WHERE id = ? LIMIT 1',
+        [deficiency.exceptionId]
+      )
+    : null;
+  if (!exception) throw new Error('EXCEPTION_NOT_FOUND');
+
+  const test = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
+    [exception.toeTestId]
+  );
+  if (!test) throw new Error('TOE_TEST_NOT_FOUND');
+
+  const process = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [test.processId]
+  );
+  if (!process) throw new Error('PROCESS_NOT_FOUND');
+
+  const id = crypto.randomUUID();
+  const issueId = 'ISS-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+  const severity = ['Critical', 'High', 'Medium', 'Low'].includes(input.severity)
+    ? input.severity
+    : 'High';
+  const now = nowIso();
+
+  await run(
+    db,
+    `INSERT INTO Issue (
+      id, institutionId, issueId, source, processId, riskId, controlId,
+      deficiencyId, title, description, severity, ownerName, targetDate,
+      status, createdAt, updatedAt
+    ) VALUES (?, ?, ?, 'TOE', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?)`,
+    [
+      id,
+      process.institutionId,
+      issueId,
+      test.processId,
+      test.riskId || null,
+      test.controlId,
+      deficiency.id,
+      input.title,
+      input.description,
+      severity,
+      input.ownerName,
+      input.targetDate,
+      now,
+      now
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Issue WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createManagementActionPlan(input: {
+  issueId: string;
+  agreedAction: string;
+  recommendation?: string | null;
+  actionOwner: string;
+  approverName: string;
+  originalDueDate: string;
+}) {
+  const db = await ensureAssuranceSchema();
+  const issue = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Issue WHERE id = ? LIMIT 1',
+    [input.issueId]
+  );
+  if (!issue) throw new Error('ISSUE_NOT_FOUND');
+
+  const id = crypto.randomUUID();
+  const mapId = 'MAP-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+  const now = nowIso();
+
+  await run(
+    db,
+    `INSERT INTO ManagementActionPlan (
+      id, mapId, issueId, agreedAction, recommendation, actionOwner,
+      approverName, originalDueDate, revisedDueDate, extensionCount,
+      extensionReason, progressPercent, status, completedAt, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, 0, 'Draft', NULL, ?, ?)`,
+    [
+      id,
+      mapId,
+      issue.id,
+      input.agreedAction,
+      nullable(input.recommendation),
+      input.actionOwner,
+      input.approverName,
+      input.originalDueDate,
+      now,
+      now
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createMapMilestone(input: {
+  mapId: string;
+  title: string;
+  owner: string;
+  dueDate: string;
+}) {
+  const db = await ensureAssuranceSchema();
+  const map = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
+    [input.mapId]
+  );
+  if (!map) throw new Error('MAP_NOT_FOUND');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO MAPMilestone (
+      id, mapId, title, owner, dueDate, status, progressPercent, evidenceDoc, createdAt
+    ) VALUES (?, ?, ?, ?, ?, 'Pending', 0, NULL, ?)`,
+    [id, map.id, input.title, input.owner, input.dueDate, nowIso()]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM MAPMilestone WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createRetestRecord(input: {
+  mapId: string;
+  sampleCount: number;
+  passedCount: number;
+  failedCount: number;
+  testerName: string;
+  reviewerName: string;
+  conclusionNotes?: string | null;
+}) {
+  const db = await ensureAssuranceSchema();
+  const map = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
+    [input.mapId]
+  );
+  if (!map) throw new Error('MAP_NOT_FOUND');
+
+  if (
+    input.sampleCount < 0 ||
+    input.passedCount < 0 ||
+    input.failedCount < 0 ||
+    input.passedCount + input.failedCount !== input.sampleCount
+  ) {
+    throw new Error('INVALID_RETEST_COUNTS');
+  }
+
+  const result =
+    input.sampleCount === 0
+      ? 'Not Assessed'
+      : input.failedCount === 0 && input.passedCount === input.sampleCount
+        ? 'Pass'
+        : 'Fail';
+
+  const id = crypto.randomUUID();
+  const retestId = 'RET-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+
+  await run(
+    db,
+    `INSERT INTO RetestRecord (
+      id, mapId, retestId, sampleCount, passedCount, failedCount,
+      testerName, reviewerName, result, conclusionNotes, retestedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      map.id,
+      retestId,
+      input.sampleCount,
+      input.passedCount,
+      input.failedCount,
+      input.testerName,
+      input.reviewerName,
+      result,
+      nullable(input.conclusionNotes),
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM RetestRecord WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
 export async function listToeTests() {
   const db = await ensureAssuranceSchema();
   const tests = await all<Record<string, unknown>>(
@@ -654,12 +1007,50 @@ export async function updateToeSample(input: {
 
 export async function listRemediationData() {
   const db = await ensureAssuranceSchema();
-  const [deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
+  const [exceptionRows, deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
+    all<Record<string, unknown>>(db, 'SELECT * FROM TestingException ORDER BY createdAt DESC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM ControlDeficiency ORDER BY createdAt DESC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM Issue ORDER BY createdAt DESC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM ManagementActionPlan ORDER BY createdAt DESC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM RetestRecord ORDER BY retestedAt DESC')
   ]);
+
+  const exceptions = await Promise.all(
+    exceptionRows.map(async row => {
+      const test = await first<Record<string, unknown>>(
+        db,
+        'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
+        [row.toeTestId]
+      );
+      const [control, process, deficiencies] = test
+        ? await Promise.all([
+            first<Record<string, unknown>>(
+              db,
+              'SELECT id, controlId, name FROM ControlMaster WHERE id = ? LIMIT 1',
+              [test.controlId]
+            ),
+            first<Record<string, unknown>>(
+              db,
+              'SELECT id, processId, name FROM BusinessProcess WHERE id = ? LIMIT 1',
+              [test.processId]
+            ),
+            all<Record<string, unknown>>(
+              db,
+              'SELECT * FROM ControlDeficiency WHERE exceptionId = ? ORDER BY createdAt DESC',
+              [row.id]
+            )
+          ])
+        : [null, null, []];
+
+      return {
+        ...row,
+        test,
+        control,
+        process,
+        deficiencies
+      };
+    })
+  );
 
   const [deficiencies, issues, maps, retests] = await Promise.all([
     Promise.all(deficiencyRows.map(row => loadDeficiency(db, row))),
@@ -692,7 +1083,7 @@ export async function listRemediationData() {
     )
   ]);
 
-  return { deficiencies, issues, maps, retests };
+  return { exceptions, deficiencies, issues, maps, retests };
 }
 
 export async function requestMapExtension(input: {
