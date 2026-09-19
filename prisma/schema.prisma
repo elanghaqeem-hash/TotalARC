@@ -833,7 +833,11 @@ model AISuggestion {
   recommendation   String?
   suggestedRisk    String?
   suggestedControl String?
+  provider          String?
   model             String
+  requestId         String?
+  redactions        Int      @default(0)
+  fallbackUsed      Boolean  @default(false)
   status            String   @default("Pending Review")
   reviewedBy        String?
   reviewedAt        DateTime?
@@ -844,6 +848,7 @@ model AISuggestion {
 
   @@index([institutionId, status])
   @@index([processId])
+  @@index([requestId])
 }
 
 model AuditLog {
