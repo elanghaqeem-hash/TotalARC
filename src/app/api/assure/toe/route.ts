@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       }
 
       const controls = await listControls(auth.user.institutionId);
-      const selectedControl = controls.find(control => control.id === controlId);
+      const selectedControl = controls.find(control => (control as Record<string, unknown>).id === controlId);
       if (
         selectedControl
         && !isOrgUnitAuthorized(
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const scopedTest = existingTests.find(test => test.id === toeTestId);
+      const scopedTest = existingTests.find(test => (test as Record<string, unknown>).id === toeTestId);
       if (scopedTest && !ensureTestScope(scopedTest)) {
         return NextResponse.json(
           {
@@ -206,7 +206,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'amount must be numeric when provided.' }, { status: 400 });
       }
 
-      const scopedTest = existingTests.find(test => test.id === toeTestId);
+      const scopedTest = existingTests.find(test => (test as Record<string, unknown>).id === toeTestId);
       if (scopedTest && !ensureTestScope(scopedTest)) {
         return NextResponse.json(
           {
