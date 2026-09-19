@@ -227,7 +227,7 @@ export default function DashboardPage() {
             </div>
 
             <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-brand-600">Total ARC Command Center</p>
-            <h1 className="max-w-4xl text-3xl font-black leading-[1.06] tracking-tight text-slate-950 sm:text-4xl lg:text-[46px]">
+            <h1 className="max-w-3xl text-[28px] font-black leading-[1.08] tracking-tight text-slate-950 sm:text-[32px] lg:text-[38px] xl:text-[40px]">
               Assurance, Risk & Control
               <span className="block text-brand-700">dalam satu pandangan yang lebih jelas.</span>
             </h1>
