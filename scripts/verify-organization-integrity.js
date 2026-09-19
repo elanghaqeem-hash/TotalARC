@@ -25,6 +25,8 @@ const corePath = 'src/lib/d1-core.ts';
 const orgPagePath = 'src/app/organization/page.tsx';
 const processPagePath = 'src/app/processes/page.tsx';
 const prismaPath = 'prisma/schema.prisma';
+const authPath = 'src/lib/auth.ts';
+const authUsersRoutePath = 'src/app/api/auth/users/route.ts';
 
 const domain = requireFile(domainPath);
 requirePatterns(domainPath, domain, [
@@ -133,7 +135,9 @@ requirePatterns(controlPagePath, controlPage, [
 const rcmRoute = requireFile(rcmRoutePath);
 requirePatterns(rcmRoutePath, rcmRoute, [
   /getOrganizationData\(auth\.user\.institutionId\)/,
-  /organizationUnits:\s*organization\.organizationUnits/
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /isOrgUnitAuthorized\(authorizedOrgUnitIds/,
+  /organizationUnits:\s*scopedUnits/
 ]);
 
 const rcmPage = requireFile(rcmPagePath);
@@ -147,7 +151,55 @@ requirePatterns(corePath, core, [
   /p\.legalEntityId AS processLegalEntityId/,
   /p\.orgUnitId AS processOrgUnitId/,
   /legalEntityId:\s*row\.processLegalEntityId/,
-  /orgUnitId:\s*row\.processOrgUnitId/
+  /orgUnitId:\s*row\.processOrgUnitId/,
+  /legalEntityId, orgUnitId, criticality, classification/
+]);
+
+const auth = requireFile(authPath);
+requirePatterns(authPath, auth, [
+  /ORG_ACCESS_SCOPES/,
+  /orgUnitId:\s*string \| null/,
+  /orgAccessScope:\s*OrgAccessScope/,
+  /idx_access_user_org_unit/,
+  /resolveAuthorizedOrgUnitIds/,
+  /UNIT_AND_CHILDREN/,
+  /isOrgUnitAuthorized/
+]);
+
+const authUsersRoute = requireFile(authUsersRoutePath);
+requirePatterns(authUsersRoutePath, authUsersRoute, [
+  /orgUnitId/,
+  /orgAccessScope/,
+  /isOrgScope/
+]);
+
+requirePatterns(processRoutePath, processRoute, [
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /PROCESS_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /isOrgUnitAuthorized\(authorizedOrgUnitIds/
+]);
+
+const riskRoutePath = 'src/app/api/risks/route.ts';
+const controlRoutePath = 'src/app/api/controls/route.ts';
+const riskRoute = requireFile(riskRoutePath);
+const controlRoute = requireFile(controlRoutePath);
+
+requirePatterns(riskRoutePath, riskRoute, [
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /RISK_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /isOrgUnitAuthorized/
+]);
+
+requirePatterns(controlRoutePath, controlRoute, [
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /CONTROL_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /isOrgUnitAuthorized/
+]);
+
+requirePatterns(orgPagePath, orgPage, [
+  /Edit User Organization Access/,
+  /UNIT_AND_CHILDREN/,
+  /\/api\/auth\/users/
 ]);
 
 if (findings.length) {
