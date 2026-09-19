@@ -15,7 +15,7 @@ jobs:
   verify-production-d1:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     env:
       TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
     steps:
@@ -31,7 +31,10 @@ jobs:
 
           for attempt in $(seq 1 12); do
             echo "Production D1 verification attempt $attempt"
-            HTTP_CODE="$(curl --silent --show-error --location --max-time 20               --output /tmp/totalarc-d1-health.json               --write-out "%{http_code}"               "$URL" || true)"
+            HTTP_CODE="$(curl --silent --show-error --location --max-time 20 \
+              --output /tmp/totalarc-d1-health.json \
+              --write-out "%{http_code}" \
+              "$URL" || true)"
 
             RESPONSE="$(cat /tmp/totalarc-d1-health.json 2>/dev/null || true)"
 
@@ -62,3 +65,94 @@ jobs:
           echo "::error::Total ARC production D1 connectivity could not be verified."
           printf '%s\n' "$RESPONSE"
           exit 1
+
+      - name: Smoke test production D1 APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+
+          check_json() {
+            local name="$1"
+            local path="$2"
+            local expression="$3"
+            local output="/tmp/totalarc-smoke-${name}.json"
+
+            echo "Checking $name at $path"
+            local http_code
+            http_code="$(curl --silent --show-error --location --max-time 25 \
+              --output "$output" \
+              --write-out "%{http_code}" \
+              "$BASE_URL$path" || true)"
+
+            if [ "$http_code" != "200" ]; then
+              echo "::error::$name returned HTTP ${http_code:-unknown}."
+              cat "$output" 2>/dev/null || true
+              return 1
+            fi
+
+            if ! jq -e "$expression" "$output" >/dev/null 2>&1; then
+              echo "::error::$name returned an unexpected production payload."
+              cat "$output" 2>/dev/null || true
+              return 1
+            fi
+
+            echo "$name: healthy"
+          }
+
+          check_json "database" "/api/system/database" '
+            .ok == true and
+            .database == "cloudflare-d1" and
+            .persistent == true and
+            .readOnlyProbe == true
+          '
+
+          check_json "processes" "/api/processes" '
+            .storage == "cloudflare-d1" and
+            (.processes | type) == "array" and
+            (.categories | type) == "array"
+          '
+
+          check_json "risks" "/api/risks" '
+            .storage == "cloudflare-d1" and
+            (.risks | type) == "array"
+          '
+
+          check_json "controls" "/api/controls" '
+            .storage == "cloudflare-d1" and
+            (.controls | type) == "array"
+          '
+
+          check_json "rcm" "/api/rcm" '
+            .storage == "cloudflare-d1" and
+            (.rcm | type) == "array" and
+            (.total | type) == "number"
+          '
+
+          check_json "dashboard" "/api/dashboard" '
+            .storage == "cloudflare-d1" and
+            (.metrics | type) == "object" and
+            (.executiveQandA | type) == "array"
+          '
+
+          check_json "toe" "/api/assure/toe" '
+            .storage == "cloudflare-d1" and
+            (.tests | type) == "array"
+          '
+
+          check_json "remediation" "/api/assure/remediation" '
+            .storage == "cloudflare-d1" and
+            (.deficiencies | type) == "array" and
+            (.issues | type) == "array" and
+            (.maps | type) == "array" and
+            (.retests | type) == "array"
+          '
+
+          check_json "ccm" "/api/monitor/ccm" '
+            .storage == "cloudflare-d1" and
+            (.rules | type) == "array"
+          '
+
+          echo "All Total ARC production D1 API smoke tests passed."
