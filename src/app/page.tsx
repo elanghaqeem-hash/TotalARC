@@ -222,7 +222,7 @@ export default function DashboardPage() {
             <div className="mb-5 flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-slate-600">
                 <Shield className="h-3.5 w-3.5 text-brand-600" />
-                {currentUser.roleTitle}
+                {currentUser?.roleTitle || 'Authentication required'}
               </div>
             </div>
 

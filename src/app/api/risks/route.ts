@@ -1,12 +1,31 @@
 import { NextResponse } from 'next/server';
-import { createRisk, listRisks } from '@/lib/d1-core';
+import { createRisk, listBusinessProcesses, listRisks } from '@/lib/d1-core';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { assertOrganizationScope, resolveOrganizationAccess } from '@/lib/organization-access';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeTenantApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
   try {
-    const risks = await listRisks();
-    return NextResponse.json({ risks, storage: 'cloudflare-d1' });
+    const [risks, access] = await Promise.all([
+      listRisks(auth.user.institutionId),
+      resolveOrganizationAccess(auth.user)
+    ]);
+    const visibleRisks = access.unrestricted
+      ? risks
+      : risks.filter(risk =>
+          risk.process
+          && typeof risk.process.orgUnitId === 'string'
+          && access.unitIds.includes(risk.process.orgUnitId)
+        );
+    return NextResponse.json({
+      risks: visibleRisks,
+      organizationAccess: access,
+      storage: 'cloudflare-d1'
+    });
   } catch (error) {
     console.error('Failed to fetch D1 risks:', error);
     return NextResponse.json({ error: 'Failed to fetch risks from persistent database.' }, { status: 503 });
@@ -14,6 +33,13 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeTenantApi(request, ['Admin', 'ProcessOwner', 'Reviewer']);
+  if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
+
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -37,6 +63,29 @@ export async function POST(request: Request) {
       );
     }
 
+    const [{ processes }, access] = await Promise.all([
+      listBusinessProcesses(auth.user.institutionId),
+      resolveOrganizationAccess(auth.user)
+    ]);
+    const selectedProcess = processes.find(process => process.id === processId);
+    if (!selectedProcess) {
+      return NextResponse.json(
+        { error: 'Select a registered business process before creating a risk.' },
+        { status: 400 }
+      );
+    }
+    try {
+      assertOrganizationScope(access, selectedProcess.orgUnitId);
+    } catch {
+      return NextResponse.json(
+        {
+          error: 'Your organization access scope does not allow the selected business process.',
+          code: 'ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
+      );
+    }
+
     const risk = await createRisk({
       ...body,
       name,
@@ -48,7 +97,7 @@ export async function POST(request: Request) {
       ownerName,
       inherentLikelihood: likelihood,
       inherentImpact: impactValue
-    });
+    }, auth.user.institutionId, actor);
 
     return NextResponse.json(risk, { status: 201 });
   } catch (error) {

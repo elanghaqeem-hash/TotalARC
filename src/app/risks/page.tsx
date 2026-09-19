@@ -21,8 +21,10 @@ import { getRiskBadgeClasses } from '@/lib/utils';
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
   const [processes, setProcesses] = useState<any[]>([]);
+  const [organizationUnits, setOrganizationUnits] = useState<any[]>([]);
   const [selectedRisk, setSelectedRisk] = useState<any>(null);
   const [search, setSearch] = useState('');
+  const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
   const [activeTab, setActiveTab] = useState<'register' | 'inherent_heatmap' | 'residual_heatmap'>('register');
   const [newRiskModal, setNewRiskModal] = useState(false);
 
@@ -54,8 +56,12 @@ export default function RisksPage() {
       .then(([riskData, processData]) => {
         const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
         const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
+        const nextOrganizationUnits = Array.isArray(processData.organization?.organizationUnits)
+          ? processData.organization.organizationUnits
+          : [];
         setRisks(nextRisks);
         setProcesses(nextProcesses);
+        setOrganizationUnits(nextOrganizationUnits);
 
         if (nextRisks.length > 0 && !selectedRisk) {
           setSelectedRisk(nextRisks[0]);
@@ -93,11 +99,18 @@ export default function RisksPage() {
     }
   };
 
+  const processById = new Map(processes.map(process => [process.id, process]));
+  const unitById = new Map(organizationUnits.map(unit => [unit.id, unit]));
+  const selectedRiskProcess = selectedRisk ? processById.get(selectedRisk.processId) : null;
+
   const filtered = risks.filter(r => {
-    return (
+    const process = processById.get(r.processId);
+    const matchesOrg = selectedOrgUnit === 'ALL' || process?.orgUnitId === selectedOrgUnit;
+    return matchesOrg && (
       r.name.toLowerCase().includes(search.toLowerCase()) ||
       r.riskId.toLowerCase().includes(search.toLowerCase()) ||
-      r.category.toLowerCase().includes(search.toLowerCase())
+      r.category.toLowerCase().includes(search.toLowerCase()) ||
+      String(process?.orgUnit?.name || '').toLowerCase().includes(search.toLowerCase())
     );
   });
 
@@ -141,6 +154,17 @@ export default function RisksPage() {
             className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
           />
         </div>
+
+        <select
+          value={selectedOrgUnit}
+          onChange={e => setSelectedOrgUnit(e.target.value)}
+          className="text-xs px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="ALL">All Organization Units</option>
+          {organizationUnits.filter(unit => unit.status === 'Active').map(unit => (
+            <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+          ))}
+        </select>
 
         <div className="flex items-center space-x-2">
           <button
@@ -221,7 +245,10 @@ export default function RisksPage() {
                   </p>
 
                   <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                    <span>Process: <strong>{r.process?.name || 'Unassigned'}</strong></span>
+                    <span>
+                      Process: <strong>{r.process?.name || 'Unassigned'}</strong>
+                      {processById.get(r.processId)?.orgUnit?.name ? ` · ${processById.get(r.processId)?.orgUnit?.name}` : ''}
+                    </span>
                     <span className="text-emerald-700 font-semibold flex items-center space-x-1">
                       <TrendingDown className="w-3.5 h-3.5" />
                       <span>Residual: {r.residualScore} ({r.residualRating})</span>
@@ -258,6 +285,17 @@ export default function RisksPage() {
                   <h2 className="text-xl font-black text-slate-900 mt-2">
                     {selectedRisk.name}
                   </h2>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                      Process: <strong className="text-slate-700">{selectedRiskProcess?.name || selectedRisk.process?.name || 'Unassigned'}</strong>
+                    </span>
+                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                      Organization Unit: <strong className="text-slate-700">{selectedRiskProcess?.orgUnit?.name || 'Not assigned'}</strong>
+                    </span>
+                    <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                      Legal Entity: <strong className="text-slate-700">{selectedRiskProcess?.legalEntity?.name || 'Not assigned'}</strong>
+                    </span>
+                  </div>
                 </div>
 
                 {/* Structured Cause - Event - Impact (Section 29) */}

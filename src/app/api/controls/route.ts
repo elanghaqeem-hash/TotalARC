@@ -1,12 +1,31 @@
 import { NextResponse } from 'next/server';
-import { createControl, listControls } from '@/lib/d1-core';
+import { createControl, listBusinessProcesses, listControls } from '@/lib/d1-core';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { assertOrganizationScope, resolveOrganizationAccess } from '@/lib/organization-access';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeTenantApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
   try {
-    const controls = await listControls();
-    return NextResponse.json({ controls, storage: 'cloudflare-d1' });
+    const [controls, access] = await Promise.all([
+      listControls(auth.user.institutionId),
+      resolveOrganizationAccess(auth.user)
+    ]);
+    const visibleControls = access.unrestricted
+      ? controls
+      : controls.filter(control =>
+          control.process
+          && typeof control.process.orgUnitId === 'string'
+          && access.unitIds.includes(control.process.orgUnitId)
+        );
+    return NextResponse.json({
+      controls: visibleControls,
+      organizationAccess: access,
+      storage: 'cloudflare-d1'
+    });
   } catch (error) {
     console.error('Failed to fetch D1 controls:', error);
     return NextResponse.json({ error: 'Failed to fetch controls from persistent database.' }, { status: 503 });
@@ -14,6 +33,13 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeTenantApi(request, ['Admin', 'ControlOwner', 'ProcessOwner']);
+  if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
+
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -33,6 +59,29 @@ export async function POST(request: Request) {
       );
     }
 
+    const [{ processes }, access] = await Promise.all([
+      listBusinessProcesses(auth.user.institutionId),
+      resolveOrganizationAccess(auth.user)
+    ]);
+    const selectedProcess = processes.find(process => process.id === processId);
+    if (!selectedProcess) {
+      return NextResponse.json(
+        { error: 'Select a registered business process before creating a control.' },
+        { status: 400 }
+      );
+    }
+    try {
+      assertOrganizationScope(access, selectedProcess.orgUnitId);
+    } catch {
+      return NextResponse.json(
+        {
+          error: 'Your organization access scope does not allow the selected business process.',
+          code: 'ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
+      );
+    }
+
     const control = await createControl({
       ...body,
       name,
@@ -44,7 +93,7 @@ export async function POST(request: Request) {
       type,
       nature,
       frequency
-    });
+    }, auth.user.institutionId, actor);
 
     return NextResponse.json(control, { status: 201 });
   } catch (error) {

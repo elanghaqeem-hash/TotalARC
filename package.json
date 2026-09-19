@@ -16,7 +16,11 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
-    "build:next": "next build"
+    "build:next": "next build",
+    "verify:tenant-isolation": "node scripts/verify-tenant-isolation.js",
+    "verify:mutation-security": "node scripts/verify-mutation-security.js",
+    "verify:organization-integrity": "node scripts/verify-organization-integrity.js",
+    "verify:organization-scope": "node scripts/verify-organization-scope.js"
   },
   "keywords": [],
   "author": "",
@@ -29,7 +33,8 @@
     "next": "15.5.25",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "jose": "6.2.12"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",

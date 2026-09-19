@@ -70,6 +70,101 @@ function nullable(value: unknown) {
   return value === undefined || value === '' ? null : value;
 }
 
+async function tenantToeTest(
+  db: D1DatabaseLike,
+  toeTestId: string,
+  institutionId: string
+) {
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT t.*
+       FROM ToETest t
+       JOIN BusinessProcess p ON p.id = t.processId
+      WHERE t.id = ? AND p.institutionId = ?
+      LIMIT 1`,
+    [toeTestId, institutionId]
+  );
+}
+
+async function tenantException(
+  db: D1DatabaseLike,
+  exceptionId: string,
+  institutionId: string
+) {
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT e.*
+       FROM TestingException e
+       JOIN ToETest t ON t.id = e.toeTestId
+       JOIN BusinessProcess p ON p.id = t.processId
+      WHERE e.id = ? AND p.institutionId = ?
+      LIMIT 1`,
+    [exceptionId, institutionId]
+  );
+}
+
+async function tenantDeficiency(
+  db: D1DatabaseLike,
+  deficiencyId: string,
+  institutionId: string
+) {
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT d.*
+       FROM ControlDeficiency d
+       JOIN TestingException e ON e.id = d.exceptionId
+       JOIN ToETest t ON t.id = e.toeTestId
+       JOIN BusinessProcess p ON p.id = t.processId
+      WHERE d.id = ? AND p.institutionId = ?
+      LIMIT 1`,
+    [deficiencyId, institutionId]
+  );
+}
+
+async function tenantIssue(
+  db: D1DatabaseLike,
+  issueId: string,
+  institutionId: string
+) {
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Issue WHERE id = ? AND institutionId = ? LIMIT 1',
+    [issueId, institutionId]
+  );
+}
+
+async function tenantMap(
+  db: D1DatabaseLike,
+  mapId: string,
+  institutionId: string
+) {
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT m.*
+       FROM ManagementActionPlan m
+       JOIN Issue i ON i.id = m.issueId
+      WHERE m.id = ? AND i.institutionId = ?
+      LIMIT 1`,
+    [mapId, institutionId]
+  );
+}
+
+async function tenantMonitoringRule(
+  db: D1DatabaseLike,
+  ruleId: string,
+  institutionId: string
+) {
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT r.*
+       FROM MonitoringRule r
+       JOIN ControlMaster c ON c.id = r.controlId
+      WHERE r.id = ? AND c.institutionId = ?
+      LIMIT 1`,
+    [ruleId, institutionId]
+  );
+}
+
 export async function ensureAssuranceSchema() {
   const db = await getDb();
 
@@ -273,9 +368,9 @@ export async function ensureAssuranceSchema() {
   return db;
 }
 
-async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
+async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
   const [issue, milestones, retests] = await Promise.all([
-    first<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE id = ? LIMIT 1', [row.issueId]),
+    first<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE id = ? AND institutionId = ? LIMIT 1', [row.issueId, institutionId]),
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM MAPMilestone WHERE mapId = ? ORDER BY dueDate ASC, createdAt ASC',
@@ -293,14 +388,14 @@ async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
     const [process, control] = await Promise.all([
       first<Record<string, unknown>>(
         db,
-        'SELECT id, processId, name FROM BusinessProcess WHERE id = ? LIMIT 1',
-        [issue.processId]
+        'SELECT id, processId, name FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+        [issue.processId, institutionId]
       ),
       issue.controlId
         ? first<Record<string, unknown>>(
             db,
-            'SELECT id, controlId, name FROM ControlMaster WHERE id = ? LIMIT 1',
-            [issue.controlId]
+            'SELECT id, controlId, name FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+            [issue.controlId, institutionId]
           )
         : Promise.resolve(null)
     ]);
@@ -322,33 +417,29 @@ async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
   };
 }
 
-async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>) {
+async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
   const [process, risk, control, deficiency, actionPlanRows] = await Promise.all([
     first<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name FROM BusinessProcess WHERE id = ? LIMIT 1',
-      [row.processId]
+      'SELECT id, processId, name FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+      [row.processId, institutionId]
     ),
     row.riskId
       ? first<Record<string, unknown>>(
           db,
-          'SELECT id, riskId, name FROM RiskMaster WHERE id = ? LIMIT 1',
-          [row.riskId]
+          'SELECT id, riskId, name FROM RiskMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+          [row.riskId, institutionId]
         )
       : Promise.resolve(null),
     row.controlId
       ? first<Record<string, unknown>>(
           db,
-          'SELECT id, controlId, name FROM ControlMaster WHERE id = ? LIMIT 1',
-          [row.controlId]
+          'SELECT id, controlId, name FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+          [row.controlId, institutionId]
         )
       : Promise.resolve(null),
     row.deficiencyId
-      ? first<Record<string, unknown>>(
-          db,
-          'SELECT * FROM ControlDeficiency WHERE id = ? LIMIT 1',
-          [row.deficiencyId]
-        )
+      ? tenantDeficiency(db, String(row.deficiencyId), institutionId)
       : Promise.resolve(null),
     all<Record<string, unknown>>(
       db,
@@ -371,7 +462,7 @@ async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>) {
     };
   }
 
-  const actionPlans = await Promise.all(actionPlanRows.map(map => loadMap(db, map)));
+  const actionPlans = await Promise.all(actionPlanRows.map(map => loadMap(db, map, institutionId)));
 
   return {
     ...row,
@@ -383,14 +474,10 @@ async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>) {
   };
 }
 
-async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>) {
+async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
   const [exception, rootCause, issues] = await Promise.all([
     row.exceptionId
-      ? first<Record<string, unknown>>(
-          db,
-          'SELECT * FROM TestingException WHERE id = ? LIMIT 1',
-          [row.exceptionId]
-        )
+      ? tenantException(db, String(row.exceptionId), institutionId)
       : Promise.resolve(null),
     first<Record<string, unknown>>(
       db,
@@ -399,8 +486,8 @@ async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>) 
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM Issue WHERE deficiencyId = ? ORDER BY createdAt DESC',
-      [row.id]
+      'SELECT * FROM Issue WHERE deficiencyId = ? AND institutionId = ? ORDER BY createdAt DESC',
+      [row.id, institutionId]
     )
   ]);
 
@@ -423,12 +510,12 @@ export async function createToeTest(input: {
   populationSource: string;
   samplingMethod: string;
   notes?: string | null;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
   const control = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
-    [input.controlId]
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
   );
   if (!control) throw new Error('CONTROL_NOT_FOUND');
 
@@ -484,13 +571,9 @@ export async function addToeSample(input: {
   amount?: number | null;
   attributesTested?: string | null;
   evidenceRef?: string | null;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const test = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
-    [input.toeTestId]
-  );
+  const test = await tenantToeTest(db, input.toeTestId, institutionId);
   if (!test) throw new Error('TOE_TEST_NOT_FOUND');
 
   const nextNumberRow = await first<{ nextNumber?: number }>(
@@ -537,13 +620,9 @@ export async function createTestingExceptionFromSample(input: {
   sampleId: string;
   severity: string;
   description?: string | null;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const test = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
-    [input.toeTestId]
-  );
+  const test = await tenantToeTest(db, input.toeTestId, institutionId);
   if (!test) throw new Error('TOE_TEST_NOT_FOUND');
 
   const sample = await first<Record<string, unknown>>(
@@ -605,13 +684,9 @@ export async function createControlDeficiency(input: {
   regulatoryImpact?: string | null;
   compensatingControls?: string | null;
   approvedBy: string;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const exception = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM TestingException WHERE id = ? LIMIT 1',
-    [input.exceptionId]
-  );
+  const exception = await tenantException(db, input.exceptionId, institutionId);
   if (!exception) throw new Error('EXCEPTION_NOT_FOUND');
 
   const existing = await first<Record<string, unknown>>(
@@ -671,13 +746,9 @@ export async function createIssueFromDeficiency(input: {
   severity: string;
   ownerName: string;
   targetDate: string;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const deficiency = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ControlDeficiency WHERE id = ? LIMIT 1',
-    [input.deficiencyId]
-  );
+  const deficiency = await tenantDeficiency(db, input.deficiencyId, institutionId);
   if (!deficiency) throw new Error('DEFICIENCY_NOT_FOUND');
   if (deficiency.humanApproved !== 1) throw new Error('DEFICIENCY_NOT_APPROVED');
 
@@ -699,8 +770,8 @@ export async function createIssueFromDeficiency(input: {
 
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [test.processId]
+    'SELECT * FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+    [test.processId, institutionId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -720,7 +791,7 @@ export async function createIssueFromDeficiency(input: {
     ) VALUES (?, ?, ?, 'TOE', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?)`,
     [
       id,
-      process.institutionId,
+      institutionId,
       issueId,
       test.processId,
       test.riskId || null,
@@ -750,13 +821,9 @@ export async function createManagementActionPlan(input: {
   actionOwner: string;
   approverName: string;
   originalDueDate: string;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const issue = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM Issue WHERE id = ? LIMIT 1',
-    [input.issueId]
-  );
+  const issue = await tenantIssue(db, input.issueId, institutionId);
   if (!issue) throw new Error('ISSUE_NOT_FOUND');
 
   const id = crypto.randomUUID();
@@ -796,13 +863,9 @@ export async function createMapMilestone(input: {
   title: string;
   owner: string;
   dueDate: string;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const map = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
-    [input.mapId]
-  );
+  const map = await tenantMap(db, input.mapId, institutionId);
   if (!map) throw new Error('MAP_NOT_FOUND');
 
   const id = crypto.randomUUID();
@@ -829,13 +892,9 @@ export async function createRetestRecord(input: {
   testerName: string;
   reviewerName: string;
   conclusionNotes?: string | null;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const map = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
-    [input.mapId]
-  );
+  const map = await tenantMap(db, input.mapId, institutionId);
   if (!map) throw new Error('MAP_NOT_FOUND');
 
   if (
@@ -885,11 +944,16 @@ export async function createRetestRecord(input: {
   );
 }
 
-export async function listToeTests() {
+export async function listToeTests(institutionId: string) {
   const db = await ensureAssuranceSchema();
   const tests = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM ToETest ORDER BY testedAt DESC, testId ASC'
+    `SELECT t.*
+       FROM ToETest t
+       JOIN BusinessProcess p ON p.id = t.processId
+      WHERE p.institutionId = ?
+      ORDER BY t.testedAt DESC, t.testId ASC`,
+    [institutionId]
   );
 
   return Promise.all(
@@ -919,7 +983,7 @@ export async function listToeTests() {
             'SELECT * FROM ControlDeficiency WHERE exceptionId = ? ORDER BY createdAt ASC',
             [exception.id]
           );
-          const deficiencies = await Promise.all(deficiencyRows.map(row => loadDeficiency(db, row)));
+          const deficiencies = await Promise.all(deficiencyRows.map(row => loadDeficiency(db, row, institutionId)));
           return { ...exception, deficiencies };
         })
       );
@@ -951,12 +1015,17 @@ export async function updateToeSample(input: {
   sampleId: string;
   result: string;
   failureReason?: string | null;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
   const sample = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM TestSample WHERE id = ? LIMIT 1',
-    [input.sampleId]
+    `SELECT s.*
+       FROM TestSample s
+       JOIN ToETest t ON t.id = s.toeTestId
+       JOIN BusinessProcess p ON p.id = t.processId
+      WHERE s.id = ? AND p.institutionId = ?
+      LIMIT 1`,
+    [input.sampleId, institutionId]
   );
   if (!sample) throw new Error('SAMPLE_NOT_FOUND');
 
@@ -1005,14 +1074,50 @@ export async function updateToeSample(input: {
   );
 }
 
-export async function listRemediationData() {
+export async function listRemediationData(institutionId: string) {
   const db = await ensureAssuranceSchema();
   const [exceptionRows, deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
-    all<Record<string, unknown>>(db, 'SELECT * FROM TestingException ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ControlDeficiency ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM Issue ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ManagementActionPlan ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM RetestRecord ORDER BY retestedAt DESC')
+    all<Record<string, unknown>>(
+      db,
+      `SELECT e.*
+         FROM TestingException e
+         JOIN ToETest t ON t.id = e.toeTestId
+         JOIN BusinessProcess p ON p.id = t.processId
+        WHERE p.institutionId = ?
+        ORDER BY e.createdAt DESC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT d.*
+         FROM ControlDeficiency d
+         JOIN TestingException e ON e.id = d.exceptionId
+         JOIN ToETest t ON t.id = e.toeTestId
+         JOIN BusinessProcess p ON p.id = t.processId
+        WHERE p.institutionId = ?
+        ORDER BY d.createdAt DESC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE institutionId = ? ORDER BY createdAt DESC', [institutionId]),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.*
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE i.institutionId = ?
+        ORDER BY m.createdAt DESC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.*
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+        WHERE i.institutionId = ?
+        ORDER BY r.retestedAt DESC`,
+      [institutionId]
+    )
   ]);
 
   const exceptions = await Promise.all(
@@ -1053,9 +1158,9 @@ export async function listRemediationData() {
   );
 
   const [deficiencies, issues, maps, retests] = await Promise.all([
-    Promise.all(deficiencyRows.map(row => loadDeficiency(db, row))),
-    Promise.all(issueRows.map(row => loadIssue(db, row))),
-    Promise.all(mapRows.map(row => loadMap(db, row))),
+    Promise.all(deficiencyRows.map(row => loadDeficiency(db, row, institutionId))),
+    Promise.all(issueRows.map(row => loadIssue(db, row, institutionId))),
+    Promise.all(mapRows.map(row => loadMap(db, row, institutionId))),
     Promise.all(
       retestRows.map(async row => {
         const map = await first<Record<string, unknown>>(
@@ -1091,13 +1196,9 @@ export async function requestMapExtension(input: {
   extensionReason: string;
   newDueDate: string;
   approverName: string;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const existing = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
-    [input.mapId]
-  );
+  const existing = await tenantMap(db, input.mapId, institutionId);
   if (!existing) throw new Error('MAP_NOT_FOUND');
 
   const extensionCount = Number(existing.extensionCount || 0) + 1;
@@ -1124,11 +1225,16 @@ export async function requestMapExtension(input: {
   );
 }
 
-export async function listMonitoringRules() {
+export async function listMonitoringRules(institutionId: string) {
   const db = await ensureAssuranceSchema();
   const rules = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM MonitoringRule ORDER BY createdAt DESC, ruleId ASC'
+    `SELECT r.*
+       FROM MonitoringRule r
+       JOIN ControlMaster c ON c.id = r.controlId
+      WHERE c.institutionId = ?
+      ORDER BY r.createdAt DESC, r.ruleId ASC`,
+    [institutionId]
   );
 
   return Promise.all(
@@ -1179,12 +1285,12 @@ export async function listMonitoringRules() {
   );
 }
 
-export async function createMonitoringRule(input: Record<string, unknown>) {
+export async function createMonitoringRule(input: Record<string, unknown>, institutionId: string) {
   const db = await ensureAssuranceSchema();
   const control = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
-    [input.controlId]
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
   );
   if (!control) throw new Error('CONTROL_NOT_FOUND');
 
@@ -1236,13 +1342,9 @@ export async function ingestMonitoringRun(input: {
   exceptionsFound: number;
   details?: string | null;
   exceptions?: Array<{ transactionRef?: string; details?: string }>;
-}) {
+}, institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const rule = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM MonitoringRule WHERE id = ? LIMIT 1',
-    [input.ruleId]
-  );
+  const rule = await tenantMonitoringRule(db, input.ruleId, institutionId);
   if (!rule) throw new Error('RULE_NOT_FOUND');
 
   const status = input.exceptionsFound > 0 ? 'Exception Detected' : 'Healthy';
@@ -1293,7 +1395,7 @@ async function count(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
   return Number(row?.count || 0);
 }
 
-export async function getAssuranceDashboardMetrics() {
+export async function getAssuranceDashboardMetrics(institutionId: string) {
   const db = await ensureAssuranceSchema();
 
   const [
@@ -1309,25 +1411,64 @@ export async function getAssuranceDashboardMetrics() {
   ] = await Promise.all([
     count(
       db,
-      `SELECT COUNT(*) AS count FROM ToETest
-        WHERE failCount > 0 OR finalConclusion IN ('Partially Effective', 'Ineffective')`
+      `SELECT COUNT(*) AS count
+         FROM ToETest t
+         JOIN BusinessProcess p ON p.id = t.processId
+        WHERE p.institutionId = ?
+          AND (t.failCount > 0 OR t.finalConclusion IN ('Partially Effective', 'Ineffective'))`,
+      [institutionId]
     ),
-    count(db, 'SELECT COUNT(*) AS count FROM TestingException'),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status <> 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status = 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status = 'Overdue'"),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status IN ('Completed by Owner', 'Closed')"
+      `SELECT COUNT(*) AS count
+         FROM TestingException e
+         JOIN ToETest t ON t.id = e.toeTestId
+         JOIN BusinessProcess p ON p.id = t.processId
+        WHERE p.institutionId = ?`,
+      [institutionId]
     ),
-    count(db, "SELECT COUNT(*) AS count FROM MonitoringRule WHERE lastStatus = 'Healthy'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RetestRecord'),
+    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE institutionId = ? AND status <> 'Closed'", [institutionId]),
+    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE institutionId = ? AND status = 'Closed'", [institutionId]),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE i.institutionId = ? AND m.status = 'Overdue'`,
+      [institutionId]
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE i.institutionId = ? AND m.status IN ('Completed by Owner', 'Closed')`,
+      [institutionId]
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM MonitoringRule r
+         JOIN ControlMaster c ON c.id = r.controlId
+        WHERE c.institutionId = ? AND r.lastStatus = 'Healthy'`,
+      [institutionId]
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+        WHERE i.institutionId = ?`,
+      [institutionId]
+    ),
     count(
       db,
       `SELECT COUNT(DISTINCT t.controlId) AS count
          FROM ToETest t
          JOIN ControlMaster c ON c.id = t.controlId
-        WHERE c.isKeyControl = 1`
+        WHERE c.institutionId = ? AND c.isKeyControl = 1`,
+      [institutionId]
     )
   ]);
 
@@ -1344,15 +1485,18 @@ export async function getAssuranceDashboardMetrics() {
   };
 }
 
-export async function enrichRcmWithAssurance(rows: Array<Record<string, unknown>>) {
+export async function enrichRcmWithAssurance(
+  rows: Array<Record<string, unknown>>,
+  institutionId: string
+) {
   const db = await ensureAssuranceSchema();
 
   return Promise.all(
     rows.map(async row => {
       const control = await first<Record<string, unknown>>(
         db,
-        'SELECT * FROM ControlMaster WHERE controlId = ? LIMIT 1',
-        [row.controlId]
+        'SELECT * FROM ControlMaster WHERE controlId = ? AND institutionId = ? LIMIT 1',
+        [row.controlId, institutionId]
       );
       if (!control) return row;
 
@@ -1363,8 +1507,8 @@ export async function enrichRcmWithAssurance(rows: Array<Record<string, unknown>
       );
       const issue = await first<Record<string, unknown>>(
         db,
-        'SELECT * FROM Issue WHERE controlId = ? ORDER BY createdAt DESC LIMIT 1',
-        [control.id]
+        'SELECT * FROM Issue WHERE controlId = ? AND institutionId = ? ORDER BY createdAt DESC LIMIT 1',
+        [control.id, institutionId]
       );
       const map = issue
         ? await first<Record<string, unknown>>(

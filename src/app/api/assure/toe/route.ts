@@ -6,12 +6,18 @@ import {
   listToeTests,
   updateToeSample
 } from '@/lib/d1-assurance';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { recordMutationAudit } from '@/lib/d1-core';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeTenantApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   try {
-    const tests = await listToeTests();
+    const tests = await listToeTests(auth.user.institutionId);
     return NextResponse.json({ tests, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 ToE tests:', error);
@@ -23,6 +29,12 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeTenantApi(request, ['Admin', 'Tester', 'Reviewer']);
+  if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const actionType =
@@ -68,7 +80,16 @@ export async function POST(request: Request) {
         populationSource,
         samplingMethod,
         notes: typeof body.notes === 'string' ? body.notes.trim() : null
-      });
+      }, auth.user.institutionId);
+
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'ToETest',
+        recordId: String(test?.id || test?.testId || ''),
+        newValue: test,
+        reason: 'ToE test workpaper created.'
+      }, actor);
 
       return NextResponse.json(test, { status: 201 });
     }
@@ -95,7 +116,16 @@ export async function POST(request: Request) {
         sampleId,
         severity,
         description
-      });
+      }, auth.user.institutionId);
+
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'TestingException',
+        recordId: String(exception?.id || exception?.exceptionNumber || ''),
+        newValue: exception,
+        reason: 'Testing exception created from a failed ToE sample.'
+      }, actor);
 
       return NextResponse.json(exception, { status: 201 });
     }
@@ -132,7 +162,16 @@ export async function POST(request: Request) {
           typeof body.attributesTested === 'string' ? body.attributesTested.trim() : null,
         evidenceRef:
           typeof body.evidenceRef === 'string' ? body.evidenceRef.trim() : null
-      });
+      }, auth.user.institutionId);
+
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'ToESample',
+        recordId: String(sample?.id || ''),
+        newValue: sample,
+        reason: 'ToE sample added to a persisted test workpaper.'
+      }, actor);
 
       return NextResponse.json(sample, { status: 201 });
     }
@@ -153,7 +192,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const updated = await updateToeSample({ sampleId, result, failureReason });
+    const updated = await updateToeSample({ sampleId, result, failureReason }, auth.user.institutionId);
+    await recordMutationAudit({
+      institutionId: auth.user.institutionId,
+      action: 'UPDATE',
+      entityType: 'ToESample',
+      recordId: String(updated?.id || sampleId),
+      newValue: updated,
+      reason: 'ToE sample result updated.'
+    }, actor);
+
     return NextResponse.json(updated);
   } catch (error) {
     const code = error instanceof Error ? error.message : '';

@@ -8,12 +8,18 @@ import {
   listRemediationData,
   requestMapExtension
 } from '@/lib/d1-assurance';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { recordMutationAudit } from '@/lib/d1-core';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeTenantApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   try {
-    const data = await listRemediationData();
+    const data = await listRemediationData(auth.user.institutionId);
     return NextResponse.json({ ...data, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 remediation data:', error);
@@ -29,6 +35,12 @@ function textValue(body: Record<string, unknown>, key: string) {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeTenantApi(request, ['Admin', 'Reviewer', 'Tester', 'ProcessOwner']);
+  if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = textValue(body, 'actionType');
@@ -71,7 +83,19 @@ export async function POST(request: Request) {
         regulatoryImpact: textValue(body, 'regulatoryImpact') || null,
         compensatingControls: textValue(body, 'compensatingControls') || null,
         approvedBy
-      });
+      }, auth.user.institutionId);
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'ControlDeficiency',
+        recordId: String(deficiency?.id || deficiency?.deficiencyId || ''),
+        newValue: {
+          deficiencyId: deficiency?.deficiencyId,
+          classification: deficiency?.classification,
+          exceptionId: deficiency?.exceptionId
+        },
+        reason: 'Control deficiency created from a persisted testing exception.'
+      }, actor);
       return NextResponse.json(deficiency, { status: 201 });
     }
 
@@ -100,7 +124,20 @@ export async function POST(request: Request) {
         severity,
         ownerName,
         targetDate
-      });
+      }, auth.user.institutionId);
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'Issue',
+        recordId: String(issue?.id || issue?.issueId || ''),
+        newValue: {
+          issueId: issue?.issueId,
+          severity: issue?.severity,
+          targetDate: issue?.targetDate,
+          deficiencyId: issue?.deficiencyId
+        },
+        reason: 'Remediation issue opened from an approved control deficiency.'
+      }, actor);
       return NextResponse.json(issue, { status: 201 });
     }
 
@@ -128,7 +165,20 @@ export async function POST(request: Request) {
         actionOwner,
         approverName,
         originalDueDate
-      });
+      }, auth.user.institutionId);
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'ManagementActionPlan',
+        recordId: String(map?.id || map?.mapId || ''),
+        newValue: {
+          mapId: map?.mapId,
+          issueId: map?.issueId,
+          originalDueDate: map?.originalDueDate,
+          status: map?.status
+        },
+        reason: 'Management Action Plan created for a persisted issue.'
+      }, actor);
       return NextResponse.json(map, { status: 201 });
     }
 
@@ -145,7 +195,19 @@ export async function POST(request: Request) {
         );
       }
 
-      const milestone = await createMapMilestone({ mapId, title, owner, dueDate });
+      const milestone = await createMapMilestone({ mapId, title, owner, dueDate }, auth.user.institutionId);
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'MAPMilestone',
+        recordId: String(milestone?.id || ''),
+        newValue: {
+          mapId: milestone?.mapId,
+          title: milestone?.title,
+          dueDate: milestone?.dueDate
+        },
+        reason: 'Management Action Plan milestone created.'
+      }, actor);
       return NextResponse.json(milestone, { status: 201 });
     }
 
@@ -182,7 +244,20 @@ export async function POST(request: Request) {
         testerName,
         reviewerName,
         conclusionNotes: textValue(body, 'conclusionNotes') || null
-      });
+      }, auth.user.institutionId);
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'RetestRecord',
+        recordId: String(retest?.id || retest?.retestId || ''),
+        newValue: {
+          retestId: retest?.retestId,
+          mapId: retest?.mapId,
+          sampleCount: retest?.sampleCount,
+          result: retest?.result
+        },
+        reason: 'Remediation retest record created.'
+      }, actor);
       return NextResponse.json(retest, { status: 201 });
     }
 
@@ -204,7 +279,19 @@ export async function POST(request: Request) {
         extensionReason,
         newDueDate,
         approverName
-      });
+      }, auth.user.institutionId);
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'UPDATE',
+        entityType: 'ManagementActionPlan',
+        recordId: String(updated?.id || mapId),
+        newValue: {
+          mapId: updated?.mapId,
+          revisedDueDate: updated?.revisedDueDate,
+          extensionCount: updated?.extensionCount
+        },
+        reason: 'Management Action Plan due-date extension recorded.'
+      }, actor);
       return NextResponse.json(updated);
     }
 
