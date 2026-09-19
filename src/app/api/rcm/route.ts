@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
+    const prisma = getPrisma();
     // Dynamically query Process + Risk + Control mappings + Assessment + Testing + Issues + MAP
     const mappings = await prisma.controlRiskMapping.findMany({
       include: {
