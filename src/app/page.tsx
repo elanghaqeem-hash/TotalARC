@@ -458,44 +458,70 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-base font-black text-slate-950 sm:text-lg">Executive Assurance Indicators</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Interpretasi ringkas yang dihitung dari data aktif, bukan narasi statis.</p>
+      <TraceabilityFlow currentStep="Dashboard" />
+
+      <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
+        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-50 to-sky-100 text-brand-700 ring-1 ring-brand-100">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-brand-700">
+                Board & Management View
+              </div>
+              <h2 className="text-xl font-black leading-tight tracking-tight text-slate-950 sm:text-2xl">
+                Executive Assurance Intelligence
+              </h2>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-500 sm:text-sm sm:leading-6">
+                Ringkasan assurance yang jelas dan non-teknis untuk membantu Board & Management memahami kondisi risiko, kontrol, pengujian, remediation, dan sign-off.
+              </p>
+            </div>
           </div>
-          <Link href="/reports" className="inline-flex items-center gap-1 text-xs font-bold text-brand-700 hover:text-brand-800">
-            Open analytics <ArrowRight className="h-3.5 w-3.5" />
+
+          <Link
+            href="/certification"
+            className="group inline-flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 lg:w-auto lg:min-w-[250px]"
+          >
+            <span className="flex items-center gap-2">
+              <BadgeCheck className="h-5 w-5" />
+              View Sign-Off Attestation
+            </span>
+            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
           </Link>
         </div>
 
-        {data.executiveQandA.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500">
-            Belum ada assurance indicators yang dapat dihitung dari record saat ini.
+        <div className="border-t border-slate-100 bg-slate-50/50 p-4 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">Executive Assurance Signals</h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">Dihitung dari record aktif pada database, bukan narasi statis.</p>
+            </div>
+            <Link href="/reports" className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-700 hover:text-brand-800">
+              Open analytics <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {data.executiveQandA.map((item, index) => (
-              <div key={`${item.question}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="text-xs font-bold leading-5 text-slate-900">{item.question}</div>
-                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-brand-700 ring-1 ring-slate-200">
-                    {item.status}
-                  </span>
-                </div>
-                <p className="mt-2 text-[11px] leading-5 text-slate-600">{item.summary}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="mb-4">
-          <h2 className="text-base font-black text-slate-950">End-to-End Traceability</h2>
-          <p className="mt-0.5 text-xs text-slate-500">Telusuri hubungan process → risk → control → testing → remediation secara konsisten.</p>
+          {data.executiveQandA.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-white p-5 text-center text-xs text-slate-500">
+              Belum ada assurance indicators yang dapat dihitung dari record saat ini.
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {data.executiveQandA.map((item, index) => (
+                <div key={`${item.question}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-xs font-black leading-5 text-slate-900">{item.question}</div>
+                    <span className="shrink-0 rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-black text-brand-700 ring-1 ring-brand-100">
+                      {item.status}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-5 text-slate-600">{item.summary}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <TraceabilityFlow currentStep="Dashboard" />
       </section>
     </div>
   );
