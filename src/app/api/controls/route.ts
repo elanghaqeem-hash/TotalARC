@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
+    const prisma = getPrisma();
     const controls = await prisma.controlMaster.findMany({
       include: {
         process: true, activity: true, risks: { include: { risk: true } }, todTests: true,
@@ -19,6 +20,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const prisma = getPrisma();
     const body = await request.json();
     const {
       controlId, name, description, objective, processId, riskId, controlOwner,
