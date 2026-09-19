@@ -27,6 +27,11 @@ const processPagePath = 'src/app/processes/page.tsx';
 const prismaPath = 'prisma/schema.prisma';
 const authPath = 'src/lib/auth.ts';
 const authUsersRoutePath = 'src/app/api/auth/users/route.ts';
+const assuranceDomainPath = 'src/lib/d1-assurance.ts';
+const toeRoutePath = 'src/app/api/assure/toe/route.ts';
+const remediationRoutePath = 'src/app/api/assure/remediation/route.ts';
+const ccmRoutePath = 'src/app/api/monitor/ccm/route.ts';
+const dashboardRoutePath = 'src/app/api/dashboard/route.ts';
 
 const domain = requireFile(domainPath);
 requirePatterns(domainPath, domain, [
@@ -200,6 +205,46 @@ requirePatterns(orgPagePath, orgPage, [
   /Edit User Organization Access/,
   /UNIT_AND_CHILDREN/,
   /\/api\/auth\/users/
+]);
+
+const assuranceDomain = requireFile(assuranceDomainPath);
+requirePatterns(assuranceDomainPath, assuranceDomain, [
+  /legalEntityId, orgUnitId FROM BusinessProcess/,
+  /process:\s*\(mapWithIssue\?\.issue/,
+  /process\s*\n\s*};/
+]);
+
+const toeRoute = requireFile(toeRoutePath);
+requirePatterns(toeRoutePath, toeRoute, [
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /TOE_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /isOrgUnitAuthorized/,
+  /listControls\(auth\.user\.institutionId\)/
+]);
+
+const remediationRoute = requireFile(remediationRoutePath);
+requirePatterns(remediationRoutePath, remediationRoute, [
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /REMEDIATION_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /data\.exceptions\.filter/,
+  /data\.maps\.filter/,
+  /data\.retests\.filter/
+]);
+
+const ccmRoute = requireFile(ccmRoutePath);
+requirePatterns(ccmRoutePath, ccmRoute, [
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /CCM_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /scopedRules/,
+  /listControls\(auth\.user\.institutionId\)/
+]);
+
+const dashboardRoute = requireFile(dashboardRoutePath);
+requirePatterns(dashboardRoutePath, dashboardRoute, [
+  /authorizedOrgUnitIds !== null/,
+  /organization-scoped-bpm-risk-control-assurance-remediation-ccm/,
+  /recentAuditLogs:\s*\[\]/,
+  /authorizedUnitCount:\s*authorizedOrgUnitIds\.length/
 ]);
 
 if (findings.length) {
