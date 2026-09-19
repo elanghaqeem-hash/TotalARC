@@ -16,7 +16,10 @@ const blocked = [
   /Demo Showcase/i,
   /Section 136 Scenario/i,
   /simulateFailure/i,
-  /Simulate Exception/i
+  /Simulate Exception/i,
+  /\bBANK_KALBAR\b/,
+  /\bensureBankKalbarPersisted\b/,
+  /Bank Kalbar institution master bootstrapped to persistent D1 storage/i
 ];
 
 const findings = [];
