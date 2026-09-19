@@ -612,7 +612,7 @@ export async function listRisks(institutionId: string) {
       const [process, activity, mappings] = await Promise.all([
         first<Record<string, unknown>>(
           db,
-          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+          'SELECT id, processId, name, categoryId, legalEntityId, orgUnitId, criticality, classification FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
           [row.processId, institutionId]
         ),
         row.activityId
@@ -754,7 +754,9 @@ export async function createRisk(input: Record<string, unknown>, institutionId: 
     process: {
       id: process.id,
       processId: process.processId,
-      name: process.name
+      name: process.name,
+      legalEntityId: process.legalEntityId || null,
+      orgUnitId: process.orgUnitId || null
     },
     activity: null,
     controls: [],
@@ -775,7 +777,7 @@ export async function listControls(institutionId: string) {
       const [process, activity, mappings] = await Promise.all([
         first<Record<string, unknown>>(
           db,
-          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+          'SELECT id, processId, name, categoryId, legalEntityId, orgUnitId, criticality, classification FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
           [row.processId, institutionId]
         ),
         row.activityId
@@ -926,7 +928,9 @@ export async function createControl(input: Record<string, unknown>, institutionI
     process: {
       id: process.id,
       processId: process.processId,
-      name: process.name
+      name: process.name,
+      legalEntityId: process.legalEntityId || null,
+      orgUnitId: process.orgUnitId || null
     },
     activity: null,
     risks: risk
