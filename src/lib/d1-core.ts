@@ -336,12 +336,20 @@ export async function ensureCoreDomainSchema() {
   return db;
 }
 
-async function primaryInstitution(db: D1DatabaseLike) {
+async function primaryInstitution(db: D1DatabaseLike, institutionId?: string) {
   const exists = await first<{ count?: number }>(
     db,
     "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='Institution'"
   );
   if (!Number(exists?.count || 0)) return null;
+
+  if (institutionId) {
+    return first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+      [institutionId]
+    );
+  }
 
   return first<Record<string, unknown>>(
     db,
@@ -476,11 +484,17 @@ async function hydrateProcess(
   } as D1BusinessProcess;
 }
 
-export async function listBusinessProcesses() {
+export async function listBusinessProcesses(institutionId?: string) {
   const db = await ensureCoreDomainSchema();
   const [categories, rows] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY processId ASC')
+    institutionId
+      ? all<Record<string, unknown>>(
+          db,
+          'SELECT * FROM BusinessProcess WHERE institutionId = ? ORDER BY processId ASC',
+          [institutionId]
+        )
+      : all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY processId ASC')
   ]);
   const categoryMap = new Map(categories.map(category => [String(category.id), category]));
   const processes = await Promise.all(rows.map(row => hydrateProcess(db, row, categoryMap)));
@@ -490,6 +504,7 @@ export async function listBusinessProcesses() {
 export async function findBusinessProcessForAi(identifier: {
   processId?: string;
   processName?: string;
+  institutionId?: string;
 }) {
   const db = await ensureCoreDomainSchema();
   let row: Record<string, unknown> | null = null;
@@ -497,25 +512,36 @@ export async function findBusinessProcessForAi(identifier: {
   if (identifier.processId) {
     row = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM BusinessProcess WHERE id = ? OR processId = ? LIMIT 1',
-      [identifier.processId, identifier.processId]
+      identifier.institutionId
+        ? 'SELECT * FROM BusinessProcess WHERE institutionId = ? AND (id = ? OR processId = ?) LIMIT 1'
+        : 'SELECT * FROM BusinessProcess WHERE id = ? OR processId = ? LIMIT 1',
+      identifier.institutionId
+        ? [identifier.institutionId, identifier.processId, identifier.processId]
+        : [identifier.processId, identifier.processId]
     );
   }
 
   if (!row && identifier.processName) {
     row = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM BusinessProcess WHERE name = ? LIMIT 1',
-      [identifier.processName]
+      identifier.institutionId
+        ? 'SELECT * FROM BusinessProcess WHERE institutionId = ? AND name = ? LIMIT 1'
+        : 'SELECT * FROM BusinessProcess WHERE name = ? LIMIT 1',
+      identifier.institutionId
+        ? [identifier.institutionId, identifier.processName]
+        : [identifier.processName]
     );
   }
 
   return row ? hydrateProcess(db, row) : null;
 }
 
-export async function createBusinessProcess(input: Record<string, unknown>) {
+export async function createBusinessProcess(
+  input: Record<string, unknown>,
+  institutionId?: string
+) {
   const db = await ensureCoreDomainSchema();
-  const institution = await primaryInstitution(db);
+  const institution = await primaryInstitution(db, institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const category = await first<Record<string, unknown>>(
@@ -584,12 +610,18 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
   return hydrateProcess(db, created);
 }
 
-export async function listRisks() {
+export async function listRisks(institutionId?: string) {
   const db = await ensureCoreDomainSchema();
-  const rows = await all<Record<string, unknown>>(
-    db,
-    'SELECT * FROM RiskMaster ORDER BY riskId ASC'
-  );
+  const rows = institutionId
+    ? await all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM RiskMaster WHERE institutionId = ? ORDER BY riskId ASC',
+        [institutionId]
+      )
+    : await all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM RiskMaster ORDER BY riskId ASC'
+      );
 
   return Promise.all(
     rows.map(async row => {
@@ -651,12 +683,17 @@ export async function listRisks() {
   );
 }
 
-export async function createRisk(input: Record<string, unknown>) {
+export async function createRisk(
+  input: Record<string, unknown>,
+  institutionId?: string
+) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [input.processId]
+    institutionId
+      ? 'SELECT * FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1'
+      : 'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    institutionId ? [input.processId, institutionId] : [input.processId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -745,12 +782,18 @@ export async function createRisk(input: Record<string, unknown>) {
   };
 }
 
-export async function listControls() {
+export async function listControls(institutionId?: string) {
   const db = await ensureCoreDomainSchema();
-  const rows = await all<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ControlMaster ORDER BY controlId ASC'
-  );
+  const rows = institutionId
+    ? await all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM ControlMaster WHERE institutionId = ? ORDER BY controlId ASC',
+        [institutionId]
+      )
+    : await all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM ControlMaster ORDER BY controlId ASC'
+      );
 
   return Promise.all(
     rows.map(async row => {
@@ -811,12 +854,17 @@ export async function listControls() {
   );
 }
 
-export async function createControl(input: Record<string, unknown>) {
+export async function createControl(
+  input: Record<string, unknown>,
+  institutionId?: string
+) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [input.processId]
+    institutionId
+      ? 'SELECT * FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1'
+      : 'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    institutionId ? [input.processId, institutionId] : [input.processId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -824,8 +872,10 @@ export async function createControl(input: Record<string, unknown>) {
   if (input.riskId) {
     risk = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM RiskMaster WHERE id = ? LIMIT 1',
-      [input.riskId]
+      institutionId
+        ? 'SELECT * FROM RiskMaster WHERE id = ? AND institutionId = ? LIMIT 1'
+        : 'SELECT * FROM RiskMaster WHERE id = ? LIMIT 1',
+      institutionId ? [input.riskId, institutionId] : [input.riskId]
     );
     if (!risk) throw new Error('RISK_NOT_FOUND');
     if (String(risk.processId) !== String(process.id)) throw new Error('RISK_PROCESS_MISMATCH');
@@ -926,7 +976,7 @@ export async function createControl(input: Record<string, unknown>) {
   };
 }
 
-export async function listRcmRows() {
+export async function listRcmRows(institutionId?: string) {
   const db = await ensureCoreDomainSchema();
   const rows = await all<Record<string, unknown>>(
     db,
@@ -966,7 +1016,9 @@ export async function listRcmRows() {
       JOIN BusinessProcess p ON p.id = r.processId
       LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
       JOIN ControlMaster c ON c.id = m.controlId
-      ORDER BY p.processId ASC, r.riskId ASC, c.controlId ASC`
+      ${institutionId ? 'WHERE p.institutionId = ?' : ''}
+      ORDER BY p.processId ASC, r.riskId ASC, c.controlId ASC`,
+    institutionId ? [institutionId] : []
   );
 
   const rcm = await Promise.all(
@@ -1045,8 +1097,11 @@ async function count(
   return Number(row?.count || 0);
 }
 
-export async function getCoreDashboardData() {
+export async function getCoreDashboardData(institutionId?: string) {
   const db = await ensureCoreDomainSchema();
+  const tenant = institutionId ? ' WHERE institutionId = ?' : '';
+  const tenantAnd = institutionId ? ' AND institutionId = ?' : '';
+  const values = institutionId ? [institutionId] : [];
 
   const [
     totalProcesses,
@@ -1060,27 +1115,51 @@ export async function getCoreDashboardData() {
     highCritical,
     recentAuditLogs
   ] = await Promise.all([
-    count(db, 'SELECT COUNT(*) AS count FROM BusinessProcess'),
-    count(db, "SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RiskMaster'),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'"),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'"),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster'),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1'),
+    count(db, `SELECT COUNT(*) AS count FROM BusinessProcess${tenant}`, values),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'${tenantAnd}`,
+      values
+    ),
+    count(db, `SELECT COUNT(*) AS count FROM RiskMaster${tenant}`, values),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'${tenantAnd}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'${tenantAnd}`,
+      values
+    ),
+    count(db, `SELECT COUNT(*) AS count FROM ControlMaster${tenant}`, values),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1${tenantAnd}`,
+      values
+    ),
     count(
       db,
       `SELECT COUNT(DISTINCT r.id) AS count
          FROM RiskMaster r
          JOIN ControlRiskMapping m ON m.riskId = r.id
-        WHERE r.inherentRating IN ('High', 'Critical')`
+        WHERE r.inherentRating IN ('High', 'Critical')
+          ${institutionId ? 'AND r.institutionId = ?' : ''}`,
+      values
     ),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating IN ('High', 'Critical')"
+      `SELECT COUNT(*) AS count FROM RiskMaster
+        WHERE inherentRating IN ('High', 'Critical')
+        ${institutionId ? 'AND institutionId = ?' : ''}`,
+      values
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM AuditLog ORDER BY timestamp DESC LIMIT 8'
+      institutionId
+        ? 'SELECT * FROM AuditLog WHERE institutionId = ? ORDER BY timestamp DESC LIMIT 8'
+        : 'SELECT * FROM AuditLog ORDER BY timestamp DESC LIMIT 8',
+      values
     )
   ]);
 
@@ -1109,26 +1188,6 @@ export async function getCoreDashboardData() {
       summary: highCritical
         ? `${mappedHighCritical} of ${highCritical} High/Critical risks have at least one persisted control mapping.`
         : 'No High/Critical risks are currently registered.',
-      badge: 'Cloudflare D1'
-    },
-    {
-      question: 'Have key controls been tested?',
-      status: keyControls ? 'Testing data migration pending' : 'No key controls',
-      summary: keyControls
-        ? 'Key controls are persisted. ToD/ToE persistence is the next D1 migration phase; no testing conclusion is inferred.'
-        : 'No key controls are currently registered.',
-      badge: 'Cloudflare D1'
-    },
-    {
-      question: 'How many issues remain open?',
-      status: 'Remediation migration pending',
-      summary: 'Issue and remediation counts are not inferred until their D1 migration is complete.',
-      badge: 'Cloudflare D1'
-    },
-    {
-      question: 'Which remediation actions are overdue?',
-      status: 'Remediation migration pending',
-      summary: 'Management Action Plan status is not inferred until remediation records are persisted in D1.',
       badge: 'Cloudflare D1'
     }
   ];
