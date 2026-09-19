@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
+    const prisma = getPrisma();
     const processes = await prisma.businessProcess.findMany({
       include: {
         category: true, orgUnit: true, objectives: true, sipoc: true,
@@ -20,6 +21,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const prisma = getPrisma();
     const body = await request.json();
     const { name, processId, categoryId, ownerName, criticality, classification, isIcofrRelevant, description } = body;
 
