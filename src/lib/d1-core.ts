@@ -112,6 +112,37 @@ export async function ensureCoreDomainSchema() {
   const db = await getDb();
 
   await executeSchemaScript(db, `
+    CREATE TABLE IF NOT EXISTS Institution (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      legalName TEXT NOT NULL,
+      shortName TEXT NOT NULL,
+      institutionType TEXT NOT NULL,
+      country TEXT NOT NULL DEFAULT 'Indonesia',
+      provinceState TEXT,
+      city TEXT,
+      registeredAddress TEXT,
+      operationalAddress TEXT,
+      website TEXT,
+      generalEmail TEXT,
+      telephone TEXT,
+      yearEstablished INTEGER,
+      registrationNumber TEXT,
+      taxId TEXT,
+      parentCompany TEXT,
+      holdingCompany TEXT,
+      stockExchange TEXT,
+      ticker TEXT,
+      logo TEXT,
+      employeeCount TEXT,
+      revenueRange TEXT,
+      businessModel TEXT,
+      operatingModel TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_institution_legal_name ON Institution(legalName);
+
     CREATE TABLE IF NOT EXISTS ProcessCategory (
       id TEXT PRIMARY KEY NOT NULL,
       code TEXT NOT NULL UNIQUE,
