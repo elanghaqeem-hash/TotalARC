@@ -23,6 +23,26 @@ const PROCESS_CATEGORIES = [
   { id: 'ref:CAT-HR', code: 'CAT-HR', name: 'Human Resources & People', orderIndex: 6 }
 ] as const;
 
+export type D1BusinessProcess = Record<string, unknown> & {
+  id: string;
+  institutionId: string;
+  categoryId: string;
+  processId: string;
+  name: string;
+  description: string | null;
+  criticality: string;
+  classification: string;
+  isIcofrRelevant: boolean;
+  status: string;
+  category: Record<string, unknown> | null;
+  orgUnit: Record<string, unknown> | null;
+  objectives: Record<string, unknown>[];
+  sipoc: Record<string, unknown> | null;
+  activities: Record<string, unknown>[];
+  risks: Array<Record<string, unknown>>;
+  controls: Array<Record<string, unknown>>;
+};
+
 async function getDb(): Promise<D1DatabaseLike> {
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -358,7 +378,7 @@ async function hydrateProcess(
   db: D1DatabaseLike,
   row: Record<string, unknown>,
   categoryMap?: Map<string, Record<string, unknown>>
-) {
+): Promise<D1BusinessProcess> {
   const id = String(row.id);
   const [objectives, sipoc, activities, risks, controls] = await Promise.all([
     all<Record<string, unknown>>(
@@ -395,6 +415,15 @@ async function hydrateProcess(
 
   return {
     ...processRow(row),
+    id: String(row.id),
+    institutionId: String(row.institutionId),
+    categoryId: String(row.categoryId),
+    processId: String(row.processId),
+    name: String(row.name),
+    description: typeof row.description === 'string' ? row.description : null,
+    criticality: String(row.criticality || ''),
+    classification: String(row.classification || ''),
+    status: String(row.status || ''),
     category,
     orgUnit: null,
     objectives,
@@ -402,7 +431,7 @@ async function hydrateProcess(
     activities,
     risks: risks.map(riskRow),
     controls: controls.map(controlRow)
-  };
+  } as D1BusinessProcess;
 }
 
 export async function listBusinessProcesses() {
