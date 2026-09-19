@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { runAiGateway } from '@/lib/ai/gateway';
-import type { AiSensitivity } from '@/lib/ai/types';
+import { guardAiPost } from '@/lib/ai/http-security';
 
 type Finding = {
   id: string;
@@ -17,17 +17,6 @@ type Finding = {
   status: string;
 };
 
-function parseSensitivity(value: unknown): AiSensitivity | undefined {
-  if (
-    value === 'public' ||
-    value === 'internal' ||
-    value === 'confidential' ||
-    value === 'restricted'
-  ) {
-    return value;
-  }
-  return undefined;
-}
 
 function parseJsonObject(text: string): Record<string, unknown> {
   const trimmed = text.trim().replace(/^\`\`\`(?:json)?/i, '').replace(/\`\`\`$/i, '').trim();
@@ -74,7 +63,10 @@ function normalizeFindings(value: unknown): Finding[] {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
+    if (!guarded.ok) return guarded.response;
+
+    const body = guarded.body;
     const processId = typeof body.processId === 'string' ? body.processId.trim() : '';
     const processName = typeof body.processName === 'string' ? body.processName.trim() : '';
 
@@ -154,9 +146,7 @@ export async function POST(request: Request) {
       'Maximum 12 findings. Use an empty findings array when there is no evidence-based gap.'
     ].join(' ');
 
-    const analysisSensitivity: AiSensitivity = registeredProcess
-      ? 'confidential'
-      : parseSensitivity(body.sensitivity) || 'confidential';
+    const analysisSensitivity = 'confidential' as const;
 
     const result = await runAiGateway({
       task: 'process_analysis',
@@ -223,8 +213,7 @@ export async function POST(request: Request) {
     console.error('AI analysis failed:', error);
     return NextResponse.json(
       {
-        error: 'Failed to analyze process with configured AI providers.',
-        detail: error instanceof Error ? error.message : 'Unknown AI gateway error'
+        error: 'Failed to analyze process with configured AI providers.'
       },
       { status: 503 }
     );

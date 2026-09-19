@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
-import type { AiSensitivity, AiTask } from '@/lib/ai/types';
+import { guardAiPost } from '@/lib/ai/http-security';
+import type { AiTask } from '@/lib/ai/types';
 
 const TASKS: AiTask[] = [
   'process_analysis',
@@ -25,21 +26,13 @@ function taskFrom(value: unknown): AiTask {
     : 'chat';
 }
 
-function sensitivityFrom(value: unknown): AiSensitivity | undefined {
-  if (
-    value === 'public' ||
-    value === 'internal' ||
-    value === 'confidential' ||
-    value === 'restricted'
-  ) {
-    return value;
-  }
-  return undefined;
-}
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const guarded = await guardAiPost(request, 'AI_CHAT_RATE_LIMIT');
+    if (!guarded.ok) return guarded.response;
+
+    const body = guarded.body;
     const message = typeof body.message === 'string' ? body.message.trim() : '';
 
     if (!message) {
@@ -53,7 +46,7 @@ export async function POST(request: Request) {
 
     const result = await runAiGateway({
       task: taskFrom(body.task),
-      sensitivity: sensitivityFrom(body.sensitivity),
+      sensitivity: 'confidential',
       systemPrompt: [
         'You are Total ARC AI, a Governance, Risk, Compliance, ICOFR and Internal Control copilot.',
         'Use supplied facts and context. Clearly distinguish evidence from suggestions.',
@@ -84,8 +77,7 @@ export async function POST(request: Request) {
     console.error('AI chat failed:', error);
     return NextResponse.json(
       {
-        error: 'AI assistant is unavailable.',
-        detail: error instanceof Error ? error.message : 'Unknown AI gateway error'
+        error: 'AI assistant is unavailable.'
       },
       { status: 503 }
     );

@@ -140,3 +140,17 @@ Optional external provider GitHub Actions secrets:
 Cloudflare Workers AI remains the required private provider for confidential/restricted workloads. Gemini, Groq and OpenRouter remain optional fallback/eligible routing providers according to the gateway policy.
 
 The deployment token must be able to access/provision the D1 database required by the current Total ARC production architecture. If the D1 permission preflight fails, deployment stops before building or publishing the Worker.
+
+
+### AI endpoint production guards
+
+Total ARC protects the inference endpoints independently from model-provider quotas:
+
+- `POST /api/ai/chat`: Cloudflare Rate Limiting binding, 20 requests per 60 seconds per temporary actor fingerprint.
+- `POST /api/ai/analyze`: Cloudflare Rate Limiting binding, 6 requests per 60 seconds per temporary actor fingerprint.
+- Explicit cross-origin browser requests are rejected.
+- JSON request bodies are capped at 256 KiB before inference.
+- Chat and analysis are forced to `confidential` sensitivity server-side until authenticated server-side data classification is implemented.
+- Upstream provider error details are logged server-side and are not returned verbatim to clients.
+
+These controls are an interim production protection layer. They do not represent user authentication or tenant authorization. The current browser RoleContext is presentation state only and must not be treated as an authenticated identity.
