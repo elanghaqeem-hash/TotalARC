@@ -20,6 +20,7 @@ import { getRiskBadgeClasses } from '@/lib/utils';
 
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
+  const [processes, setProcesses] = useState<any[]>([]);
   const [selectedRisk, setSelectedRisk] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'register' | 'inherent_heatmap' | 'residual_heatmap'>('register');
@@ -40,14 +41,33 @@ export default function RisksPage() {
   });
 
   const loadRisks = () => {
-    fetch('/api/risks')
-      .then(res => res.json())
-      .then(d => {
-        setRisks(d.risks || []);
-        if (d.risks?.length > 0 && !selectedRisk) {
-          setSelectedRisk(d.risks[0]);
-          setFormData(prev => ({ ...prev, processId: d.risks[0].processId }));
+    Promise.all([
+      fetch('/api/risks').then(res => {
+        if (!res.ok) throw new Error('Unable to load risks.');
+        return res.json();
+      }),
+      fetch('/api/processes').then(res => {
+        if (!res.ok) throw new Error('Unable to load processes.');
+        return res.json();
+      })
+    ])
+      .then(([riskData, processData]) => {
+        const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
+        const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
+        setRisks(nextRisks);
+        setProcesses(nextProcesses);
+
+        if (nextRisks.length > 0 && !selectedRisk) {
+          setSelectedRisk(nextRisks[0]);
         }
+
+        setFormData(prev => ({
+          ...prev,
+          processId:
+            prev.processId && nextProcesses.some((process: any) => process.id === prev.processId)
+              ? prev.processId
+              : nextProcesses[0]?.id || ''
+        }));
       })
       .catch(console.error);
   };
@@ -409,6 +429,69 @@ export default function RisksPage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Risk ID</label>
+                  <input
+                    type="text"
+                    placeholder="Auto-generated if blank"
+                    value={formData.riskId}
+                    onChange={e => setFormData({ ...formData, riskId: e.target.value })}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Risk Category *</label>
+                  <select
+                    required
+                    value={formData.category}
+                    onChange={e => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  >
+                    <option value="Operational">Operational</option>
+                    <option value="Financial Reporting">Financial Reporting</option>
+                    <option value="Compliance">Compliance</option>
+                    <option value="Technology">Technology</option>
+                    <option value="Cybersecurity">Cybersecurity</option>
+                    <option value="Strategic">Strategic</option>
+                    <option value="Fraud">Fraud</option>
+                    <option value="Third Party">Third Party</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Business Process *</label>
+                <select
+                  required
+                  value={formData.processId}
+                  onChange={e => setFormData({ ...formData, processId: e.target.value })}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                >
+                  {processes.length === 0 ? (
+                    <option value="">Register a business process first</option>
+                  ) : (
+                    processes.map(process => (
+                      <option key={process.id} value={process.id}>
+                        {process.processId} — {process.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Risk Owner *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Enter accountable risk owner"
+                  value={formData.ownerName}
+                  onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                />
+              </div>
+
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Risk Name *</label>
                 <input
@@ -466,7 +549,6 @@ export default function RisksPage() {
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
                     <option value={0} disabled>Select level</option>
-                    <option value={0} disabled>Select level</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
@@ -480,6 +562,7 @@ export default function RisksPage() {
                     onChange={e => setFormData({ ...formData, inherentImpact: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
+                    <option value={0} disabled>Select level</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
@@ -497,7 +580,8 @@ export default function RisksPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm"
+                  disabled={processes.length === 0}
+                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save Risk Master
                 </button>
