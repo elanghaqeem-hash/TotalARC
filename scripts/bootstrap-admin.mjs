@@ -1,7 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './prisma-client.mjs';
 import { randomBytes, scryptSync } from 'node:crypto';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 function required(name) {
   const value = process.env[name];
