@@ -32,6 +32,7 @@ const toeRoutePath = 'src/app/api/assure/toe/route.ts';
 const remediationRoutePath = 'src/app/api/assure/remediation/route.ts';
 const ccmRoutePath = 'src/app/api/monitor/ccm/route.ts';
 const dashboardRoutePath = 'src/app/api/dashboard/route.ts';
+const aiAnalyzeRoutePath = 'src/app/api/ai/analyze/route.ts';
 
 const domain = requireFile(domainPath);
 requirePatterns(domainPath, domain, [
@@ -54,6 +55,8 @@ requirePatterns(domainPath, domain, [
 const route = requireFile(routePath);
 requirePatterns(routePath, route, [
   /authorizeTenantApi\(request, READ_ROLES\)/,
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /scopeOrganizationData\(data, authorizedOrgUnitIds, auth\.user\.id\)/,
   /authorizeTenantApi\(request, \['Admin'\]\)/,
   /guardMutationRequest\(request\)/,
   /mutationActorFromRequest\(request, auth\.user\)/,
@@ -180,6 +183,7 @@ requirePatterns(authUsersRoutePath, authUsersRoute, [
 
 requirePatterns(processRoutePath, processRoute, [
   /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /scopeOrganizationData/,
   /PROCESS_ORGANIZATION_SCOPE_FORBIDDEN/,
   /isOrgUnitAuthorized\(authorizedOrgUnitIds/
 ]);
@@ -245,6 +249,20 @@ requirePatterns(dashboardRoutePath, dashboardRoute, [
   /organization-scoped-bpm-risk-control-assurance-remediation-ccm/,
   /recentAuditLogs:\s*\[\]/,
   /authorizedUnitCount:\s*authorizedOrgUnitIds\.length/
+]);
+
+const aiAnalyzeRoute = requireFile(aiAnalyzeRoutePath);
+requirePatterns(aiAnalyzeRoutePath, aiAnalyzeRoute, [
+  /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
+  /AI_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /registeredProcess\.orgUnitId/
+]);
+
+requirePatterns(domainPath, domain, [
+  /export function scopeOrganizationData/,
+  /allowedUnitIds/,
+  /relevantUserIds/,
+  /childUnitCount/
 ]);
 
 if (findings.length) {
