@@ -33,10 +33,7 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Reconcile lockfile for validation
-        run: npm install --package-lock-only --ignore-scripts
-
-      - name: Install dependencies
+      - name: Install dependencies from committed lockfile
         run: npm ci
 
       - name: Build OpenNext Cloudflare artifact
