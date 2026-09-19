@@ -15,26 +15,34 @@ export async function GET() {
       prisma.auditLog.findMany({ take: 8, orderBy: { timestamp: 'desc' } })
     ]);
 
-    const highCritical = risks.filter((risk) => risk.inherentRating === 'High' || risk.inherentRating === 'Critical');
+    const typedRisks = risks as Array<{ inherentRating: string; controls: unknown[] }>;
+    const typedControls = controls as Array<{ isKeyControl: boolean; toeTests: unknown[] }>;
+    const typedProcesses = processes as Array<{ criticality: string }>;
+    const typedToETests = toeTests as Array<{ failCount: number; finalConclusion: string; exceptions: unknown[] }>;
+    const typedIssues = issues as Array<{ status: string }>;
+    const typedMaps = maps as Array<{ status: string }>;
+    const typedRules = rules as Array<{ lastStatus: string | null }>;
+
+    const highCritical = typedRisks.filter((risk) => risk.inherentRating === 'High' || risk.inherentRating === 'Critical');
     const mappedHighCritical = highCritical.filter((risk) => risk.controls.length > 0);
-    const keyControls = controls.filter((control) => control.isKeyControl);
+    const keyControls = typedControls.filter((control) => control.isKeyControl);
     const testedKeyControls = keyControls.filter((control) => control.toeTests.length > 0);
 
     const metrics = {
       totalProcesses: processes.length,
-      criticalProcesses: processes.filter((p) => p.criticality === 'Critical').length,
+      criticalProcesses: typedProcesses.filter((process) => process.criticality === 'Critical').length,
       totalRisks: risks.length,
-      criticalRisks: risks.filter((r) => r.inherentRating === 'Critical').length,
-      highRisks: risks.filter((r) => r.inherentRating === 'High').length,
+      criticalRisks: typedRisks.filter((risk) => risk.inherentRating === 'Critical').length,
+      highRisks: typedRisks.filter((risk) => risk.inherentRating === 'High').length,
       totalControls: controls.length,
       keyControls: keyControls.length,
-      failedToEs: toeTests.filter((t) => t.failCount > 0 || ['Partially Effective', 'Ineffective'].includes(t.finalConclusion)).length,
-      totalExceptions: toeTests.reduce((sum, test) => sum + test.exceptions.length, 0),
-      openIssues: issues.filter((issue) => issue.status !== 'Closed').length,
-      closedIssues: issues.filter((issue) => issue.status === 'Closed').length,
-      overdueMAP: maps.filter((map) => map.status === 'Overdue').length,
-      completedMAP: maps.filter((map) => ['Completed by Owner', 'Closed'].includes(map.status)).length,
-      ccmHealthy: rules.filter((rule) => rule.lastStatus === 'Healthy').length,
+      failedToEs: typedToETests.filter((test) => test.failCount > 0 || ['Partially Effective', 'Ineffective'].includes(test.finalConclusion)).length,
+      totalExceptions: typedToETests.reduce((sum, test) => sum + test.exceptions.length, 0),
+      openIssues: typedIssues.filter((issue) => issue.status !== 'Closed').length,
+      closedIssues: typedIssues.filter((issue) => issue.status === 'Closed').length,
+      overdueMAP: typedMaps.filter((map) => map.status === 'Overdue').length,
+      completedMAP: typedMaps.filter((map) => ['Completed by Owner', 'Closed'].includes(map.status)).length,
+      ccmHealthy: typedRules.filter((rule) => rule.lastStatus === 'Healthy').length,
       totalRetests: retests.length
     };
 
