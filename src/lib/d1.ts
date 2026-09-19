@@ -317,7 +317,9 @@ export async function getD1Health() {
     'RetestRecord',
     'MonitoringRule',
     'MonitoringRun',
-    'CCMException'
+    'CCMException',
+    'AuthUser',
+    'AuthSession'
   ];
   const existing = new Set(tableNames);
   const missingRequiredTables = requiredTables.filter(name => !existing.has(name));
