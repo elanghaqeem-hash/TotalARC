@@ -327,6 +327,91 @@ async function callOpenAiCompatible(
   return parseOpenAiText(data);
 }
 
+function contentText(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  if (Array.isArray(value)) {
+    const text = value
+      .map(part => {
+        if (typeof part === 'string') return part;
+        if (!part || typeof part !== 'object') return '';
+
+        const record = part as Record<string, unknown>;
+        if (typeof record.text === 'string') return record.text;
+        if (typeof record.content === 'string') return record.content;
+        return '';
+      })
+      .join('')
+      .trim();
+
+    return text || null;
+  }
+
+  return null;
+}
+
+function extractWorkersAiText(result: unknown): string | null {
+  const direct = contentText(result);
+  if (direct) return direct;
+
+  if (!result || typeof result !== 'object') return null;
+  const record = result as Record<string, unknown>;
+
+  for (const key of ['response', 'output_text', 'text']) {
+    const text = contentText(record[key]);
+    if (text) return text;
+  }
+
+  if (record.message && typeof record.message === 'object') {
+    const message = record.message as Record<string, unknown>;
+    const text = contentText(message.content);
+    if (text) return text;
+  }
+
+  if (Array.isArray(record.choices)) {
+    for (const choiceValue of record.choices) {
+      if (!choiceValue || typeof choiceValue !== 'object') continue;
+      const choice = choiceValue as Record<string, unknown>;
+
+      if (choice.message && typeof choice.message === 'object') {
+        const message = choice.message as Record<string, unknown>;
+        const text = contentText(message.content);
+        if (text) return text;
+      }
+
+      if (choice.delta && typeof choice.delta === 'object') {
+        const delta = choice.delta as Record<string, unknown>;
+        const text = contentText(delta.content);
+        if (text) return text;
+      }
+
+      const choiceText = contentText(choice.text);
+      if (choiceText) return choiceText;
+    }
+  }
+
+  if (Array.isArray(record.output)) {
+    for (const outputValue of record.output) {
+      if (!outputValue || typeof outputValue !== 'object') continue;
+      const output = outputValue as Record<string, unknown>;
+      const text =
+        contentText(output.content) ||
+        contentText(output.text) ||
+        contentText(output.output_text);
+      if (text) return text;
+    }
+  }
+
+  if (record.result && typeof record.result === 'object') {
+    return extractWorkersAiText(record.result);
+  }
+
+  return contentText(record.result);
+}
+
 async function callCloudflare(
   systemPrompt: string,
   prompt: string,
@@ -344,22 +429,17 @@ async function callCloudflare(
       { role: 'user', content: prompt }
     ],
     temperature,
-    max_tokens: maxOutputTokens
+    max_tokens: maxOutputTokens,
+    stream: false
   });
 
-  if (typeof result === 'string' && result.trim()) return result.trim();
+  const text = extractWorkersAiText(result);
+  if (text) return text;
 
-  if (result && typeof result === 'object') {
-    const record = result as Record<string, unknown>;
-    if (typeof record.response === 'string' && record.response.trim()) {
-      return record.response.trim();
-    }
-    if (typeof record.result === 'string' && record.result.trim()) {
-      return record.result.trim();
-    }
-  }
-
-  throw new ProviderError('Cloudflare Workers AI returned no text content', false);
+  throw new ProviderError(
+    'Cloudflare Workers AI returned a successful response without final text content',
+    false
+  );
 }
 
 async function callProvider(
@@ -428,7 +508,7 @@ export async function probeAiProviders(): Promise<AiProviderProbe[]> {
           'You are a Total ARC production connectivity probe. Reply briefly.',
           'Return the word OK.',
           0,
-          64,
+          512,
           false
         )
       );
