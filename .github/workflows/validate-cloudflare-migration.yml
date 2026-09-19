@@ -37,6 +37,9 @@ jobs:
       - name: Verify mutation security
         run: npm run verify:mutation-security
 
+      - name: Verify organization master integrity
+        run: npm run verify:organization-integrity
+
       - name: Build OpenNext Cloudflare artifact
         run: npm run build
 
