@@ -100,3 +100,24 @@ npm run cf-typegen
 - `POST /api/ai/analyze` performs evidence-based process/control analysis using persisted BPM/RCM context.
 
 The AI layer is advisory only and does not autonomously mutate assurance records.
+
+
+### Production AI readiness
+
+Total ARC exposes a non-inference readiness endpoint:
+
+```text
+GET /api/ai/ready
+```
+
+It does not call a model and does not consume inference quota. It returns HTTP 200 only when the private Cloudflare Workers AI binding is available at runtime; otherwise it returns HTTP 503.
+
+The production deployment workflow automatically checks this endpoint after a successful Cloudflare deployment. A deployment is therefore not considered AI-ready merely because the source code builds.
+
+Cloudflare CI/CD credentials must be configured outside Git:
+
+- `CLOUDFLARE_API_TOKEN` — GitHub Actions repository secret.
+- `CLOUDFLARE_ACCOUNT_ID` — GitHub Actions repository variable (preferred) or repository secret.
+- `TOTALARC_PRODUCTION_URL` — optional repository variable used only as a fallback if Wrangler does not emit a deployment URL.
+
+The deploy workflow fails before publishing when required credentials are absent, and it fails after publishing if the Workers AI binding is not runtime-ready.
