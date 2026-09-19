@@ -41,6 +41,7 @@ type LegalEntity = {
   taxId?: string | null;
   status: string;
   effectiveDate?: string | null;
+  processCount?: number;
 };
 
 type OrganizationUnit = {
@@ -62,6 +63,9 @@ type OrganizationUnit = {
   effectiveFrom?: string | null;
   effectiveUntil?: string | null;
   status: string;
+  processCount?: number;
+  positionCount?: number;
+  childUnitCount?: number;
 };
 
 type OrganizationPosition = {
@@ -232,7 +236,7 @@ function UnitTreeNode({
             {unit.name}
           </div>
           <div className="truncate text-[11px] text-slate-500">
-            {unit.code} · {unit.type}
+            {unit.code} · {unit.type} · {unit.processCount || 0} processes
           </div>
         </button>
         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${badgeClass(unit.status)}`}>
@@ -768,6 +772,20 @@ export default function OrganizationPage() {
                         <div className="mt-1 text-xs font-bold text-slate-700">{selectedUnit.location || 'Not specified'}</div>
                       </div>
                     </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">Linked Processes</div>
+                        <div className="mt-1 text-lg font-black text-slate-900">{selectedUnit.processCount || 0}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">Child Units</div>
+                        <div className="mt-1 text-lg font-black text-slate-900">{selectedUnit.childUnitCount || 0}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">Positions</div>
+                        <div className="mt-1 text-lg font-black text-slate-900">{selectedUnit.positionCount || 0}</div>
+                      </div>
+                    </div>
                     <div className="text-xs text-slate-500">
                       Cost center: <span className="font-bold text-slate-700">{selectedUnit.costCenter || 'Not specified'}</span>
                     </div>
@@ -790,7 +808,9 @@ export default function OrganizationPage() {
                 <div>
                   <div className="text-sm font-black text-slate-900">{entity.name}</div>
                   <div className="mt-1 text-xs text-slate-500">{entity.code} · {entity.entityType} · {entity.country} · {entity.currency}</div>
-                  {entity.parentEntityName && <div className="mt-1 text-[10px] text-slate-400">Parent: {entity.parentEntityName}</div>}
+                  <div className="mt-1 text-[10px] text-slate-400">
+                    {entity.processCount || 0} linked processes{entity.parentEntityName ? ` · Parent: ${entity.parentEntityName}` : ''}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`rounded-full border px-2 py-1 text-[10px] font-bold ${badgeClass(entity.status)}`}>{entity.status}</span>
@@ -812,7 +832,9 @@ export default function OrganizationPage() {
                 <div>
                   <div className="text-sm font-black text-slate-900">{unit.name}</div>
                   <div className="mt-1 text-xs text-slate-500">{unit.code} · {unit.type} · {unit.legalEntityName || 'No legal entity'}</div>
-                  <div className="mt-1 text-[10px] text-slate-400">Head: {unit.headUserName || unit.headName || 'Not assigned'} · Parent: {unit.parentName || 'Top level'}</div>
+                  <div className="mt-1 text-[10px] text-slate-400">
+                    Head: {unit.headUserName || unit.headName || 'Not assigned'} · Parent: {unit.parentName || 'Top level'} · {unit.processCount || 0} processes · {unit.positionCount || 0} positions
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`rounded-full border px-2 py-1 text-[10px] font-bold ${badgeClass(unit.status)}`}>{unit.status}</span>
