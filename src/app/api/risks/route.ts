@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 function riskRating(score: number) {
   if (score >= 15) return 'Critical';
@@ -10,6 +10,7 @@ function riskRating(score: number) {
 
 export async function GET() {
   try {
+    const prisma = getPrisma();
     const risks = await prisma.riskMaster.findMany({
       include: { process: true, activity: true, controls: { include: { control: true } }, issues: true },
       orderBy: { riskId: 'asc' }
@@ -23,6 +24,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const prisma = getPrisma();
     const body = await request.json();
     const {
       riskId, name, description, cause, event, impact, category, processId,
