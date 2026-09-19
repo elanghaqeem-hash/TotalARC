@@ -195,6 +195,7 @@ jobs:
           echo "### AI production verification" >> "$GITHUB_STEP_SUMMARY"
           echo "- Worker deployment: successful" >> "$GITHUB_STEP_SUMMARY"
           echo "- Workers AI binding: ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "$provider_summary"
           echo "$provider_summary" >> "$GITHUB_STEP_SUMMARY"
 
           private_ready=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);process.stdout.write(j.privateProviderReady===true?'true':'false')}catch{process.stdout.write('false')}})")
