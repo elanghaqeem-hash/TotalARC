@@ -87,6 +87,9 @@ type OrganizationUser = {
   email: string;
   role: string;
   department?: string | null;
+  orgUnitId?: string | null;
+  orgUnitName?: string | null;
+  accessScope?: 'Institution' | 'Unit' | 'UnitAndDescendants';
   active: boolean;
 };
 
@@ -99,7 +102,7 @@ type OrganizationData = {
   storage: string;
 };
 
-type ModalMode = 'entity' | 'unit' | 'position' | 'import' | null;
+type ModalMode = 'entity' | 'unit' | 'position' | 'user' | 'import' | null;
 type Tab = 'structure' | 'entities' | 'units' | 'positions' | 'users';
 
 const UNIT_TYPES = [
@@ -143,7 +146,8 @@ const emptyForm: Record<string, string> = {
   title: '',
   positionLevel: '',
   orgUnitId: '',
-  assignedUserId: ''
+  assignedUserId: '',
+  accessScope: 'Institution'
 };
 
 function inputClass() {
@@ -449,6 +453,20 @@ export default function OrganizationPage() {
     setModal('position');
   };
 
+  const openEditUserScope = (user: OrganizationUser) => {
+    setEditing(true);
+    setForm({
+      ...emptyForm,
+      id: user.id,
+      name: user.name,
+      orgUnitId: user.orgUnitId || '',
+      accessScope: user.accessScope || 'Institution'
+    });
+    setModal('user');
+    setError('');
+    setNotice('');
+  };
+
   const mutate = async (method: 'POST' | 'PATCH', body: Record<string, unknown>) => {
     const response = await fetch('/api/organization', {
       method,
@@ -488,6 +506,22 @@ export default function OrganizationPage() {
           ...form,
           action: editing ? 'update-position' : 'create-position'
         });
+      }
+
+      if (modal === 'user') {
+        const response = await fetch('/api/auth/users', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: form.id,
+            orgUnitId: form.accessScope === 'Institution' ? null : form.orgUnitId || null,
+            accessScope: form.accessScope
+          })
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error || 'Unable to update user organization access.');
+        }
       }
 
       setModal(null);
@@ -883,10 +917,21 @@ export default function OrganizationPage() {
                   <div className="text-sm font-black text-slate-900">{user.name}</div>
                   <div className="mt-1 text-xs text-slate-500">{user.email} · {user.role}</div>
                   <div className="mt-1 text-[10px] text-slate-400">{user.department || 'No department label'}</div>
+                  <div className="mt-1 text-[10px] font-medium text-brand-700">
+                    Access: {user.accessScope || 'Institution'}
+                    {user.orgUnitName ? ` · ${user.orgUnitName}` : ''}
+                  </div>
                 </div>
-                <span className={`w-fit rounded-full border px-2 py-1 text-[10px] font-bold ${badgeClass(user.active ? 'Active' : 'Inactive')}`}>
-                  {user.active ? 'Active' : 'Inactive'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`w-fit rounded-full border px-2 py-1 text-[10px] font-bold ${badgeClass(user.active ? 'Active' : 'Inactive')}`}>
+                    {user.active ? 'Active' : 'Inactive'}
+                  </span>
+                  {isAdmin && (
+                    <button type="button" onClick={() => openEditUserScope(user)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50" title="Manage organization access">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             )) : <div className="p-10 text-center text-xs text-slate-500">No provisioned users are bound to this institution.</div>}
           </div>
@@ -902,6 +947,7 @@ export default function OrganizationPage() {
                   {modal === 'entity' && `${editing ? 'Edit' : 'Add'} Legal Entity`}
                   {modal === 'unit' && `${editing ? 'Edit' : 'Add'} Organization Unit`}
                   {modal === 'position' && `${editing ? 'Edit' : 'Add'} Position`}
+                  {modal === 'user' && 'Manage User Organization Access'}
                   {modal === 'import' && 'Import Organization Structure'}
                 </div>
                 <div className="mt-1 text-[10px] text-slate-500">Changes are stored in the tenant-scoped Cloudflare D1 organization master and audited.</div>
@@ -984,6 +1030,56 @@ export default function OrganizationPage() {
                     <label className="text-xs font-bold text-slate-700">Position Level<input value={form.positionLevel} onChange={event => updateField('positionLevel', event.target.value)} className={`mt-1 ${inputClass()}`} placeholder="e.g. Head, Manager, Officer" /></label>
                     <label className="text-xs font-bold text-slate-700">Assigned User<select value={form.assignedUserId} onChange={event => updateField('assignedUserId', event.target.value)} className={`mt-1 ${inputClass()}`}><option value="">Vacant</option>{data.users.filter(user => user.active).map(user => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>)}</select></label>
                     <label className="text-xs font-bold text-slate-700">Status<select value={form.status} onChange={event => updateField('status', event.target.value)} className={`mt-1 ${inputClass()}`}><option>Active</option><option>Inactive</option></select></label>
+                  </div>
+                )}
+
+                {modal === 'user' && (
+                  <div className="space-y-4">
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <div className="text-[10px] font-bold uppercase text-slate-400">User</div>
+                      <div className="mt-1 text-sm font-black text-slate-900">{form.name}</div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="text-xs font-bold text-slate-700">
+                        Access Scope *
+                        <select
+                          value={form.accessScope}
+                          onChange={event => {
+                            const accessScope = event.target.value;
+                            setForm(current => ({
+                              ...current,
+                              accessScope,
+                              orgUnitId: accessScope === 'Institution' ? '' : current.orgUnitId
+                            }));
+                          }}
+                          className={`mt-1 ${inputClass()}`}
+                        >
+                          <option value="Institution">Institution-wide</option>
+                          <option value="Unit">Assigned unit only</option>
+                          <option value="UnitAndDescendants">Assigned unit + descendants</option>
+                        </select>
+                      </label>
+                      <label className="text-xs font-bold text-slate-700">
+                        Primary Organization Unit {form.accessScope === 'Institution' ? '' : '*'}
+                        <select
+                          required={form.accessScope !== 'Institution'}
+                          disabled={form.accessScope === 'Institution'}
+                          value={form.orgUnitId}
+                          onChange={event => updateField('orgUnitId', event.target.value)}
+                          className={`mt-1 ${inputClass()} disabled:bg-slate-100 disabled:text-slate-400`}
+                        >
+                          <option value="">Select unit</option>
+                          {data.organizationUnits
+                            .filter(unit => unit.status === 'Active')
+                            .map(unit => (
+                              <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+                            ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800">
+                      Institution-wide can access all organization units. Assigned unit only is restricted to one unit. Assigned unit + descendants includes all active child units beneath the selected unit.
+                    </div>
                   </div>
                 )}
 
