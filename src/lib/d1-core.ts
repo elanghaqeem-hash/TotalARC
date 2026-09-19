@@ -36,6 +36,7 @@ export type D1BusinessProcess = Record<string, unknown> & {
   isIcofrRelevant: boolean;
   status: string;
   category: Record<string, unknown> | null;
+  legalEntity: Record<string, unknown> | null;
   orgUnit: Record<string, unknown> | null;
   objectives: Record<string, unknown>[];
   sipoc: Record<string, unknown> | null;
@@ -413,7 +414,7 @@ async function hydrateProcess(
   categoryMap?: Map<string, Record<string, unknown>>
 ): Promise<D1BusinessProcess> {
   const id = String(row.id);
-  const [objectives, sipoc, activities, risks, controls] = await Promise.all([
+  const [objectives, sipoc, activities, risks, controls, orgUnit, legalEntity] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM ProcessObjective WHERE processId = ? ORDER BY createdAt ASC',
@@ -434,7 +435,21 @@ async function hydrateProcess(
       db,
       'SELECT * FROM ControlMaster WHERE processId = ? ORDER BY controlId ASC',
       [id]
-    )
+    ),
+    row.orgUnitId
+      ? first<Record<string, unknown>>(
+          db,
+          'SELECT id, code, name, type, legalEntityId, parentId, status FROM OrganizationUnit WHERE id = ? AND institutionId = ? LIMIT 1',
+          [row.orgUnitId, row.institutionId]
+        )
+      : Promise.resolve(null),
+    row.legalEntityId
+      ? first<Record<string, unknown>>(
+          db,
+          'SELECT id, code, name, entityType, country, status FROM LegalEntity WHERE id = ? AND institutionId = ? LIMIT 1',
+          [row.legalEntityId, row.institutionId]
+        )
+      : Promise.resolve(null)
   ]);
 
   let category = categoryMap?.get(String(row.categoryId)) || null;
@@ -458,7 +473,8 @@ async function hydrateProcess(
     classification: String(row.classification || ''),
     status: String(row.status || ''),
     category,
-    orgUnit: null,
+    legalEntity,
+    orgUnit,
     objectives,
     sipoc,
     activities,
@@ -542,15 +558,18 @@ export async function createBusinessProcess(input: Record<string, unknown>, inst
       level, parentProcessId, description, ownerName, ownerEmail, managerName,
       criticality, classification, isIcofrRelevant, status, version,
       effectiveDate, reviewDate, tags, createdAt, updatedAt
-    ) VALUES (?, ?, NULL, NULL, ?, ?, ?, 2, NULL, ?, ?, NULL, NULL, ?, ?, ?, 'Draft', '1.0', ?, NULL, NULL, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 2, NULL, ?, ?, ?, NULL, ?, ?, ?, 'Draft', '1.0', ?, NULL, NULL, ?, ?)`,
     [
       id,
       institution.id,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
       category.id,
       enterpriseId,
       input.name,
       nullable(input.description),
       input.ownerName,
+      nullable(input.ownerEmail),
       input.criticality,
       input.classification,
       input.isIcofrRelevant ? 1 : 0,
