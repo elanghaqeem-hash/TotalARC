@@ -490,7 +490,7 @@ export default function DashboardPage() {
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h3 className="text-sm font-black text-slate-900">Executive Assurance Signals</h3>
-              <p className="mt-0.5 text-[11px] text-slate-500">Dihitung dari record aktif pada database, bukan narasi statis.</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Dihitung dari record aktif pada database.</p>
             </div>
             <Link href="/reports" className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-700 hover:text-brand-800">
               Open analytics <ChevronRight className="h-3.5 w-3.5" />
