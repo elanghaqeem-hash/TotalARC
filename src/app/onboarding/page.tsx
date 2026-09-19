@@ -148,7 +148,7 @@ export default function OnboardingPage() {
         {step === 1 && (
           <div className="space-y-4">
             <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              1. Institution Legal Identity (Section 11)
+              1. Institution Legal Identity
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
