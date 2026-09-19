@@ -53,6 +53,7 @@ function walk(dir) {
 
 walk('src');
 walk('prisma');
+walk('migrations');
 
 if (fs.existsSync('prisma/dev.db')) findings.push('prisma/dev.db is committed/present');
 
