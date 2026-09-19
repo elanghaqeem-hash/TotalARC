@@ -16,39 +16,43 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger and verify Bank Kalbar persistence
+      - name: Verify read-only D1 health
         shell: bash
         run: |
           set -euo pipefail
           URL="https://totalarc.serayamg.workers.dev/api/system/database"
           RESPONSE=""
 
-          for attempt in $(seq 1 30); do
-            echo "Production D1 verification attempt $attempt"
+          for attempt in $(seq 1 20); do
+            echo "Production D1 health attempt $attempt"
             RESPONSE="$(curl --silent --show-error --location --max-time 20 "$URL" || true)"
 
             if printf '%s' "$RESPONSE" | jq -e '
               .ok == true and
               .persistent == true and
               .database == "cloudflare-d1" and
-              .institution.name == "Bank Kalbar" and
-              .institution.legalName == "PT. Bank Pembangunan Daerah Kalimantan Barat"
+              .mutationPerformed == false and
+              (.counts.institutions | type) == "number" and
+              (.counts.processes | type) == "number" and
+              (.counts.risks | type) == "number" and
+              (.counts.controls | type) == "number"
             ' >/dev/null 2>&1; then
-              echo "Bank Kalbar is persisted in Cloudflare D1."
+              echo "Cloudflare D1 is reachable and the health check is read-only."
               printf '%s\n' "$RESPONSE" | jq '{
                 ok,
                 database,
                 persistent,
-                institution,
-                auditLogCount: (.auditLogs | length)
+                mutationPerformed,
+                counts,
+                latestAuditTimestamp
               }'
               exit 0
             fi
 
-            echo "Production endpoint not ready or persistence not verified yet."
-            sleep 10
+            echo "Production endpoint not ready or D1 health not verified yet."
+            sleep 5
           done
 
-          echo "Bank Kalbar persistence could not be verified from production."
+          echo "Production D1 health could not be verified."
           printf '%s\n' "$RESPONSE"
           exit 1
