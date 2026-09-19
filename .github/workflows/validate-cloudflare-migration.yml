@@ -25,6 +25,67 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate Cloudflare Access cutover configuration
+        env:
+          TOTALARC_ACCESS_TEAM_DOMAIN: ${{ vars.TOTALARC_ACCESS_TEAM_DOMAIN }}
+          TOTALARC_ACCESS_AUD: ${{ vars.TOTALARC_ACCESS_AUD }}
+          TOTALARC_ADMIN_EMAIL: ${{ vars.TOTALARC_ADMIN_EMAIL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in TOTALARC_ACCESS_TEAM_DOMAIN TOTALARC_ACCESS_AUD TOTALARC_ADMIN_EMAIL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository variable $name."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          if ! printf '%s' "$TOTALARC_ACCESS_TEAM_DOMAIN" | grep -Eq '^https://[^/]+\.cloudflareaccess\.com/?
+      - name: Enforce dependency security gate
+        run: npm audit --audit-level=moderate
+
+      - name: Verify no dummy operational data
+        run: npm run verify:no-dummy
+
+      - name: Build OpenNext Cloudflare artifact
+        run: npm run build
+
+      - name: Verify Worker artifact exists
+        run: test -f .open-next/worker.js
+; then
+            echo "::error::TOTALARC_ACCESS_TEAM_DOMAIN must be https://<team>.cloudflareaccess.com."
+            exit 1
+          fi
+          if ! printf '%s' "$TOTALARC_ADMIN_EMAIL" | grep -Eq '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+
+      - name: Enforce dependency security gate
+        run: npm audit --audit-level=moderate
+
+      - name: Verify no dummy operational data
+        run: npm run verify:no-dummy
+
+      - name: Build OpenNext Cloudflare artifact
+        run: npm run build
+
+      - name: Verify Worker artifact exists
+        run: test -f .open-next/worker.js
+; then
+            echo "::error::TOTALARC_ADMIN_EMAIL must be a valid email address."
+            exit 1
+          fi
+
+          CERTS_URL="${TOTALARC_ACCESS_TEAM_DOMAIN%/}/cdn-cgi/access/certs"
+          if ! curl --fail --silent --show-error --max-time 15 "$CERTS_URL" | jq -e '.keys | length > 0' >/dev/null; then
+            echo "::error::Cloudflare Access signing keys could not be resolved."
+            exit 1
+          fi
+
+          echo "Cloudflare Access cutover configuration is ready."
+
+
       - name: Enforce dependency security gate
         run: npm audit --audit-level=moderate
 
