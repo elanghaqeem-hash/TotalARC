@@ -916,6 +916,28 @@ export async function importOrganizationUnits(
   rows.forEach(row => visit(row.code));
 
   const idByCode = new Map(rows.map(row => [row.code, crypto.randomUUID()]));
+  const resolvedEntityByCode = new Map<string, string | null>();
+  const resolveEntityId = (code: string): string | null => {
+    if (resolvedEntityByCode.has(code)) return resolvedEntityByCode.get(code) || null;
+
+    const row = rowByCode.get(code);
+    if (!row) return existingByCode.get(code)?.legalEntityId || null;
+
+    let resolved: string | null = null;
+    if (row.entityCode) {
+      resolved = entityByCode.get(row.entityCode)?.id || null;
+    } else if (row.parentCode) {
+      resolved = resolveEntityId(row.parentCode);
+    } else if (entities.length === 1) {
+      resolved = entities[0].id;
+    }
+
+    resolvedEntityByCode.set(code, resolved);
+    return resolved;
+  };
+
+  for (const row of rows) resolveEntityId(row.code);
+
   const now = new Date().toISOString();
 
   const inserts = rows.map(row => {
@@ -924,12 +946,10 @@ export async function importOrganizationUnits(
       ? existingParent?.id || idByCode.get(row.parentCode) || null
       : null;
     const explicitEntity = row.entityCode ? entityByCode.get(row.entityCode) || null : null;
-    const parentRow = row.parentCode ? rowByCode.get(row.parentCode) : null;
-    const parentEntityId = existingParent?.legalEntityId
-      || (parentRow?.entityCode ? entityByCode.get(parentRow.entityCode)?.id || null : null);
-    const legalEntityId = explicitEntity?.id
-      || parentEntityId
-      || (entities.length === 1 ? entities[0].id : null);
+    const parentEntityId = row.parentCode
+      ? (existingParent?.legalEntityId || resolvedEntityByCode.get(row.parentCode) || null)
+      : null;
+    const legalEntityId = resolvedEntityByCode.get(row.code) || null;
 
     if (explicitEntity && parentEntityId && explicitEntity.id !== parentEntityId) {
       throw new Error('ORGANIZATION_IMPORT_ENTITY_MISMATCH');
