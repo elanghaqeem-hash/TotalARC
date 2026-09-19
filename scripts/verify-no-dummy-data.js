@@ -42,6 +42,23 @@ function walk(dir) {
 walk('src');
 walk('prisma');
 
+const d1CoreRoutes = [
+  'src/app/api/processes/route.ts',
+  'src/app/api/risks/route.ts',
+  'src/app/api/controls/route.ts',
+  'src/app/api/rcm/route.ts',
+  'src/app/api/dashboard/route.ts',
+  'src/app/api/ai/analyze/route.ts'
+];
+
+for (const route of d1CoreRoutes) {
+  if (!fs.existsSync(route)) continue;
+  const content = fs.readFileSync(route, 'utf8');
+  if (/from\s+['"]@\/lib\/prisma['"]/.test(content)) {
+    findings.push(`${route}: core production route must use Cloudflare D1, not Prisma/SQLite`);
+  }
+}
+
 if (fs.existsSync('prisma/dev.db')) findings.push('prisma/dev.db is committed/present');
 
 if (findings.length) {
