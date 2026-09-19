@@ -15,7 +15,6 @@ import {
   ChevronDown,
   ClipboardCheck,
   Cpu,
-  Download,
   FileCheck,
   FileSpreadsheet,
   FolderTree,
@@ -78,15 +77,9 @@ const navGroups: NavGroup[] = [
       { name: 'Certification & Attestation', href: '/certification', icon: BadgeCheck },
       { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
       { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
-      { name: 'Workpapers & Export Center', href: '/reports', icon: Download }
+      { name: 'Analytics, Reports & Export', href: '/reports', icon: BarChart3 }
     ]
   }
-];
-
-const topLinks = [
-  { name: 'Dashboard', href: '/', icon: Activity },
-  { name: 'Processes', href: '/processes', icon: Layers },
-  { name: 'Analytics', href: '/reports', icon: BarChart3 }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -195,26 +188,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </Link>
           </div>
-
-          <nav className="hidden items-center gap-1 rounded-xl bg-slate-100 p-1 lg:flex">
-            {topLinks.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href;
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-bold transition ${
-                    active ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {item.name}
-                </Link>
-              );
-            })}
-          </nav>
 
           <div className="flex min-w-0 items-center gap-2">
             <Link
