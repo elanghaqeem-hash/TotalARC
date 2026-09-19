@@ -14,7 +14,7 @@ generator client {
 model Institution {
   id                  String   @id @default(uuid())
   name                String
-  legalName           String
+  legalName           String   @unique
   shortName           String
   institutionType     String   // Corporation, Public Company, State-Owned Enterprise, etc.
   country             String   @default("Indonesia")
@@ -109,7 +109,7 @@ model User {
 
 model Framework {
   id          String   @id @default(uuid())
-  code        String   // COSO-IC, ISO-31000, ISO-27001, SOX, COBIT, NIST-CSF
+  code        String   @unique // COSO-IC, ISO-31000, ISO-27001, SOX, COBIT, NIST-CSF
   name        String
   category    String
   description String?
@@ -146,7 +146,7 @@ model SystemApplication {
 // -------------------------------------------------------------
 model ProcessCategory {
   id          String   @id @default(uuid())
-  code        String
+  code        String   @unique
   name        String
   description String?
   orderIndex  Int      @default(0)
