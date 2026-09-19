@@ -612,7 +612,7 @@ export async function listRisks(institutionId: string) {
       const [process, activity, mappings] = await Promise.all([
         first<Record<string, unknown>>(
           db,
-          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+          'SELECT id, processId, name, categoryId, criticality, classification, legalEntityId, orgUnitId, ownerName, ownerEmail FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
           [row.processId, institutionId]
         ),
         row.activityId
