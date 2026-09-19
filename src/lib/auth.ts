@@ -150,29 +150,20 @@ async function getAuthEnvironment() {
 }
 
 async function ensureAuthSchema(db: D1DatabaseLike) {
-  const statements = [
-    `CREATE TABLE IF NOT EXISTS AccessUser (
-      id TEXT PRIMARY KEY NOT NULL,
-      institutionId TEXT,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL,
-      department TEXT,
-      orgUnitId TEXT,
-      accessScope TEXT NOT NULL DEFAULT 'Institution',
-      active INTEGER NOT NULL DEFAULT 1,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
-      lastAuthenticatedAt TEXT
-    )`,
-    'CREATE INDEX IF NOT EXISTS idx_access_user_institution ON AccessUser(institutionId)',
-    'CREATE INDEX IF NOT EXISTS idx_access_user_role ON AccessUser(role)',
-    'CREATE INDEX IF NOT EXISTS idx_access_user_org_unit ON AccessUser(orgUnitId)'
-  ];
-
-  for (const statement of statements) {
-    await db.prepare(statement).run();
-  }
+  await db.prepare(`CREATE TABLE IF NOT EXISTS AccessUser (
+    id TEXT PRIMARY KEY NOT NULL,
+    institutionId TEXT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    department TEXT,
+    orgUnitId TEXT,
+    accessScope TEXT NOT NULL DEFAULT 'Institution',
+    active INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    lastAuthenticatedAt TEXT
+  )`).run();
 
   const columns = await db.prepare('PRAGMA table_info(AccessUser)').all<{ name?: string }>();
   const columnNames = new Set((columns.results || []).map(column => String(column.name || '')));
@@ -181,6 +172,14 @@ async function ensureAuthSchema(db: D1DatabaseLike) {
   }
   if (!columnNames.has('accessScope')) {
     await db.prepare("ALTER TABLE AccessUser ADD COLUMN accessScope TEXT NOT NULL DEFAULT 'Institution'").run();
+  }
+
+  for (const statement of [
+    'CREATE INDEX IF NOT EXISTS idx_access_user_institution ON AccessUser(institutionId)',
+    'CREATE INDEX IF NOT EXISTS idx_access_user_role ON AccessUser(role)',
+    'CREATE INDEX IF NOT EXISTS idx_access_user_org_unit ON AccessUser(orgUnitId)'
+  ]) {
+    await db.prepare(statement).run();
   }
 }
 
