@@ -89,7 +89,7 @@ const topLinks = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, setRole, institutionName } = useRole();
+  const { currentUser, setRole } = useRole();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
@@ -191,14 +191,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="flex min-w-0 items-center gap-2">
-            <div className="hidden max-w-[280px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 xl:flex">
-              <Building2 className="h-4 w-4 shrink-0 text-brand-600" />
-              <div className="min-w-0">
-                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Active institution</div>
-                <div className="truncate text-[11px] font-bold text-slate-700">{institutionName}</div>
-              </div>
-            </div>
-
             <Link
               href="/onboarding"
               className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 transition hover:border-brand-200 hover:text-brand-700 md:flex"
