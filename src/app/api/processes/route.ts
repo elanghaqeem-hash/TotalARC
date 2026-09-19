@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
-import { getOrganizationData } from '@/lib/d1-organization';
+import { getOrganizationData, scopeOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
@@ -21,18 +21,20 @@ export async function GET(request: Request) {
     const scopedProcesses = processes.filter(process =>
       isOrgUnitAuthorized(authorizedOrgUnitIds, process.orgUnitId as string | null | undefined)
     );
-    const scopedUnits = organization.organizationUnits.filter(unit =>
-      isOrgUnitAuthorized(authorizedOrgUnitIds, unit.id)
+    const scopedOrganization = scopeOrganizationData(
+      organization,
+      authorizedOrgUnitIds,
+      auth.user.id
     );
 
     return NextResponse.json({
       processes: scopedProcesses,
       categories,
       organization: {
-        legalEntities: organization.legalEntities,
-        organizationUnits: scopedUnits,
-        positions: organization.positions,
-        users: organization.users
+        legalEntities: scopedOrganization.legalEntities,
+        organizationUnits: scopedOrganization.organizationUnits,
+        positions: scopedOrganization.positions,
+        users: scopedOrganization.users
       },
       storage: 'cloudflare-d1'
     }, {
@@ -77,12 +79,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const [organization, authorizedOrgUnitIds] = await Promise.all([
+    const [rawOrganization, authorizedOrgUnitIds] = await Promise.all([
       getOrganizationData(auth.user.institutionId),
       resolveAuthorizedOrgUnitIds(auth.user)
     ]);
+    const organization = scopeOrganizationData(
+      rawOrganization,
+      authorizedOrgUnitIds,
+      auth.user.id
+    );
     const activeUnits = organization.organizationUnits.filter(
-      unit => unit.status === 'Active' && isOrgUnitAuthorized(authorizedOrgUnitIds, unit.id)
+      unit => unit.status === 'Active'
     );
     const selectedUnit = orgUnitId
       ? organization.organizationUnits.find(unit => unit.id === orgUnitId)
