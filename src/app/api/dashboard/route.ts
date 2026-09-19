@@ -15,9 +15,17 @@ export async function GET() {
       prisma.auditLog.findMany({ take: 8, orderBy: { timestamp: 'desc' } })
     ]);
 
-    const highCritical = risks.filter((risk) => risk.inherentRating === 'High' || risk.inherentRating === 'Critical');
+    const typedRisks = risks as Array<{ inherentRating: string; controls: unknown[] }>;
+    const typedControls = controls as Array<{ isKeyControl: boolean; toeTests: unknown[] }>;
+    const typedProcesses = processes as Array<{ criticality: string }>;
+    const typedToETests = toeTests as Array<{ failCount: number; finalConclusion: string; exceptions: unknown[] }>;
+    const typedIssues = issues as Array<{ status: string }>;
+    const typedMaps = maps as Array<{ status: string }>;
+    const typedRules = rules as Array<{ lastStatus: string | null }>;
+
+    const highCritical = typedRisks.filter((risk) => risk.inherentRating === 'High' || risk.inherentRating === 'Critical');
     const mappedHighCritical = highCritical.filter((risk) => risk.controls.length > 0);
-    const keyControls = controls.filter((control) => control.isKeyControl);
+    const keyControls = typedControls.filter((control) => control.isKeyControl);
     const testedKeyControls = keyControls.filter((control) => control.toeTests.length > 0);
 
     const metrics = {
