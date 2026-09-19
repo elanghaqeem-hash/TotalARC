@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
+import { resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import {
   createLegalEntity,
   createOrganizationPosition,
   createOrganizationUnit,
   getOrganizationData,
+  scopeOrganizationData,
   importOrganizationUnits,
   updateLegalEntity,
   updateOrganizationPosition,
@@ -97,8 +99,12 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const data = await getOrganizationData(auth.user.institutionId);
-    return NextResponse.json(data, {
+    const [data, authorizedOrgUnitIds] = await Promise.all([
+      getOrganizationData(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
+    ]);
+    const scopedData = scopeOrganizationData(data, authorizedOrgUnitIds, auth.user.id);
+    return NextResponse.json(scopedData, {
       headers: {
         'Cache-Control': 'no-store, max-age=0'
       }
