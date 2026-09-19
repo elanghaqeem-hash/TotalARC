@@ -1,0 +1,57 @@
+name: Resolve Production D1 Identity
+
+on:
+  push:
+    branches:
+      - database/formal-d1-migrations-stage4
+    paths:
+      - .github/workflows/resolve-production-d1.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-production-d1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve DB binding from deployed Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SETTINGS_URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/totalarc/settings"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$SETTINGS_URL" > /tmp/totalarc-worker-settings.json
+
+          DB_ID="$(jq -r '.result.bindings[]? | select(.type == "d1" and .name == "DB") | .database_id // .id // empty' /tmp/totalarc-worker-settings.json | head -n 1)"
+          if [ -z "$DB_ID" ]; then
+            echo "::error::Deployed Total ARC Worker does not expose a D1 binding named DB."
+            exit 1
+          fi
+
+          npx wrangler d1 list --json > /tmp/totalarc-d1-list.json
+          DB_NAME="$(jq -r --arg id "$DB_ID" '.[] | select((.uuid // .id // "") == $id) | .name // empty' /tmp/totalarc-d1-list.json | head -n 1)"
+
+          if [ -z "$DB_NAME" ]; then
+            echo "::error::The deployed Worker DB binding could not be matched to a D1 database visible to this account token."
+            exit 1
+          fi
+
+          echo "TOTALARC_D1_DATABASE_ID=$DB_ID"
+          echo "TOTALARC_D1_DATABASE_NAME=$DB_NAME"
+          echo "Resolved deployed Worker binding DB to its existing production D1 database."
