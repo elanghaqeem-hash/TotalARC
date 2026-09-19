@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlaskConical, Plus, Save, X } from 'lucide-react';
+import { AlertTriangle, FlaskConical, Plus, Save, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 
 const EMPTY_TEST_FORM = {
@@ -32,6 +32,8 @@ export default function ToEPage() {
   const [error, setError] = useState('');
   const [testModal, setTestModal] = useState(false);
   const [sampleModal, setSampleModal] = useState(false);
+  const [exceptionSample, setExceptionSample] = useState<any | null>(null);
+  const [exceptionForm, setExceptionForm] = useState({ severity: 'High', description: '' });
   const [saving, setSaving] = useState(false);
   const [testForm, setTestForm] = useState(EMPTY_TEST_FORM);
   const [sampleForm, setSampleForm] = useState(EMPTY_SAMPLE_FORM);
@@ -154,6 +156,46 @@ export default function ToEPage() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to add ToE sample.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openException = (sample: any) => {
+    setExceptionSample(sample);
+    setExceptionForm({
+      severity: 'High',
+      description: sample.failureReason || ''
+    });
+    setError('');
+  };
+
+  const createException = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!test || !exceptionSample) return;
+
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch('/api/assure/toe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionType: 'CREATE_EXCEPTION',
+          toeTestId: test.id,
+          sampleId: exceptionSample.id,
+          ...exceptionForm
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to raise testing exception.');
+      }
+
+      setExceptionSample(null);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to raise testing exception.');
     } finally {
       setSaving(false);
     }
@@ -381,15 +423,34 @@ export default function ToEPage() {
                             />
                           </td>
                           <td className="p-2">
-                            <button
-                              type="button"
-                              onClick={() => saveSampleResult(sample.id)}
-                              disabled={saving}
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 font-semibold disabled:opacity-50"
-                            >
-                              <Save className="w-3.5 h-3.5" />
-                              Save
-                            </button>
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => saveSampleResult(sample.id)}
+                                disabled={saving}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 font-semibold disabled:opacity-50"
+                              >
+                                <Save className="w-3.5 h-3.5" />
+                                Save
+                              </button>
+                              {sample.result === 'Fail' && (
+                                test.exceptions?.some((exception: any) => exception.sampleRef === sample.transactionRef) ? (
+                                  <span className="inline-flex items-center px-2.5 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-semibold">
+                                    Exception raised
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => openException(sample)}
+                                    disabled={saving}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold disabled:opacity-50"
+                                  >
+                                    <AlertTriangle className="w-3.5 h-3.5" />
+                                    Raise Exception
+                                  </button>
+                                )
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -553,6 +614,82 @@ export default function ToEPage() {
                   className="px-5 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-bold disabled:opacity-50"
                 >
                   {saving ? 'Saving...' : 'Register Test'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {exceptionSample && test && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Raise Testing Exception</h3>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {test.testId} · sample {exceptionSample.transactionRef}. This does not create a deficiency or issue automatically.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExceptionSample(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={createException} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Severity *</label>
+                <select
+                  required
+                  value={exceptionForm.severity}
+                  onChange={event =>
+                    setExceptionForm({ ...exceptionForm, severity: event.target.value })
+                  }
+                  className="w-full p-2.5 rounded-lg border border-slate-200"
+                >
+                  <option value="Critical">Critical</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Exception Description *</label>
+                <textarea
+                  required
+                  rows={4}
+                  value={exceptionForm.description}
+                  onChange={event =>
+                    setExceptionForm({ ...exceptionForm, description: event.target.value })
+                  }
+                  placeholder="Describe the factual exception evidenced by this failed sample"
+                  className="w-full p-2.5 rounded-lg border border-slate-200"
+                />
+              </div>
+
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-[11px] text-amber-800">
+                The exception is persisted only after this human action. Deficiency classification and issue creation remain separate approval steps.
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExceptionSample(null)}
+                  className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Raise Exception'}
                 </button>
               </div>
             </form>
