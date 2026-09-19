@@ -1,7 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 
-export const SESSION_COOKIE = 'totalarc_session';
-export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
+import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '@/lib/auth-constants';
+export { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '@/lib/auth-constants';
 
 export type AuthRole =
   | 'Admin'
@@ -277,7 +277,17 @@ export async function getCurrentAuthUser(request: Request): Promise<AuthUser | n
   const tokenHash = await sha256Hex(rawToken);
   const now = new Date().toISOString();
   const session = await db.prepare(
-    `SELECT s.*, u.*
+    `SELECT
+       s.id AS sessionId,
+       s.userId AS sessionUserId,
+       s.expiresAt AS sessionExpiresAt,
+       u.id AS id,
+       u.institutionId AS institutionId,
+       u.name AS name,
+       u.email AS email,
+       u.role AS role,
+       u.department AS department,
+       u.mustChangePassword AS mustChangePassword
        FROM AuthSession s
        JOIN AuthUser u ON u.id = s.userId
       WHERE s.tokenHash = ? AND s.expiresAt > ? AND u.active = 1
