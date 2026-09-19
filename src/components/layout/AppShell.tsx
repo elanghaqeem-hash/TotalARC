@@ -77,7 +77,7 @@ const navGroups: NavGroup[] = [
       { name: 'Certification & Attestation', href: '/certification', icon: BadgeCheck },
       { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
       { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
-      { name: 'Analytics, Reports & Export', href: '/reports', icon: BarChart3 }
+      { name: 'Analytics', href: '/reports', icon: BarChart3 }
     ]
   }
 ];
