@@ -90,6 +90,26 @@ jobs:
           fi
           echo "Cloudflare D1 access is available."
 
+      - name: Validate Workers AI account inference
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL="@cf/qwen/qwen3-30b-a3b-fp8"
+          URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/$MODEL"
+          HTTP_CODE=$(curl --silent --show-error --output /tmp/workers-ai-preflight.json --write-out "%{http_code}"             --request POST "$URL"             --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             --header "Content-Type: application/json"             --data '{"messages":[{"role":"user","content":"Reply with OK only."}],"max_tokens":16,"temperature":0}')
+
+          SUCCESS=$(jq -r '.success // false' /tmp/workers-ai-preflight.json 2>/dev/null || echo false)
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ] || [ "$SUCCESS" != "true" ]; then
+            echo "::error::Cloudflare Workers AI account inference preflight failed (HTTP $HTTP_CODE)."
+            echo "### Workers AI account preflight failed" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.errors[]? | "- " + ((.code // "unknown")|tostring) + ": " + (.message // "Unknown Workers AI error")' /tmp/workers-ai-preflight.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            exit 1
+          fi
+          echo "Cloudflare Workers AI account inference is available."
+
       - name: Verify no dummy operational data
         run: npm run verify:no-dummy
 
@@ -168,24 +188,26 @@ jobs:
             exit 1
           fi
 
-          probe=$(curl --fail --silent --show-error --max-time 60 -X POST -H "Authorization: Bearer $AI_PROBE_TOKEN" "$PROBE_URL")
-          private_ready=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{const j=JSON.parse(i);process.stdout.write(j.privateProviderReady===true?'true':'false')})")
-          if [ "$private_ready" != "true" ]; then
-            echo "::error::Cloudflare Workers AI binding exists but private inference failed."
+          PROBE_HTTP=$(curl --silent --show-error --max-time 60 --output /tmp/totalarc-ai-probe.json --write-out "%{http_code}"             -X POST -H "Authorization: Bearer $AI_PROBE_TOKEN" "$PROBE_URL")
+          probe=$(cat /tmp/totalarc-ai-probe.json)
+          provider_summary=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);for(const p of j.providers||[]){console.log('- '+p.provider+': configured='+p.configured+', healthy='+p.ok+', model='+p.model+(p.error?(', error='+p.error):''))}}catch{console.log('- Probe response was not valid JSON')}})")
+
+          echo "### AI production verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Worker deployment: successful" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Workers AI binding: ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "$provider_summary" >> "$GITHUB_STEP_SUMMARY"
+
+          private_ready=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);process.stdout.write(j.privateProviderReady===true?'true':'false')}catch{process.stdout.write('false')}})")
+          if [ "$PROBE_HTTP" -lt 200 ] || [ "$PROBE_HTTP" -ge 300 ] || [ "$private_ready" != "true" ]; then
+            echo "::error::Cloudflare Workers AI binding exists but private inference failed (HTTP $PROBE_HTTP)."
             exit 1
           fi
 
-          external_healthy=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{const j=JSON.parse(i);process.stdout.write(j.configuredExternalProvidersHealthy===true?'true':'false')})")
+          external_healthy=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);process.stdout.write(j.configuredExternalProvidersHealthy===true?'true':'false')}catch{process.stdout.write('false')}})")
           if [ "$external_healthy" != "true" ]; then
             echo "::warning::One or more configured external AI providers failed the production probe."
           fi
 
           status=$(curl --fail --silent --show-error --max-time 15 "$STATUS_URL")
-          provider_summary=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{const j=JSON.parse(i);for(const p of j.providers||[]){console.log('- '+p.provider+': configured='+p.configured+', healthy='+p.ok+', model='+p.model)}})")
-
-          echo "### AI production verification" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Worker deployment: successful" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Workers AI binding: ready" >> "$GITHUB_STEP_SUMMARY"
           echo "- Private Workers AI inference: successful" >> "$GITHUB_STEP_SUMMARY"
-          echo "$provider_summary" >> "$GITHUB_STEP_SUMMARY"
           echo "Provider status endpoint responded successfully." >> "$GITHUB_STEP_SUMMARY"
