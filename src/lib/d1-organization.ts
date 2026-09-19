@@ -464,6 +464,74 @@ export async function getOrganizationData(institutionId: string) {
   };
 }
 
+export function scopeOrganizationData(
+  data: Awaited<ReturnType<typeof getOrganizationData>>,
+  authorizedOrgUnitIds: string[] | null,
+  currentUserId?: string
+) {
+  if (authorizedOrgUnitIds === null) return data;
+
+  const allowedUnitIds = new Set(authorizedOrgUnitIds);
+  const scopedUnits = data.organizationUnits
+    .filter(unit => allowedUnitIds.has(unit.id))
+    .map(unit => {
+      const parentVisible = Boolean(unit.parentId && allowedUnitIds.has(unit.parentId));
+      return {
+        ...unit,
+        parentId: parentVisible ? unit.parentId : null,
+        parentName: parentVisible ? unit.parentName : null,
+        childUnitCount: data.organizationUnits.filter(
+          child => child.parentId === unit.id && allowedUnitIds.has(child.id)
+        ).length
+      };
+    });
+
+  const entityIds = new Set(
+    scopedUnits
+      .map(unit => unit.legalEntityId)
+      .filter((id): id is string => typeof id === 'string' && Boolean(id))
+  );
+  const scopedEntities = data.legalEntities
+    .filter(entity => entityIds.has(entity.id))
+    .map(entity => ({
+      ...entity,
+      parentEntityId:
+        entity.parentEntityId && entityIds.has(entity.parentEntityId)
+          ? entity.parentEntityId
+          : null,
+      parentEntityName:
+        entity.parentEntityId && entityIds.has(entity.parentEntityId)
+          ? entity.parentEntityName
+          : null
+    }));
+
+  const scopedPositions = data.positions.filter(position =>
+    allowedUnitIds.has(position.orgUnitId)
+  );
+
+  const relevantUserIds = new Set<string>();
+  if (currentUserId) relevantUserIds.add(currentUserId);
+  for (const unit of scopedUnits) {
+    if (unit.headUserId) relevantUserIds.add(unit.headUserId);
+  }
+  for (const position of scopedPositions) {
+    if (position.assignedUserId) relevantUserIds.add(position.assignedUserId);
+  }
+
+  const scopedUsers = data.users.filter(user =>
+    relevantUserIds.has(user.id)
+    || Boolean(user.orgUnitId && allowedUnitIds.has(user.orgUnitId))
+  );
+
+  return {
+    ...data,
+    legalEntities: scopedEntities,
+    organizationUnits: scopedUnits,
+    positions: scopedPositions,
+    users: scopedUsers
+  };
+}
+
 export async function createLegalEntity(
   institutionId: string,
   input: Record<string, unknown>,
