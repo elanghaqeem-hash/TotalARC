@@ -22,7 +22,6 @@ import {
   FolderTree,
   Layers,
   Menu,
-  Plus,
   Shield,
   Sparkles,
   Workflow,
@@ -190,14 +189,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex min-w-0 items-center gap-2">
-            <Link
-              href="/onboarding"
-              className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 transition hover:border-brand-200 hover:text-brand-700 md:flex"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Institution
-            </Link>
-
             <button
               onClick={() => setAiDrawerOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-2.5 py-2.5 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:px-3 sm:text-[11px]"
