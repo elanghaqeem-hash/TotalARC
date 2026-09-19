@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import { runAiGateway } from '@/lib/ai/gateway';
 import type { AiSensitivity } from '@/lib/ai/types';
 
@@ -74,6 +74,7 @@ function normalizeFindings(value: unknown): Finding[] {
 
 export async function POST(request: Request) {
   try {
+    const prisma = getPrisma();
     const body = (await request.json()) as Record<string, unknown>;
     const processId = typeof body.processId === 'string' ? body.processId.trim() : '';
     const processName = typeof body.processName === 'string' ? body.processName.trim() : '';
