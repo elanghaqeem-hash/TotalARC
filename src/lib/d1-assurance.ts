@@ -51,6 +51,17 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
   return values.length ? statement.bind(...values).run() : statement.run();
 }
 
+async function executeSchemaScript(db: D1DatabaseLike, script: string) {
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -62,7 +73,7 @@ function nullable(value: unknown) {
 export async function ensureAssuranceSchema() {
   const db = await getDb();
 
-  await db.exec(`
+  await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS ToETest (
       id TEXT PRIMARY KEY NOT NULL,
       testId TEXT NOT NULL,
