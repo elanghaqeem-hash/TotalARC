@@ -1,100 +1,64 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { listRemediationData, requestMapExtension } from '@/lib/d1-assurance';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const [deficiencies, issues, maps, retests] = await Promise.all([
-      prisma.controlDeficiency.findMany({
-        include: {
-          exception: true,
-          rootCause: true,
-          issues: true
-        }
-      }),
-      prisma.issue.findMany({
-        include: {
-          process: true,
-          risk: true,
-          control: true,
-          deficiency: {
-            include: {
-              rootCause: true
-            }
-          },
-          actionPlans: {
-            include: {
-              milestones: true,
-              retests: true
-            }
-          }
-        }
-      }),
-      prisma.managementActionPlan.findMany({
-        include: {
-          issue: {
-            include: {
-              process: true,
-              control: true
-            }
-          },
-          milestones: true,
-          retests: true
-        }
-      }),
-      prisma.retestRecord.findMany({
-        include: {
-          map: {
-            include: {
-              issue: true
-            }
-          }
-        }
-      })
-    ]);
-
-    return NextResponse.json({
-      deficiencies,
-      issues,
-      maps,
-      retests
-    });
+    const data = await listRemediationData();
+    return NextResponse.json({ ...data, storage: 'cloudflare-d1' });
   } catch (error) {
-    console.error('Failed to fetch remediation data:', error);
-    return NextResponse.json({ error: 'Failed to fetch remediation data' }, { status: 500 });
+    console.error('Failed to fetch D1 remediation data:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch remediation data from persistent database.' },
+      { status: 503 }
+    );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { actionType, mapId, extensionReason, newDueDate, approverName } = body;
+    const body = (await request.json()) as Record<string, unknown>;
+    const actionType = typeof body.actionType === 'string' ? body.actionType : '';
 
-    if (actionType === 'REQUEST_EXTENSION' && (!mapId || !extensionReason || !newDueDate || !approverName)) {
-      return NextResponse.json({ error: 'mapId, extensionReason, newDueDate, and approverName are required.' }, { status: 400 });
+    if (actionType !== 'REQUEST_EXTENSION') {
+      return NextResponse.json(
+        { error: 'Unsupported remediation action.' },
+        { status: 400 }
+      );
     }
 
-    if (actionType === 'REQUEST_EXTENSION') {
-      const existingMap = await prisma.managementActionPlan.findUnique({
-        where: { id: mapId }
-      });
-      if (!existingMap) throw new Error('MAP not found');
+    const mapId = typeof body.mapId === 'string' ? body.mapId.trim() : '';
+    const extensionReason =
+      typeof body.extensionReason === 'string' ? body.extensionReason.trim() : '';
+    const newDueDate = typeof body.newDueDate === 'string' ? body.newDueDate.trim() : '';
+    const approverName =
+      typeof body.approverName === 'string' ? body.approverName.trim() : '';
 
-      // Original due date is immutable per Section 79!
-      const updated = await prisma.managementActionPlan.update({
-        where: { id: mapId },
-        data: {
-          revisedDueDate: new Date(newDueDate),
-          extensionCount: existingMap.extensionCount + 1,
-          extensionReason: extensionReason,
-          approverName
-        }
-      });
-      return NextResponse.json(updated);
+    if (!mapId || !extensionReason || !newDueDate || !approverName) {
+      return NextResponse.json(
+        { error: 'mapId, extensionReason, newDueDate, and approverName are required.' },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json({ message: 'OK' });
+    const updated = await requestMapExtension({
+      mapId,
+      extensionReason,
+      newDueDate,
+      approverName
+    });
+    return NextResponse.json(updated);
   } catch (error) {
-    console.error('Failed to process remediation action:', error);
-    return NextResponse.json({ error: 'Failed to process remediation action' }, { status: 500 });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'MAP_NOT_FOUND') {
+      return NextResponse.json({ error: 'Management Action Plan not found.' }, { status: 404 });
+    }
+
+    console.error('Failed to update D1 remediation action:', error);
+    return NextResponse.json(
+      { error: 'Failed to process remediation action in persistent database.' },
+      { status: 500 }
+    );
   }
 }
