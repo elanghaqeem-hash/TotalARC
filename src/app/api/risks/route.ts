@@ -1,36 +1,31 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createRisk, listRisks } from '@/lib/d1-core';
 
-function riskRating(score: number) {
-  if (score >= 15) return 'Critical';
-  if (score >= 10) return 'High';
-  if (score >= 5) return 'Medium';
-  return 'Low';
-}
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const risks = await prisma.riskMaster.findMany({
-      include: { process: true, activity: true, controls: { include: { control: true } }, issues: true },
-      orderBy: { riskId: 'asc' }
-    });
-    return NextResponse.json({ risks });
+    const risks = await listRisks();
+    return NextResponse.json({ risks, storage: 'cloudflare-d1' });
   } catch (error) {
-    console.error('Failed to fetch risks:', error);
-    return NextResponse.json({ error: 'Failed to fetch risks' }, { status: 500 });
+    console.error('Failed to fetch D1 risks:', error);
+    return NextResponse.json({ error: 'Failed to fetch risks from persistent database.' }, { status: 503 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const {
-      riskId, name, description, cause, event, impact, category, processId,
-      ownerName, inherentLikelihood, inherentImpact
-    } = body;
+    const body = (await request.json()) as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const cause = typeof body.cause === 'string' ? body.cause.trim() : '';
+    const event = typeof body.event === 'string' ? body.event.trim() : '';
+    const impact = typeof body.impact === 'string' ? body.impact.trim() : '';
+    const category = typeof body.category === 'string' ? body.category.trim() : '';
+    const processId = typeof body.processId === 'string' ? body.processId.trim() : '';
+    const ownerName = typeof body.ownerName === 'string' ? body.ownerName.trim() : '';
+    const likelihood = Number(body.inherentLikelihood);
+    const impactValue = Number(body.inherentImpact);
 
-    const likelihood = Number(inherentLikelihood);
-    const impactValue = Number(inherentImpact);
     if (
       !name || !cause || !event || !impact || !category || !processId || !ownerName ||
       !Number.isInteger(likelihood) || likelihood < 1 || likelihood > 5 ||
@@ -42,31 +37,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (!institution) return NextResponse.json({ error: 'Register an institution before creating risks.' }, { status: 409 });
-
-    const score = likelihood * impactValue;
-    const rating = riskRating(score);
-    const risk = await prisma.riskMaster.create({
-      data: {
-        institutionId: institution.id,
-        riskId: riskId || `RSK-${Date.now().toString(36).toUpperCase()}`,
-        name, description: description || `Due to ${cause}, there is a risk that ${event}, resulting in ${impact}.`, cause, event, impact, category, processId, ownerName,
-        inherentLikelihood: likelihood,
-        inherentImpact: impactValue,
-        inherentScore: score,
-        inherentRating: rating,
-        residualLikelihood: likelihood,
-        residualImpact: impactValue,
-        residualScore: score,
-        residualRating: rating,
-        riskTreatment: 'Not Assessed'
-      }
+    const risk = await createRisk({
+      ...body,
+      name,
+      cause,
+      event,
+      impact,
+      category,
+      processId,
+      ownerName,
+      inherentLikelihood: likelihood,
+      inherentImpact: impactValue
     });
 
     return NextResponse.json(risk, { status: 201 });
   } catch (error) {
-    console.error('Failed to create risk:', error);
-    return NextResponse.json({ error: 'Failed to create risk' }, { status: 500 });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'PROCESS_NOT_FOUND') {
+      return NextResponse.json({ error: 'Select a registered business process before creating a risk.' }, { status: 400 });
+    }
+    if (code === 'RISK_ID_CONFLICT') {
+      return NextResponse.json({ error: 'Risk ID already exists for this institution.' }, { status: 409 });
+    }
+
+    console.error('Failed to create D1 risk:', error);
+    return NextResponse.json({ error: 'Failed to create risk in persistent database.' }, { status: 500 });
   }
 }
