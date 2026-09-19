@@ -6,16 +6,16 @@ import {
   listToeTests,
   updateToeSample
 } from '@/lib/d1-assurance';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
-    const tests = await listToeTests();
+    const tests = await listToeTests(auth.user.institutionId);
     return NextResponse.json({ tests, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 ToE tests:', error);
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(request, ['Admin', 'Tester', 'Reviewer']);
+  const auth = await authorizeTenantApi(request, ['Admin', 'Tester', 'Reviewer']);
   if (auth.response) return auth.response;
 
   try {
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
         populationSource,
         samplingMethod,
         notes: typeof body.notes === 'string' ? body.notes.trim() : null
-      });
+      }, auth.user.institutionId);
 
       return NextResponse.json(test, { status: 201 });
     }
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
         sampleId,
         severity,
         description
-      });
+      }, auth.user.institutionId);
 
       return NextResponse.json(exception, { status: 201 });
     }
@@ -139,7 +139,7 @@ export async function POST(request: Request) {
           typeof body.attributesTested === 'string' ? body.attributesTested.trim() : null,
         evidenceRef:
           typeof body.evidenceRef === 'string' ? body.evidenceRef.trim() : null
-      });
+      }, auth.user.institutionId);
 
       return NextResponse.json(sample, { status: 201 });
     }
@@ -160,7 +160,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const updated = await updateToeSample({ sampleId, result, failureReason });
+    const updated = await updateToeSample({ sampleId, result, failureReason }, auth.user.institutionId);
     return NextResponse.json(updated);
   } catch (error) {
     const code = error instanceof Error ? error.message : '';

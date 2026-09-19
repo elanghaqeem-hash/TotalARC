@@ -89,8 +89,8 @@ for (const route of authenticatedOperationalRoutes) {
   if (!/from\s+['"]@\/lib\/api-auth['"]/.test(content)) {
     findings.push(`${route}: operational route must enforce server-side authentication/RBAC`);
   }
-  if (!/authorizeApi\s*\(/.test(content)) {
-    findings.push(`${route}: authorizeApi() guard is required`);
+  if (!/(?:authorizeApi|authorizeTenantApi)\s*\(/.test(content)) {
+    findings.push(`${route}: server-side authorization guard is required`);
   }
 }
 

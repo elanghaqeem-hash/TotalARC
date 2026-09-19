@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { FRAMEWORK_REFERENCES, INDUSTRY_REFERENCES } from '@/lib/reference-data';
 import { upsertInstitution } from '@/lib/d1';
 import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { bindBootstrapAdminToInstitution } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,10 +61,28 @@ export async function POST(request: Request) {
       revenueRange: revenueRange || null,
       businessModel: businessModel || null,
       operatingModel: operatingModel || null
-    }, 'Institution saved through onboarding to persistent Cloudflare D1.');
+    }, 'Institution saved through onboarding to persistent Cloudflare D1.', auth.user.institutionId);
+
+    if (!auth.user.institutionId) {
+      await bindBootstrapAdminToInstitution(auth.user, String(institution.id));
+    }
 
     return NextResponse.json({ success: true, institution, storage: 'cloudflare-d1' }, { status: 200 });
   } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'INSTITUTION_CONTEXT_REQUIRED' || code === 'INSTITUTION_CONTEXT_NOT_FOUND') {
+      return NextResponse.json(
+        { error: 'Institution context is not valid for this authenticated administrator.' },
+        { status: 409 }
+      );
+    }
+    if (code === 'INSTITUTION_LEGAL_NAME_CONFLICT') {
+      return NextResponse.json(
+        { error: 'The legal institution name is already registered to another tenant.' },
+        { status: 409 }
+      );
+    }
+
     console.error('Onboarding persistence failed:', error);
     return NextResponse.json(
       { error: 'Failed to save institution to persistent database.' },

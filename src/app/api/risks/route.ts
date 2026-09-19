@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createRisk, listRisks } from '@/lib/d1-core';
-import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
+import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(request, READ_ROLES);
+  const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
 
   try {
-    const risks = await listRisks();
+    const risks = await listRisks(auth.user.institutionId);
     return NextResponse.json({ risks, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 risks:', error);
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(request, ['Admin', 'ProcessOwner', 'Reviewer']);
+  const auth = await authorizeTenantApi(request, ['Admin', 'ProcessOwner', 'Reviewer']);
   if (auth.response) return auth.response;
 
   try {
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       ownerName,
       inherentLikelihood: likelihood,
       inherentImpact: impactValue
-    });
+    }, auth.user.institutionId);
 
     return NextResponse.json(risk, { status: 201 });
   } catch (error) {

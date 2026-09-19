@@ -31,6 +31,9 @@ jobs:
       - name: Verify no dummy operational data
         run: npm run verify:no-dummy
 
+      - name: Verify tenant isolation
+        run: npm run verify:tenant-isolation
+
       - name: Build OpenNext Cloudflare artifact
         run: npm run build
 
