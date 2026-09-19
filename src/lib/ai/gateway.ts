@@ -393,7 +393,17 @@ export type AiProviderProbe = {
   model: string;
   durationMs?: number;
   retryable?: boolean;
+  error?: string;
 };
+
+function safeProbeError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : 'Unknown provider error';
+  const redacted = redactForExternal(raw).text
+    .replace(/https?:\/\/[^\s]+/gi, '[URL_REDACTED]')
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+  return redacted.slice(0, 240) || 'Provider probe failed';
+}
 
 export async function probeAiProviders(): Promise<AiProviderProbe[]> {
   const providers = Object.keys(PROVIDER_CONFIG) as AiProvider[];
@@ -437,7 +447,8 @@ export async function probeAiProviders(): Promise<AiProviderProbe[]> {
         ok: false,
         model: PROVIDER_CONFIG[provider].model,
         durationMs: Date.now() - startedAt,
-        retryable: error instanceof ProviderError ? error.retryable : false
+        retryable: error instanceof ProviderError ? error.retryable : false,
+        error: safeProbeError(error)
       });
     }
   }
