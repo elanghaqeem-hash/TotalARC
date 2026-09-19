@@ -281,17 +281,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <Nav collapsed={sidebarCollapsed} />
 
-          {!sidebarCollapsed && (
-            <div className="mt-4 rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 p-4 text-white shadow-lg">
-              <div className="flex items-center gap-2 text-[11px] font-black text-emerald-300">
-                <Shield className="h-4 w-4" />
-                Data integrity
-              </div>
-              <p className="mt-2 text-[10px] leading-5 text-slate-300">
-                Operational records ditampilkan hanya ketika tersimpan pada database terhubung. Tidak ada transaksi demo atau assurance result simulasi.
-              </p>
-            </div>
-          )}
         </aside>
 
         <main className="min-w-0 flex-1 pb-20 lg:pb-6">{children}</main>
