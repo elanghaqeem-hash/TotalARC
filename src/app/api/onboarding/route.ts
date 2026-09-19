@@ -1,18 +1,15 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { FRAMEWORK_REFERENCES, INDUSTRY_REFERENCES } from '@/lib/reference-data';
+import { upsertInstitution } from '@/lib/d1';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  try {
-    const [industries, frameworks, regulations] = await Promise.all([
-      prisma.industryClassification.findMany({ orderBy: { industry: 'asc' } }),
-      prisma.framework.findMany({ orderBy: { name: 'asc' } }),
-      prisma.regulation.findMany({ orderBy: { regulator: 'asc' } })
-    ]);
-    return NextResponse.json({ industries, frameworks, regulations });
-  } catch (error) {
-    console.error('Failed to load onboarding references:', error);
-    return NextResponse.json({ error: 'Failed to load onboarding references' }, { status: 500 });
-  }
+  return NextResponse.json({
+    industries: INDUSTRY_REFERENCES,
+    frameworks: FRAMEWORK_REFERENCES,
+    regulations: []
+  });
 }
 
 export async function POST(request: Request) {
@@ -25,55 +22,46 @@ export async function POST(request: Request) {
       stockExchange, ticker, logo, employeeCount, revenueRange, businessModel, operatingModel
     } = body;
 
-    if (!name || !institutionType || !country) {
-      return NextResponse.json({ error: 'name, institutionType, and country are required.' }, { status: 400 });
+    if (!name || !legalName || !institutionType || !country) {
+      return NextResponse.json(
+        { error: 'name, legalName, institutionType, and country are required.' },
+        { status: 400 }
+      );
     }
 
-    const normalizedShortName = (shortName || name.replace(/[^A-Za-z0-9]/g, '').slice(0, 8) || 'ORG').toUpperCase();
-    const institution = await prisma.institution.create({
-      data: {
-        name,
-        legalName: legalName || name,
-        shortName: normalizedShortName,
-        institutionType,
-        country,
-        provinceState: provinceState || null,
-        city: city || null,
-        registeredAddress: registeredAddress || null,
-        operationalAddress: operationalAddress || null,
-        website: website || null,
-        generalEmail: generalEmail || null,
-        telephone: telephone || null,
-        yearEstablished: yearEstablished ? Number(yearEstablished) : null,
-        registrationNumber: registrationNumber || null,
-        taxId: taxId || null,
-        parentCompany: parentCompany || null,
-        holdingCompany: holdingCompany || null,
-        stockExchange: stockExchange || null,
-        ticker: ticker || null,
-        logo: logo || null,
-        employeeCount: employeeCount || null,
-        revenueRange: revenueRange || null,
-        businessModel: businessModel || null,
-        operatingModel: operatingModel || null
-      }
-    });
+    const institution = await upsertInstitution({
+      name,
+      legalName,
+      shortName: shortName || name,
+      institutionType,
+      country,
+      provinceState: provinceState || null,
+      city: city || null,
+      registeredAddress: registeredAddress || null,
+      operationalAddress: operationalAddress || null,
+      website: website || null,
+      generalEmail: generalEmail || null,
+      telephone: telephone || null,
+      yearEstablished: yearEstablished ? Number(yearEstablished) : null,
+      registrationNumber: registrationNumber || null,
+      taxId: taxId || null,
+      parentCompany: parentCompany || null,
+      holdingCompany: holdingCompany || null,
+      stockExchange: stockExchange || null,
+      ticker: ticker || null,
+      logo: logo || null,
+      employeeCount: employeeCount || null,
+      revenueRange: revenueRange || null,
+      businessModel: businessModel || null,
+      operatingModel: operatingModel || null
+    }, 'Institution saved through onboarding to persistent Cloudflare D1.');
 
-    await prisma.auditLog.create({
-      data: {
-        institutionId: institution.id,
-        userName: 'System',
-        userRole: 'System',
-        action: 'CREATE',
-        entityType: 'Institution',
-        recordId: institution.id,
-        reason: 'Institution registered through onboarding.'
-      }
-    });
-
-    return NextResponse.json({ success: true, institution }, { status: 201 });
+    return NextResponse.json({ success: true, institution, storage: 'cloudflare-d1' }, { status: 200 });
   } catch (error) {
-    console.error('Onboarding failed:', error);
-    return NextResponse.json({ error: 'Failed to onboard institution' }, { status: 500 });
+    console.error('Onboarding persistence failed:', error);
+    return NextResponse.json(
+      { error: 'Failed to save institution to persistent database.' },
+      { status: 500 }
+    );
   }
 }
