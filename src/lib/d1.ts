@@ -47,14 +47,6 @@ export type InstitutionRecord = InstitutionInput & {
   updatedAt: string;
 };
 
-export const BANK_KALBAR: InstitutionInput = {
-  name: 'Bank Kalbar',
-  legalName: 'PT. Bank Pembangunan Daerah Kalimantan Barat',
-  shortName: 'Bank Kalbar',
-  institutionType: 'Regional-Owned Enterprise',
-  country: 'Indonesia'
-};
-
 async function getD1(): Promise<D1DatabaseLike> {
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -276,25 +268,23 @@ export async function upsertInstitution(
   return created;
 }
 
-export async function ensureBankKalbarPersisted(): Promise<InstitutionRecord> {
-  const existing = await getInstitutionByLegalName(BANK_KALBAR.legalName);
+export async function getD1Health() {
+  const db = await getD1();
 
-  if (
-    existing &&
-    existing.name === BANK_KALBAR.name &&
-    existing.shortName === BANK_KALBAR.shortName &&
-    existing.institutionType === BANK_KALBAR.institutionType &&
-    existing.country === BANK_KALBAR.country
-  ) {
-    return existing;
+  const query = await db.prepare('SELECT 1 AS ok').first<{ ok?: number }>();
+  if (Number(query?.ok) !== 1) {
+    throw new Error('Cloudflare D1 connectivity probe did not return the expected result.');
   }
 
-  return upsertInstitution(
-    BANK_KALBAR,
-    existing
-      ? 'Bank Kalbar institution master synchronized.'
-      : 'Bank Kalbar institution master bootstrapped to persistent D1 storage.'
-  );
+  const schema = await db.prepare(
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+  ).first<{ count?: number }>();
+
+  return {
+    binding: 'DB',
+    queryOk: true,
+    tableCount: Number(schema?.count || 0)
+  };
 }
 
 export async function getRecentInstitutionAuditLogs(limit = 8) {
