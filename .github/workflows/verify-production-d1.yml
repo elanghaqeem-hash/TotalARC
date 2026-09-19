@@ -1,9 +1,11 @@
 name: Verify production D1 persistence
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      - Deploy Total ARC to Cloudflare
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -11,6 +13,7 @@ permissions:
 
 jobs:
   verify-production-d1:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Trigger and verify Bank Kalbar persistence
