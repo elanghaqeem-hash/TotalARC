@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createRisk, listRisks } from '@/lib/d1-core';
+import { createRisk, listBusinessProcesses, listRisks } from '@/lib/d1-core';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +10,17 @@ export async function GET(request: Request) {
   const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
   try {
-    const risks = await listRisks(auth.user.institutionId);
-    return NextResponse.json({ risks, storage: 'cloudflare-d1' });
+    const [risks, authorizedOrgUnitIds] = await Promise.all([
+      listRisks(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
+    ]);
+    const scopedRisks = risks.filter(risk =>
+      isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        (risk.process as Record<string, unknown> | null)?.orgUnitId as string | null | undefined
+      )
+    );
+    return NextResponse.json({ risks: scopedRisks, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 risks:', error);
     return NextResponse.json({ error: 'Failed to fetch risks from persistent database.' }, { status: 503 });
@@ -45,6 +55,27 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Complete risk data and a 1-5 inherent likelihood/impact assessment are required.' },
         { status: 400 }
+      );
+    }
+
+    const [{ processes }, authorizedOrgUnitIds] = await Promise.all([
+      listBusinessProcesses(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
+    ]);
+    const selectedProcess = processes.find(process => process.id === processId);
+    if (
+      !selectedProcess
+      || !isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        selectedProcess.orgUnitId as string | null | undefined
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Your account is not authorized for the selected business process organization unit.',
+          code: 'RISK_ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
       );
     }
 
