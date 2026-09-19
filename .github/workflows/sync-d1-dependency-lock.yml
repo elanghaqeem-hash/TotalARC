@@ -1,18 +1,13 @@
-name: Sync D1 dependency lock
+name: Prepare D1 dependency and migration
 
 on:
-  push:
-    branches:
-      - hardening/d1-unified-storage
-    paths:
-      - package.json
-      - .github/workflows/sync-d1-dependency-lock.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  sync-lock:
+  prepare-d1:
     runs-on: ubuntu-latest
     steps:
       - name: Check out branch
@@ -23,19 +18,28 @@ jobs:
         with:
           node-version: 22
 
-      - name: Refresh package lock
-        run: npm install --package-lock-only --ignore-scripts
+      - name: Install and synchronize dependencies
+        run: npm install --ignore-scripts
 
-      - name: Commit lockfile when changed
+      - name: Generate initial D1 migration
+        run: npm run prisma:migration:diff
+
+      - name: Verify persistence guardrails
+        run: npm run verify:no-dummy
+
+      - name: Build OpenNext Worker
+        run: npm run build
+
+      - name: Commit generated lockfile and migration
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- package-lock.json; then
-            echo "package-lock.json is already synchronized."
+          git add package-lock.json migrations/0001_initial.sql
+          if git diff --cached --quiet; then
+            echo "Generated files are already synchronized."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "Sync package lock for Prisma D1 adapter"
+          git commit -m "Generate D1 lockfile and initial migration"
           git push
