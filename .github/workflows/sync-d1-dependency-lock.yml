@@ -1,4 +1,5 @@
 name: Prepare D1 dependency and migration
+# Validation trigger after RCM type correction
 
 on:
   push:
