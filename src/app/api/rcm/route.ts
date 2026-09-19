@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { listRcmRows } from '@/lib/d1-core';
+import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const rcm = await listRcmRows();
+    const baseRows = await listRcmRows();
+    const rcm = await enrichRcmWithAssurance(baseRows);
+
     return NextResponse.json({
       rcm,
       total: rcm.length,
@@ -13,6 +16,9 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Failed to generate D1 RCM:', error);
-    return NextResponse.json({ error: 'Failed to generate RCM from persistent database.' }, { status: 503 });
+    return NextResponse.json(
+      { error: 'Failed to generate RCM from persistent database.' },
+      { status: 503 }
+    );
   }
 }
