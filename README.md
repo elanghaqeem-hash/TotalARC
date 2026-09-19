@@ -121,3 +121,22 @@ Cloudflare CI/CD credentials must be configured outside Git:
 - `TOTALARC_PRODUCTION_URL` — optional repository variable used only as a fallback if Wrangler does not emit a deployment URL.
 
 The deploy workflow fails before publishing when required credentials are absent, and it fails after publishing if the Workers AI binding is not runtime-ready.
+
+
+### Full production AI connectivity
+
+The production workflow now validates the complete AI path instead of treating a successful build as proof of connectivity.
+
+Before deployment it validates Cloudflare credentials and D1 access. After deployment it synchronizes any configured external provider keys from GitHub Actions secrets to the Worker, creates a one-time deployment probe token, verifies `/api/ai/ready`, and executes a protected `POST /api/ai/probe` request.
+
+The protected probe performs a small real inference against Cloudflare Workers AI and also probes every external provider that is configured at runtime. Secret values are never returned by the endpoint or printed by the workflow.
+
+Optional external provider GitHub Actions secrets:
+
+- `GEMINI_API_KEY`
+- `GROQ_API_KEY`
+- `OPENROUTER_API_KEY`
+
+Cloudflare Workers AI remains the required private provider for confidential/restricted workloads. Gemini, Groq and OpenRouter remain optional fallback/eligible routing providers according to the gateway policy.
+
+The deployment token must be able to access/provision the D1 database required by the current Total ARC production architecture. If the D1 permission preflight fails, deployment stops before building or publishing the Worker.
