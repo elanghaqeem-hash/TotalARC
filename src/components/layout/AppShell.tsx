@@ -156,17 +156,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Menu className="h-5 w-5" />
             </button>
 
-            <Link href="/" className="flex min-w-0 items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-brand-700 text-white shadow-lg shadow-sky-200">
-                <Shield className="h-6 w-6" />
-              </div>
-              <div className="min-w-0 leading-none">
-                <div className="text-[15px] font-black tracking-tight text-slate-950 sm:text-lg">
-                  <span className="block">TOTAL</span>
-                  <span className="mt-1 block text-brand-600">ARC</span>
-                </div>
-                <div className="mt-1 hidden text-[9px] font-medium leading-none text-slate-400 md:block">Total Assurance, Risk & Control</div>
-              </div>
+            <Link
+              href="/"
+              className="flex min-w-0 items-center"
+              aria-label="Total ARC home"
+            >
+              <img
+                src="/brand/total-arc-logo.svg"
+                alt="Total ARC"
+                className="h-[42px] w-auto max-w-[118px] object-contain sm:h-[48px] sm:max-w-[138px] md:max-w-[150px]"
+              />
             </Link>
           </div>
 
@@ -272,14 +271,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm lg:hidden">
           <div className="h-full w-[86vw] max-w-sm overflow-y-auto bg-slate-50 p-4 shadow-2xl">
             <div className="sticky top-0 z-10 mb-4 flex items-center justify-between border-b border-slate-200 bg-slate-50 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
-                  <Shield className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-black text-slate-900">Total ARC</div>
-                  <div className="text-[10px] text-slate-400">Navigation</div>
-                </div>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <img
+                  src="/brand/total-arc-logo.svg"
+                  alt="Total ARC"
+                  className="h-[44px] w-auto max-w-[145px] object-contain"
+                />
+                <span className="hidden text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xs:inline">
+                  Navigation
+                </span>
               </div>
               <button
                 onClick={() => setMobileMenuOpen(false)}
