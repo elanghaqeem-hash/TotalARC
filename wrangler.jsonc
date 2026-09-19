@@ -19,13 +19,23 @@
     }
   ],
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
+    "remote": true
   },
   "d1_databases": [
     {
       "binding": "DB"
     }
   ],
+  "vars": {
+    "AI_DEFAULT_SENSITIVITY": "confidential",
+    "AI_ALLOW_EXTERNAL_FOR_SENSITIVE": "false",
+    "AI_REDACT_EXTERNAL": "true",
+    "CLOUDFLARE_AI_MODEL": "@cf/qwen/qwen3-30b-a3b-fp8",
+    "GEMINI_MODEL": "gemini-3.8-flash",
+    "GROQ_MODEL": "openai/gpt-oss-20b",
+    "OPENROUTER_MODEL": "openrouter/free"
+  },
   "observability": {
     "enabled": true
   },
