@@ -14,7 +14,12 @@ const blocked = [
   /Demo Showcase/i,
   /Section 136 Scenario/i,
   /simulateFailure/i,
-  /Simulate Exception/i
+  /Simulate Exception/i,
+  /ensureBankKalbarPersisted/i,
+  /\bBANK_KALBAR\b/,
+  /bootstrapped to persistent D1 storage/i,
+  /\|\|\s*['"]Effective['"]/,
+  /\|\|\s*['"]Effective Design['"]/
 ];
 
 const findings = [];
@@ -30,6 +35,18 @@ function walk(dir) {
       for (const pattern of blocked) {
         if (pattern.test(content)) findings.push(`${full}: ${pattern}`);
       }
+
+      if (full !== path.join('src', 'lib', 'prisma.ts') && /new\s+PrismaClient\s*\(/.test(content)) {
+        findings.push(`${full}: PrismaClient must be created only by src/lib/prisma.ts`);
+      }
+
+      if (/import\s*\{\s*prisma\s*\}\s*from\s*['"]@\/lib\/prisma['"]/.test(content)) {
+        findings.push(`${full}: global prisma import is forbidden; use getPrisma() per request`);
+      }
+
+      if (/from\s*['"]@\/lib\/d1['"]/.test(content)) {
+        findings.push(`${full}: legacy D1 operational helper import is forbidden`);
+      }
     }
   }
 }
@@ -40,9 +57,9 @@ walk('prisma');
 if (fs.existsSync('prisma/dev.db')) findings.push('prisma/dev.db is committed/present');
 
 if (findings.length) {
-  console.error('Dummy/simulated operational data signatures detected:');
+  console.error('Dummy/simulated data or unsafe persistence patterns detected:');
   findings.forEach((item) => console.error(' - ' + item));
   process.exit(1);
 }
 
-console.log('No blocked dummy operational data signatures detected.');
+console.log('No blocked dummy data or unsafe persistence patterns detected.');
