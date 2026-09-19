@@ -27,6 +27,24 @@
       "binding": "DB"
     }
   ],
+  "ratelimits": [
+    {
+      "name": "AI_CHAT_RATE_LIMIT",
+      "namespace_id": "571001",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    },
+    {
+      "name": "AI_ANALYZE_RATE_LIMIT",
+      "namespace_id": "571002",
+      "simple": {
+        "limit": 6,
+        "period": 60
+      }
+    }
+  ],
   "vars": {
     "AI_DEFAULT_SENSITIVITY": "confidential",
     "AI_ALLOW_EXTERNAL_FOR_SENSITIVE": "false",
