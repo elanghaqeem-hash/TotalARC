@@ -56,8 +56,19 @@ async function getD1(): Promise<D1DatabaseLike> {
   return db;
 }
 
+async function executeSchemaScript(db: D1DatabaseLike, script: string) {
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
+}
+
 async function ensureSchema(db: D1DatabaseLike) {
-  await db.exec(`
+  await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS Institution (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -277,13 +288,41 @@ export async function getD1Health() {
   }
 
   const schema = await db.prepare(
-    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-  ).first<{ count?: number }>();
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+  ).all<{ name?: string }>();
+
+  const tableNames = (schema.results || [])
+    .map(row => String(row.name || ''))
+    .filter(Boolean);
+
+  const requiredTables = [
+    'Institution',
+    'AuditLog',
+    'ProcessCategory',
+    'BusinessProcess',
+    'RiskMaster',
+    'ControlMaster',
+    'ControlRiskMapping',
+    'ToETest',
+    'TestSample',
+    'TestingException',
+    'ControlDeficiency',
+    'Issue',
+    'ManagementActionPlan',
+    'RetestRecord',
+    'MonitoringRule',
+    'MonitoringRun'
+  ];
+  const existing = new Set(tableNames);
+  const missingRequiredTables = requiredTables.filter(name => !existing.has(name));
 
   return {
     binding: 'DB',
     queryOk: true,
-    tableCount: Number(schema?.count || 0)
+    tableCount: tableNames.length,
+    requiredTableCount: requiredTables.length,
+    requiredTablesReady: missingRequiredTables.length === 0,
+    missingRequiredTables
   };
 }
 
