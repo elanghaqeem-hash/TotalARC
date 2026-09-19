@@ -3,6 +3,8 @@ const path = require('path');
 
 const blocked = [
   /PT Nusantara Digital Services/i,
+  /NDS\.JK/i,
+  /TECHNOLOGY\s*(?:→|->)\s*IT\s+SERVICES/i,
   /nusantaradigital\.id/i,
   /Satria Pratama/i,
   /Maya Indira/i,
