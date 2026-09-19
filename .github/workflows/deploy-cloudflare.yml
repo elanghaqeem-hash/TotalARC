@@ -19,10 +19,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -33,26 +33,86 @@ jobs:
       - name: Validate Cloudflare deployment credentials
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
           set -euo pipefail
+
+          missing=0
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "Missing GitHub Actions secret: CLOUDFLARE_API_TOKEN"
-            exit 1
+            echo "::error::Missing CLOUDFLARE_API_TOKEN."
+            echo "### Deployment blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Add repository secret CLOUDFLARE_API_TOKEN." >> "$GITHUB_STEP_SUMMARY"
+            missing=1
           fi
+
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "Missing GitHub Actions secret: CLOUDFLARE_ACCOUNT_ID"
+            echo "::error::Missing CLOUDFLARE_ACCOUNT_ID."
+            echo "### Cloudflare account ID required" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Add CLOUDFLARE_ACCOUNT_ID as a repository variable (preferred) or repository secret." >> "$GITHUB_STEP_SUMMARY"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "The Worker was not deployed. No source-code or AI-provider failure occurred." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+
           echo "Cloudflare deployment credentials are configured."
+
+      - name: Verify no dummy operational data
+        run: npm run verify:no-dummy
 
       - name: Build OpenNext Worker
         run: npm run build
 
       - name: Deploy Worker and provision Cloudflare bindings
-        uses: cloudflare/wrangler-action@v3
+        id: deploy
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+
+      - name: Verify AI runtime readiness
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          FALLBACK_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL="${DEPLOYMENT_URL:-${FALLBACK_URL:-}}"
+          if [ -z "$BASE_URL" ]; then
+            echo "::error::Deployment completed but no deployment URL was available."
+            echo "Set repository variable TOTALARC_PRODUCTION_URL if the Wrangler action does not emit deployment-url." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          BASE_URL="${BASE_URL%/}"
+          READY_URL="$BASE_URL/api/ai/ready"
+          echo "Checking AI readiness at $READY_URL"
+
+          for attempt in $(seq 1 12); do
+            if body=$(curl --fail --silent --show-error --max-time 10 "$READY_URL"); then
+              ready=$(printf '%s' "$body" | node -e "let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{try{const parsed=JSON.parse(input);process.stdout.write(parsed.ready===true?'true':'false')}catch{process.stdout.write('false')}})")
+
+              if [ "$ready" = "true" ]; then
+                echo "Total ARC AI Gateway is runtime-ready."
+                echo "### AI runtime verification" >> "$GITHUB_STEP_SUMMARY"
+                echo "- Deployment: successful" >> "$GITHUB_STEP_SUMMARY"
+                echo "- Cloudflare Workers AI binding: ready" >> "$GITHUB_STEP_SUMMARY"
+                echo "- Endpoint /api/ai/ready returned ready=true" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
+
+            echo "AI readiness not confirmed yet (attempt $attempt/12)."
+            sleep 5
+          done
+
+          echo "::error::Worker deployed but Total ARC AI Gateway did not become runtime-ready."
+          echo "### AI runtime verification failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "The Worker deployed, but /api/ai/ready did not return ready=true." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
