@@ -8,8 +8,6 @@
     "build": "node scripts/cloudflare-build.cjs",
     "start": "next start",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
-    "prisma:seed-reference": "node prisma/seed.js",
     "verify:no-dummy": "node scripts/verify-no-dummy-data.js",
     "build:cloudflare": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
@@ -18,7 +16,8 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "build:next": "next build",
     "d1:migrations:local": "wrangler d1 migrations apply DB --local",
-    "d1:migrations:remote": "wrangler d1 migrations apply DB --remote"
+    "d1:migrations:remote": "wrangler d1 migrations apply DB --remote",
+    "prisma:migration:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script --output migrations/0001_initial.sql"
   },
   "keywords": [],
   "author": "",
