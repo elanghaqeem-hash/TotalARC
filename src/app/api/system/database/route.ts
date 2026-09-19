@@ -7,9 +7,10 @@ export async function GET() {
   try {
     const prisma = getPrisma();
 
-    const [institutionCount, processCount, riskCount, controlCount, auditLogCount, latestAudit] =
+    const [institutionCount, processCategoryCount, processCount, riskCount, controlCount, auditLogCount, latestAudit] =
       await Promise.all([
         prisma.institution.count(),
+        prisma.processCategory.count(),
         prisma.businessProcess.count(),
         prisma.riskMaster.count(),
         prisma.controlMaster.count(),
@@ -24,11 +25,13 @@ export async function GET() {
       mutationPerformed: false,
       counts: {
         institutions: institutionCount,
+        processCategories: processCategoryCount,
         processes: processCount,
         risks: riskCount,
         controls: controlCount,
         auditLogs: auditLogCount
       },
+      referenceDataReady: processCategoryCount > 0,
       latestAuditTimestamp: latestAudit?.timestamp || null
     });
   } catch (error) {
