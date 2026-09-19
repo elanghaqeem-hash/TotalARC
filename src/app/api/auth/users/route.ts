@@ -7,6 +7,7 @@ import {
   updateProvisionedUser,
   type UserRole
 } from '@/lib/auth';
+import { guardMutationRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const email = typeof body.email === 'string' ? body.email.trim() : '';
@@ -64,6 +68,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const id = typeof body.id === 'string' ? body.id.trim() : '';

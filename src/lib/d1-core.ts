@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { auditActorLabel, appendRequestAuditContext, type MutationActor } from '@/lib/mutation-security';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -349,6 +350,7 @@ async function writeAudit(
     newValue?: unknown;
     reason?: string | null;
     ipAddress?: string | null;
+    actor?: MutationActor;
   }
 ) {
   await run(
@@ -360,15 +362,17 @@ async function writeAudit(
     [
       crypto.randomUUID(),
       input.institutionId || null,
-      input.userName || 'System',
-      input.userRole || 'System',
+      input.actor ? auditActorLabel(input.actor) : (input.userName || 'System'),
+      input.actor?.role || input.userRole || 'System',
       input.action,
       input.entityType,
       input.recordId,
       input.oldValue === undefined ? null : JSON.stringify(input.oldValue),
       input.newValue === undefined ? null : JSON.stringify(input.newValue),
-      input.reason || null,
-      input.ipAddress || null,
+      input.actor && input.reason
+        ? appendRequestAuditContext(input.reason, input.actor)
+        : input.reason || null,
+      input.actor?.ipAddress || input.ipAddress || null,
       nowIso()
     ]
   );
@@ -500,7 +504,7 @@ export async function findBusinessProcessForAi(identifier: {
   return row ? hydrateProcess(db, row) : null;
 }
 
-export async function createBusinessProcess(input: Record<string, unknown>, institutionId: string) {
+export async function createBusinessProcess(input: Record<string, unknown>, institutionId: string, actor: MutationActor) {
   const db = await ensureCoreDomainSchema();
   const institution = await first<Record<string, unknown>>(
     db,
@@ -569,7 +573,8 @@ export async function createBusinessProcess(input: Record<string, unknown>, inst
     entityType: 'Process',
     recordId: id,
     newValue: created,
-    reason: 'Business process registered in Cloudflare D1.'
+    reason: 'Business process registered in Cloudflare D1.',
+    actor
   });
 
   return hydrateProcess(db, created);
@@ -643,7 +648,7 @@ export async function listRisks(institutionId: string) {
   );
 }
 
-export async function createRisk(input: Record<string, unknown>, institutionId: string) {
+export async function createRisk(input: Record<string, unknown>, institutionId: string, actor: MutationActor) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
     db,
@@ -721,7 +726,8 @@ export async function createRisk(input: Record<string, unknown>, institutionId: 
     entityType: 'Risk',
     recordId: id,
     newValue: created,
-    reason: 'Risk registered in Cloudflare D1.'
+    reason: 'Risk registered in Cloudflare D1.',
+    actor
   });
 
   return {
@@ -804,7 +810,7 @@ export async function listControls(institutionId: string) {
   );
 }
 
-export async function createControl(input: Record<string, unknown>, institutionId: string) {
+export async function createControl(input: Record<string, unknown>, institutionId: string, actor: MutationActor) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
     db,
@@ -892,7 +898,8 @@ export async function createControl(input: Record<string, unknown>, institutionI
     newValue: created,
     reason: risk
       ? 'Control registered and mapped to a persisted risk in Cloudflare D1.'
-      : 'Control registered in Cloudflare D1.'
+      : 'Control registered in Cloudflare D1.',
+    actor
   });
 
   return {
@@ -1140,6 +1147,28 @@ export async function getCoreDashboardData(institutionId: string) {
   };
 }
 
+export async function recordMutationAudit(input: {
+  institutionId: string;
+  action: string;
+  entityType: string;
+  recordId: string;
+  oldValue?: unknown;
+  newValue?: unknown;
+  reason: string;
+}, actor: MutationActor) {
+  const db = await ensureCoreDomainSchema();
+  await writeAudit(db, {
+    institutionId: input.institutionId,
+    action: input.action,
+    entityType: input.entityType,
+    recordId: input.recordId,
+    oldValue: input.oldValue,
+    newValue: input.newValue,
+    reason: input.reason,
+    actor
+  });
+}
+
 export async function recordAiAnalysisAudit(input: {
   institutionId: string;
   processId: string;
@@ -1147,12 +1176,10 @@ export async function recordAiAnalysisAudit(input: {
   provider: string;
   model: string;
   findingsCount: number;
-}) {
+}, actor: MutationActor) {
   const db = await ensureCoreDomainSchema();
   await writeAudit(db, {
     institutionId: input.institutionId,
-    userName: 'Total ARC AI',
-    userRole: 'AI Assistant',
     action: 'AI_ANALYZE',
     entityType: 'BusinessProcess',
     recordId: input.processId,
@@ -1163,6 +1190,7 @@ export async function recordAiAnalysisAudit(input: {
       findingsCount: input.findingsCount,
       humanReviewRequired: true
     },
-    reason: 'Advisory BPM/RCM control-gap analysis; no autonomous record mutation.'
+    reason: 'Authenticated user requested advisory BPM/RCM control-gap analysis; no autonomous record mutation.',
+    actor
   });
 }

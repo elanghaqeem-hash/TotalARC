@@ -34,6 +34,9 @@ jobs:
       - name: Verify tenant isolation
         run: npm run verify:tenant-isolation
 
+      - name: Verify mutation security
+        run: npm run verify:mutation-security
+
       - name: Build OpenNext Cloudflare artifact
         run: npm run build
 

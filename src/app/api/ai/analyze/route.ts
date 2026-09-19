@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
 import { findBusinessProcessForAi, recordAiAnalysisAudit } from '@/lib/d1-core';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 type Finding = {
@@ -65,6 +66,9 @@ function normalizeFindings(value: unknown): Finding[] {
 export async function POST(request: Request) {
   const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
 
   try {
     const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
@@ -167,7 +171,7 @@ export async function POST(request: Request) {
           provider: result.provider,
           model: result.model,
           findingsCount: findings.length
-        });
+        }, actor);
       } catch (auditError) {
         console.warn('AI audit log persistence failed:', auditError);
       }
