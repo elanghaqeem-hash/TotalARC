@@ -16,6 +16,14 @@ import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+type ScopedRow = Record<string, unknown> & {
+  process?: Record<string, unknown> | null;
+  control?: Record<string, unknown> | null;
+  issue?: Record<string, unknown> | null;
+  controls?: unknown[];
+  exceptions?: unknown[];
+};
+
 export async function GET(request: Request) {
   const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
@@ -46,28 +54,36 @@ export async function GET(request: Request) {
           typeof orgUnitId === 'string' ? orgUnitId : null
         );
 
+      const riskRows = risks as unknown as ScopedRow[];
+      const controlRows = controls as unknown as ScopedRow[];
+      const toeRows = toeTests as unknown as ScopedRow[];
+      const issueRows = remediation.issues as unknown as ScopedRow[];
+      const mapRows = remediation.maps as unknown as ScopedRow[];
+      const retestRows = remediation.retests as unknown as ScopedRow[];
+      const monitoringRows = monitoringRules as unknown as ScopedRow[];
+
       const scopedProcesses = processData.processes.filter(process => allowed(process.orgUnitId));
-      const scopedRisks = risks.filter(risk =>
+      const scopedRisks = riskRows.filter(risk =>
         allowed((risk.process as Record<string, unknown> | null)?.orgUnitId)
       );
-      const scopedControls = controls.filter(control =>
+      const scopedControls = controlRows.filter(control =>
         allowed((control.process as Record<string, unknown> | null)?.orgUnitId)
       );
-      const scopedToeTests = toeTests.filter(test =>
+      const scopedToeTests = toeRows.filter(test =>
         allowed((test.process as Record<string, unknown> | null)?.orgUnitId)
       );
-      const scopedIssues = remediation.issues.filter(issue =>
+      const scopedIssues = issueRows.filter(issue =>
         allowed((issue.process as Record<string, unknown> | null)?.orgUnitId)
       );
-      const scopedMaps = remediation.maps.filter(map =>
+      const scopedMaps = mapRows.filter(map =>
         allowed(
           ((map.issue as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId
         )
       );
-      const scopedRetests = remediation.retests.filter(retest =>
+      const scopedRetests = retestRows.filter(retest =>
         allowed((retest.process as Record<string, unknown> | null)?.orgUnitId)
       );
-      const scopedRules = monitoringRules.filter(rule =>
+      const scopedRules = monitoringRows.filter(rule =>
         allowed(
           ((rule.control as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId
         )
