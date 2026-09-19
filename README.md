@@ -8,7 +8,7 @@ Enterprise Governance, Risk, and Compliance (GRC), Internal Control over Financi
 
 ## Data integrity principle
 
-Operational screens must display records persisted in the connected database. Total ARC does not ship with demo institutions, fake users, simulated transactions, fabricated test results, pre-closed issues, or synthetic monitoring outcomes. The optional seed command below loads reference taxonomy only.
+Operational screens must display records persisted in the connected database. Total ARC does not ship with demo institutions, fake users, simulated transactions, fabricated test results, pre-closed issues, or synthetic monitoring outcomes. Reference taxonomy is managed through committed Cloudflare D1 migrations and never through operational seed data.
 
 ## Key Features
 
@@ -28,8 +28,8 @@ Operational screens must display records persisted in the connected database. To
 
 - Next.js App Router / TypeScript
 - Tailwind CSS
-- Prisma ORM
-- SQLite schema for local development; production persistence must use an explicitly provisioned persistent data service compatible with the deployment architecture
+- Prisma ORM with the official Cloudflare D1 driver adapter
+- Cloudflare D1 as the single operational persistence layer for local Wrangler development and production
 - OpenNext for Cloudflare
 
 ## Getting Started
@@ -39,12 +39,12 @@ git clone https://github.com/elanghaqeem-hash/TotalARC.git
 cd TotalARC
 npm install
 npm run prisma:generate
-npm run prisma:push
-npm run prisma:seed-reference
+npm run prisma:migration:diff
+npm run d1:migrations:local
 npm run dev
 ```
 
-The reference seed loads taxonomy only. Register real institutional and operational data through the application or approved integrations.
+Reference taxonomy is loaded by the committed D1 migration in `migrations/0002_reference_taxonomy.sql`. Register real institutional and operational data through the application or approved integrations; no operational seed is provided.
 
 ## Validation
 
@@ -53,7 +53,13 @@ npm run verify:no-dummy
 npm run build
 ```
 
-The pull-request workflow blocks known dummy operational-data signatures and verifies the Cloudflare Worker artifact.
+The pull-request workflow blocks known dummy operational-data signatures, split-storage regressions, global Prisma clients, and optimistic assurance fallbacks, then verifies the Cloudflare Worker artifact.
+
+## Cloudflare D1 deployment
+
+Production uses the `DB` Cloudflare D1 binding declared in `wrangler.jsonc`. The deployment workflow first deploys the Worker so Wrangler can provision/link the draft D1 binding when needed, then applies committed D1 migrations. The database health endpoint at `GET /api/system/database` is read-only and reports connection, schema/reference readiness, and persisted record counts without creating operational data.
+
+GitHub Actions production deployment requires repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Never commit or paste these credentials into source files.
 
 
 ## AI Gateway
