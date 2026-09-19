@@ -156,6 +156,13 @@ jobs:
             (.rules | type) == "array"
           '
 
+          check_json "auth-status" "/api/auth/status" '
+            .storage == "cloudflare-d1" and
+            (.enforced | type) == "boolean" and
+            (.configured | type) == "boolean" and
+            (.userCount | type) == "number"
+          '
+
           check_json "database-final" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and
