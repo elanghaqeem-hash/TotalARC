@@ -235,38 +235,6 @@ async function provisionBootstrapAdmin(
   );
   if (Number(existingCount?.count || 0) !== 0) return null;
 
-  const orgUnitId = input.orgUnitId?.trim() || null;
-  const orgAccessScope = input.role === 'Admin'
-    ? 'ALL'
-    : (input.orgAccessScope || (orgUnitId ? 'UNIT_ONLY' : 'ALL'));
-
-  if (!isOrgAccessScope(orgAccessScope)) {
-    throw new AuthorizationError(400, 'ORG_ACCESS_SCOPE_INVALID', 'Invalid organization access scope.');
-  }
-
-  if (orgAccessScope !== 'ALL' && !orgUnitId) {
-    throw new AuthorizationError(
-      400,
-      'ORG_UNIT_REQUIRED_FOR_SCOPE',
-      'An organization unit is required for a unit-scoped user.'
-    );
-  }
-
-  if (orgUnitId) {
-    const unit = await first<{ id?: string }>(
-      db,
-      'SELECT id FROM OrganizationUnit WHERE id = ? AND institutionId = ? LIMIT 1',
-      [orgUnitId, admin.institutionId]
-    );
-    if (!unit?.id) {
-      throw new AuthorizationError(
-        400,
-        'ORG_UNIT_INVALID',
-        'The selected organization unit does not belong to this institution.'
-      );
-    }
-  }
-
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   await run(
@@ -562,6 +530,38 @@ export async function provisionUser(
       'USER_ALREADY_EXISTS',
       'A Total ARC user with this email already exists.'
     );
+  }
+
+  const orgUnitId = input.orgUnitId?.trim() || null;
+  const orgAccessScope = input.role === 'Admin'
+    ? 'ALL'
+    : (input.orgAccessScope || (orgUnitId ? 'UNIT_ONLY' : 'ALL'));
+
+  if (!isOrgAccessScope(orgAccessScope)) {
+    throw new AuthorizationError(400, 'ORG_ACCESS_SCOPE_INVALID', 'Invalid organization access scope.');
+  }
+
+  if (orgAccessScope !== 'ALL' && !orgUnitId) {
+    throw new AuthorizationError(
+      400,
+      'ORG_UNIT_REQUIRED_FOR_SCOPE',
+      'An organization unit is required for a unit-scoped user.'
+    );
+  }
+
+  if (orgUnitId) {
+    const unit = await first<{ id?: string }>(
+      db,
+      'SELECT id FROM OrganizationUnit WHERE id = ? AND institutionId = ? LIMIT 1',
+      [orgUnitId, admin.institutionId]
+    );
+    if (!unit?.id) {
+      throw new AuthorizationError(
+        400,
+        'ORG_UNIT_INVALID',
+        'The selected organization unit does not belong to this institution.'
+      );
+    }
   }
 
   const now = new Date().toISOString();
