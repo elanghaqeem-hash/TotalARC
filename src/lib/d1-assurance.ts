@@ -402,6 +402,125 @@ async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>) 
   };
 }
 
+export async function createToeTest(input: {
+  testId?: string;
+  controlId: string;
+  testerName: string;
+  reviewerName?: string | null;
+  period: string;
+  populationSize: number;
+  populationSource: string;
+  samplingMethod: string;
+  notes?: string | null;
+}) {
+  const db = await ensureAssuranceSchema();
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
+    [input.controlId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  const enterpriseId =
+    input.testId && input.testId.trim()
+      ? input.testId.trim()
+      : 'TOE-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ToETest WHERE testId = ? LIMIT 1',
+    [enterpriseId]
+  );
+  if (duplicate) throw new Error('TOE_TEST_ID_CONFLICT');
+
+  const id = crypto.randomUUID();
+  const testedAt = nowIso();
+
+  await run(
+    db,
+    `INSERT INTO ToETest (
+      id, testId, controlId, processId, riskId, testerName, reviewerName, period,
+      populationSize, populationSource, samplingMethod, sampleSize, passCount,
+      failCount, testerConclusion, finalConclusion, status, notes, testedAt
+    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'Not Assessed', 'Not Assessed', 'Planned', ?, ?)`,
+    [
+      id,
+      enterpriseId,
+      control.id,
+      control.processId,
+      input.testerName,
+      nullable(input.reviewerName),
+      input.period,
+      input.populationSize,
+      input.populationSource,
+      input.samplingMethod,
+      nullable(input.notes),
+      testedAt
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function addToeSample(input: {
+  toeTestId: string;
+  transactionRef: string;
+  transactionDate: string;
+  amount?: number | null;
+  attributesTested?: string | null;
+  evidenceRef?: string | null;
+}) {
+  const db = await ensureAssuranceSchema();
+  const test = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
+    [input.toeTestId]
+  );
+  if (!test) throw new Error('TOE_TEST_NOT_FOUND');
+
+  const nextNumberRow = await first<{ nextNumber?: number }>(
+    db,
+    'SELECT COALESCE(MAX(sampleNumber), 0) + 1 AS nextNumber FROM TestSample WHERE toeTestId = ?',
+    [input.toeTestId]
+  );
+  const sampleNumber = Number(nextNumberRow?.nextNumber || 1);
+  const id = crypto.randomUUID();
+
+  await run(
+    db,
+    `INSERT INTO TestSample (
+      id, toeTestId, sampleNumber, transactionRef, transactionDate, amount,
+      attributesTested, result, failureReason, evidenceRef
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Not Tested', NULL, ?)`,
+    [
+      id,
+      input.toeTestId,
+      sampleNumber,
+      input.transactionRef,
+      input.transactionDate,
+      input.amount === null || input.amount === undefined ? null : input.amount,
+      nullable(input.attributesTested),
+      nullable(input.evidenceRef)
+    ]
+  );
+
+  await run(
+    db,
+    'UPDATE ToETest SET sampleSize = ? WHERE id = ?',
+    [sampleNumber, input.toeTestId]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM TestSample WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
 export async function listToeTests() {
   const db = await ensureAssuranceSchema();
   const tests = await all<Record<string, unknown>>(
@@ -479,6 +598,9 @@ export async function updateToeSample(input: {
 
   const allowed = new Set(['Pass', 'Fail', 'N/A', 'Not Tested']);
   if (!allowed.has(input.result)) throw new Error('INVALID_SAMPLE_RESULT');
+  if (input.result === 'Fail' && !input.failureReason?.trim()) {
+    throw new Error('FAILURE_REASON_REQUIRED');
+  }
 
   await run(
     db,
