@@ -45,7 +45,7 @@ export async function GET() {
       const risk = m.risk;
       const control = m.control;
       const process = risk.process;
-      const objective = process.objectives?.[0]?.objective || 'Process integrity and financial assurance';
+      const objective = process.objectives?.[0]?.objective || 'Not Defined';
       const toe = control.toeTests?.[0];
       const tod = control.todTests?.[0];
       const issue = control.issues?.[0];
@@ -58,8 +58,8 @@ export async function GET() {
         // Process
         processId: process.processId,
         processName: process.name,
-        processCategory: process.category?.name || 'General',
-        activityName: risk.activity?.name || 'All Activities',
+        processCategory: process.category?.name || 'Not Assigned',
+        activityName: risk.activity?.name || 'Not Linked',
         processObjective: objective,
 
         // Risk
@@ -83,14 +83,14 @@ export async function GET() {
         controlType: control.type,
         controlNature: control.nature,
         controlFrequency: control.frequency,
-        evidenceRequirement: control.evidenceRequirement || 'Standard Audit Log',
+        evidenceRequirement: control.evidenceRequirement || 'Not Specified',
         isKeyControl: control.isKeyControl,
         isIcofrKey: control.isIcofrKey,
 
         // Assurance / Testing
-        csaStatus: control.csaResponses?.[0]?.csaConclusion || 'Effective',
-        todConclusion: tod?.conclusion || 'Effective Design',
-        toeConclusion: toe?.finalConclusion || 'Effective',
+        csaStatus: control.csaResponses?.[0]?.csaConclusion || 'Not Assessed',
+        todConclusion: tod?.conclusion || 'Not Assessed',
+        toeConclusion: toe?.finalConclusion || 'Not Assessed',
         toePassRatio: toe ? `${toe.passCount}/${toe.sampleSize} Pass` : 'Not Tested',
         controlHealth: control.overallHealth,
 
