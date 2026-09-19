@@ -28,6 +28,7 @@ export default function ProcessesPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [legalEntities, setLegalEntities] = useState<any[]>([]);
   const [organizationUnits, setOrganizationUnits] = useState<any[]>([]);
+  const [organizationPositions, setOrganizationPositions] = useState<any[]>([]);
   const [organizationUsers, setOrganizationUsers] = useState<any[]>([]);
   const [selectedProcess, setSelectedProcess] = useState<any>(null);
   const [search, setSearch] = useState('');
@@ -61,12 +62,14 @@ export default function ProcessesPage() {
         const nextCategories = Array.isArray(data.categories) ? data.categories : [];
         const nextEntities = Array.isArray(data.organization?.legalEntities) ? data.organization.legalEntities : [];
         const nextUnits = Array.isArray(data.organization?.organizationUnits) ? data.organization.organizationUnits : [];
+        const nextPositions = Array.isArray(data.organization?.positions) ? data.organization.positions : [];
         const nextUsers = Array.isArray(data.organization?.users) ? data.organization.users : [];
 
         setProcesses(nextProcesses);
         setCategories(nextCategories);
         setLegalEntities(nextEntities);
         setOrganizationUnits(nextUnits);
+        setOrganizationPositions(nextPositions);
         setOrganizationUsers(nextUsers);
 
         if (nextProcesses.length > 0 && !selectedProcess) {
@@ -143,6 +146,18 @@ export default function ProcessesPage() {
   const unitsForEntity = formData.legalEntityId
     ? activeUnits.filter(unit => !unit.legalEntityId || unit.legalEntityId === formData.legalEntityId)
     : activeUnits;
+  const selectedFormUnit = organizationUnits.find(unit => unit.id === formData.orgUnitId);
+  const ownerUserIdsForUnit = new Set(
+    [
+      selectedFormUnit?.headUserId,
+      ...organizationPositions
+        .filter(position => position.status === 'Active' && position.orgUnitId === formData.orgUnitId)
+        .map(position => position.assignedUserId)
+    ].filter(Boolean)
+  );
+  const ownerCandidates = formData.orgUnitId && ownerUserIdsForUnit.size > 0
+    ? activeUsers.filter(user => ownerUserIdsForUnit.has(user.id))
+    : activeUsers;
 
   return (
     <div className="space-y-6">
@@ -565,7 +580,10 @@ export default function ProcessesPage() {
                       setFormData({
                         ...formData,
                         orgUnitId: e.target.value,
-                        legalEntityId: unit?.legalEntityId || formData.legalEntityId
+                        legalEntityId: unit?.legalEntityId || formData.legalEntityId,
+                        ownerUserId: '',
+                        ownerName: '',
+                        ownerEmail: ''
                       });
                     }}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
@@ -597,7 +615,7 @@ export default function ProcessesPage() {
                       className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                     >
                       <option value="">Select process owner</option>
-                      {activeUsers.map(user => (
+                      {ownerCandidates.map(user => (
                         <option key={user.id} value={user.id}>{user.name} · {user.role}</option>
                       ))}
                     </select>
