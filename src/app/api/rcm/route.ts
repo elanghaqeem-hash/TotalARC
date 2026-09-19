@@ -3,6 +3,7 @@ import { listRcmRows } from '@/lib/d1-core';
 import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
 import { getOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,18 +12,25 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const [baseRows, organization] = await Promise.all([
+    const [baseRows, organization, authorizedOrgUnitIds] = await Promise.all([
       listRcmRows(auth.user.institutionId),
-      getOrganizationData(auth.user.institutionId)
+      getOrganizationData(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
     ]);
-    const rcm = await enrichRcmWithAssurance(baseRows, auth.user.institutionId);
+    const scopedRows = baseRows.filter(row =>
+      isOrgUnitAuthorized(authorizedOrgUnitIds, row.orgUnitId as string | null | undefined)
+    );
+    const rcm = await enrichRcmWithAssurance(scopedRows, auth.user.institutionId);
+    const scopedUnits = organization.organizationUnits.filter(unit =>
+      isOrgUnitAuthorized(authorizedOrgUnitIds, unit.id)
+    );
 
     return NextResponse.json({
       rcm,
       total: rcm.length,
       organization: {
         legalEntities: organization.legalEntities,
-        organizationUnits: organization.organizationUnits
+        organizationUnits: scopedUnits
       },
       storage: 'cloudflare-d1'
     });
