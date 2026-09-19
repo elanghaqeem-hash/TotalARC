@@ -37,7 +37,6 @@ export default function OnboardingPage() {
     generalEmail: '',
     telephone: '',
     yearEstablished: '',
-    taxId: '',
     stockExchange: '',
     ticker: '',
     selectedIndustry: 'Financial Services',
@@ -203,16 +202,6 @@ export default function OnboardingPage() {
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Tax ID (NPWP)</label>
-                <input
-                  type="text"
-                  value={formData.taxId}
-                  onChange={e => setFormData({ ...formData, taxId: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
               </div>
 
               <div>

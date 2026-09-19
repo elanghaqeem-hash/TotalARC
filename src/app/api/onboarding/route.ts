@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const {
       name, legalName, shortName, institutionType, country, provinceState, city,
       registeredAddress, operationalAddress, website, generalEmail, telephone,
-      yearEstablished, registrationNumber, taxId, parentCompany, holdingCompany,
+      yearEstablished, registrationNumber, parentCompany, holdingCompany,
       stockExchange, ticker, logo, employeeCount, revenueRange, businessModel, operatingModel
     } = body;
 
@@ -44,7 +44,6 @@ export async function POST(request: Request) {
       telephone: telephone || null,
       yearEstablished: yearEstablished ? Number(yearEstablished) : null,
       registrationNumber: registrationNumber || null,
-      taxId: taxId || null,
       parentCompany: parentCompany || null,
       holdingCompany: holdingCompany || null,
       stockExchange: stockExchange || null,
