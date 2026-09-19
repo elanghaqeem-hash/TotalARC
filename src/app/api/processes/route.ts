@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
-
   try {
     const { processes, categories } = await listBusinessProcesses(auth.user.institutionId);
     return NextResponse.json({
@@ -24,6 +24,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await authorizeTenantApi(request, ['Admin', 'ProcessOwner']);
   if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
+
 
   try {
     const body = (await request.json()) as Record<string, unknown>;
@@ -47,7 +51,7 @@ export async function POST(request: Request) {
       ownerName,
       criticality,
       classification
-    }, auth.user.institutionId);
+    }, auth.user.institutionId, actor);
 
     return NextResponse.json(process, { status: 201 });
   } catch (error) {

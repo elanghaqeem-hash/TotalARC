@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { FRAMEWORK_REFERENCES, INDUSTRY_REFERENCES } from '@/lib/reference-data';
 import { upsertInstitution } from '@/lib/d1';
+import { recordMutationAudit } from '@/lib/d1-core';
 import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
 import { bindBootstrapAdminToInstitution } from '@/lib/auth';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +22,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await authorizeApi(request, ['Admin']);
   if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
 
   try {
     const body = await request.json();
@@ -61,10 +66,21 @@ export async function POST(request: Request) {
       revenueRange: revenueRange || null,
       businessModel: businessModel || null,
       operatingModel: operatingModel || null
-    }, 'Institution saved through onboarding to persistent Cloudflare D1.', auth.user.institutionId);
+    }, 'Institution saved through onboarding to persistent Cloudflare D1.', auth.user.institutionId, actor);
 
     if (!auth.user.institutionId) {
-      await bindBootstrapAdminToInstitution(auth.user, String(institution.id));
+      const boundAdmin = await bindBootstrapAdminToInstitution(auth.user, String(institution.id));
+      await recordMutationAudit({
+        institutionId: String(institution.id),
+        action: 'BIND_TENANT',
+        entityType: 'AccessUser',
+        recordId: boundAdmin.id,
+        newValue: {
+          institutionId: boundAdmin.institutionId,
+          role: boundAdmin.role
+        },
+        reason: 'Bootstrap administrator explicitly bound to the newly onboarded institution.'
+      }, actor);
     }
 
     return NextResponse.json({ success: true, institution, storage: 'cloudflare-d1' }, { status: 200 });

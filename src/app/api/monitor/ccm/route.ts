@@ -5,6 +5,8 @@ import {
   listMonitoringRules
 } from '@/lib/d1-assurance';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { recordMutationAudit } from '@/lib/d1-core';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +26,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await authorizeTenantApi(request, ['Admin', 'ControlOwner']);
   if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
 
   try {
     const body = (await request.json()) as Record<string, unknown>;
@@ -44,6 +49,20 @@ export async function POST(request: Request) {
       }
 
       const rule = await createMonitoringRule({ ...body, controlId, name, description, dataSource, queryLogic }, auth.user.institutionId);
+      await recordMutationAudit({
+        institutionId: auth.user.institutionId,
+        action: 'CREATE',
+        entityType: 'MonitoringRule',
+        recordId: String(rule?.id || rule?.ruleId || ''),
+        newValue: {
+          ruleId: rule?.ruleId,
+          controlId: rule?.controlId,
+          frequency: rule?.frequency,
+          threshold: rule?.threshold,
+          status: rule?.status
+        },
+        reason: 'Continuous monitoring rule created.'
+      }, actor);
       return NextResponse.json(rule, { status: 201 });
     }
 
@@ -83,6 +102,21 @@ export async function POST(request: Request) {
       details,
       exceptions
     }, auth.user.institutionId);
+
+    await recordMutationAudit({
+      institutionId: auth.user.institutionId,
+      action: 'CREATE',
+      entityType: 'MonitoringRun',
+      recordId: String(run?.id || ''),
+      newValue: {
+        ruleId: run?.ruleId,
+        populationChecked: run?.populationChecked,
+        exceptionsFound: run?.exceptionsFound,
+        status: run?.status,
+        runTimestamp: run?.runTimestamp
+      },
+      reason: 'Continuous monitoring execution result ingested.'
+    }, actor);
 
     return NextResponse.json(run, { status: 201 });
   } catch (error) {

@@ -3,6 +3,8 @@ import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
 import type { AiTask } from '@/lib/ai/types';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { recordMutationAudit } from '@/lib/d1-core';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 const TASKS: AiTask[] = [
   'process_analysis',
@@ -31,6 +33,9 @@ function taskFrom(value: unknown): AiTask {
 export async function POST(request: Request) {
   const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
 
   try {
     const guarded = await guardAiPost(request, 'AI_CHAT_RATE_LIMIT');
@@ -63,6 +68,21 @@ export async function POST(request: Request) {
       temperature: 0.2,
       maxOutputTokens: 4096
     });
+
+    await recordMutationAudit({
+      institutionId: auth.user.institutionId,
+      action: 'AI_CHAT',
+      entityType: 'AIRequest',
+      recordId: result.requestId,
+      newValue: {
+        provider: result.provider,
+        model: result.model,
+        task: taskFrom(body.task),
+        fallbackUsed: result.fallbackUsed,
+        redactionCount: result.redactions || 0
+      },
+      reason: 'Authenticated user invoked Total ARC AI chat. Prompt content is intentionally excluded from the audit record.'
+    }, actor);
 
     return NextResponse.json({
       answer: result.text,

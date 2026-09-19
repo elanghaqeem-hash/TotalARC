@@ -17,7 +17,8 @@
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "build:next": "next build",
-    "verify:tenant-isolation": "node scripts/verify-tenant-isolation.js"
+    "verify:tenant-isolation": "node scripts/verify-tenant-isolation.js",
+    "verify:mutation-security": "node scripts/verify-mutation-security.js"
   },
   "keywords": [],
   "author": "",

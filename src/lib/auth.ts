@@ -1,5 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { recordMutationAudit } from '@/lib/d1-core';
+import { mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const USER_ROLES = [
   'Admin',
@@ -517,13 +519,34 @@ export async function provisionUser(
     ]
   );
 
-  return first<Record<string, unknown>>(
+  const created = await first<Record<string, unknown>>(
     db,
     `SELECT id, institutionId, email, name, role, department, active,
             createdAt, updatedAt, lastAuthenticatedAt
        FROM AccessUser WHERE id = ? LIMIT 1`,
     [id]
   );
+
+  if (!created) {
+    throw new AuthorizationError(500, 'USER_CREATE_FAILED', 'Provisioned user could not be reloaded.');
+  }
+
+  await recordMutationAudit({
+    institutionId: admin.institutionId,
+    action: 'CREATE',
+    entityType: 'AccessUser',
+    recordId: id,
+    newValue: {
+      email,
+      name,
+      role: input.role,
+      department: input.department?.trim() || null,
+      active: true
+    },
+    reason: 'Total ARC user provisioned by an authenticated administrator.'
+  }, mutationActorFromRequest(request, admin));
+
+  return created;
 }
 
 export async function updateProvisionedUser(
@@ -589,11 +612,40 @@ export async function updateProvisionedUser(
     [nextRole, nextActive ? 1 : 0, nextName, nextDepartment, now, existing.id]
   );
 
-  return first<Record<string, unknown>>(
+  const updated = await first<Record<string, unknown>>(
     db,
     `SELECT id, institutionId, email, name, role, department, active,
             createdAt, updatedAt, lastAuthenticatedAt
        FROM AccessUser WHERE id = ? LIMIT 1`,
     [existing.id]
   );
+
+  if (!updated) {
+    throw new AuthorizationError(500, 'USER_UPDATE_FAILED', 'Updated user could not be reloaded.');
+  }
+
+  const auditInstitutionId = admin.institutionId || existing.institutionId;
+  if (auditInstitutionId) {
+    await recordMutationAudit({
+      institutionId: auditInstitutionId,
+      action: 'UPDATE',
+      entityType: 'AccessUser',
+      recordId: existing.id,
+      oldValue: {
+        name: existing.name,
+        role: existing.role,
+        department: existing.department,
+        active: Boolean(existing.active)
+      },
+      newValue: {
+        name: nextName,
+        role: nextRole,
+        department: nextDepartment,
+        active: nextActive
+      },
+      reason: 'Total ARC user profile, role, or account status updated by an authenticated administrator.'
+    }, mutationActorFromRequest(request, admin));
+  }
+
+  return updated;
 }

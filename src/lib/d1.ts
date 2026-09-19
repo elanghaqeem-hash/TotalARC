@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { auditActorLabel, appendRequestAuditContext, type MutationActor } from '@/lib/mutation-security';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -128,7 +129,8 @@ async function insertAudit(
   action: string,
   oldValue: unknown,
   newValue: unknown,
-  reason: string
+  reason: string,
+  actor: MutationActor
 ) {
   await db.prepare(`
     INSERT INTO AuditLog (
@@ -138,15 +140,15 @@ async function insertAudit(
   `).bind(
     crypto.randomUUID(),
     institutionId,
-    'System',
-    'System',
+    auditActorLabel(actor),
+    actor.role,
     action,
     'Institution',
     institutionId,
     oldValue ? JSON.stringify(oldValue) : null,
     newValue ? JSON.stringify(newValue) : null,
-    reason,
-    null,
+    appendRequestAuditContext(reason, actor),
+    actor.ipAddress,
     new Date().toISOString()
   ).run();
 }
@@ -170,7 +172,8 @@ export async function getInstitutionById(id: string): Promise<InstitutionRecord 
 export async function upsertInstitution(
   input: InstitutionInput,
   reason = 'Institution saved through Total ARC.',
-  institutionId: string | null = null
+  institutionId: string | null = null,
+  actor: MutationActor
 ): Promise<InstitutionRecord> {
   const db = await getD1();
   await ensureSchema(db);
@@ -239,7 +242,7 @@ export async function upsertInstitution(
     if (!updated) throw new Error('INSTITUTION_UPDATE_FAILED');
 
     if (JSON.stringify(existing) !== JSON.stringify(updated)) {
-      await insertAudit(db, institutionId, 'UPDATE', existing, updated, reason);
+      await insertAudit(db, institutionId, 'UPDATE', existing, updated, reason, actor);
     }
 
     return updated;
@@ -296,7 +299,7 @@ export async function upsertInstitution(
     .first<InstitutionRecord>();
 
   if (!created) throw new Error('INSTITUTION_CREATE_FAILED');
-  await insertAudit(db, id, 'CREATE', null, created, reason);
+  await insertAudit(db, id, 'CREATE', null, created, reason, actor);
   return created;
 }
 

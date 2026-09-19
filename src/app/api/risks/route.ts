@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createRisk, listRisks } from '@/lib/d1-core';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
-
   try {
     const risks = await listRisks(auth.user.institutionId);
     return NextResponse.json({ risks, storage: 'cloudflare-d1' });
@@ -20,6 +20,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await authorizeTenantApi(request, ['Admin', 'ProcessOwner', 'Reviewer']);
   if (auth.response) return auth.response;
+  const mutationGuard = guardMutationRequest(request);
+  if (mutationGuard) return mutationGuard;
+  const actor = mutationActorFromRequest(request, auth.user);
+
 
   try {
     const body = (await request.json()) as Record<string, unknown>;
@@ -55,7 +59,7 @@ export async function POST(request: Request) {
       ownerName,
       inherentLikelihood: likelihood,
       inherentImpact: impactValue
-    }, auth.user.institutionId);
+    }, auth.user.institutionId, actor);
 
     return NextResponse.json(risk, { status: 201 });
   } catch (error) {
