@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   addToeSample,
+  createTestingExceptionFromSample,
   createToeTest,
   listToeTests,
   updateToeSample
@@ -72,6 +73,33 @@ export async function POST(request: Request) {
       return NextResponse.json(test, { status: 201 });
     }
 
+    if (actionType === 'CREATE_EXCEPTION') {
+      const toeTestId =
+        typeof body.toeTestId === 'string' ? body.toeTestId.trim() : '';
+      const sampleId =
+        typeof body.sampleId === 'string' ? body.sampleId.trim() : '';
+      const severity =
+        typeof body.severity === 'string' ? body.severity.trim() : 'High';
+      const description =
+        typeof body.description === 'string' ? body.description.trim() : null;
+
+      if (!toeTestId || !sampleId) {
+        return NextResponse.json(
+          { error: 'toeTestId and sampleId are required.' },
+          { status: 400 }
+        );
+      }
+
+      const exception = await createTestingExceptionFromSample({
+        toeTestId,
+        sampleId,
+        severity,
+        description
+      });
+
+      return NextResponse.json(exception, { status: 201 });
+    }
+
     if (actionType === 'ADD_SAMPLE') {
       const toeTestId =
         typeof body.toeTestId === 'string' ? body.toeTestId.trim() : '';
@@ -140,6 +168,24 @@ export async function POST(request: Request) {
     }
     if (code === 'SAMPLE_NOT_FOUND') {
       return NextResponse.json({ error: 'ToE sample not found.' }, { status: 404 });
+    }
+    if (code === 'SAMPLE_NOT_FAILED') {
+      return NextResponse.json(
+        { error: 'Only a persisted failed sample can be raised as a testing exception.' },
+        { status: 409 }
+      );
+    }
+    if (code === 'EXCEPTION_DESCRIPTION_REQUIRED') {
+      return NextResponse.json(
+        { error: 'An exception description is required.' },
+        { status: 400 }
+      );
+    }
+    if (code === 'EXCEPTION_ALREADY_EXISTS') {
+      return NextResponse.json(
+        { error: 'A testing exception already exists for this failed sample.' },
+        { status: 409 }
+      );
     }
     if (code === 'INVALID_SAMPLE_RESULT') {
       return NextResponse.json({ error: 'Invalid ToE sample result.' }, { status: 400 });
