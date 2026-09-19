@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
 import { getOrganizationData } from '@/lib/d1-organization';
+import {
+  assertOrganizationScope,
+  filterByOrganizationScope,
+  resolveOrganizationAccess
+} from '@/lib/organization-access';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
@@ -11,19 +16,42 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const [{ processes, categories }, organization] = await Promise.all([
+    const [{ processes, categories }, organization, access] = await Promise.all([
       listBusinessProcesses(auth.user.institutionId),
-      getOrganizationData(auth.user.institutionId)
+      getOrganizationData(auth.user.institutionId),
+      resolveOrganizationAccess(auth.user)
     ]);
 
+    const visibleProcesses = filterByOrganizationScope(processes, access);
+    const allowedUnitIds = access.unrestricted
+      ? new Set(organization.organizationUnits.map(unit => unit.id))
+      : new Set(access.unitIds);
+    const visibleUnits = organization.organizationUnits.filter(unit => allowedUnitIds.has(unit.id));
+    const visibleEntityIds = new Set(visibleUnits.map(unit => unit.legalEntityId).filter(Boolean));
+    const visiblePositions = organization.positions.filter(position => allowedUnitIds.has(position.orgUnitId));
+    const visibleUserIds = new Set<string>([
+      auth.user.id,
+      ...visibleUnits.map(unit => unit.headUserId).filter((value): value is string => Boolean(value)),
+      ...visiblePositions.map(position => position.assignedUserId).filter((value): value is string => Boolean(value))
+    ]);
+    const visibleUsers = access.unrestricted
+      ? organization.users
+      : organization.users.filter(user =>
+          visibleUserIds.has(user.id)
+          || (typeof user.orgUnitId === 'string' && allowedUnitIds.has(user.orgUnitId))
+        );
+
     return NextResponse.json({
-      processes,
+      processes: visibleProcesses,
       categories,
       organization: {
-        legalEntities: organization.legalEntities,
-        organizationUnits: organization.organizationUnits,
-        positions: organization.positions,
-        users: organization.users
+        legalEntities: access.unrestricted
+          ? organization.legalEntities
+          : organization.legalEntities.filter(entity => visibleEntityIds.has(entity.id)),
+        organizationUnits: visibleUnits,
+        positions: visiblePositions,
+        users: visibleUsers,
+        access
       },
       storage: 'cloudflare-d1'
     }, {
@@ -68,7 +96,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const organization = await getOrganizationData(auth.user.institutionId);
+    const [organization, access] = await Promise.all([
+      getOrganizationData(auth.user.institutionId),
+      resolveOrganizationAccess(auth.user)
+    ]);
     const activeUnits = organization.organizationUnits.filter(unit => unit.status === 'Active');
     const selectedUnit = orgUnitId
       ? organization.organizationUnits.find(unit => unit.id === orgUnitId)
@@ -98,6 +129,20 @@ export async function POST(request: Request) {
         },
         { status: 400 }
       );
+    }
+
+    if (selectedUnit) {
+      try {
+        assertOrganizationScope(access, selectedUnit.id);
+      } catch {
+        return NextResponse.json(
+          {
+            error: 'Your organization access scope does not allow this organization unit.',
+            code: 'ORGANIZATION_SCOPE_FORBIDDEN'
+          },
+          { status: 403 }
+        );
+      }
     }
 
     if (legalEntityId && !selectedEntity) {
