@@ -207,7 +207,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {authLoading ? 'Authenticating…' : currentUser?.name || 'Authentication required'}
                 </div>
                 <div className="truncate text-[9px] text-slate-400">
-                  {currentUser ? `${currentUser.role} · ${currentUser.roleTitle}` : authError || 'No authenticated identity'}
+                  {currentUser
+                    ? `${currentUser.role} · ${currentUser.accessScope === 'Institution' ? 'Institution access' : currentUser.accessScope === 'Unit' ? 'Unit access' : 'Unit + descendants'}`
+                    : authError || 'No authenticated identity'}
                 </div>
               </div>
             </div>
