@@ -9,6 +9,7 @@ const tenantRoutes = [
   'src/app/api/rcm/route.ts',
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
+  'src/app/api/organization/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
@@ -24,6 +25,7 @@ const routesRequiringExplicitTenantPropagation = new Set([
   'src/app/api/rcm/route.ts',
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
+  'src/app/api/organization/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
@@ -50,8 +52,9 @@ for (const route of tenantRoutes) {
 const corePath = 'src/lib/d1-core.ts';
 const assurancePath = 'src/lib/d1-assurance.ts';
 const institutionPath = 'src/lib/d1.ts';
+const organizationPath = 'src/lib/d1-organization.ts';
 
-for (const file of [corePath, assurancePath, institutionPath]) {
+for (const file of [corePath, assurancePath, institutionPath, organizationPath]) {
   if (!fs.existsSync(file)) {
     findings.push(`${file}: expected D1 domain file is missing`);
     continue;
@@ -94,6 +97,32 @@ const requiredAssuranceSignatures = [
 
 for (const pattern of requiredAssuranceSignatures) {
   if (!pattern.test(assurance)) findings.push(`${assurancePath}: missing tenant-scoped signature ${pattern}`);
+}
+
+const organization = fs.existsSync(organizationPath) ? fs.readFileSync(organizationPath, 'utf8') : '';
+const requiredOrganizationSignatures = [
+  /getOrganizationData\(institutionId:\s*string\)/,
+  /createLegalEntity\([\s\S]*institutionId:\s*string/,
+  /createOrganizationUnit\([\s\S]*institutionId:\s*string/,
+  /createOrganizationPosition\([\s\S]*institutionId:\s*string/,
+  /importOrganizationUnits\([\s\S]*institutionId:\s*string/
+];
+
+for (const pattern of requiredOrganizationSignatures) {
+  if (!pattern.test(organization)) {
+    findings.push(`${organizationPath}: missing tenant-scoped organization contract ${pattern}`);
+  }
+}
+
+const processRoutePath = 'src/app/api/processes/route.ts';
+if (fs.existsSync(processRoutePath)) {
+  const processRoute = fs.readFileSync(processRoutePath, 'utf8');
+  if (!/getOrganizationData\(auth\.user\.institutionId\)/.test(processRoute)) {
+    findings.push(`${processRoutePath}: BPM process ownership must resolve from the authenticated tenant organization master`);
+  }
+  if (!/PROCESS_ORGANIZATION_ENTITY_MISMATCH/.test(processRoute)) {
+    findings.push(`${processRoutePath}: legal entity and organization unit mismatch protection is required`);
+  }
 }
 
 
