@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRole, USERS, type UserRole } from '@/context/RoleContext';
@@ -21,6 +21,8 @@ import {
   FolderTree,
   Layers,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Shield,
   Sparkles,
@@ -93,17 +95,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const Nav = ({ mobile = false }: { mobile?: boolean }) => (
-    <div className="space-y-4">
+  useEffect(() => {
+    const stored = window.localStorage.getItem('total-arc-sidebar-collapsed');
+    if (stored === 'true') setSidebarCollapsed(true);
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem('total-arc-sidebar-collapsed', String(next));
+      return next;
+    });
+  };
+
+  const Nav = ({ mobile = false, collapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
+    <div className={collapsed ? 'space-y-2' : 'space-y-4'}>
       {navGroups.map((group) => (
-        <section key={group.title} className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
-          <div className="px-2.5 pb-2 pt-1">
-            <div className="text-[11px] font-black tracking-[0.12em] text-slate-800">{group.title}</div>
-            <div className="mt-0.5 text-[10px] text-slate-400">{group.subtitle}</div>
-          </div>
+        <section
+          key={group.title}
+          className={`border border-slate-200 bg-white shadow-sm transition-all duration-200 ${
+            collapsed ? 'rounded-xl p-1.5' : 'rounded-2xl p-2.5'
+          }`}
+        >
+          {!collapsed && (
+            <div className="px-2.5 pb-2 pt-1">
+              <div className="text-[11px] font-black tracking-[0.12em] text-slate-800">{group.title}</div>
+              <div className="mt-0.5 text-[10px] text-slate-400">{group.subtitle}</div>
+            </div>
+          )}
 
-          <div className="space-y-1">
+          <div className={collapsed ? 'space-y-1.5' : 'space-y-1'}>
             {group.items.map((item) => {
               const Icon = item.icon;
               const active = pathname === item.href;
@@ -112,14 +135,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  title={collapsed ? item.name : undefined}
+                  aria-label={collapsed ? item.name : undefined}
                   onClick={() => mobile && setMobileMenuOpen(false)}
-                  className={`group flex items-center justify-between rounded-xl px-2.5 py-2.5 text-[11px] transition-all ${
+                  className={`group flex items-center rounded-xl text-[11px] transition-all ${
+                    collapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-2.5 py-2.5'
+                  } ${
                     active
                       ? 'bg-gradient-to-r from-brand-600 to-sky-500 font-bold text-white shadow-md shadow-sky-100'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <span className="flex min-w-0 items-center gap-2.5">
+                  <span className={`flex min-w-0 items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
                     <span
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
                         active ? 'bg-white/15' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-brand-700'
@@ -127,9 +154,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     >
                       <Icon className="h-3.5 w-3.5" />
                     </span>
-                    <span className="truncate">{item.name}</span>
+                    {!collapsed && <span className="truncate">{item.name}</span>}
                   </span>
-                  {item.badge && (
+                  {!collapsed && item.badge && (
                     <span className={`ml-2 shrink-0 text-[9px] font-bold ${active ? 'text-white/80' : 'text-slate-400'}`}>
                       {item.badge}
                     </span>
@@ -251,17 +278,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-5 px-3 py-4 sm:px-5 lg:px-6 lg:py-6">
-        <aside className="sticky top-[96px] hidden h-[calc(100vh-112px)] w-[272px] shrink-0 overflow-y-auto pb-4 lg:block">
-          <Nav />
-          <div className="mt-4 rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 p-4 text-white shadow-lg">
-            <div className="flex items-center gap-2 text-[11px] font-black text-emerald-300">
-              <Shield className="h-4 w-4" />
-              Data integrity
-            </div>
-            <p className="mt-2 text-[10px] leading-5 text-slate-300">
-              Operational records ditampilkan hanya ketika tersimpan pada database terhubung. Tidak ada transaksi demo atau assurance result simulasi.
-            </p>
+        <aside
+          className={`sticky top-[96px] hidden h-[calc(100vh-112px)] shrink-0 overflow-y-auto pb-4 transition-[width] duration-300 ease-out lg:block ${
+            sidebarCollapsed ? 'w-[76px]' : 'w-[272px]'
+          }`}
+        >
+          <div className={`sticky top-0 z-10 mb-3 flex bg-slate-50/95 pb-1 backdrop-blur ${
+            sidebarCollapsed ? 'justify-center' : 'justify-end'
+          }`}>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+              className={`group flex h-9 items-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 ${
+                sidebarCollapsed ? 'w-10 justify-center px-0' : 'gap-2 px-3'
+              }`}
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <>
+                  <PanelLeftClose className="h-4 w-4" />
+                  <span className="text-[10px] font-bold">Hide menu</span>
+                </>
+              )}
+            </button>
           </div>
+
+          <Nav collapsed={sidebarCollapsed} />
+
+          {!sidebarCollapsed && (
+            <div className="mt-4 rounded-2xl bg-gradient-to-br from-slate-950 to-slate-800 p-4 text-white shadow-lg">
+              <div className="flex items-center gap-2 text-[11px] font-black text-emerald-300">
+                <Shield className="h-4 w-4" />
+                Data integrity
+              </div>
+              <p className="mt-2 text-[10px] leading-5 text-slate-300">
+                Operational records ditampilkan hanya ketika tersimpan pada database terhubung. Tidak ada transaksi demo atau assurance result simulasi.
+              </p>
+            </div>
+          )}
         </aside>
 
         <main className="min-w-0 flex-1 pb-20 lg:pb-6">{children}</main>
