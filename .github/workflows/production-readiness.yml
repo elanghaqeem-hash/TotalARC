@@ -174,6 +174,34 @@ jobs:
             http://127.0.0.1:3000/api/processes)
           test "$CREATE_B" = "201"
 
+          PROCESS_A_ID=$(python3 - <<'PY'
+          import json
+          print(json.load(open('/tmp/process-a.json'))['id'])
+          PY
+          )
+
+          curl -fsS -H "Cookie: $COOKIE_A" http://127.0.0.1:3000/api/ai/status > /tmp/ai-status.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/ai-status.json'))
+          providers=data.get('providers') or []
+          assert providers, data
+          assert not any(bool(p.get('configured')) for p in providers), providers
+          PY
+
+          AI_CODE=$(curl -sS -o /tmp/ai-analysis.json -w "%{http_code}" \
+            -H "Cookie: $COOKIE_A" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:3000' \
+            --data "{\"processId\":\"$PROCESS_A_ID\",\"mode\":\"control_gap\"}" \
+            http://127.0.0.1:3000/api/ai/analyze)
+          test "$AI_CODE" = "503"
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/ai-analysis.json'))
+          assert data.get('code')=='AI_UNAVAILABLE', data
+          PY
+
           curl -fsS -H "Cookie: $COOKIE_A" http://127.0.0.1:3000/api/processes > /tmp/a-processes.json
           curl -fsS -H "Cookie: $COOKIE_B" http://127.0.0.1:3000/api/processes > /tmp/b-processes.json
 
