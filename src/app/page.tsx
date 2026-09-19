@@ -301,7 +301,7 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between gap-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}. Total ARC tidak mengganti kegagalan ini dengan data demo atau simulasi.</span>
+            <span>{error}.</span>
           </div>
           <button onClick={() => void loadDashboard()} className="inline-flex shrink-0 items-center gap-1 font-bold hover:text-rose-950">
             <RefreshCw className="h-3.5 w-3.5" /> Retry
