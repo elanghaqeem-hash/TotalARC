@@ -17,7 +17,7 @@
     "build:next": "next build",
     "d1:migrations:local": "wrangler d1 migrations apply DB --local",
     "d1:migrations:remote": "wrangler d1 migrations apply DB --remote",
-    "prisma:migration:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script --output migrations/0001_initial.sql"
+    "prisma:migration:diff": "node scripts/generate-d1-migration.cjs"
   },
   "keywords": [],
   "author": "",
