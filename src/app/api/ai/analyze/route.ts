@@ -4,6 +4,7 @@ import { guardAiPost } from '@/lib/ai/http-security';
 import { findBusinessProcessForAi, recordAiAnalysisAudit } from '@/lib/d1-core';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 
 type Finding = {
   id: string;
@@ -85,6 +86,23 @@ export async function POST(request: Request) {
             processName: processName || undefined
           }, auth.user.institutionId)
         : null;
+
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
+    if (
+      registeredProcess
+      && !isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        registeredProcess.orgUnitId as string | null | undefined
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Your account is not authorized to analyze this process organization unit.',
+          code: 'AI_ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
+      );
+    }
 
     const suppliedActivities = Array.isArray(body.activities) ? body.activities : [];
     const suppliedRisks = Array.isArray(body.risks) ? body.risks : [];

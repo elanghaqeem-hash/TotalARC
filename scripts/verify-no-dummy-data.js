@@ -49,6 +49,7 @@ const d1CoreRoutes = [
   'src/app/api/controls/route.ts',
   'src/app/api/rcm/route.ts',
   'src/app/api/dashboard/route.ts',
+  'src/app/api/organization/route.ts',
   'src/app/api/ai/analyze/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
@@ -63,7 +64,6 @@ for (const route of d1CoreRoutes) {
   }
 }
 
-
 const authenticatedOperationalRoutes = [
   'src/app/api/onboarding/route.ts',
   'src/app/api/processes/route.ts',
@@ -72,6 +72,7 @@ const authenticatedOperationalRoutes = [
   'src/app/api/rcm/route.ts',
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
+  'src/app/api/organization/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',

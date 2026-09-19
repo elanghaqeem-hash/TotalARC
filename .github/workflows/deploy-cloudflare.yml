@@ -163,6 +163,15 @@ jobs:
       - name: Verify no dummy operational data
         run: npm run verify:no-dummy
 
+      - name: Verify tenant isolation
+        run: npm run verify:tenant-isolation
+
+      - name: Verify mutation security
+        run: npm run verify:mutation-security
+
+      - name: Verify organization master integrity
+        run: npm run verify:organization-integrity
+
       - name: Build OpenNext Worker
         run: npm run build
 

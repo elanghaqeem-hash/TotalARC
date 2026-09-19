@@ -22,9 +22,11 @@ import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
 
 export default function RCMWorkspacePage() {
   const [rcmRows, setRcmRows] = useState<any[]>([]);
+  const [organizationUnits, setOrganizationUnits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('ALL');
+  const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   useEffect(() => {
@@ -32,6 +34,11 @@ export default function RCMWorkspacePage() {
       .then(res => res.json())
       .then(d => {
         setRcmRows(d.rcm || []);
+        setOrganizationUnits(
+          Array.isArray(d.organization?.organizationUnits)
+            ? d.organization.organizationUnits
+            : []
+        );
         setLoading(false);
       })
       .catch(err => {
@@ -40,17 +47,23 @@ export default function RCMWorkspacePage() {
       });
   }, []);
 
+  const unitById = new Map(organizationUnits.map(unit => [unit.id, unit]));
+
   const filtered = rcmRows.filter(row => {
+    const unitName = unitById.get(row.orgUnitId)?.name || '';
     const matchSearch =
       row.processName?.toLowerCase().includes(search.toLowerCase()) ||
       row.riskName?.toLowerCase().includes(search.toLowerCase()) ||
       row.controlName?.toLowerCase().includes(search.toLowerCase()) ||
-      row.controlId?.toLowerCase().includes(search.toLowerCase());
+      row.controlId?.toLowerCase().includes(search.toLowerCase()) ||
+      unitName.toLowerCase().includes(search.toLowerCase());
+    const matchOrg = selectedOrgUnit === 'ALL' || row.orgUnitId === selectedOrgUnit;
+    const baseMatch = matchSearch && matchOrg;
 
-    if (filterType === 'KEY_ONLY') return matchSearch && row.isKeyControl;
-    if (filterType === 'ICOFR_ONLY') return matchSearch && row.isIcofrKey;
-    if (filterType === 'ISSUES_ONLY') return matchSearch && row.issueId;
-    return matchSearch;
+    if (filterType === 'KEY_ONLY') return baseMatch && row.isKeyControl;
+    if (filterType === 'ICOFR_ONLY') return baseMatch && row.isIcofrKey;
+    if (filterType === 'ISSUES_ONLY') return baseMatch && row.issueId;
+    return baseMatch;
   });
 
   // Client CSV Export
@@ -159,15 +172,27 @@ export default function RCMWorkspacePage() {
       {/* Search & Filter Bar */}
       <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
         <div className="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.72fr)] 2xl:items-stretch">
-          <div className="relative min-w-0">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search process, risk, control, or control ID"
-              className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
-            />
+          <div className="grid min-w-0 gap-2">
+            <div className="relative min-w-0">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search process, risk, control, organization unit, or control ID"
+                className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+              />
+            </div>
+            <select
+              value={selectedOrgUnit}
+              onChange={e => setSelectedOrgUnit(e.target.value)}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 outline-none transition focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+            >
+              <option value="ALL">All Organization Units</option>
+              {organizationUnits.filter(unit => unit.status === 'Active').map(unit => (
+                <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="min-w-0">
@@ -247,12 +272,13 @@ export default function RCMWorkspacePage() {
           <span>
             Showing <strong className="text-slate-700">{filtered.length}</strong> of <strong className="text-slate-700">{rcmRows.length}</strong> mappings
           </span>
-          {(search || filterType !== 'ALL') && (
+          {(search || filterType !== 'ALL' || selectedOrgUnit !== 'ALL') && (
             <button
               type="button"
               onClick={() => {
                 setSearch('');
                 setFilterType('ALL');
+                setSelectedOrgUnit('ALL');
               }}
               className="font-bold text-brand-700 transition hover:text-brand-800"
             >
@@ -295,6 +321,9 @@ export default function RCMWorkspacePage() {
                       <td className="py-3 px-4 border-r border-slate-200">
                         <div className="font-bold text-slate-900">{row.processName}</div>
                         <div className="text-[10px] font-mono text-brand-600">{row.processId}</div>
+                        <div className="mt-1 text-[10px] text-slate-400">
+                          {unitById.get(row.orgUnitId)?.name || 'Organization unit not assigned'}
+                        </div>
                       </td>
 
                       {/* Objective */}
@@ -408,6 +437,9 @@ export default function RCMWorkspacePage() {
                     {row.processId}
                   </span>
                   <h3 className="font-bold text-sm text-slate-900 mt-1">{row.processName}</h3>
+                  <div className="mt-1 text-[10px] text-slate-400">
+                    {unitById.get(row.orgUnitId)?.name || 'Organization unit not assigned'}
+                  </div>
                 </div>
                 <span className="text-xs font-bold text-slate-400 font-mono">#{row.rowNumber}</span>
               </div>

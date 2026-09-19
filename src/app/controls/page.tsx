@@ -23,9 +23,11 @@ import { getHealthBadgeClasses } from '@/lib/utils';
 export default function ControlsPage() {
   const [controls, setControls] = useState<any[]>([]);
   const [processes, setProcesses] = useState<any[]>([]);
+  const [organizationUnits, setOrganizationUnits] = useState<any[]>([]);
   const [risks, setRisks] = useState<any[]>([]);
   const [selectedControl, setSelectedControl] = useState<any>(null);
   const [search, setSearch] = useState('');
+  const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
   const [newControlModal, setNewControlModal] = useState(false);
 
   // Form State
@@ -62,10 +64,14 @@ export default function ControlsPage() {
       .then(([controlData, processData, riskData]) => {
         const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
         const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
+        const nextOrganizationUnits = Array.isArray(processData.organization?.organizationUnits)
+          ? processData.organization.organizationUnits
+          : [];
         const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
 
         setControls(nextControls);
         setProcesses(nextProcesses);
+        setOrganizationUnits(nextOrganizationUnits);
         setRisks(nextRisks);
 
         if (nextControls.length > 0 && !selectedControl) {
@@ -112,11 +118,18 @@ export default function ControlsPage() {
     }
   };
 
+  const processById = new Map(processes.map(process => [process.id, process]));
+  const selectedControlProcess = selectedControl ? processById.get(selectedControl.processId) : null;
+
   const filtered = controls.filter(c => {
-    return (
+    const process = processById.get(c.processId);
+    const matchesOrg = selectedOrgUnit === 'ALL' || process?.orgUnitId === selectedOrgUnit;
+    return matchesOrg && (
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.controlId.toLowerCase().includes(search.toLowerCase()) ||
-      c.type.toLowerCase().includes(search.toLowerCase())
+      c.type.toLowerCase().includes(search.toLowerCase()) ||
+      String(c.controlOwner || '').toLowerCase().includes(search.toLowerCase()) ||
+      String(process?.orgUnit?.name || '').toLowerCase().includes(search.toLowerCase())
     );
   });
 
@@ -159,6 +172,17 @@ export default function ControlsPage() {
             className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
           />
         </div>
+
+        <select
+          value={selectedOrgUnit}
+          onChange={e => setSelectedOrgUnit(e.target.value)}
+          className="text-xs px-3 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        >
+          <option value="ALL">All Organization Units</option>
+          {organizationUnits.filter(unit => unit.status === 'Active').map(unit => (
+            <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+          ))}
+        </select>
 
         <div className="text-xs text-slate-500 font-semibold">
           Showing {filtered.length} Enterprise Controls
@@ -216,8 +240,13 @@ export default function ControlsPage() {
                   {c.description}
                 </p>
 
-                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>Type: <strong>{c.type}</strong> ({c.nature})</span>
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                  <div>
+                    <div>Type: <strong>{c.type}</strong> ({c.nature})</div>
+                    <div className="text-[10px] text-slate-400">
+                      {processById.get(c.processId)?.orgUnit?.name || 'Organization unit not assigned'}
+                    </div>
+                  </div>
                   <span className="text-brand-600 font-bold flex items-center space-x-1">
                     <span>Control 360°</span>
                     <ArrowRight className="w-3 h-3" />
@@ -257,6 +286,17 @@ export default function ControlsPage() {
                 <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                   {selectedControl.description}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                  <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                    Process: <strong className="text-slate-700">{selectedControlProcess?.name || selectedControl.process?.name || 'Unassigned'}</strong>
+                  </span>
+                  <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                    Organization Unit: <strong className="text-slate-700">{selectedControlProcess?.orgUnit?.name || 'Not assigned'}</strong>
+                  </span>
+                  <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
+                    Legal Entity: <strong className="text-slate-700">{selectedControlProcess?.legalEntity?.name || 'Not assigned'}</strong>
+                  </span>
+                </div>
               </div>
 
               {/* Attributes & Design Matrix (Section 33 & 34) */}
