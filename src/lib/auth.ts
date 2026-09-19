@@ -15,6 +15,9 @@ export const USER_ROLES = [
 
 export type UserRole = (typeof USER_ROLES)[number];
 
+export const ORG_ACCESS_SCOPES = ['ALL', 'UNIT_AND_CHILDREN', 'UNIT_ONLY'] as const;
+export type OrgAccessScope = (typeof ORG_ACCESS_SCOPES)[number];
+
 export type AuthenticatedUser = {
   id: string;
   institutionId: string | null;
@@ -22,6 +25,8 @@ export type AuthenticatedUser = {
   name: string;
   role: UserRole;
   department: string | null;
+  orgUnitId: string | null;
+  orgAccessScope: OrgAccessScope;
 };
 
 type D1DatabaseLike = {
@@ -51,6 +56,8 @@ type AccessUserRow = {
   name: string;
   role: string;
   department: string | null;
+  orgUnitId: string | null;
+  orgAccessScope: string | null;
   active: number;
   createdAt: string;
   updatedAt: string;
@@ -89,6 +96,10 @@ function normalizeEmail(value: unknown) {
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
+}
+
+function isOrgAccessScope(value: unknown): value is OrgAccessScope {
+  return typeof value === 'string' && (ORG_ACCESS_SCOPES as readonly string[]).includes(value);
 }
 
 function displayName(payload: JWTPayload, email: string) {
@@ -132,6 +143,18 @@ async function getAuthEnvironment() {
   };
 }
 
+async function ensureAuthColumn(
+  db: D1DatabaseLike,
+  column: string,
+  definition: string
+) {
+  const result = await db.prepare('PRAGMA table_info(AccessUser)').all<{ name?: string }>();
+  const columns = result.results || [];
+  if (!columns.some(item => item.name === column)) {
+    await db.prepare(`ALTER TABLE AccessUser ADD COLUMN ${column} ${definition}`).run();
+  }
+}
+
 async function ensureAuthSchema(db: D1DatabaseLike) {
   const statements = [
     `CREATE TABLE IF NOT EXISTS AccessUser (
@@ -141,6 +164,8 @@ async function ensureAuthSchema(db: D1DatabaseLike) {
       name TEXT NOT NULL,
       role TEXT NOT NULL,
       department TEXT,
+      orgUnitId TEXT,
+      orgAccessScope TEXT NOT NULL DEFAULT 'ALL',
       active INTEGER NOT NULL DEFAULT 1,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
@@ -153,6 +178,10 @@ async function ensureAuthSchema(db: D1DatabaseLike) {
   for (const statement of statements) {
     await db.prepare(statement).run();
   }
+
+  await ensureAuthColumn(db, 'orgUnitId', 'TEXT');
+  await ensureAuthColumn(db, 'orgAccessScope', "TEXT NOT NULL DEFAULT 'ALL'");
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_user_org_unit ON AccessUser(orgUnitId)').run();
 }
 
 async function first<T = Record<string, unknown>>(
@@ -186,7 +215,9 @@ function mapUser(row: AccessUserRow): AuthenticatedUser {
     email: row.email,
     name: row.name,
     role: row.role,
-    department: row.department || null
+    department: row.department || null,
+    orgUnitId: row.orgUnitId || null,
+    orgAccessScope: isOrgAccessScope(row.orgAccessScope) ? row.orgAccessScope : 'ALL'
   };
 }
 
@@ -204,14 +235,46 @@ async function provisionBootstrapAdmin(
   );
   if (Number(existingCount?.count || 0) !== 0) return null;
 
+  const orgUnitId = input.orgUnitId?.trim() || null;
+  const orgAccessScope = input.role === 'Admin'
+    ? 'ALL'
+    : (input.orgAccessScope || (orgUnitId ? 'UNIT_ONLY' : 'ALL'));
+
+  if (!isOrgAccessScope(orgAccessScope)) {
+    throw new AuthorizationError(400, 'ORG_ACCESS_SCOPE_INVALID', 'Invalid organization access scope.');
+  }
+
+  if (orgAccessScope !== 'ALL' && !orgUnitId) {
+    throw new AuthorizationError(
+      400,
+      'ORG_UNIT_REQUIRED_FOR_SCOPE',
+      'An organization unit is required for a unit-scoped user.'
+    );
+  }
+
+  if (orgUnitId) {
+    const unit = await first<{ id?: string }>(
+      db,
+      'SELECT id FROM OrganizationUnit WHERE id = ? AND institutionId = ? LIMIT 1',
+      [orgUnitId, admin.institutionId]
+    );
+    if (!unit?.id) {
+      throw new AuthorizationError(
+        400,
+        'ORG_UNIT_INVALID',
+        'The selected organization unit does not belong to this institution.'
+      );
+    }
+  }
+
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   await run(
     db,
     `INSERT INTO AccessUser (
-      id, institutionId, email, name, role, department, active,
+      id, institutionId, email, name, role, department, orgUnitId, orgAccessScope, active,
       createdAt, updatedAt, lastAuthenticatedAt
-    ) VALUES (?, ?, ?, ?, 'Admin', NULL, 1, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, 'Admin', NULL, NULL, 'ALL', 1, ?, ?, ?)`,
     [id, null, email, name, now, now, now]
   );
 
@@ -437,14 +500,14 @@ export async function listProvisionedUsers(request: Request) {
 
   const statement = admin.institutionId
     ? db.prepare(
-        `SELECT id, institutionId, email, name, role, department, active,
+        `SELECT id, institutionId, email, name, role, department, orgUnitId, orgAccessScope, active,
                 createdAt, updatedAt, lastAuthenticatedAt
            FROM AccessUser
           WHERE institutionId = ?
           ORDER BY name ASC, email ASC`
       ).bind(admin.institutionId)
     : db.prepare(
-        `SELECT id, institutionId, email, name, role, department, active,
+        `SELECT id, institutionId, email, name, role, department, orgUnitId, orgAccessScope, active,
                 createdAt, updatedAt, lastAuthenticatedAt
            FROM AccessUser
           WHERE id = ?
@@ -462,6 +525,8 @@ export async function provisionUser(
     name: string;
     role: UserRole;
     department?: string | null;
+    orgUnitId?: string | null;
+    orgAccessScope?: OrgAccessScope;
   }
 ) {
   const admin = await requireRoles(request, ['Admin']);
@@ -504,9 +569,9 @@ export async function provisionUser(
   await run(
     db,
     `INSERT INTO AccessUser (
-      id, institutionId, email, name, role, department, active,
+      id, institutionId, email, name, role, department, orgUnitId, orgAccessScope, active,
       createdAt, updatedAt, lastAuthenticatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)`,
     [
       id,
       admin.institutionId,
@@ -514,6 +579,8 @@ export async function provisionUser(
       name,
       input.role,
       input.department?.trim() || null,
+      orgUnitId,
+      orgAccessScope,
       now,
       now
     ]
@@ -521,7 +588,7 @@ export async function provisionUser(
 
   const created = await first<Record<string, unknown>>(
     db,
-    `SELECT id, institutionId, email, name, role, department, active,
+    `SELECT id, institutionId, email, name, role, department, orgUnitId, orgAccessScope, active,
             createdAt, updatedAt, lastAuthenticatedAt
        FROM AccessUser WHERE id = ? LIMIT 1`,
     [id]
@@ -541,6 +608,8 @@ export async function provisionUser(
       name,
       role: input.role,
       department: input.department?.trim() || null,
+      orgUnitId,
+      orgAccessScope,
       active: true
     },
     reason: 'Total ARC user provisioned by an authenticated administrator.'
@@ -557,6 +626,8 @@ export async function updateProvisionedUser(
     active?: boolean;
     name?: string;
     department?: string | null;
+    orgUnitId?: string | null;
+    orgAccessScope?: OrgAccessScope;
   }
 ) {
   const admin = await requireRoles(request, ['Admin']);
@@ -590,9 +661,43 @@ export async function updateProvisionedUser(
   const nextName = input.name?.trim() || existing.name;
   const nextDepartment =
     input.department === undefined ? existing.department : input.department?.trim() || null;
+  const nextOrgUnitId =
+    input.orgUnitId === undefined ? existing.orgUnitId : input.orgUnitId?.trim() || null;
+  const requestedScope =
+    input.orgAccessScope === undefined
+      ? (isOrgAccessScope(existing.orgAccessScope) ? existing.orgAccessScope : 'ALL')
+      : input.orgAccessScope;
+  const nextOrgAccessScope = nextRole === 'Admin' ? 'ALL' : requestedScope;
 
   if (!isUserRole(nextRole)) {
     throw new AuthorizationError(400, 'USER_ROLE_INVALID', 'Invalid Total ARC role.');
+  }
+
+  if (!isOrgAccessScope(nextOrgAccessScope)) {
+    throw new AuthorizationError(400, 'ORG_ACCESS_SCOPE_INVALID', 'Invalid organization access scope.');
+  }
+
+  if (nextOrgAccessScope !== 'ALL' && !nextOrgUnitId) {
+    throw new AuthorizationError(
+      400,
+      'ORG_UNIT_REQUIRED_FOR_SCOPE',
+      'An organization unit is required for a unit-scoped user.'
+    );
+  }
+
+  if (nextOrgUnitId && admin.institutionId) {
+    const unit = await first<{ id?: string }>(
+      db,
+      'SELECT id FROM OrganizationUnit WHERE id = ? AND institutionId = ? LIMIT 1',
+      [nextOrgUnitId, admin.institutionId]
+    );
+    if (!unit?.id) {
+      throw new AuthorizationError(
+        400,
+        'ORG_UNIT_INVALID',
+        'The selected organization unit does not belong to this institution.'
+      );
+    }
   }
 
   if (existing.id === admin.id && !nextActive) {
@@ -607,14 +712,23 @@ export async function updateProvisionedUser(
   await run(
     db,
     `UPDATE AccessUser
-        SET role = ?, active = ?, name = ?, department = ?, updatedAt = ?
+        SET role = ?, active = ?, name = ?, department = ?, orgUnitId = ?, orgAccessScope = ?, updatedAt = ?
       WHERE id = ?`,
-    [nextRole, nextActive ? 1 : 0, nextName, nextDepartment, now, existing.id]
+    [
+      nextRole,
+      nextActive ? 1 : 0,
+      nextName,
+      nextDepartment,
+      nextOrgUnitId,
+      nextOrgAccessScope,
+      now,
+      existing.id
+    ]
   );
 
   const updated = await first<Record<string, unknown>>(
     db,
-    `SELECT id, institutionId, email, name, role, department, active,
+    `SELECT id, institutionId, email, name, role, department, orgUnitId, orgAccessScope, active,
             createdAt, updatedAt, lastAuthenticatedAt
        FROM AccessUser WHERE id = ? LIMIT 1`,
     [existing.id]
@@ -635,12 +749,16 @@ export async function updateProvisionedUser(
         name: existing.name,
         role: existing.role,
         department: existing.department,
+        orgUnitId: existing.orgUnitId,
+        orgAccessScope: isOrgAccessScope(existing.orgAccessScope) ? existing.orgAccessScope : 'ALL',
         active: Boolean(existing.active)
       },
       newValue: {
         name: nextName,
         role: nextRole,
         department: nextDepartment,
+        orgUnitId: nextOrgUnitId,
+        orgAccessScope: nextOrgAccessScope,
         active: nextActive
       },
       reason: 'Total ARC user profile, role, or account status updated by an authenticated administrator.'
@@ -648,4 +766,56 @@ export async function updateProvisionedUser(
   }
 
   return updated;
+}
+
+
+export async function resolveAuthorizedOrgUnitIds(user: AuthenticatedUser): Promise<string[] | null> {
+  if (!user.institutionId || user.orgAccessScope === 'ALL' || user.role === 'Admin') return null;
+  if (!user.orgUnitId) return [];
+
+  const { db } = await getAuthEnvironment();
+  await ensureAuthSchema(db);
+
+  const root = await first<{ id?: string }>(
+    db,
+    'SELECT id FROM OrganizationUnit WHERE id = ? AND institutionId = ? LIMIT 1',
+    [user.orgUnitId, user.institutionId]
+  );
+  if (!root?.id) return [];
+
+  if (user.orgAccessScope === 'UNIT_ONLY') return [user.orgUnitId];
+
+  const units = await db.prepare(
+    'SELECT id, parentId FROM OrganizationUnit WHERE institutionId = ?'
+  ).bind(user.institutionId).all<{ id?: string; parentId?: string | null }>();
+
+  const children = new Map<string, string[]>();
+  for (const row of units.results || []) {
+    if (!row.id || !row.parentId) continue;
+    const current = children.get(row.parentId) || [];
+    current.push(row.id);
+    children.set(row.parentId, current);
+  }
+
+  const resolved = new Set<string>([user.orgUnitId]);
+  const queue = [user.orgUnitId];
+  while (queue.length) {
+    const parentId = queue.shift() as string;
+    for (const childId of children.get(parentId) || []) {
+      if (resolved.has(childId)) continue;
+      resolved.add(childId);
+      queue.push(childId);
+    }
+  }
+
+  return Array.from(resolved);
+}
+
+export function isOrgUnitAuthorized(
+  authorizedOrgUnitIds: string[] | null,
+  orgUnitId: string | null | undefined
+) {
+  if (authorizedOrgUnitIds === null) return true;
+  if (!orgUnitId) return false;
+  return authorizedOrgUnitIds.includes(orgUnitId);
 }
