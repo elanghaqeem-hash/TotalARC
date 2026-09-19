@@ -19,6 +19,8 @@ export interface UserProfile {
   roleTitle: string;
   email: string;
   department: string;
+  orgUnitId: string | null;
+  accessScope: 'Institution' | 'Unit' | 'UnitAndDescendants';
 }
 
 const titles: Record<UserRole, string> = {
@@ -55,7 +57,12 @@ function toProfile(value: unknown): UserProfile | null {
     role,
     roleTitle: titles[role],
     email: typeof user.email === 'string' ? user.email : '',
-    department: typeof user.department === 'string' ? user.department : ''
+    department: typeof user.department === 'string' ? user.department : '',
+    orgUnitId: typeof user.orgUnitId === 'string' ? user.orgUnitId : null,
+    accessScope:
+      user.accessScope === 'Unit' || user.accessScope === 'UnitAndDescendants'
+        ? user.accessScope
+        : 'Institution'
   };
 }
 
