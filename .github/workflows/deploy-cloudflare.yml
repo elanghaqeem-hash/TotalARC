@@ -59,11 +59,61 @@ jobs:
 
           echo "Cloudflare deployment credentials are configured."
 
+      - name: Validate Cloudflare Access authentication configuration
+        env:
+          TOTALARC_ACCESS_TEAM_DOMAIN: ${{ vars.TOTALARC_ACCESS_TEAM_DOMAIN }}
+          TOTALARC_ACCESS_AUD: ${{ vars.TOTALARC_ACCESS_AUD }}
+          TOTALARC_ADMIN_EMAIL: ${{ vars.TOTALARC_ADMIN_EMAIL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+
+          if [ -z "$TOTALARC_ACCESS_TEAM_DOMAIN" ]; then
+            echo "::error::Missing repository variable TOTALARC_ACCESS_TEAM_DOMAIN."
+            missing=1
+          fi
+          if [ -z "$TOTALARC_ACCESS_AUD" ]; then
+            echo "::error::Missing repository variable TOTALARC_ACCESS_AUD."
+            missing=1
+          fi
+          if [ -z "$TOTALARC_ADMIN_EMAIL" ]; then
+            echo "::error::Missing repository variable TOTALARC_ADMIN_EMAIL."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo "### Authentication deployment blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "Configure Cloudflare Access team domain, application AUD, and bootstrap admin email before deploying this security stage." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          if ! printf '%s' "$TOTALARC_ACCESS_TEAM_DOMAIN" | grep -Eq '^https://[^/]+\.cloudflareaccess\.com/?$'; then
+            echo "::error::TOTALARC_ACCESS_TEAM_DOMAIN must be an https://<team>.cloudflareaccess.com URL."
+            exit 1
+          fi
+
+          if ! printf '%s' "$TOTALARC_ADMIN_EMAIL" | grep -Eq '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'; then
+            echo "::error::TOTALARC_ADMIN_EMAIL must be a valid email address."
+            exit 1
+          fi
+
+          CERTS_URL="${TOTALARC_ACCESS_TEAM_DOMAIN%/}/cdn-cgi/access/certs"
+          if ! curl --fail --silent --show-error --max-time 15 "$CERTS_URL" | jq -e '.keys | length > 0' >/dev/null; then
+            echo "::error::Cloudflare Access signing keys could not be resolved from $CERTS_URL."
+            exit 1
+          fi
+
+          echo "Cloudflare Access authentication configuration is structurally valid."
+
       - name: Audit optional external AI provider secrets
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TOTALARC_ACCESS_TEAM_DOMAIN: ${{ vars.TOTALARC_ACCESS_TEAM_DOMAIN }}
+          TOTALARC_ACCESS_AUD: ${{ vars.TOTALARC_ACCESS_AUD }}
+          TOTALARC_ADMIN_EMAIL: ${{ vars.TOTALARC_ADMIN_EMAIL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -124,13 +174,16 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
-      - name: Sync AI runtime secrets
+      - name: Sync runtime secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TOTALARC_ACCESS_TEAM_DOMAIN: ${{ vars.TOTALARC_ACCESS_TEAM_DOMAIN }}
+          TOTALARC_ACCESS_AUD: ${{ vars.TOTALARC_ACCESS_AUD }}
+          TOTALARC_ADMIN_EMAIL: ${{ vars.TOTALARC_ADMIN_EMAIL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -152,6 +205,9 @@ jobs:
           put_secret GEMINI_API_KEY "$GEMINI_API_KEY"
           put_secret GROQ_API_KEY "$GROQ_API_KEY"
           put_secret OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
+          put_secret TOTALARC_ACCESS_TEAM_DOMAIN "$TOTALARC_ACCESS_TEAM_DOMAIN"
+          put_secret TOTALARC_ACCESS_AUD "$TOTALARC_ACCESS_AUD"
+          put_secret TOTALARC_ADMIN_EMAIL "$TOTALARC_ADMIN_EMAIL"
 
       - name: Verify AI runtime and provider connectivity
         env:
@@ -171,7 +227,6 @@ jobs:
           BASE_URL="${BASE_URL%/}"
           READY_URL="$BASE_URL/api/ai/ready"
           PROBE_URL="$BASE_URL/api/ai/probe"
-          STATUS_URL="$BASE_URL/api/ai/status"
 
           ready=false
           for attempt in $(seq 1 12); do
@@ -209,6 +264,5 @@ jobs:
             echo "::warning::One or more configured external AI providers failed the production probe."
           fi
 
-          status=$(curl --fail --silent --show-error --max-time 15 "$STATUS_URL")
           echo "- Private Workers AI inference: successful" >> "$GITHUB_STEP_SUMMARY"
-          echo "Provider status endpoint responded successfully." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Authenticated AI status endpoint is intentionally excluded from anonymous deployment probes." >> "$GITHUB_STEP_SUMMARY"

@@ -66,7 +66,7 @@ jobs:
           printf '%s\n' "$RESPONSE"
           exit 1
 
-      - name: Smoke test production D1 APIs
+      - name: Verify anonymous operational access is denied
         shell: bash
         run: |
           set -euo pipefail
@@ -74,94 +74,39 @@ jobs:
           BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
           BASE_URL="${BASE_URL%/}"
 
-          check_json() {
+          check_denied() {
             local name="$1"
             local path="$2"
-            local expression="$3"
-            local output="/tmp/totalarc-smoke-${name}.json"
+            local output="/tmp/totalarc-auth-${name}.txt"
 
-            echo "Checking $name at $path"
+            echo "Checking anonymous denial for $name at $path"
             local http_code
-            http_code="$(curl --silent --show-error --location --max-time 25 \
+            http_code="$(curl --silent --show-error --max-time 20 \
               --output "$output" \
               --write-out "%{http_code}" \
               "$BASE_URL$path" || true)"
 
-            if [ "$http_code" != "200" ]; then
-              echo "::error::$name returned HTTP ${http_code:-unknown}."
-              cat "$output" 2>/dev/null || true
-              return 1
-            fi
-
-            if ! jq -e "$expression" "$output" >/dev/null 2>&1; then
-              echo "::error::$name returned an unexpected production payload."
-              cat "$output" 2>/dev/null || true
-              return 1
-            fi
-
-            echo "$name: healthy"
+            case "$http_code" in
+              302|401|403)
+                echo "$name: anonymous access denied (HTTP $http_code)"
+                ;;
+              *)
+                echo "::error::$name unexpectedly allowed or mishandled anonymous access (HTTP ${http_code:-unknown})."
+                cat "$output" 2>/dev/null || true
+                return 1
+                ;;
+            esac
           }
 
-          check_json "database" "/api/system/database" '
-            .ok == true and
-            .database == "cloudflare-d1" and
-            .persistent == true and
-            .readOnlyProbe == true
-          '
+          check_denied "auth-me" "/api/auth/me"
+          check_denied "processes" "/api/processes"
+          check_denied "risks" "/api/risks"
+          check_denied "controls" "/api/controls"
+          check_denied "rcm" "/api/rcm"
+          check_denied "dashboard" "/api/dashboard"
+          check_denied "toe" "/api/assure/toe"
+          check_denied "remediation" "/api/assure/remediation"
+          check_denied "ccm" "/api/monitor/ccm"
+          check_denied "ai-status" "/api/ai/status"
 
-          check_json "processes" "/api/processes" '
-            .storage == "cloudflare-d1" and
-            (.processes | type) == "array" and
-            (.categories | type) == "array"
-          '
-
-          check_json "risks" "/api/risks" '
-            .storage == "cloudflare-d1" and
-            (.risks | type) == "array"
-          '
-
-          check_json "controls" "/api/controls" '
-            .storage == "cloudflare-d1" and
-            (.controls | type) == "array"
-          '
-
-          check_json "rcm" "/api/rcm" '
-            .storage == "cloudflare-d1" and
-            (.rcm | type) == "array" and
-            (.total | type) == "number"
-          '
-
-          check_json "dashboard" "/api/dashboard" '
-            .storage == "cloudflare-d1" and
-            (.metrics | type) == "object" and
-            (.executiveQandA | type) == "array"
-          '
-
-          check_json "toe" "/api/assure/toe" '
-            .storage == "cloudflare-d1" and
-            (.tests | type) == "array"
-          '
-
-          check_json "remediation" "/api/assure/remediation" '
-            .storage == "cloudflare-d1" and
-            (.exceptions | type) == "array" and
-            (.deficiencies | type) == "array" and
-            (.issues | type) == "array" and
-            (.maps | type) == "array" and
-            (.retests | type) == "array"
-          '
-
-          check_json "ccm" "/api/monitor/ccm" '
-            .storage == "cloudflare-d1" and
-            (.rules | type) == "array"
-          '
-
-          check_json "database-final" "/api/system/database" '
-            .ok == true and
-            .database == "cloudflare-d1" and
-            .persistent == true and
-            .health.requiredTablesReady == true and
-            (.health.missingRequiredTables | length) == 0
-          '
-
-          echo "All Total ARC production D1 API smoke tests passed."
+          echo "All protected Total ARC operational endpoints deny anonymous access."

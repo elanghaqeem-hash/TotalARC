@@ -29,7 +29,8 @@
     "next": "15.5.25",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "jose": "6.2.12"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",

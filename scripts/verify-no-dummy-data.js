@@ -19,7 +19,8 @@ const blocked = [
   /Simulate Exception/i,
   /\bBANK_KALBAR\b/,
   /\bensureBankKalbarPersisted\b/,
-  /Bank Kalbar institution master bootstrapped to persistent D1 storage/i
+  /Bank Kalbar institution master bootstrapped to persistent D1 storage/i,
+  /View as role/i
 ];
 
 const findings = [];
@@ -60,6 +61,49 @@ for (const route of d1CoreRoutes) {
   if (/from\s+['"]@\/lib\/prisma['"]/.test(content)) {
     findings.push(`${route}: core production route must use Cloudflare D1, not Prisma/SQLite`);
   }
+}
+
+
+const authenticatedOperationalRoutes = [
+  'src/app/api/onboarding/route.ts',
+  'src/app/api/processes/route.ts',
+  'src/app/api/risks/route.ts',
+  'src/app/api/controls/route.ts',
+  'src/app/api/rcm/route.ts',
+  'src/app/api/dashboard/route.ts',
+  'src/app/api/assurance/route.ts',
+  'src/app/api/assure/toe/route.ts',
+  'src/app/api/assure/remediation/route.ts',
+  'src/app/api/monitor/ccm/route.ts',
+  'src/app/api/ai/analyze/route.ts',
+  'src/app/api/ai/chat/route.ts',
+  'src/app/api/ai/status/route.ts'
+];
+
+for (const route of authenticatedOperationalRoutes) {
+  if (!fs.existsSync(route)) {
+    findings.push(`${route}: expected authenticated operational route is missing`);
+    continue;
+  }
+  const content = fs.readFileSync(route, 'utf8');
+  if (!/from\s+['"]@\/lib\/api-auth['"]/.test(content)) {
+    findings.push(`${route}: operational route must enforce server-side authentication/RBAC`);
+  }
+  if (!/authorizeApi\s*\(/.test(content)) {
+    findings.push(`${route}: authorizeApi() guard is required`);
+  }
+}
+
+const roleContextPath = 'src/context/RoleContext.tsx';
+if (fs.existsSync(roleContextPath)) {
+  const roleContext = fs.readFileSync(roleContextPath, 'utf8');
+  if (/\bsetRole\b/.test(roleContext) || /\bUSERS\s*=/.test(roleContext)) {
+    findings.push(`${roleContextPath}: client-side role simulation is forbidden`);
+  }
+}
+
+if (!fs.existsSync('src/lib/auth.ts')) {
+  findings.push('src/lib/auth.ts: Cloudflare Access authentication foundation is required');
 }
 
 if (fs.existsSync('prisma/dev.db')) findings.push('prisma/dev.db is committed/present');

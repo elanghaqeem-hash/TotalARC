@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
 import type { AiTask } from '@/lib/ai/types';
+import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
 
 const TASKS: AiTask[] = [
   'process_analysis',
@@ -28,6 +29,9 @@ function taskFrom(value: unknown): AiTask {
 
 
 export async function POST(request: Request) {
+  const auth = await authorizeApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   try {
     const guarded = await guardAiPost(request, 'AI_CHAT_RATE_LIMIT');
     if (!guarded.ok) return guarded.response;

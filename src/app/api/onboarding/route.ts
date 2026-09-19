@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { FRAMEWORK_REFERENCES, INDUSTRY_REFERENCES } from '@/lib/reference-data';
 import { upsertInstitution } from '@/lib/d1';
+import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   return NextResponse.json({
     industries: INDUSTRY_REFERENCES,
     frameworks: FRAMEWORK_REFERENCES,
@@ -13,6 +17,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeApi(request, ['Admin']);
+  if (auth.response) return auth.response;
+
   try {
     const body = await request.json();
     const {

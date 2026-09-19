@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  validate-code:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,7 @@ jobs:
       - name: Enforce dependency security gate
         run: npm audit --audit-level=moderate
 
-      - name: Verify no dummy operational data
+      - name: Verify no dummy operational data and auth guardrails
         run: npm run verify:no-dummy
 
       - name: Build OpenNext Cloudflare artifact
@@ -36,3 +36,62 @@ jobs:
 
       - name: Verify Worker artifact exists
         run: test -f .open-next/worker.js
+
+  validate-access-cutover:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Cloudflare Access cutover configuration
+        env:
+          TOTALARC_ACCESS_TEAM_DOMAIN: ${{ vars.TOTALARC_ACCESS_TEAM_DOMAIN }}
+          TOTALARC_ACCESS_AUD: ${{ vars.TOTALARC_ACCESS_AUD }}
+          TOTALARC_ADMIN_EMAIL: ${{ vars.TOTALARC_ADMIN_EMAIL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+
+          if [ -z "$TOTALARC_ACCESS_TEAM_DOMAIN" ]; then
+            echo "::error::Missing repository variable TOTALARC_ACCESS_TEAM_DOMAIN."
+            missing=1
+          fi
+          if [ -z "$TOTALARC_ACCESS_AUD" ]; then
+            echo "::error::Missing repository variable TOTALARC_ACCESS_AUD."
+            missing=1
+          fi
+          if [ -z "$TOTALARC_ADMIN_EMAIL" ]; then
+            echo "::error::Missing repository variable TOTALARC_ADMIN_EMAIL."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo "### Cloudflare Access cutover blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "Configure TOTALARC_ACCESS_TEAM_DOMAIN, TOTALARC_ACCESS_AUD, and TOTALARC_ADMIN_EMAIL as repository variables." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          case "$TOTALARC_ACCESS_TEAM_DOMAIN" in
+            https://*.cloudflareaccess.com|https://*.cloudflareaccess.com/)
+              ;;
+            *)
+              echo "::error::TOTALARC_ACCESS_TEAM_DOMAIN must be https://<team>.cloudflareaccess.com."
+              exit 1
+              ;;
+          esac
+
+          case "$TOTALARC_ADMIN_EMAIL" in
+            *@*.*)
+              ;;
+            *)
+              echo "::error::TOTALARC_ADMIN_EMAIL must be a valid email address."
+              exit 1
+              ;;
+          esac
+
+          CERTS_URL="${TOTALARC_ACCESS_TEAM_DOMAIN%/}/cdn-cgi/access/certs"
+          if ! curl --fail --silent --show-error --max-time 15 "$CERTS_URL" | jq -e '.keys | length > 0' >/dev/null; then
+            echo "::error::Cloudflare Access signing keys could not be resolved."
+            exit 1
+          fi
+
+          echo "Cloudflare Access cutover configuration is ready."
