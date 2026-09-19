@@ -134,9 +134,6 @@ export default function ControlsPage() {
           <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
             Enterprise Control Library
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Section 6 Principle: Register Once. One Control Master is shared across Operational Risk, ICOFR, ITGC, and RCSA without duplicate control records.
-          </p>
         </div>
 
         <div className="flex items-center space-x-3">
