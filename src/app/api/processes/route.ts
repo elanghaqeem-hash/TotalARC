@@ -1,27 +1,30 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const processes = await prisma.businessProcess.findMany({
-      include: {
-        category: true, orgUnit: true, objectives: true, sipoc: true,
-        activities: { orderBy: { orderIndex: 'asc' } }, risks: true, controls: true
-      },
-      orderBy: { processId: 'asc' }
+    const { processes, categories } = await listBusinessProcesses();
+    return NextResponse.json({
+      processes,
+      categories,
+      storage: 'cloudflare-d1'
     });
-    const categories = await prisma.processCategory.findMany({ orderBy: { orderIndex: 'asc' } });
-    return NextResponse.json({ processes, categories });
   } catch (error) {
-    console.error('Failed to fetch processes:', error);
-    return NextResponse.json({ error: 'Failed to fetch processes' }, { status: 500 });
+    console.error('Failed to fetch D1 processes:', error);
+    return NextResponse.json({ error: 'Failed to fetch processes from persistent database.' }, { status: 503 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { name, processId, categoryId, ownerName, criticality, classification, isIcofrRelevant, description } = body;
+    const body = (await request.json()) as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const categoryId = typeof body.categoryId === 'string' ? body.categoryId.trim() : '';
+    const ownerName = typeof body.ownerName === 'string' ? body.ownerName.trim() : '';
+    const criticality = typeof body.criticality === 'string' ? body.criticality.trim() : '';
+    const classification = typeof body.classification === 'string' ? body.classification.trim() : '';
 
     if (!name || !categoryId || !ownerName || !criticality || !classification) {
       return NextResponse.json(
@@ -30,40 +33,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const institution = await prisma.institution.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (!institution) return NextResponse.json({ error: 'Register an institution before creating processes.' }, { status: 409 });
-
-    const process = await prisma.businessProcess.create({
-      data: {
-        institutionId: institution.id,
-        processId: processId || `PRC-${Date.now().toString(36).toUpperCase()}`,
-        name,
-        categoryId,
-        ownerName,
-        criticality,
-        classification,
-        isIcofrRelevant: Boolean(isIcofrRelevant),
-        description: description || null,
-        status: 'Draft',
-        version: '1.0'
-      }
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        institutionId: institution.id,
-        userName: 'System',
-        userRole: 'System',
-        action: 'CREATE',
-        entityType: 'Process',
-        recordId: process.id,
-        reason: 'Business process registered.'
-      }
+    const process = await createBusinessProcess({
+      ...body,
+      name,
+      categoryId,
+      ownerName,
+      criticality,
+      classification
     });
 
     return NextResponse.json(process, { status: 201 });
   } catch (error) {
-    console.error('Failed to create process:', error);
-    return NextResponse.json({ error: 'Failed to create process' }, { status: 500 });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'INSTITUTION_REQUIRED') {
+      return NextResponse.json({ error: 'Register an institution before creating processes.' }, { status: 409 });
+    }
+    if (code === 'CATEGORY_NOT_FOUND') {
+      return NextResponse.json({ error: 'Selected process category does not exist.' }, { status: 400 });
+    }
+    if (code === 'PROCESS_ID_CONFLICT') {
+      return NextResponse.json({ error: 'Process ID already exists for this institution.' }, { status: 409 });
+    }
+
+    console.error('Failed to create D1 process:', error);
+    return NextResponse.json({ error: 'Failed to create process in persistent database.' }, { status: 500 });
   }
 }
