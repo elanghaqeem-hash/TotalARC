@@ -37,8 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           missing=0
+
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::Missing CLOUDFLARE_API_TOKEN."
             echo "### Deployment blocked" >> "$GITHUB_STEP_SUMMARY"
@@ -49,17 +49,46 @@ jobs:
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::error::Missing CLOUDFLARE_ACCOUNT_ID."
             echo "### Cloudflare account ID required" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Add CLOUDFLARE_ACCOUNT_ID as a repository variable (preferred) or repository secret." >> "$GITHUB_STEP_SUMMARY"
+            echo "- Add CLOUDFLARE_ACCOUNT_ID as a repository variable or repository secret." >> "$GITHUB_STEP_SUMMARY"
             missing=1
           fi
 
           if [ "$missing" -ne 0 ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "The Worker was not deployed. No source-code or AI-provider failure occurred." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
           echo "Cloudflare deployment credentials are configured."
+
+      - name: Audit optional external AI provider secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "### AI provider configuration" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cloudflare Workers AI: required native binding" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$GEMINI_API_KEY" ]; then echo "- Gemini: configured in GitHub Actions" >> "$GITHUB_STEP_SUMMARY"; else echo "- Gemini: not configured" >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -n "$GROQ_API_KEY" ]; then echo "- Groq: configured in GitHub Actions" >> "$GITHUB_STEP_SUMMARY"; else echo "- Groq: not configured" >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -n "$OPENROUTER_API_KEY" ]; then echo "- OpenRouter: configured in GitHub Actions" >> "$GITHUB_STEP_SUMMARY"; else echo "- OpenRouter: not configured" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Validate D1 deployment permission
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! npx wrangler d1 list --json >/tmp/totalarc-d1-list.json 2>/tmp/totalarc-d1-error.log; then
+            echo "::error::Cloudflare token cannot access D1. Total ARC cannot safely deploy its DB binding."
+            echo "### Cloudflare D1 permission required" >> "$GITHUB_STEP_SUMMARY"
+            echo "The deployment token is valid, but it cannot list/provision D1 databases." >> "$GITHUB_STEP_SUMMARY"
+            echo "Grant D1 Edit/Write permission for the Total ARC Cloudflare account, then rerun this workflow." >> "$GITHUB_STEP_SUMMARY"
+            tail -n 20 /tmp/totalarc-d1-error.log || true
+            exit 1
+          fi
+          echo "Cloudflare D1 access is available."
 
       - name: Verify no dummy operational data
         run: npm run verify:no-dummy
@@ -75,7 +104,36 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
-      - name: Verify AI runtime readiness
+      - name: Sync AI runtime secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | npx wrangler secret put "$name" >/dev/null
+              echo "$name synchronized to the Total ARC Worker."
+            fi
+          }
+
+          AI_PROBE_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+          echo "::add-mask::$AI_PROBE_TOKEN"
+          echo "AI_PROBE_TOKEN=$AI_PROBE_TOKEN" >> "$GITHUB_ENV"
+
+          put_secret AI_PROBE_TOKEN "$AI_PROBE_TOKEN"
+          put_secret GEMINI_API_KEY "$GEMINI_API_KEY"
+          put_secret GROQ_API_KEY "$GROQ_API_KEY"
+          put_secret OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
+
+      - name: Verify AI runtime and provider connectivity
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
           FALLBACK_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
@@ -86,33 +144,48 @@ jobs:
           BASE_URL="${DEPLOYMENT_URL:-${FALLBACK_URL:-}}"
           if [ -z "$BASE_URL" ]; then
             echo "::error::Deployment completed but no deployment URL was available."
-            echo "Set repository variable TOTALARC_PRODUCTION_URL if the Wrangler action does not emit deployment-url." >> "$GITHUB_STEP_SUMMARY"
+            echo "Set repository variable TOTALARC_PRODUCTION_URL if Wrangler does not emit deployment-url." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
           BASE_URL="${BASE_URL%/}"
           READY_URL="$BASE_URL/api/ai/ready"
-          echo "Checking AI readiness at $READY_URL"
+          PROBE_URL="$BASE_URL/api/ai/probe"
+          STATUS_URL="$BASE_URL/api/ai/status"
 
+          ready=false
           for attempt in $(seq 1 12); do
-            if body=$(curl --fail --silent --show-error --max-time 10 "$READY_URL"); then
-              ready=$(printf '%s' "$body" | node -e "let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{try{const parsed=JSON.parse(input);process.stdout.write(parsed.ready===true?'true':'false')}catch{process.stdout.write('false')}})")
-
-              if [ "$ready" = "true" ]; then
-                echo "Total ARC AI Gateway is runtime-ready."
-                echo "### AI runtime verification" >> "$GITHUB_STEP_SUMMARY"
-                echo "- Deployment: successful" >> "$GITHUB_STEP_SUMMARY"
-                echo "- Cloudflare Workers AI binding: ready" >> "$GITHUB_STEP_SUMMARY"
-                echo "- Endpoint /api/ai/ready returned ready=true" >> "$GITHUB_STEP_SUMMARY"
-                exit 0
-              fi
+            if body=$(curl --fail --silent --show-error --max-time 15 "$READY_URL"); then
+              ready=$(printf '%s' "$body" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);process.stdout.write(j.ready===true?'true':'false')}catch{process.stdout.write('false')}})")
+              if [ "$ready" = "true" ]; then break; fi
             fi
-
             echo "AI readiness not confirmed yet (attempt $attempt/12)."
             sleep 5
           done
 
-          echo "::error::Worker deployed but Total ARC AI Gateway did not become runtime-ready."
-          echo "### AI runtime verification failed" >> "$GITHUB_STEP_SUMMARY"
-          echo "The Worker deployed, but /api/ai/ready did not return ready=true." >> "$GITHUB_STEP_SUMMARY"
-          exit 1
+          if [ "$ready" != "true" ]; then
+            echo "::error::Cloudflare Workers AI binding did not become runtime-ready."
+            exit 1
+          fi
+
+          probe=$(curl --fail --silent --show-error --max-time 60 -X POST -H "Authorization: Bearer $AI_PROBE_TOKEN" "$PROBE_URL")
+          private_ready=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{const j=JSON.parse(i);process.stdout.write(j.privateProviderReady===true?'true':'false')})")
+          if [ "$private_ready" != "true" ]; then
+            echo "::error::Cloudflare Workers AI binding exists but private inference failed."
+            exit 1
+          fi
+
+          external_healthy=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{const j=JSON.parse(i);process.stdout.write(j.configuredExternalProvidersHealthy===true?'true':'false')})")
+          if [ "$external_healthy" != "true" ]; then
+            echo "::warning::One or more configured external AI providers failed the production probe."
+          fi
+
+          status=$(curl --fail --silent --show-error --max-time 15 "$STATUS_URL")
+          provider_summary=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{const j=JSON.parse(i);for(const p of j.providers||[]){console.log('- '+p.provider+': configured='+p.configured+', healthy='+p.ok+', model='+p.model)}})")
+
+          echo "### AI production verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Worker deployment: successful" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Workers AI binding: ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Private Workers AI inference: successful" >> "$GITHUB_STEP_SUMMARY"
+          echo "$provider_summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "Provider status endpoint responded successfully." >> "$GITHUB_STEP_SUMMARY"
