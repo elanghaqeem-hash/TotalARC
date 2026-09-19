@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { SESSION_COOKIE } from '@/lib/d1-auth';
+import { SESSION_COOKIE } from '@/lib/auth-constants';
 
 const PUBLIC_PATHS = new Set([
   '/login',
