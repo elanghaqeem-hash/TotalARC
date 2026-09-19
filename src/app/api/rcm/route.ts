@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { listRcmRows } from '@/lib/d1-core';
 import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
-import { getOrganizationData } from '@/lib/d1-organization';
+import { getOrganizationData, scopeOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 
@@ -21,16 +21,18 @@ export async function GET(request: Request) {
       isOrgUnitAuthorized(authorizedOrgUnitIds, row.orgUnitId as string | null | undefined)
     );
     const rcm = await enrichRcmWithAssurance(scopedRows, auth.user.institutionId);
-    const scopedUnits = organization.organizationUnits.filter(unit =>
-      isOrgUnitAuthorized(authorizedOrgUnitIds, unit.id)
+    const scopedOrganization = scopeOrganizationData(
+      organization,
+      authorizedOrgUnitIds,
+      auth.user.id
     );
 
     return NextResponse.json({
       rcm,
       total: rcm.length,
       organization: {
-        legalEntities: organization.legalEntities,
-        organizationUnits: scopedUnits
+        legalEntities: scopedOrganization.legalEntities,
+        organizationUnits: scopedOrganization.organizationUnits
       },
       storage: 'cloudflare-d1'
     });
