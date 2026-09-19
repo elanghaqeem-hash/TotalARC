@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from './prisma-client.mjs';
 import { randomBytes, scrypt as scryptCallback } from 'node:crypto';
 import { promisify } from 'node:util';
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 const scrypt = promisify(scryptCallback);
 const password = process.env.CI_E2E_PASSWORD;
 
