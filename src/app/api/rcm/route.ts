@@ -41,7 +41,7 @@ export async function GET() {
       }
     });
 
-    const rcmRows = mappings.map((m, idx) => {
+    const rcmRows = mappings.map((m: (typeof mappings)[number], idx: number) => {
       const risk = m.risk;
       const control = m.control;
       const process = risk.process;
