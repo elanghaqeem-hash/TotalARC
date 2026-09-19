@@ -78,6 +78,17 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
   return values.length ? statement.bind(...values).run() : statement.run();
 }
 
+async function executeSchemaScript(db: D1DatabaseLike, script: string) {
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
+}
+
 function bool(value: unknown): boolean {
   return value === true || value === 1 || value === '1';
 }
@@ -100,7 +111,7 @@ function riskRating(score: number) {
 export async function ensureCoreDomainSchema() {
   const db = await getDb();
 
-  await db.exec(`
+  await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS ProcessCategory (
       id TEXT PRIMARY KEY NOT NULL,
       code TEXT NOT NULL UNIQUE,
