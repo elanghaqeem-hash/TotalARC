@@ -164,7 +164,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <img
                 src="/brand/total-arc-logo.svg"
                 alt="Total ARC"
-                className="h-[42px] w-auto max-w-[118px] object-contain sm:h-[48px] sm:max-w-[138px] md:max-w-[150px]"
+                className="h-[42px] w-auto max-w-[122px] object-contain sm:h-[48px] sm:max-w-[150px] md:max-w-[165px]"
               />
             </Link>
           </div>
@@ -275,7 +275,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <img
                   src="/brand/total-arc-logo.svg"
                   alt="Total ARC"
-                  className="h-[44px] w-auto max-w-[145px] object-contain"
+                  className="h-[46px] w-auto max-w-[158px] object-contain"
                 />
                 <span className="hidden text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xs:inline">
                   Navigation
