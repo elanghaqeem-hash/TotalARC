@@ -68,7 +68,7 @@ const quickActions = [
     href: '/rcm',
     icon: FileSpreadsheet,
     accent: 'from-sky-500 to-blue-600',
-    iconBg: 'bg-white/18'
+    iconBg: 'bg-white/20'
   },
   {
     title: 'ToE Workpaper',
@@ -76,7 +76,7 @@ const quickActions = [
     href: '/toe',
     icon: Cpu,
     accent: 'from-emerald-500 to-teal-600',
-    iconBg: 'bg-white/18'
+    iconBg: 'bg-white/20'
   },
   {
     title: 'CSA Assessment',
@@ -84,7 +84,7 @@ const quickActions = [
     href: '/rcsa',
     icon: ClipboardCheck,
     accent: 'from-violet-500 to-purple-600',
-    iconBg: 'bg-white/18'
+    iconBg: 'bg-white/20'
   },
   {
     title: 'Reports & Analytics',
@@ -92,7 +92,7 @@ const quickActions = [
     href: '/reports',
     icon: BarChart3,
     accent: 'from-amber-500 to-orange-500',
-    iconBg: 'bg-white/18'
+    iconBg: 'bg-white/20'
   }
 ];
 
@@ -114,7 +114,7 @@ function formatNumber(value: number) {
 
 export default function DashboardPage() {
   const { institutionName, currentUser } = useRole();
-  const [data, setData] = useState<Required<DashboardPayload>>({
+  const [data, setData] = useState<{ metrics: typeof emptyMetrics; executiveQandA: NonNullable<DashboardPayload['executiveQandA']>; recentAuditLogs: NonNullable<DashboardPayload['recentAuditLogs']>; }>({
     metrics: emptyMetrics,
     executiveQandA: [],
     recentAuditLogs: []
