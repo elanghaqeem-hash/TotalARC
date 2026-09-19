@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { resolveOrganizationAccess } from '@/lib/organization-access';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 import {
   createLegalEntity,
@@ -97,8 +98,45 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const data = await getOrganizationData(auth.user.institutionId);
-    return NextResponse.json(data, {
+    const [data, access] = await Promise.all([
+      getOrganizationData(auth.user.institutionId),
+      resolveOrganizationAccess(auth.user)
+    ]);
+
+    if (access.unrestricted) {
+      return NextResponse.json({ ...data, access }, {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0'
+        }
+      });
+    }
+
+    const allowedUnitIds = new Set(access.unitIds);
+    const organizationUnits = data.organizationUnits.filter(unit => allowedUnitIds.has(unit.id));
+    const legalEntityIds = new Set(organizationUnits.map(unit => unit.legalEntityId).filter(Boolean));
+    const positions = data.positions.filter(position => allowedUnitIds.has(position.orgUnitId));
+    const visibleUserIds = new Set<string>([
+      auth.user.id,
+      ...organizationUnits
+        .map(unit => unit.headUserId)
+        .filter((value): value is string => Boolean(value)),
+      ...positions
+        .map(position => position.assignedUserId)
+        .filter((value): value is string => Boolean(value))
+    ]);
+    const users = data.users.filter(user =>
+      visibleUserIds.has(user.id)
+      || (typeof user.orgUnitId === 'string' && allowedUnitIds.has(user.orgUnitId))
+    );
+
+    return NextResponse.json({
+      ...data,
+      legalEntities: data.legalEntities.filter(entity => legalEntityIds.has(entity.id)),
+      organizationUnits,
+      positions,
+      users,
+      access
+    }, {
       headers: {
         'Cache-Control': 'no-store, max-age=0'
       }
