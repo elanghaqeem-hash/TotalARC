@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
+    const prisma = getPrisma();
     const [processes, risks, controls, toeTests, issues, maps, rules, retests, recentAuditLogs] = await Promise.all([
       prisma.businessProcess.findMany(),
       prisma.riskMaster.findMany({ include: { controls: true } }),
