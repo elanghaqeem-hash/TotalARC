@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       }
 
       const controls = await listControls(auth.user.institutionId);
-      const selectedControl = controls.find(control => control.id === controlId);
+      const selectedControl = controls.find(control => (control as Record<string, unknown>).id === controlId);
       if (
         selectedControl
         && !isOrgUnitAuthorized(
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
     }
 
     const rules = await listMonitoringRules(auth.user.institutionId);
-    const selectedRule = rules.find(rule => rule.id === ruleId);
+    const selectedRule = rules.find(rule => (rule as Record<string, unknown>).id === ruleId);
     if (
       selectedRule
       && !isOrgUnitAuthorized(
