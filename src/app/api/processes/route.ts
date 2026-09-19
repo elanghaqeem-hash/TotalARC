@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
 import { getOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
 export const dynamic = 'force-dynamic';
@@ -11,17 +12,25 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const [{ processes, categories }, organization] = await Promise.all([
+    const [{ processes, categories }, organization, authorizedOrgUnitIds] = await Promise.all([
       listBusinessProcesses(auth.user.institutionId),
-      getOrganizationData(auth.user.institutionId)
+      getOrganizationData(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
     ]);
 
+    const scopedProcesses = processes.filter(process =>
+      isOrgUnitAuthorized(authorizedOrgUnitIds, process.orgUnitId as string | null | undefined)
+    );
+    const scopedUnits = organization.organizationUnits.filter(unit =>
+      isOrgUnitAuthorized(authorizedOrgUnitIds, unit.id)
+    );
+
     return NextResponse.json({
-      processes,
+      processes: scopedProcesses,
       categories,
       organization: {
         legalEntities: organization.legalEntities,
-        organizationUnits: organization.organizationUnits,
+        organizationUnits: scopedUnits,
         positions: organization.positions,
         users: organization.users
       },
@@ -68,8 +77,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const organization = await getOrganizationData(auth.user.institutionId);
-    const activeUnits = organization.organizationUnits.filter(unit => unit.status === 'Active');
+    const [organization, authorizedOrgUnitIds] = await Promise.all([
+      getOrganizationData(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
+    ]);
+    const activeUnits = organization.organizationUnits.filter(
+      unit => unit.status === 'Active' && isOrgUnitAuthorized(authorizedOrgUnitIds, unit.id)
+    );
     const selectedUnit = orgUnitId
       ? organization.organizationUnits.find(unit => unit.id === orgUnitId)
       : null;
@@ -87,6 +101,16 @@ export async function POST(request: Request) {
           code: 'PROCESS_ORGANIZATION_UNIT_REQUIRED'
         },
         { status: 400 }
+      );
+    }
+
+    if (orgUnitId && !isOrgUnitAuthorized(authorizedOrgUnitIds, orgUnitId)) {
+      return NextResponse.json(
+        {
+          error: 'Your account is not authorized for the selected organization unit.',
+          code: 'PROCESS_ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
       );
     }
 
