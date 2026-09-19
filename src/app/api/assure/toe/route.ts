@@ -6,10 +6,14 @@ import {
   listToeTests,
   updateToeSample
 } from '@/lib/d1-assurance';
+import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   try {
     const tests = await listToeTests();
     return NextResponse.json({ tests, storage: 'cloudflare-d1' });
@@ -23,6 +27,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeApi(request, ['Admin', 'Tester', 'Reviewer']);
+  if (auth.response) return auth.response;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const actionType =

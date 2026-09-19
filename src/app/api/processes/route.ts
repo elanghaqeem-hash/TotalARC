@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
+import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   try {
     const { processes, categories } = await listBusinessProcesses();
     return NextResponse.json({
@@ -18,6 +22,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeApi(request, ['Admin', 'ProcessOwner']);
+  if (auth.response) return auth.response;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';

@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createControl, listControls } from '@/lib/d1-core';
+import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await authorizeApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   try {
     const controls = await listControls();
     return NextResponse.json({ controls, storage: 'cloudflare-d1' });
@@ -14,6 +18,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeApi(request, ['Admin', 'ControlOwner', 'ProcessOwner']);
+  if (auth.response) return auth.response;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';

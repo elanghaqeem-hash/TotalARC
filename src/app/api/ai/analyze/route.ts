@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
 import { findBusinessProcessForAi, recordAiAnalysisAudit } from '@/lib/d1-core';
+import { authorizeApi, READ_ROLES } from '@/lib/api-auth';
 
 type Finding = {
   id: string;
@@ -62,6 +63,9 @@ function normalizeFindings(value: unknown): Finding[] {
 }
 
 export async function POST(request: Request) {
+  const auth = await authorizeApi(request, READ_ROLES);
+  if (auth.response) return auth.response;
+
   try {
     const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
     if (!guarded.ok) return guarded.response;
