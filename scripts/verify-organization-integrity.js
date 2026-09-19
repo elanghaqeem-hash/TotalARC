@@ -133,7 +133,7 @@ requirePatterns(controlPagePath, controlPage, [
 const rcmRoute = requireFile(rcmRoutePath);
 requirePatterns(rcmRoutePath, rcmRoute, [
   /getOrganizationData\(auth\.user\.institutionId\)/,
-  /organizationUnits:\s*organization\.organizationUnits/
+  /organizationUnits:\s*(?:organization\.organizationUnits|visibleUnits)/
 ]);
 
 const rcmPage = requireFile(rcmPagePath);
