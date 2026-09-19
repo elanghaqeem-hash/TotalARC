@@ -47,6 +47,11 @@ type ProviderStatus = {
   role: string;
 };
 
+type ContextError = {
+  scope: 'ai' | 'process';
+  message: string;
+};
+
 export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [processes, setProcesses] = useState<ProcessOption[]>([]);
   const [selectedProcessId, setSelectedProcessId] = useState('');
@@ -56,52 +61,77 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
   const [aiMeta, setAiMeta] = useState<AiMeta | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [contextErrors, setContextErrors] = useState<ContextError[]>([]);
+  const [analysisError, setAnalysisError] = useState('');
 
   const configuredProviders = providers.filter(provider => provider.configured);
+  const aiStatusUnavailable = contextErrors.some(error => error.scope === 'ai');
+  const processDataUnavailable = contextErrors.some(error => error.scope === 'process');
 
   useEffect(() => {
     if (!isOpen) return;
 
     let cancelled = false;
     setLoadingContext(true);
-    setErrorMessage('');
+    setContextErrors([]);
+    setAnalysisError('');
 
-    Promise.all([
+    Promise.allSettled([
       fetch('/api/ai/status').then(async response => {
-        if (!response.ok) throw new Error('Unable to read AI gateway status.');
+        if (!response.ok) throw new Error('AI gateway status request failed.');
         return response.json();
       }),
       fetch('/api/processes').then(async response => {
-        if (!response.ok) throw new Error('Unable to load registered processes.');
+        if (!response.ok) throw new Error('Registered process request failed.');
         return response.json();
       })
     ])
-      .then(([statusData, processData]) => {
+      .then(([statusResult, processResult]) => {
         if (cancelled) return;
 
-        const nextProviders = Array.isArray(statusData.providers) ? statusData.providers : [];
-        const nextProcesses = Array.isArray(processData.processes)
-          ? processData.processes.map((process: ProcessOption) => ({
-              id: process.id,
-              processId: process.processId,
-              name: process.name,
-              status: process.status
-            }))
-          : [];
+        const nextErrors: ContextError[] = [];
 
-        setProviders(nextProviders);
-        setProcesses(nextProcesses);
-        setSelectedProcessId(current =>
-          current && nextProcesses.some((process: ProcessOption) => process.id === current)
-            ? current
-            : nextProcesses[0]?.id || ''
-        );
-      })
-      .catch(error => {
-        if (!cancelled) {
-          setErrorMessage(error instanceof Error ? error.message : 'Unable to load AI context.');
+        if (statusResult.status === 'fulfilled') {
+          const statusData = statusResult.value;
+          const nextProviders = Array.isArray(statusData.providers) ? statusData.providers : [];
+          setProviders(nextProviders);
+        } else {
+          setProviders([]);
+          nextErrors.push({
+            scope: 'ai',
+            message:
+              'AI gateway status could not be verified. This does not indicate that registered process data is unavailable.'
+          });
         }
+
+        if (processResult.status === 'fulfilled') {
+          const processData = processResult.value;
+          const nextProcesses = Array.isArray(processData.processes)
+            ? processData.processes.map((process: ProcessOption) => ({
+                id: process.id,
+                processId: process.processId,
+                name: process.name,
+                status: process.status
+              }))
+            : [];
+
+          setProcesses(nextProcesses);
+          setSelectedProcessId(current =>
+            current && nextProcesses.some((process: ProcessOption) => process.id === current)
+              ? current
+              : nextProcesses[0]?.id || ''
+          );
+        } else {
+          setProcesses([]);
+          setSelectedProcessId('');
+          nextErrors.push({
+            scope: 'process',
+            message:
+              'Registered process data could not be loaded from the process data API. This is a business-data connectivity issue and does not by itself mean that the AI provider is unavailable.'
+          });
+        }
+
+        setContextErrors(nextErrors);
       })
       .finally(() => {
         if (!cancelled) setLoadingContext(false);
@@ -116,7 +146,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     if (!selectedProcessId) return;
 
     setAnalyzing(true);
-    setErrorMessage('');
+    setAnalysisError('');
     setFindings([]);
     setAnalysisNote('');
     setAiMeta(null);
@@ -140,7 +170,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       setAnalysisNote(typeof data.analysisNote === 'string' ? data.analysisNote : '');
       setAiMeta(data.ai || null);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'AI analysis failed.');
+      setAnalysisError(error instanceof Error ? error.message : 'AI analysis failed.');
     } finally {
       setAnalyzing(false);
     }
@@ -190,25 +220,35 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               <div className="text-xs text-slate-700 mt-1">
                 {loadingContext
                   ? 'Checking configuration...'
-                  : configuredProviders.length > 0
-                    ? configuredProviders.length + ' provider(s) configured'
-                    : 'No provider is currently configured'}
+                  : aiStatusUnavailable
+                    ? 'Gateway status could not be verified'
+                    : configuredProviders.length > 0
+                      ? configuredProviders.length + ' provider(s) configured'
+                      : 'No provider is currently configured'}
               </div>
             </div>
             <div
               className={
                 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ' +
-                (configuredProviders.length > 0
+                (configuredProviders.length > 0 && !aiStatusUnavailable
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-slate-100 text-slate-600 border-slate-200')
+                  : aiStatusUnavailable
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200')
               }
             >
-              {configuredProviders.length > 0 ? (
+              {configuredProviders.length > 0 && !aiStatusUnavailable ? (
                 <CheckCircle2 className="w-3.5 h-3.5" />
               ) : (
                 <AlertCircle className="w-3.5 h-3.5" />
               )}
-              <span>{configuredProviders.length > 0 ? 'Ready' : 'Not configured'}</span>
+              <span>
+                {configuredProviders.length > 0 && !aiStatusUnavailable
+                  ? 'Ready'
+                  : aiStatusUnavailable
+                    ? 'Status unavailable'
+                    : 'Not configured'}
+              </span>
             </div>
           </div>
 
@@ -223,7 +263,9 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               className="w-full text-xs rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-100"
             >
               {processes.length === 0 ? (
-                <option value="">No registered process available</option>
+                <option value="">
+                  {processDataUnavailable ? 'Process data could not be loaded' : 'No registered process available'}
+                </option>
               ) : (
                 processes.map(process => (
                   <option key={process.id} value={process.id}>
@@ -254,13 +296,32 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {errorMessage && (
+          {contextErrors.map(error => (
+            <div
+              key={error.scope}
+              className={
+                'rounded-lg border p-3 text-xs ' +
+                (error.scope === 'process'
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-red-200 bg-red-50 text-red-800')
+              }
+            >
+              <strong>
+                {error.scope === 'process'
+                  ? 'Process data unavailable:'
+                  : 'AI gateway status unavailable:'}
+              </strong>{' '}
+              {error.message}
+            </div>
+          ))}
+
+          {analysisError && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
-              <strong>AI unavailable:</strong> {errorMessage}
+              <strong>AI analysis unavailable:</strong> {analysisError}
             </div>
           )}
 
-          {!loadingContext && processes.length === 0 && !errorMessage && (
+          {!loadingContext && processes.length === 0 && !processDataUnavailable && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center">
               <AlertCircle className="w-6 h-6 text-slate-400 mx-auto" />
               <h4 className="text-sm font-bold text-slate-800 mt-2">No process context yet</h4>
