@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { listRcmRows } from '@/lib/d1-core';
 import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
+import { getOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -10,12 +11,19 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const baseRows = await listRcmRows(auth.user.institutionId);
+    const [baseRows, organization] = await Promise.all([
+      listRcmRows(auth.user.institutionId),
+      getOrganizationData(auth.user.institutionId)
+    ]);
     const rcm = await enrichRcmWithAssurance(baseRows, auth.user.institutionId);
 
     return NextResponse.json({
       rcm,
       total: rcm.length,
+      organization: {
+        legalEntities: organization.legalEntities,
+        organizationUnits: organization.organizationUnits
+      },
       storage: 'cloudflare-d1'
     });
   } catch (error) {
