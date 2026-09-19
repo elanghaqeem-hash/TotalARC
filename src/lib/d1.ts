@@ -300,6 +300,9 @@ export async function getD1Health() {
     'AuditLog',
     'ProcessCategory',
     'BusinessProcess',
+    'ProcessObjective',
+    'SIPOC',
+    'ProcessActivity',
     'RiskMaster',
     'ControlMaster',
     'ControlRiskMapping',
@@ -307,11 +310,14 @@ export async function getD1Health() {
     'TestSample',
     'TestingException',
     'ControlDeficiency',
+    'RootCauseAnalysis',
     'Issue',
     'ManagementActionPlan',
+    'MAPMilestone',
     'RetestRecord',
     'MonitoringRule',
-    'MonitoringRun'
+    'MonitoringRun',
+    'CCMException'
   ];
   const existing = new Set(tableNames);
   const missingRequiredTables = requiredTables.filter(name => !existing.has(name));
