@@ -89,6 +89,8 @@ type AccessUserRow = {
   name: string;
   role: string;
   department: string | null;
+  orgUnitId: string | null;
+  accessScope: string;
   active: number;
 };
 
@@ -289,7 +291,7 @@ async function tenantUnit(db: D1DatabaseLike, institutionId: string, id: string)
 async function tenantUser(db: D1DatabaseLike, institutionId: string, id: string) {
   const user = await first<AccessUserRow>(
     db,
-    `SELECT id, institutionId, email, name, role, department, active
+    `SELECT id, institutionId, email, name, role, department, orgUnitId, accessScope, active
        FROM AccessUser
       WHERE id = ? AND institutionId = ? LIMIT 1`,
     [id, institutionId]
@@ -361,7 +363,7 @@ export async function getOrganizationData(institutionId: string) {
     ),
     all<AccessUserRow>(
       db,
-      `SELECT id, institutionId, email, name, role, department, active
+      `SELECT id, institutionId, email, name, role, department, orgUnitId, accessScope, active
          FROM AccessUser
         WHERE institutionId = ?
         ORDER BY name ASC, email ASC`,
@@ -453,7 +455,11 @@ export async function getOrganizationData(institutionId: string) {
         ? userById.get(position.assignedUserId)?.email || null
         : null
     })),
-    users: users.map(user => ({ ...user, active: Number(user.active) === 1 })),
+    users: users.map(user => ({
+      ...user,
+      orgUnitName: user.orgUnitId ? unitById.get(user.orgUnitId)?.name || null : null,
+      active: Number(user.active) === 1
+    })),
     storage: 'cloudflare-d1'
   };
 }
