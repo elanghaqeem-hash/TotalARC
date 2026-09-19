@@ -1,63 +1,45 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { listToeTests, updateToeSample } from '@/lib/d1-assurance';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const tests = await prisma.toETest.findMany({
-      include: {
-        control: true,
-        process: true,
-        risk: true,
-        samples: {
-          orderBy: { sampleNumber: 'asc' }
-        },
-        exceptions: {
-          include: {
-            deficiencies: {
-              include: {
-                rootCause: true,
-                issues: {
-                  include: {
-                    actionPlans: {
-                      include: {
-                        retests: true
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    return NextResponse.json({ tests });
+    const tests = await listToeTests();
+    return NextResponse.json({ tests, storage: 'cloudflare-d1' });
   } catch (error) {
-    console.error('Failed to fetch ToE tests:', error);
-    return NextResponse.json({ error: 'Failed to fetch ToE tests' }, { status: 500 });
+    console.error('Failed to fetch D1 ToE tests:', error);
+    return NextResponse.json({ error: 'Failed to fetch ToE tests from persistent database.' }, { status: 503 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { testId, sampleId, result, failureReason } = body;
+    const body = (await request.json()) as Record<string, unknown>;
+    const sampleId = typeof body.sampleId === 'string' ? body.sampleId.trim() : '';
+    const result = typeof body.result === 'string' ? body.result.trim() : '';
+    const failureReason =
+      typeof body.failureReason === 'string' ? body.failureReason.trim() : null;
 
-    if (sampleId) {
-      const updatedSample = await prisma.testSample.update({
-        where: { id: sampleId },
-        data: {
-          result,
-          failureReason: result === 'Fail' ? failureReason : null
-        }
-      });
-      return NextResponse.json(updatedSample);
+    if (!sampleId || !result) {
+      return NextResponse.json(
+        { error: 'sampleId and result are required for a persisted ToE sample update.' },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json({ message: 'OK' });
+    const updated = await updateToeSample({ sampleId, result, failureReason });
+    return NextResponse.json(updated);
   } catch (error) {
-    console.error('Failed to update ToE sample:', error);
-    return NextResponse.json({ error: 'Failed to update sample' }, { status: 500 });
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'SAMPLE_NOT_FOUND') {
+      return NextResponse.json({ error: 'ToE sample not found.' }, { status: 404 });
+    }
+    if (code === 'INVALID_SAMPLE_RESULT') {
+      return NextResponse.json({ error: 'Invalid ToE sample result.' }, { status: 400 });
+    }
+
+    console.error('Failed to update D1 ToE sample:', error);
+    return NextResponse.json({ error: 'Failed to update ToE sample in persistent database.' }, { status: 500 });
   }
 }
