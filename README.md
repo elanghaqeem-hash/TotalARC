@@ -6,9 +6,10 @@ The production-hardening branch is designed around **real PostgreSQL persistence
 
 ## Current architecture
 
-- **Framework:** Next.js 16.3.5 App Router
-- **UI:** React 19, TypeScript, Tailwind CSS, Lucide
+- **Framework:** Next.js 15.5.25 Maintenance LTS (Cloudflare/OpenNext-compatible App Router)
+- **UI:** React 19.2.8, TypeScript, Tailwind CSS, Lucide
 - **Database:** PostgreSQL
+- **Cloud deployment adapter:** OpenNext for Cloudflare 1.20.6 + Wrangler
 - **ORM:** Prisma 6.19.3
 - **Authentication:** signed HttpOnly session cookie, password hashing with scrypt, account lockout, session-version invalidation
 - **Authorization:** server-side role checks plus institution/tenant scoping on protected APIs
@@ -136,6 +137,10 @@ See `.env.example`. Important variables include:
 ## Data integrity and demo-data policy
 
 The repository must not ship transactional “showcase” data that can be mistaken for real assurance evidence. Reference taxonomies such as industries, frameworks, regulations, and process categories are permitted. Business processes, risks, controls, assessment results, test samples, deficiencies, issues, MAPs, monitoring runs, certifications, and management attestations must originate from authenticated user activity, approved integrations, or verified imported source data.
+
+## Cloudflare deployment
+
+The repository includes `open-next.config.ts`, `wrangler.jsonc`, and a dedicated Cloudflare validation workflow. Keep the normal `npm run build` command as the native Next.js production build used by the production-readiness gate. Use `npm run build:cloudflare` to generate the OpenNext Worker artifact, and `npm run deploy:cloudflare` only from an authorized deployment environment with production secrets configured outside Git.
 
 ## Deployment notes
 
