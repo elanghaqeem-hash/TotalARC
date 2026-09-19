@@ -43,6 +43,14 @@
         "limit": 6,
         "period": 60
       }
+    },
+    {
+      "name": "AUTH_LOGIN_RATE_LIMIT",
+      "namespace_id": "571003",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
     }
   ],
   "vars": {
@@ -52,7 +60,8 @@
     "CLOUDFLARE_AI_MODEL": "@cf/qwen/qwen3-30b-a3b-fp8",
     "GEMINI_MODEL": "gemini-3.8-flash",
     "GROQ_MODEL": "openai/gpt-oss-20b",
-    "OPENROUTER_MODEL": "openrouter/free"
+    "OPENROUTER_MODEL": "openrouter/free",
+    "AUTH_ENFORCE": "false"
   },
   "observability": {
     "enabled": true
