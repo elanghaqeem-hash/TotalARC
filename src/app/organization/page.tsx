@@ -377,11 +377,15 @@ export default function OrganizationPage() {
 
   const openCreate = (mode: Exclude<ModalMode, null | 'import'>) => {
     setEditing(false);
+    const selected = data?.organizationUnits.find(unit => unit.id === selectedUnitId) || null;
     setForm({
       ...emptyForm,
       country: data?.institution.country || 'Indonesia',
-      legalEntityId: data?.legalEntities.length === 1 ? data.legalEntities[0].id : '',
-      orgUnitId: selectedUnitId || ''
+      legalEntityId:
+        selected?.legalEntityId
+        || (data?.legalEntities.length === 1 ? data.legalEntities[0].id : ''),
+      parentId: mode === 'unit' ? selectedUnitId || '' : '',
+      orgUnitId: mode === 'position' ? selectedUnitId || '' : ''
     });
     setModal(mode);
     setError('');
@@ -955,7 +959,15 @@ export default function OrganizationPage() {
                     <label className="text-xs font-bold text-slate-700">Unit Type *<select required value={form.type} onChange={event => updateField('type', event.target.value)} className={`mt-1 ${inputClass()}`}>{UNIT_TYPES.map(type => <option key={type}>{type}</option>)}</select></label>
                     <label className="text-xs font-bold text-slate-700">Legal Entity<select value={form.legalEntityId} onChange={event => updateField('legalEntityId', event.target.value)} className={`mt-1 ${inputClass()}`}><option value="">Not assigned</option>{data.legalEntities.map(entity => <option key={entity.id} value={entity.id}>{entity.code} · {entity.name}</option>)}</select></label>
                     <label className="text-xs font-bold text-slate-700">Parent Unit<select value={form.parentId} onChange={event => updateField('parentId', event.target.value)} className={`mt-1 ${inputClass()}`}><option value="">Top level</option>{data.organizationUnits.filter(item => item.id !== form.id).map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}</select></label>
-                    <label className="text-xs font-bold text-slate-700">Unit Head<select value={form.headUserId} onChange={event => updateField('headUserId', event.target.value)} className={`mt-1 ${inputClass()}`}><option value="">Not assigned</option>{data.users.filter(user => user.active).map(user => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>)}</select></label>
+                    <label className="text-xs font-bold text-slate-700">Unit Head<select value={form.headUserId} onChange={event => {
+                      const user = data.users.find(item => item.id === event.target.value);
+                      setForm(current => ({
+                        ...current,
+                        headUserId: event.target.value,
+                        headName: user?.name || '',
+                        headEmail: user?.email || ''
+                      }));
+                    }} className={`mt-1 ${inputClass()}`}><option value="">Not assigned</option>{data.users.filter(user => user.active).map(user => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>)}</select></label>
                     <label className="text-xs font-bold text-slate-700">Cost Center<input value={form.costCenter} onChange={event => updateField('costCenter', event.target.value)} className={`mt-1 ${inputClass()}`} /></label>
                     <label className="text-xs font-bold text-slate-700">Location<input value={form.location} onChange={event => updateField('location', event.target.value)} className={`mt-1 ${inputClass()}`} /></label>
                     <label className="text-xs font-bold text-slate-700">Effective From<input type="date" value={form.effectiveFrom} onChange={event => updateField('effectiveFrom', event.target.value)} className={`mt-1 ${inputClass()}`} /></label>
