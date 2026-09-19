@@ -518,8 +518,8 @@ export async function provisionUser(
     );
   }
 
-  const orgUnitId = input.orgUnitId?.trim() || null;
-  const accessScope = input.accessScope || 'Institution';
+  const orgUnitId = input.role === 'Admin' ? null : input.orgUnitId?.trim() || null;
+  const accessScope = input.role === 'Admin' ? 'Institution' : input.accessScope || 'Institution';
   if (!isOrganizationAccessScope(accessScope)) {
     throw new AuthorizationError(400, 'ORGANIZATION_SCOPE_INVALID', 'Invalid organization access scope.');
   }
@@ -655,15 +655,20 @@ export async function updateProvisionedUser(
   const nextName = input.name?.trim() || existing.name;
   const nextDepartment =
     input.department === undefined ? existing.department : input.department?.trim() || null;
-  const nextOrgUnitId =
+  let nextOrgUnitId =
     input.orgUnitId === undefined ? existing.orgUnitId : input.orgUnitId?.trim() || null;
-  const nextAccessScope =
+  let nextAccessScope =
     input.accessScope === undefined
       ? (isOrganizationAccessScope(existing.accessScope) ? existing.accessScope : 'Institution')
       : input.accessScope;
 
   if (!isUserRole(nextRole)) {
     throw new AuthorizationError(400, 'USER_ROLE_INVALID', 'Invalid Total ARC role.');
+  }
+
+  if (nextRole === 'Admin') {
+    nextOrgUnitId = null;
+    nextAccessScope = 'Institution';
   }
 
   if (!isOrganizationAccessScope(nextAccessScope)) {
