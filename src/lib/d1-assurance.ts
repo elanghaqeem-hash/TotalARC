@@ -388,7 +388,7 @@ async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>, institu
     const [process, control] = await Promise.all([
       first<Record<string, unknown>>(
         db,
-        'SELECT id, processId, name FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+        'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
         [issue.processId, institutionId]
       ),
       issue.controlId
@@ -421,7 +421,7 @@ async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>, insti
   const [process, risk, control, deficiency, actionPlanRows] = await Promise.all([
     first<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+      'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
       [row.processId, institutionId]
     ),
     row.riskId
@@ -475,7 +475,7 @@ async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>, insti
 }
 
 async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
-  const [exception, rootCause, issues] = await Promise.all([
+  const [exception, rootCause, issues, process] = await Promise.all([
     row.exceptionId
       ? tenantException(db, String(row.exceptionId), institutionId)
       : Promise.resolve(null),
@@ -488,7 +488,19 @@ async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>, 
       db,
       'SELECT * FROM Issue WHERE deficiencyId = ? AND institutionId = ? ORDER BY createdAt DESC',
       [row.id, institutionId]
-    )
+    ),
+    row.exceptionId
+      ? first<Record<string, unknown>>(
+          db,
+          `SELECT p.id, p.processId, p.name, p.legalEntityId, p.orgUnitId
+             FROM TestingException e
+             JOIN ToETest t ON t.id = e.toeTestId
+             JOIN BusinessProcess p ON p.id = t.processId
+            WHERE e.id = ? AND p.institutionId = ?
+            LIMIT 1`,
+          [row.exceptionId, institutionId]
+        )
+      : Promise.resolve(null)
   ]);
 
   return {
@@ -496,7 +508,8 @@ async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>, 
     humanApproved: row.humanApproved === 1,
     exception,
     rootCause,
-    issues
+    issues,
+    process
   };
 }
 
@@ -1136,7 +1149,7 @@ export async function listRemediationData(institutionId: string) {
             ),
             first<Record<string, unknown>>(
               db,
-              'SELECT id, processId, name FROM BusinessProcess WHERE id = ? LIMIT 1',
+              'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? LIMIT 1',
               [test.processId]
             ),
             all<Record<string, unknown>>(
@@ -1175,14 +1188,22 @@ export async function listRemediationData(institutionId: string) {
             'SELECT * FROM Issue WHERE id = ? LIMIT 1',
             [map.issueId]
           );
-          mapWithIssue = { ...map, issue };
+          const process = issue
+            ? await first<Record<string, unknown>>(
+                db,
+                'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+                [issue.processId, institutionId]
+              )
+            : null;
+          mapWithIssue = { ...map, issue: issue ? { ...issue, process } : null };
         }
         return {
           ...row,
           sampleCount: Number(row.sampleCount || 0),
           passedCount: Number(row.passedCount || 0),
           failedCount: Number(row.failedCount || 0),
-          map: mapWithIssue
+          map: mapWithIssue,
+          process: (mapWithIssue?.issue as Record<string, unknown> | null)?.process || null
         };
       })
     )
@@ -1249,7 +1270,7 @@ export async function listMonitoringRules(institutionId: string) {
       if (control) {
         const process = await first<Record<string, unknown>>(
           db,
-          'SELECT id, processId, name FROM BusinessProcess WHERE id = ? LIMIT 1',
+          'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? LIMIT 1',
           [control.processId]
         );
         controlWithProcess = {
