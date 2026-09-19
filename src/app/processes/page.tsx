@@ -155,8 +155,9 @@ export default function ProcessesPage() {
         .map(position => position.assignedUserId)
     ].filter(Boolean)
   );
-  const ownerCandidates = formData.orgUnitId && ownerUserIdsForUnit.size > 0
-    ? activeUsers.filter(user => ownerUserIdsForUnit.has(user.id))
+  const unitLinkedOwnerCandidates = activeUsers.filter(user => ownerUserIdsForUnit.has(user.id));
+  const ownerCandidates = formData.orgUnitId && unitLinkedOwnerCandidates.length > 0
+    ? unitLinkedOwnerCandidates
     : activeUsers;
 
   return (
