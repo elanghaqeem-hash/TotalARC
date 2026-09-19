@@ -109,6 +109,47 @@ requirePatterns(prismaPath, prisma, [
   /@@unique\(\[institutionId, code\]\)/
 ]);
 
+const riskPagePath = 'src/app/risks/page.tsx';
+const controlPagePath = 'src/app/controls/page.tsx';
+const rcmRoutePath = 'src/app/api/rcm/route.ts';
+const rcmPagePath = 'src/app/rcm/page.tsx';
+
+const riskPage = requireFile(riskPagePath);
+requirePatterns(riskPagePath, riskPage, [
+  /processData\.organization\?\.organizationUnits/,
+  /selectedOrgUnit/,
+  /process\?\.orgUnitId === selectedOrgUnit/,
+  /selectedRiskProcess\?\.orgUnit\?\.name/
+]);
+
+const controlPage = requireFile(controlPagePath);
+requirePatterns(controlPagePath, controlPage, [
+  /processData\.organization\?\.organizationUnits/,
+  /selectedOrgUnit/,
+  /process\?\.orgUnitId === selectedOrgUnit/,
+  /selectedControlProcess\?\.orgUnit\?\.name/
+]);
+
+const rcmRoute = requireFile(rcmRoutePath);
+requirePatterns(rcmRoutePath, rcmRoute, [
+  /getOrganizationData\(auth\.user\.institutionId\)/,
+  /organizationUnits:\s*organization\.organizationUnits/
+]);
+
+const rcmPage = requireFile(rcmPagePath);
+requirePatterns(rcmPagePath, rcmPage, [
+  /selectedOrgUnit/,
+  /row\.orgUnitId === selectedOrgUnit/,
+  /unitById\.get\(row\.orgUnitId\)\?\.name/
+]);
+
+requirePatterns(corePath, core, [
+  /p\.legalEntityId AS processLegalEntityId/,
+  /p\.orgUnitId AS processOrgUnitId/,
+  /legalEntityId:\s*row\.processLegalEntityId/,
+  /orgUnitId:\s*row\.processOrgUnitId/
+]);
+
 if (findings.length) {
   console.error('Organization integrity guardrail violations detected:');
   for (const finding of findings) console.error(' - ' + finding);
