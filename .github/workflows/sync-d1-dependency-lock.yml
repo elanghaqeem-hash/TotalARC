@@ -1,6 +1,11 @@
 name: Prepare D1 dependency and migration
 
 on:
+  push:
+    branches:
+      - hardening/d1-unified-storage
+    paths:
+      - .github/workflows/sync-d1-dependency-lock.yml
   workflow_dispatch:
 
 permissions:
