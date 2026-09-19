@@ -13,6 +13,8 @@ import {
   Calendar,
   CheckSquare,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Cpu,
   FileCheck,
@@ -20,8 +22,6 @@ import {
   FolderTree,
   Layers,
   Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Shield,
   Sparkles,
@@ -251,37 +251,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-5 px-3 py-4 sm:px-5 lg:px-6 lg:py-6">
-        <aside
-          className={`sticky top-[96px] hidden h-[calc(100vh-112px)] shrink-0 overflow-y-auto pb-4 transition-[width] duration-300 ease-out lg:block ${
+        <div
+          className={`sticky top-[96px] hidden h-[calc(100vh-112px)] shrink-0 transition-[width] duration-300 ease-out lg:block ${
             sidebarCollapsed ? 'w-[76px]' : 'w-[272px]'
           }`}
         >
-          <div className={`sticky top-0 z-10 mb-3 flex bg-slate-50/95 pb-1 backdrop-blur ${
-            sidebarCollapsed ? 'justify-center' : 'justify-end'
-          }`}>
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              title={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
-              className={`group flex h-9 items-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 ${
-                sidebarCollapsed ? 'w-10 justify-center px-0' : 'gap-2 px-3'
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+            className="group/toggle absolute -right-4 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-500 shadow-[0_10px_30px_-10px_rgba(15,23,42,0.45)] ring-4 ring-slate-50/90 backdrop-blur transition-all duration-200 hover:scale-105 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_12px_32px_-10px_rgba(2,132,199,0.45)] focus:outline-none focus:ring-4 focus:ring-brand-100"
+          >
+            {sidebarCollapsed ? (
+              <ChevronRight className="h-4 w-4 transition-transform duration-200 group-hover/toggle:translate-x-0.5" />
+            ) : (
+              <ChevronLeft className="h-4 w-4 transition-transform duration-200 group-hover/toggle:-translate-x-0.5" />
+            )}
+
+            <span
+              className={`pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-950 px-2.5 py-1.5 text-[10px] font-bold text-white opacity-0 shadow-xl transition-all duration-150 group-hover/toggle:opacity-100 xl:block ${
+                sidebarCollapsed ? 'left-[46px]' : 'right-[46px]'
               }`}
             >
-              {sidebarCollapsed ? (
-                <PanelLeftOpen className="h-4 w-4" />
-              ) : (
-                <>
-                  <PanelLeftClose className="h-4 w-4" />
-                  <span className="text-[10px] font-bold">Hide menu</span>
-                </>
-              )}
-            </button>
-          </div>
+              {sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+            </span>
+          </button>
 
-          <Nav collapsed={sidebarCollapsed} />
-
-        </aside>
+          <aside className="h-full overflow-y-auto overflow-x-hidden pb-4 pr-1">
+            <Nav collapsed={sidebarCollapsed} />
+          </aside>
+        </div>
 
         <main className="min-w-0 flex-1 pb-20 lg:pb-6">{children}</main>
       </div>
