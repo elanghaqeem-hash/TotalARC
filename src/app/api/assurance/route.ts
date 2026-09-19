@@ -1,19 +1,21 @@
 import { NextResponse } from 'next/server';
-import { ensureBankKalbarPersisted } from '@/lib/d1';
+import { getPrimaryInstitution } from '@/lib/d1';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const institution = await ensureBankKalbarPersisted();
+    const institution = await getPrimaryInstitution();
 
     return NextResponse.json({
-      institution: {
-        ...institution,
-        legalEntities: [],
-        organizationUnits: [],
-        users: []
-      },
+      institution: institution
+        ? {
+            ...institution,
+            legalEntities: [],
+            organizationUnits: [],
+            users: []
+          }
+        : null,
       campaigns: [],
       todTests: [],
       walkthroughs: [],
