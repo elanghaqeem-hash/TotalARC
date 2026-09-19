@@ -15,40 +15,50 @@ jobs:
   verify-production-d1:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
     steps:
-      - name: Trigger and verify Bank Kalbar persistence
+      - name: Verify production D1 connectivity
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://totalarc.serayamg.workers.dev/api/system/database"
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          URL="$BASE_URL/api/system/database"
           RESPONSE=""
 
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 12); do
             echo "Production D1 verification attempt $attempt"
-            RESPONSE="$(curl --silent --show-error --location --max-time 20 "$URL" || true)"
+            HTTP_CODE="$(curl --silent --show-error --location --max-time 20               --output /tmp/totalarc-d1-health.json               --write-out "%{http_code}"               "$URL" || true)"
 
-            if printf '%s' "$RESPONSE" | jq -e '
+            RESPONSE="$(cat /tmp/totalarc-d1-health.json 2>/dev/null || true)"
+
+            if [ "$HTTP_CODE" = "200" ] && printf '%s' "$RESPONSE" | jq -e '
               .ok == true and
               .persistent == true and
               .database == "cloudflare-d1" and
-              .institution.name == "Bank Kalbar" and
-              .institution.legalName == "PT. Bank Pembangunan Daerah Kalimantan Barat"
+              .readOnlyProbe == true and
+              .health.binding == "DB" and
+              .health.queryOk == true and
+              (.health.tableCount | type) == "number"
             ' >/dev/null 2>&1; then
-              echo "Bank Kalbar is persisted in Cloudflare D1."
+              echo "Total ARC production D1 binding and read-only query are healthy."
               printf '%s\n' "$RESPONSE" | jq '{
                 ok,
                 database,
                 persistent,
-                institution,
-                auditLogCount: (.auditLogs | length)
+                readOnlyProbe,
+                health
               }'
               exit 0
             fi
 
-            echo "Production endpoint not ready or persistence not verified yet."
-            sleep 10
+            echo "Production D1 endpoint not ready yet (HTTP ${HTTP_CODE:-unknown})."
+            sleep 5
           done
 
-          echo "Bank Kalbar persistence could not be verified from production."
+          echo "::error::Total ARC production D1 connectivity could not be verified."
           printf '%s\n' "$RESPONSE"
           exit 1
