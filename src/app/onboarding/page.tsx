@@ -26,10 +26,10 @@ export default function OnboardingPage() {
 
   // Form State
   const [formData, setFormData] = useState({
-    name: 'Bank Kalbar',
-    legalName: 'PT. Bank Pembangunan Daerah Kalimantan Barat',
-    shortName: 'Bank Kalbar',
-    institutionType: 'Regional-Owned Enterprise',
+    name: '',
+    legalName: '',
+    shortName: '',
+    institutionType: '',
     country: 'Indonesia',
     city: '',
     registeredAddress: '',
@@ -196,6 +196,7 @@ export default function OnboardingPage() {
                   onChange={e => setFormData({ ...formData, institutionType: e.target.value })}
                   className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 >
+                  <option value="">Select institution type</option>
                   {institutionTypes.map(t => (
                     <option key={t} value={t}>
                       {t}
@@ -208,10 +209,25 @@ export default function OnboardingPage() {
                 <label className="block text-slate-700 font-bold mb-1">Stock Exchange & Ticker</label>
                 <input
                   type="text"
-                  value={`${formData.stockExchange}: ${formData.ticker}`}
+                  value={
+                    formData.stockExchange || formData.ticker
+                      ? `${formData.stockExchange}${formData.stockExchange && formData.ticker ? ': ' : ''}${formData.ticker}`
+                      : ''
+                  }
                   onChange={e => {
-                    const [exchange, ticker] = e.target.value.split(':');
-                    setFormData({ ...formData, stockExchange: exchange?.trim() || 'IDX', ticker: ticker?.trim() || '' });
+                    const rawValue = e.target.value;
+                    const separatorIndex = rawValue.indexOf(':');
+
+                    if (separatorIndex === -1) {
+                      setFormData({ ...formData, stockExchange: rawValue.trim(), ticker: '' });
+                      return;
+                    }
+
+                    setFormData({
+                      ...formData,
+                      stockExchange: rawValue.slice(0, separatorIndex).trim(),
+                      ticker: rawValue.slice(separatorIndex + 1).trim()
+                    });
                   }}
                   className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
