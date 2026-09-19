@@ -113,6 +113,14 @@ jobs:
       - name: Verify database connectivity and no demo transactions
         run: node scripts/verify-database.mjs
 
+      - name: Bootstrap Bank Kalbar institution master twice
+        run: |
+          npm run db:ensure-bank-kalbar
+          npm run db:ensure-bank-kalbar
+
+      - name: Verify Bank Kalbar persistence is unique and audited
+        run: npm run db:verify-bank-kalbar
+
       - name: TypeScript check
         run: npx tsc --noEmit
 
