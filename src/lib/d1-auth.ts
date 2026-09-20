@@ -594,6 +594,27 @@ export async function authenticateUser(input: {
   const identifier = normalizeUsername(input.identifier || '');
   if (!identifier || !input.password) throw new Error('INVALID_CREDENTIALS');
 
+  const windowStart = new Date(Date.now() - 15 * 60_000).toISOString();
+  const recentFailures = await first<{ count?: number }>(
+    db,
+    `SELECT COUNT(*) AS count
+       FROM LoginAudit
+      WHERE result='FAILED'
+        AND timestamp>=?
+        AND (lower(identifier)=? OR (? IS NOT NULL AND ipAddress=?))`,
+    [windowStart, identifier, input.ipAddress || null, input.ipAddress || null]
+  );
+  if (Number(recentFailures?.count || 0) >= 20) {
+    await recordLogin(db, {
+      identifier,
+      result: 'FAILED',
+      reason: 'RATE_LIMITED',
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent
+    });
+    throw new Error('LOGIN_RATE_LIMITED');
+  }
+
   const user = await first<UserRow>(
     db,
     `SELECT * FROM AppUser
@@ -1107,7 +1128,12 @@ export async function updateOwnProfile(
     { displayName, email, mobile: clean(input.mobile), jobTitle: clean(input.jobTitle) }
   );
 
-  const refreshedPayload = await buildPayload(db, user, session.institution.id);
+  const refreshedPayload = await buildPayload(db, user, session.institution.id, session.sid);
+  await run(
+    db,
+    'UPDATE UserSessionAudit SET expiresAt=? WHERE sessionId=? AND userId=? AND revokedAt IS NULL',
+    [new Date(refreshedPayload.exp * 1000).toISOString(), session.sid, session.sub]
+  );
   const refreshedToken = await signSessionToken(refreshedPayload);
   return { token: refreshedToken, user: refreshedPayload };
 }
@@ -1246,7 +1272,6 @@ export async function listAuthReferenceData(institutionId: string) {
   return {
     tenant,
     roles: BANK_ROLE_CATALOG,
-    sodConflicts: validateRoleSegregation([]).length === 0 ? undefined : undefined,
     passwordPolicy: PASSWORD_POLICY,
     parameters,
     loginSummary: {
