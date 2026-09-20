@@ -17,6 +17,7 @@ import {
   ChevronRight,
   ClipboardCheck,
   Cpu,
+  FileArchive,
   FileCheck,
   FileSpreadsheet,
   FolderTree,
@@ -55,7 +56,8 @@ const navGroups: NavGroup[] = [
       { name: 'Process Architecture (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
       { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
       { name: 'Single Control Library', href: '/controls', icon: Shield },
-      { name: 'Relational RCM Workspace', href: '/rcm', icon: FileSpreadsheet }
+      { name: 'Relational RCM Workspace', href: '/rcm', icon: FileSpreadsheet },
+      { name: 'Enterprise Evidence Repository', href: '/evidence', icon: FileArchive, badge: 'FILES' }
     ]
   },
   {
