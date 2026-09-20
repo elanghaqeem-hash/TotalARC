@@ -1,7 +1,7 @@
 import type { UserRole } from '@/lib/access-control';
 
 export const AUTH_COOKIE_NAME = 'total_arc_session';
-export const AUTH_SESSION_SECONDS = 8 * 60 * 60;
+export const AUTH_SESSION_SECONDS = 60 * 60;
 
 export type SessionPayload = {
   v: 1;
@@ -12,6 +12,7 @@ export type SessionPayload = {
   institutionId: string | null;
   orgUnitId: string | null;
   department: string | null;
+  mustChangePassword: boolean;
   iat: number;
   exp: number;
   jti: string;
