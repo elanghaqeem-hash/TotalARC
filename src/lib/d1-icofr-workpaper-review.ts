@@ -25,12 +25,10 @@ const EVIDENCE_DECISIONS = ['Pending', 'Accepted', 'Rejected'] as const;
 const NOTE_SEVERITIES = ['Critical', 'High', 'Medium', 'Low'] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrTestingPlanSchema(),
-    ensureIcofrTraceabilitySchema(),
-    ensureAssuranceSchema()
-  ]);
+  await ensureCoreDomainSchema();
+  await ensureIcofrTestingPlanSchema();
+  await ensureIcofrTraceabilitySchema();
+  await ensureAssuranceSchema();
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
