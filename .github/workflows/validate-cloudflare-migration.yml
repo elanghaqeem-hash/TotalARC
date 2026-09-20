@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - database/formal-d1-migrations-stage4
 
 permissions:
   contents: read
