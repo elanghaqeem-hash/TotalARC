@@ -2,6 +2,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
 import { ensureIcofrDomainSchema } from '@/lib/d1-icofr-domains';
+import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 
 type D1DatabaseLike = {
   prepare: (sql: string) => {
@@ -432,6 +433,11 @@ export async function saveDesignAssessment(input: Record<string, unknown>) {
     [controlDomainId, institution.id]
   );
   if (!control) throw new Error('CONTROL_DOMAIN_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    period
+  });
 
   const id = typeof input.id === 'string' && input.id.trim() ? input.id.trim() : crypto.randomUUID();
   const existing = await first<Record<string, unknown>>(

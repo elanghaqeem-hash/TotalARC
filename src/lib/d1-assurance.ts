@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 
 type D1DatabaseLike = {
@@ -443,6 +444,11 @@ export async function createToeTest(input: {
   );
   if (!control) throw new Error('CONTROL_NOT_FOUND');
 
+  await assertIcofrPeriodWritable({
+    institutionId: String(control.institutionId),
+    period: input.period
+  });
+
   const enterpriseId =
     input.testId && input.testId.trim()
       ? input.testId.trim()
@@ -520,6 +526,18 @@ export async function addToeSample(input: {
   );
   if (!test) throw new Error('TOE_TEST_NOT_FOUND');
 
+  const testControl = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
+    [test.controlId]
+  );
+  if (!testControl) throw new Error('CONTROL_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(testControl.institutionId),
+    period: String(test.period)
+  });
+
   const nextNumberRow = await first<{ nextNumber?: number }>(
     db,
     'SELECT COALESCE(MAX(sampleNumber), 0) + 1 AS nextNumber FROM TestSample WHERE toeTestId = ?',
@@ -579,6 +597,18 @@ export async function createTestingExceptionFromSample(input: {
     [input.toeTestId]
   );
   if (!test) throw new Error('TOE_TEST_NOT_FOUND');
+
+  const exceptionControl = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
+    [test.controlId]
+  );
+  if (!exceptionControl) throw new Error('CONTROL_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(exceptionControl.institutionId),
+    period: String(test.period)
+  });
 
   const sample = await first<Record<string, unknown>>(
     db,
@@ -652,6 +682,25 @@ export async function createControlDeficiency(input: {
     [input.exceptionId]
   );
   if (!exception) throw new Error('EXCEPTION_NOT_FOUND');
+
+  const deficiencyTest = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
+    [exception.toeTestId]
+  );
+  if (!deficiencyTest) throw new Error('TOE_TEST_NOT_FOUND');
+
+  const deficiencyControl = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
+    [deficiencyTest.controlId]
+  );
+  if (!deficiencyControl) throw new Error('CONTROL_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(deficiencyControl.institutionId),
+    period: String(deficiencyTest.period)
+  });
 
   const existing = await first<Record<string, unknown>>(
     db,
@@ -1050,6 +1099,25 @@ export async function updateToeSample(input: {
     [input.sampleId]
   );
   if (!sample) throw new Error('SAMPLE_NOT_FOUND');
+
+  const sampleTest = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
+    [sample.toeTestId]
+  );
+  if (!sampleTest) throw new Error('TOE_TEST_NOT_FOUND');
+
+  const sampleControl = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
+    [sampleTest.controlId]
+  );
+  if (!sampleControl) throw new Error('CONTROL_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(sampleControl.institutionId),
+    period: String(sampleTest.period)
+  });
 
   const allowed = new Set(['Pass', 'Fail', 'N/A', 'Not Tested']);
   if (!allowed.has(input.result)) throw new Error('INVALID_SAMPLE_RESULT');

@@ -4,6 +4,7 @@ import { ensureIcofrTestingPlanSchema } from '@/lib/d1-icofr-testing-plan';
 import { ensureIcofrCoverageSchema, getIcofrCoverageData } from '@/lib/d1-icofr-coverage';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
 import { getOrganizationStructure } from '@/lib/d1-organization';
+import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 
 type D1DatabaseLike = {
   prepare: (sql: string) => {
@@ -252,6 +253,11 @@ export async function saveSubCertification(input: Record<string, unknown>) {
   }
 
   await validateScopeAndCycle(db, String(institution.id), scopeId, testingCycleId);
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    scopeId,
+    period
+  });
 
   const subjectTable = subjectType === 'Legal Entity' ? 'LegalEntity' : 'OrganizationUnit';
   const subject = await first<Record<string, unknown>>(
@@ -428,6 +434,11 @@ export async function saveManagementAttestation(input: Record<string, unknown>) 
   }
 
   await validateScopeAndCycle(db, String(institution.id), scopeId, testingCycleId);
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    scopeId,
+    period
+  });
 
   const id =
     typeof input.id === 'string' && input.id.trim()
@@ -559,6 +570,12 @@ export async function saveEvidencePack(input: Record<string, unknown>) {
     [attestationId, institution.id]
   );
   if (!attestation) throw new Error('ATTESTATION_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    scopeId: String(attestation.scopeId),
+    period: String(attestation.period)
+  });
 
   const id =
     typeof input.id === 'string' && input.id.trim()
@@ -863,6 +880,12 @@ export async function signManagementAttestation(
     [attestationId, institution.id]
   );
   if (!attestation) throw new Error('ATTESTATION_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    scopeId: String(attestation.scopeId),
+    period: String(attestation.period)
+  });
 
   if (String(attestation.overallConclusion) === 'Not Concluded') {
     throw new Error('CONCLUSION_REQUIRED');

@@ -190,6 +190,12 @@ export async function POST(request: Request) {
     if (code === 'INVALID_SAMPLE_RESULT') {
       return NextResponse.json({ error: 'Invalid ToE sample result.' }, { status: 400 });
     }
+    if (code === 'PERIOD_CLOSED') {
+      return NextResponse.json(
+        { error: 'This ICOFR period is closed. ToE workpapers, samples and testing exceptions are frozen until an approved temporary reopening is active.' },
+        { status: 409 }
+      );
+    }
     if (code === 'FAILURE_REASON_REQUIRED') {
       return NextResponse.json(
         { error: 'A factual failure reason is required when a sample result is Fail.' },

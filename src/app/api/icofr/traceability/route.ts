@@ -89,7 +89,8 @@ export async function POST(request: Request) {
       SOURCE_CONTROL_NOT_FOUND: ['Selected enterprise Control Master record was not found.', 400],
       REQUIRED_FIELDS: ['Control, period and tester are required for Test of Design.', 400],
       TEST_ID_CONFLICT: ['Test of Design ID already exists.', 409],
-      TRACE_LINK_NOT_FOUND: ['Traceability link was not found.', 404]
+      TRACE_LINK_NOT_FOUND: ['Traceability link was not found.', 404],
+      PERIOD_CLOSED: ['This ICOFR period is closed. Request an approved temporary reopening before changing Test of Design evidence.', 409]
     };
 
     if (known[code]) {

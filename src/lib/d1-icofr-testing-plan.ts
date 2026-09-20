@@ -8,6 +8,7 @@ import {
   createToeTest,
   ensureAssuranceSchema
 } from '@/lib/d1-assurance';
+import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 
 type D1DatabaseLike = {
   prepare: (sql: string) => {
@@ -233,6 +234,11 @@ export async function saveTestingCycle(input: Record<string, unknown>) {
   );
   if (!scope) throw new Error('SCOPE_NOT_FOUND');
 
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    scopeId
+  });
+
   const id =
     typeof input.id === 'string' && input.id.trim()
       ? input.id.trim()
@@ -370,6 +376,12 @@ export async function saveTestingPlanItem(input: Record<string, unknown>) {
   ]);
   if (!cycle) throw new Error('CYCLE_NOT_FOUND');
   if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    testingCycleId: cycleId
+  });
+
   if (plannedStartDate < String(cycle.startDate) || dueDate > String(cycle.endDate)) {
     throw new Error('OUTSIDE_CYCLE_DATES');
   }
@@ -536,6 +548,12 @@ export async function generateTestingPlanItems(input: Record<string, unknown>) {
     [cycleId, institution.id]
   );
   if (!cycle) throw new Error('CYCLE_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    testingCycleId: cycleId
+  });
+
   if (plannedStartDate < String(cycle.startDate) || dueDate > String(cycle.endDate) || dueDate < plannedStartDate) {
     throw new Error('OUTSIDE_CYCLE_DATES');
   }
@@ -627,6 +645,11 @@ export async function launchPlanExecution(
     [item.cycleId, institution.id]
   );
   if (!cycle) throw new Error('CYCLE_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    testingCycleId: String(item.cycleId)
+  });
 
   const control = await first<Record<string, unknown>>(
     db,
@@ -741,6 +764,12 @@ export async function removeTestingPlanItem(id: string) {
     [id, institution.id]
   );
   if (!existing) throw new Error('PLAN_ITEM_NOT_FOUND');
+
+  await assertIcofrPeriodWritable({
+    institutionId: String(institution.id),
+    testingCycleId: String(existing.cycleId)
+  });
+
   if (existing.todAssessmentId || existing.toeTestId) throw new Error('PLAN_EXECUTION_EXISTS');
 
   await run(db, 'DELETE FROM ICOFRTestingPlanItem WHERE id=?', [id]);
