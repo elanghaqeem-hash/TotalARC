@@ -165,7 +165,9 @@ async function tenantMonitoringRule(
   );
 }
 
-export async function ensureAssuranceSchema() {
+let assuranceSchemaPromise: Promise<D1DatabaseLike> | null = null;
+
+async function initializeAssuranceSchema() {
   const db = await getDb();
 
   await executeSchemaScript(db, `
@@ -536,6 +538,17 @@ export async function ensureAssuranceSchema() {
   return db;
 }
 
+
+
+export async function ensureAssuranceSchema() {
+  if (!assuranceSchemaPromise) {
+    assuranceSchemaPromise = initializeAssuranceSchema().catch(error => {
+      assuranceSchemaPromise = null;
+      throw error;
+    });
+  }
+  return assuranceSchemaPromise;
+}
 
 function storedBoolean(value: unknown) {
   return value === true || value === 1 || value === '1';
