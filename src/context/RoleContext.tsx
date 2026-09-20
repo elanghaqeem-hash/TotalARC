@@ -100,7 +100,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshAuth();
 
-    fetch('/api/assurance', { cache: 'no-store' })
+    fetch('/api/assurance?modules=institution', { cache: 'no-store' })
       .then((res) =>
         res.ok ? res.json() : Promise.reject(new Error('Unable to load institution'))
       )
