@@ -448,7 +448,7 @@ export function requiredPermissionForApi(pathname: string, method: string): Perm
   if (pathname.startsWith('/api/risks')) return write ? 'risk.edit' : 'risk.view';
   if (pathname.startsWith('/api/controls')) return write ? 'control.edit' : 'control.view';
   if (pathname.startsWith('/api/rcm')) return write ? 'rcm.edit' : 'rcm.view';
-  if (pathname.startsWith('/api/assurance')) return write ? 'rcsa.assess' : 'rcsa.view';
+  if (pathname.startsWith('/api/assurance')) return null;
   if (pathname.startsWith('/api/assure/toe')) return write ? 'icofr.test' : 'icofr.view';
   if (pathname.startsWith('/api/assure/remediation')) return write ? 'remediation.own' : 'remediation.view';
   if (pathname.startsWith('/api/monitor/ccm')) return write ? 'ccm.manage' : 'ccm.view';
