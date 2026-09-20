@@ -877,6 +877,7 @@ export async function getTestingPlanData() {
 
     return {
       ...item,
+      dueDate: String(item.dueDate || ''),
       populationSize: numberOrNull(item.populationSize),
       plannedSampleSize: numberOrNull(item.plannedSampleSize),
       carryForward: bool(item.carryForward),
