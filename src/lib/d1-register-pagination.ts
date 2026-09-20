@@ -116,6 +116,75 @@ function groupRows(
   return map;
 }
 
+export async function getProcessScopeById(
+  institutionId: string,
+  processRecordId: string
+) {
+  const db = await getDb();
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT p.id, p.processId, p.name, p.legalEntityId, p.orgUnitId,
+            p.criticality, p.classification
+       FROM BusinessProcess p
+      WHERE p.institutionId = ? AND p.id = ?
+      LIMIT 1`,
+    [institutionId, processRecordId]
+  );
+}
+
+export async function getControlScopeById(
+  institutionId: string,
+  controlRecordId: string
+) {
+  const db = await getDb();
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT c.id, c.controlId, c.name, c.processId,
+            p.processId AS enterpriseProcessId, p.name AS processName,
+            p.legalEntityId, p.orgUnitId
+       FROM ControlMaster c
+       JOIN BusinessProcess p ON p.id = c.processId
+      WHERE c.institutionId = ? AND p.institutionId = ? AND c.id = ?
+      LIMIT 1`,
+    [institutionId, institutionId, controlRecordId]
+  );
+}
+
+export async function getToeTestScopeById(
+  institutionId: string,
+  toeTestId: string
+) {
+  const db = await getDb(false);
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT t.id, t.testId, t.controlId, t.processId,
+            p.legalEntityId, p.orgUnitId
+       FROM ToETest t
+       JOIN BusinessProcess p ON p.id = t.processId
+      WHERE p.institutionId = ? AND t.id = ?
+      LIMIT 1`,
+    [institutionId, toeTestId]
+  );
+}
+
+export async function getToeSampleScopeById(
+  institutionId: string,
+  sampleId: string
+) {
+  const db = await getDb(false);
+  return first<Record<string, unknown>>(
+    db,
+    `SELECT s.id, s.toeTestId, t.processId,
+            p.legalEntityId, p.orgUnitId
+       FROM TestSample s
+       JOIN ToETest t ON t.id = s.toeTestId
+       JOIN BusinessProcess p ON p.id = t.processId
+      WHERE p.institutionId = ? AND s.id = ?
+      LIMIT 1`,
+    [institutionId, sampleId]
+  );
+}
+
 export async function listProcessRegisterPage(
   institutionId: string,
   filters: RegisterFilters
