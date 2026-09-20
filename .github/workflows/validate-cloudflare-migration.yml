@@ -34,6 +34,9 @@ jobs:
       - name: Verify sidebar module integrity
         run: npm run verify:modules
 
+      - name: Verify authentication security integrity
+        run: npm run verify:auth-security
+
       - name: Build OpenNext Cloudflare artifact
         run: npm run build
 
