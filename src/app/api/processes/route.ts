@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createBusinessProcess, listBusinessProcesses } from '@/lib/d1-core';
+import { createBusinessProcess } from '@/lib/d1-core';
+import { listProcessOptions, listProcessRegisterPage } from '@/lib/d1-register-pagination';
+import { parsePaginationRequest } from '@/lib/pagination';
 import { getOrganizationData, scopeOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
@@ -12,24 +14,53 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const [{ processes, categories }, organization, authorizedOrgUnitIds] = await Promise.all([
-      listBusinessProcesses(auth.user.institutionId),
+    const url = new URL(request.url);
+    const pagination = parsePaginationRequest(request);
+    const categoryId = (url.searchParams.get('categoryId') || '').trim() || null;
+    const orgUnitId = (url.searchParams.get('orgUnitId') || '').trim() || null;
+    const mode = url.searchParams.get('mode') || 'register';
+
+    const [organization, authorizedOrgUnitIds] = await Promise.all([
       getOrganizationData(auth.user.institutionId),
       resolveAuthorizedOrgUnitIds(auth.user)
     ]);
-
-    const scopedProcesses = processes.filter(process =>
-      isOrgUnitAuthorized(authorizedOrgUnitIds, process.orgUnitId as string | null | undefined)
-    );
     const scopedOrganization = scopeOrganizationData(
       organization,
       authorizedOrgUnitIds,
       auth.user.id
     );
 
+    if (mode === 'options') {
+      const processes = await listProcessOptions(
+        auth.user.institutionId,
+        { authorizedOrgUnitIds, orgUnitId },
+        pagination.search
+      );
+
+      return NextResponse.json({
+        processes,
+        organization: {
+          legalEntities: scopedOrganization.legalEntities,
+          organizationUnits: scopedOrganization.organizationUnits,
+          positions: scopedOrganization.positions,
+          users: scopedOrganization.users
+        },
+        storage: 'cloudflare-d1'
+      });
+    }
+
+    const page = await listProcessRegisterPage(
+      auth.user.institutionId,
+      {
+        ...pagination,
+        authorizedOrgUnitIds,
+        categoryId,
+        orgUnitId
+      }
+    );
+
     return NextResponse.json({
-      processes: scopedProcesses,
-      categories,
+      ...page,
       organization: {
         legalEntities: scopedOrganization.legalEntities,
         organizationUnits: scopedOrganization.organizationUnits,
