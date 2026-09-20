@@ -488,6 +488,590 @@ export async function ensureAssuranceSchema() {
   return db;
 }
 
+
+function storedBoolean(value: unknown) {
+  return value === true || value === 1 || value === '1';
+}
+
+async function loadControlContext(
+  db: D1DatabaseLike,
+  controlId: string,
+  institutionId: string
+) {
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [controlId, institutionId]
+  );
+  if (!control) return null;
+
+  const process = await first<Record<string, unknown>>(
+    db,
+    'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+    [control.processId, institutionId]
+  );
+
+  return {
+    ...control,
+    isKeyControl: storedBoolean(control.isKeyControl),
+    isIcofrKey: storedBoolean(control.isIcofrKey),
+    isItgc: storedBoolean(control.isItgc),
+    process
+  };
+}
+
+export async function listRcsaData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const campaignRows = await all<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AssessmentCampaign WHERE institutionId = ? ORDER BY startDate DESC, createdAt DESC',
+    [institutionId]
+  );
+
+  const campaigns = await Promise.all(
+    campaignRows.map(async campaign => {
+      const responseRows = await all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM CSAResponse WHERE campaignId = ? ORDER BY assessedAt DESC',
+        [campaign.id]
+      );
+      const csaResponses = await Promise.all(
+        responseRows.map(async response => ({
+          ...response,
+          wasPerformed: storedBoolean(response.wasPerformed),
+          frequencyMet: storedBoolean(response.frequencyMet),
+          evidenceAttached: storedBoolean(response.evidenceAttached),
+          exceptionsFound: storedBoolean(response.exceptionsFound),
+          processChanged: storedBoolean(response.processChanged),
+          controlChanged: storedBoolean(response.controlChanged),
+          exceptionCount: Number(response.exceptionCount || 0),
+          control: await loadControlContext(
+            db,
+            String(response.controlId || ''),
+            institutionId
+          )
+        }))
+      );
+      return { ...campaign, csaResponses };
+    })
+  );
+
+  return { campaigns };
+}
+
+export async function createAssessmentCampaign(input: {
+  name: string;
+  type: string;
+  period: string;
+  startDate: string;
+  dueDate: string;
+  ownerName: string;
+  approverName?: string | null;
+  orgUnitId?: string | null;
+  legalEntityId?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO AssessmentCampaign (
+      id, institutionId, legalEntityId, orgUnitId, name, type, period,
+      startDate, dueDate, status, ownerName, approverName, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.name,
+      input.type,
+      input.period,
+      input.startDate,
+      input.dueDate,
+      input.ownerName,
+      nullable(input.approverName),
+      nowIso()
+    ]
+  );
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AssessmentCampaign WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function upsertCsaResponse(input: {
+  campaignId: string;
+  controlId: string;
+  wasPerformed: boolean;
+  frequencyMet: boolean;
+  evidenceAttached: boolean;
+  exceptionsFound: boolean;
+  exceptionCount: number;
+  processChanged: boolean;
+  controlChanged: boolean;
+  csaConclusion: string;
+  assessorNotes?: string | null;
+  assessorName: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const campaign = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AssessmentCampaign WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.campaignId, institutionId]
+  );
+  if (!campaign) throw new Error('RCSA_CAMPAIGN_NOT_FOUND');
+
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM CSAResponse WHERE campaignId = ? AND controlId = ? LIMIT 1',
+    [input.campaignId, input.controlId]
+  );
+  const assessedAt = nowIso();
+
+  if (existing?.id) {
+    await run(
+      db,
+      `UPDATE CSAResponse
+          SET wasPerformed = ?, frequencyMet = ?, evidenceAttached = ?,
+              exceptionsFound = ?, exceptionCount = ?, processChanged = ?,
+              controlChanged = ?, csaConclusion = ?, assessorNotes = ?,
+              assessorName = ?, assessedAt = ?
+        WHERE id = ?`,
+      [
+        input.wasPerformed ? 1 : 0,
+        input.frequencyMet ? 1 : 0,
+        input.evidenceAttached ? 1 : 0,
+        input.exceptionsFound ? 1 : 0,
+        input.exceptionCount,
+        input.processChanged ? 1 : 0,
+        input.controlChanged ? 1 : 0,
+        input.csaConclusion,
+        nullable(input.assessorNotes),
+        input.assessorName,
+        assessedAt,
+        existing.id
+      ]
+    );
+  } else {
+    await run(
+      db,
+      `INSERT INTO CSAResponse (
+        id, campaignId, controlId, wasPerformed, frequencyMet, evidenceAttached,
+        exceptionsFound, exceptionCount, processChanged, controlChanged,
+        csaConclusion, assessorNotes, assessorName, assessedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        input.campaignId,
+        input.controlId,
+        input.wasPerformed ? 1 : 0,
+        input.frequencyMet ? 1 : 0,
+        input.evidenceAttached ? 1 : 0,
+        input.exceptionsFound ? 1 : 0,
+        input.exceptionCount,
+        input.processChanged ? 1 : 0,
+        input.controlChanged ? 1 : 0,
+        input.csaConclusion,
+        nullable(input.assessorNotes),
+        input.assessorName,
+        assessedAt
+      ]
+    );
+  }
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM CSAResponse WHERE campaignId = ? AND controlId = ? LIMIT 1',
+    [input.campaignId, input.controlId]
+  );
+}
+
+export async function listTodData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const [testRows, walkthroughRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT t.*
+         FROM ToDTest t
+         JOIN BusinessProcess p ON p.id = t.processId
+        WHERE p.institutionId = ?
+        ORDER BY t.testedAt DESC, t.testId ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT w.*
+         FROM Walkthrough w
+         JOIN ControlMaster c ON c.id = w.controlId
+        WHERE c.institutionId = ?
+        ORDER BY w.date DESC, w.createdAt DESC`,
+      [institutionId]
+    )
+  ]);
+
+  const todTests = await Promise.all(
+    testRows.map(async test => ({
+      ...test,
+      objectiveAlignment: storedBoolean(test.objectiveAlignment),
+      riskCoverage: storedBoolean(test.riskCoverage),
+      precisionAdequate: storedBoolean(test.precisionAdequate),
+      segregationDuties: storedBoolean(test.segregationDuties),
+      evidenceSufficiency: storedBoolean(test.evidenceSufficiency),
+      control: await loadControlContext(db, String(test.controlId || ''), institutionId),
+      process: await first<Record<string, unknown>>(
+        db,
+        'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+        [test.processId, institutionId]
+      ),
+      risk: test.riskId
+        ? await first<Record<string, unknown>>(
+            db,
+            'SELECT id, riskId, name FROM RiskMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+            [test.riskId, institutionId]
+          )
+        : null
+    }))
+  );
+
+  const walkthroughs = await Promise.all(
+    walkthroughRows.map(async walk => {
+      const control = await loadControlContext(db, String(walk.controlId || ''), institutionId);
+      return {
+        ...walk,
+        processChanged: storedBoolean(walk.processChanged),
+        control,
+        process: (control?.process as Record<string, unknown> | null) || null
+      };
+    })
+  );
+
+  return { todTests, walkthroughs };
+}
+
+export async function createTodTest(input: {
+  testId?: string;
+  controlId: string;
+  riskId?: string | null;
+  testerName: string;
+  reviewerName?: string | null;
+  period: string;
+  testObjective: string;
+  objectiveAlignment: boolean;
+  riskCoverage: boolean;
+  precisionAdequate: boolean;
+  segregationDuties: boolean;
+  evidenceSufficiency: boolean;
+  observations?: string | null;
+  conclusion: string;
+  status?: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  if (input.riskId) {
+    const risk = await first<Record<string, unknown>>(
+      db,
+      'SELECT id FROM RiskMaster WHERE id = ? AND institutionId = ? AND processId = ? LIMIT 1',
+      [input.riskId, institutionId, control.processId]
+    );
+    if (!risk) throw new Error('RISK_NOT_FOUND');
+  }
+
+  const testId = input.testId?.trim() || 'TOD-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ToDTest WHERE testId = ? LIMIT 1',
+    [testId]
+  );
+  if (duplicate) throw new Error('TOD_TEST_ID_CONFLICT');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO ToDTest (
+      id, testId, controlId, processId, riskId, testerName, reviewerName,
+      period, testObjective, objectiveAlignment, riskCoverage, precisionAdequate,
+      segregationDuties, evidenceSufficiency, observations, conclusion, status, testedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      testId,
+      control.id,
+      control.processId,
+      nullable(input.riskId),
+      input.testerName,
+      nullable(input.reviewerName),
+      input.period,
+      input.testObjective,
+      input.objectiveAlignment ? 1 : 0,
+      input.riskCoverage ? 1 : 0,
+      input.precisionAdequate ? 1 : 0,
+      input.segregationDuties ? 1 : 0,
+      input.evidenceSufficiency ? 1 : 0,
+      nullable(input.observations),
+      input.conclusion,
+      input.status || 'Draft',
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToDTest WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createWalkthrough(input: {
+  controlId: string;
+  date: string;
+  participants?: string | null;
+  transactionRef?: string | null;
+  systemsInspected?: string | null;
+  observations?: string | null;
+  processChanged: boolean;
+  conclusion: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO Walkthrough (
+      id, controlId, date, participants, transactionRef, systemsInspected,
+      observations, processChanged, conclusion, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.controlId,
+      input.date,
+      nullable(input.participants),
+      nullable(input.transactionRef),
+      nullable(input.systemsInspected),
+      nullable(input.observations),
+      input.processChanged ? 1 : 0,
+      input.conclusion,
+      nowIso()
+    ]
+  );
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Walkthrough WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function listIcofrData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const [accountRows, ipeRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM FinancialAccount WHERE institutionId = ? ORDER BY accountCode ASC',
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM IPERegister WHERE institutionId = ? ORDER BY reportName ASC',
+      [institutionId]
+    )
+  ]);
+
+  const financialAccounts = await Promise.all(
+    accountRows.map(async account => ({
+      ...account,
+      balanceAmount: Number(account.balanceAmount || 0),
+      isSignificant: storedBoolean(account.isSignificant),
+      assertions: (await all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM AccountAssertionMapping WHERE accountId = ? ORDER BY assertion ASC',
+        [account.id]
+      )).map(assertion => ({
+        ...assertion,
+        isInScope: storedBoolean(assertion.isInScope)
+      }))
+    }))
+  );
+
+  const ipeRegisters = ipeRows.map(ipe => ({
+    ...ipe,
+    completenessTested: storedBoolean(ipe.completenessTested),
+    accuracyTested: storedBoolean(ipe.accuracyTested)
+  }));
+
+  return { financialAccounts, ipeRegisters };
+}
+
+export async function createFinancialAccount(input: {
+  legalEntityId?: string | null;
+  orgUnitId?: string | null;
+  accountCode: string;
+  accountName: string;
+  financialStatement: string;
+  balanceAmount: number;
+  isSignificant: boolean;
+  scopingRationale?: string | null;
+  fraudExposure: string;
+  complexity: string;
+  assertions?: Array<{ assertion: string; isInScope: boolean }>;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM FinancialAccount WHERE institutionId = ? AND accountCode = ? LIMIT 1',
+    [institutionId, input.accountCode]
+  );
+  if (duplicate) throw new Error('FINANCIAL_ACCOUNT_CODE_CONFLICT');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO FinancialAccount (
+      id, institutionId, legalEntityId, orgUnitId, accountCode, accountName,
+      financialStatement, balanceAmount, isSignificant, scopingRationale,
+      fraudExposure, complexity, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.accountCode,
+      input.accountName,
+      input.financialStatement,
+      input.balanceAmount,
+      input.isSignificant ? 1 : 0,
+      nullable(input.scopingRationale),
+      input.fraudExposure,
+      input.complexity,
+      nowIso()
+    ]
+  );
+
+  for (const assertion of input.assertions || []) {
+    if (!assertion.assertion.trim()) continue;
+    await run(
+      db,
+      `INSERT INTO AccountAssertionMapping (id, accountId, assertion, isInScope, createdAt)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        id,
+        assertion.assertion.trim(),
+        assertion.isInScope ? 1 : 0,
+        nowIso()
+      ]
+    );
+  }
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM FinancialAccount WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function upsertAccountAssertion(input: {
+  accountId: string;
+  assertion: string;
+  isInScope: boolean;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const account = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM FinancialAccount WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.accountId, institutionId]
+  );
+  if (!account) throw new Error('FINANCIAL_ACCOUNT_NOT_FOUND');
+
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM AccountAssertionMapping WHERE accountId = ? AND assertion = ? LIMIT 1',
+    [input.accountId, input.assertion]
+  );
+  if (existing?.id) {
+    await run(
+      db,
+      'UPDATE AccountAssertionMapping SET isInScope = ? WHERE id = ?',
+      [input.isInScope ? 1 : 0, existing.id]
+    );
+  } else {
+    await run(
+      db,
+      `INSERT INTO AccountAssertionMapping (id, accountId, assertion, isInScope, createdAt)
+       VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), input.accountId, input.assertion, input.isInScope ? 1 : 0, nowIso()]
+    );
+  }
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AccountAssertionMapping WHERE accountId = ? AND assertion = ? LIMIT 1',
+    [input.accountId, input.assertion]
+  );
+}
+
+export async function createIpeRegister(input: {
+  legalEntityId?: string | null;
+  orgUnitId?: string | null;
+  reportName: string;
+  systemSource: string;
+  reportOwner: string;
+  parameters?: string | null;
+  logicSummary?: string | null;
+  completenessTested: boolean;
+  accuracyTested: boolean;
+  evidenceDoc?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO IPERegister (
+      id, institutionId, legalEntityId, orgUnitId, reportName, systemSource,
+      reportOwner, parameters, logicSummary, completenessTested, accuracyTested,
+      evidenceDoc, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.reportName,
+      input.systemSource,
+      input.reportOwner,
+      nullable(input.parameters),
+      nullable(input.logicSummary),
+      input.completenessTested ? 1 : 0,
+      input.accuracyTested ? 1 : 0,
+      nullable(input.evidenceDoc),
+      nowIso()
+    ]
+  );
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM IPERegister WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
   const [issue, milestones, retests] = await Promise.all([
     first<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE id = ? AND institutionId = ? LIMIT 1', [row.issueId, institutionId]),
