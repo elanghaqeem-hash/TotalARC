@@ -32,7 +32,11 @@ jobs:
           set -euo pipefail
           BUNDLE="secure-migration-aura/bundle.json"
           test -f "$BUNDLE"
-          test "$(jq 'length' "$BUNDLE")" = "17"
+          count="$(jq 'length' "$BUNDLE")"
+          if [ "$count" -lt 1 ] || [ "$count" -gt 17 ]; then
+            echo "::error::Expected between 1 and 17 Aura recovery envelopes, found $count."
+            exit 1
+          fi
 
           BASE_URL="${PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
           BASE_URL="${BASE_URL%/}"
@@ -45,7 +49,7 @@ jobs:
             code="$(curl --silent --show-error --max-time 180               --output /tmp/import.json --write-out "%{http_code}"               --request POST               --header "Content-Type: application/json"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               --data-binary "$envelope" "$IMPORT_URL" || true)"
             if [ "$code" -ge 200 ] && [ "$code" -lt 300 ] && jq -e '.ok==true' /tmp/import.json >/dev/null 2>&1; then
               ok=$((ok+1))
-              echo "Imported Aura remainder $total/17."
+              echo "Imported Aura recovery $total/$count."
             else
               failed=$((failed+1))
               echo "::error::Aura remainder item $total failed (HTTP ${code:-unknown})."
@@ -53,8 +57,8 @@ jobs:
             fi
           done < <(jq -c '.[]' "$BUNDLE")
 
-          echo "Aura remainder migration: total=$total ok=$ok failed=$failed"
-          test "$ok" = "17"
+          echo "Aura recovery migration: total=$total ok=$ok failed=$failed"
+          test "$ok" = "$count"
           test "$failed" = "0"
 
           curl --fail --silent --show-error --max-time 30             --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"             "$STATUS_URL" > /tmp/status.json
