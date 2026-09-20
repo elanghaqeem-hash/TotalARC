@@ -176,9 +176,6 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[11px] leading-5 text-slate-500">
-                Role tidak dipilih pada halaman ini. Role melekat pada akun dan menentukan menu serta tindakan yang tersedia setelah login.
-              </div>
             </div>
           </section>
         </div>
