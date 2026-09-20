@@ -1,4 +1,4 @@
-import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { getTenantDb } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureIcofrScopeSchema } from '@/lib/d1-icofr';
 import { ensureIcofrDomainSchema } from '@/lib/d1-icofr-domains';
@@ -41,10 +41,7 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureIcofrPeriodLockSchema()
   ]);
 
-  const { env } = await getCloudflareContext({ async: true });
-  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
-  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
-  return db;
+  return getTenantDb();
 }
 
 async function all<T = Record<string, unknown>>(
