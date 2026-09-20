@@ -8,6 +8,7 @@ import { ensureAssuranceSchema } from '@/lib/d1-assurance';
 import { ensureIcofrPeriodCloseSchema } from '@/lib/d1-icofr-period-close';
 
 type D1DatabaseLike = {
+  exec: (sql: string) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -33,13 +34,15 @@ const ITEM_DECISIONS = [
 ] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await ensureCoreDomainSchema();
-  await ensureIcofrScopeSchema();
-  await ensureIcofrDomainSchema();
-  await ensureIcofrTraceabilitySchema();
-  await ensureIcofrTestingPlanSchema();
-  await ensureAssuranceSchema();
-  await ensureIcofrPeriodCloseSchema();
+  await Promise.all([
+    ensureCoreDomainSchema(),
+    ensureIcofrScopeSchema(),
+    ensureIcofrDomainSchema(),
+    ensureIcofrTraceabilitySchema(),
+    ensureIcofrTestingPlanSchema(),
+    ensureAssuranceSchema(),
+    ensureIcofrPeriodCloseSchema()
+  ]);
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -48,9 +51,7 @@ async function getDb(): Promise<D1DatabaseLike> {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  for (const statement of script.split(';').map(item => item.trim()).filter(Boolean)) {
-    await db.prepare(statement).run();
-  }
+  await db.exec(script);
 }
 
 async function all<T = Record<string, unknown>>(

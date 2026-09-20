@@ -65,11 +65,11 @@ export default function SmartTestingPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const load = async () => {
+  const load = async (force = false) => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/icofr/smart-testing', { cache: 'no-store' });
+      const response = await fetch('/api/icofr/smart-testing', { cache: force ? 'no-store' : 'default' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Smart testing strategy unavailable.');
       setData(body);
@@ -117,7 +117,7 @@ export default function SmartTestingPage() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Unable to process smart-testing action.');
       setMessage(success);
-      await load();
+      await load(true);
       return body;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to process smart-testing action.');
@@ -191,7 +191,7 @@ export default function SmartTestingPage() {
           </div>
           <button
             type="button"
-            onClick={() => void load()}
+            onClick={() => void load(true)}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-[10px] font-bold text-slate-600 disabled:opacity-50"
           >

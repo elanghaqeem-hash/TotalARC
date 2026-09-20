@@ -11,6 +11,7 @@ import {
 import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 
 type D1DatabaseLike = {
+  exec: (sql: string) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -24,9 +25,11 @@ type D1DatabaseLike = {
 };
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await ensureIcofrScopeSchema();
-  await ensureIcofrTraceabilitySchema();
-  await ensureAssuranceSchema();
+  await Promise.all([
+    ensureIcofrScopeSchema(),
+    ensureIcofrTraceabilitySchema(),
+    ensureAssuranceSchema()
+  ]);
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -63,9 +66,7 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  for (const statement of script.split(';').map(item => item.trim()).filter(Boolean)) {
-    await db.prepare(statement).run();
-  }
+  await db.exec(script);
 }
 
 function nowIso() {

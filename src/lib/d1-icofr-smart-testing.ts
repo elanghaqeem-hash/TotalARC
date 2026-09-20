@@ -11,6 +11,7 @@ import { ensureIcofrTraceabilitySchema } from '@/lib/d1-icofr-traceability';
 import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 
 type D1DatabaseLike = {
+  exec: (sql: string) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -38,12 +39,14 @@ const REVIEW_DECISIONS = [
 ] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await ensureCoreDomainSchema();
-  await ensureIcofrTestingPlanSchema();
-  await ensureIcofrCoverageSchema();
-  await ensureIcofrRollForwardSchema();
-  await ensureAssuranceSchema();
-  await ensureIcofrTraceabilitySchema();
+  await Promise.all([
+    ensureCoreDomainSchema(),
+    ensureIcofrTestingPlanSchema(),
+    ensureIcofrCoverageSchema(),
+    ensureIcofrRollForwardSchema(),
+    ensureAssuranceSchema(),
+    ensureIcofrTraceabilitySchema()
+  ]);
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -52,9 +55,7 @@ async function getDb(): Promise<D1DatabaseLike> {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  for (const statement of script.split(';').map(item => item.trim()).filter(Boolean)) {
-    await db.prepare(statement).run();
-  }
+  await db.exec(script);
 }
 
 async function all<T = Record<string, unknown>>(
@@ -1169,28 +1170,41 @@ export async function getSmartTestingStrategyData() {
   const cycleById = new Map(cycles.map(item => [String(item.id), item]));
   const rollForwardById = new Map(rollForwards.map(item => [String(item.id), item]));
 
-  const enriched: Array<Record<string, any>> = [];
-  for (const strategyRun of strategyRuns) {
-    const decisions = await all<Record<string, unknown>>(
-      db,
-      'SELECT * FROM ICOFRTestingStrategyDecision WHERE runId=? ORDER BY priority DESC,createdAt',
-      [strategyRun.id]
-    );
+  const decisions = await all<Record<string, unknown>>(
+    db,
+    `SELECT d.*
+       FROM ICOFRTestingStrategyDecision d
+       JOIN ICOFRTestingStrategyRun r ON r.id=d.runId
+      WHERE r.institutionId=?
+      ORDER BY d.priority DESC,d.createdAt`,
+    [institution.id]
+  );
 
-    enriched.push({
+  const decisionsByRun = new Map<string, Array<Record<string, unknown>>>();
+  for (const decision of decisions) {
+    const runId = String(decision.runId);
+    const current = decisionsByRun.get(runId);
+    if (current) current.push(decision);
+    else decisionsByRun.set(runId, [decision]);
+  }
+
+  const enriched: Array<Record<string, any>> = strategyRuns.map(strategyRun => {
+    const runDecisions = decisionsByRun.get(String(strategyRun.id)) || [];
+
+    return {
       ...strategyRun,
       cycle: cycleById.get(String(strategyRun.cycleId)) || null,
       rollForward: strategyRun.rollForwardId
         ? rollForwardById.get(String(strategyRun.rollForwardId)) || null
         : null,
-      decisions: decisions.map(item => ({
+      decisions: runDecisions.map(item => ({
         ...item,
         control: controlById.get(String(item.controlDomainId)) || null,
         factors: parseFactors(item.factorsJson)
       })),
-      summary: summarizeDecisions(decisions)
-    });
-  }
+      summary: summarizeDecisions(runDecisions)
+    };
+  });
 
   return {
     institution: {

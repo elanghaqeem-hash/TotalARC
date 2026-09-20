@@ -19,8 +19,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const organization = await getOrganizationStructure();
     const [
+      organization,
       todTests,
       rcsa,
       pbcTasks,
@@ -32,6 +32,7 @@ export async function GET() {
       informationRegister,
       testingPlan
     ] = await Promise.all([
+      getOrganizationStructure(),
       listDesignAssessments(),
       getRcsaWorkspaceData(),
       listPbcTasks(),
@@ -49,20 +50,37 @@ export async function GET() {
       (rcsa.processes || []).map((process: any) => [String(process.id), process])
     );
 
+    const groupByControl = (items: any[], keyOf: (item: any) => unknown) => {
+      const grouped = new Map<string, any[]>();
+      for (const item of items || []) {
+        const key = String(keyOf(item) || '');
+        if (!key) continue;
+        const current = grouped.get(key);
+        if (current) current.push(item);
+        else grouped.set(key, [item]);
+      }
+      return grouped;
+    };
+
+    const todByControl = groupByControl(todTests, test =>
+      test.controlDomain?.sourceControlId || test.control?.id
+    );
+    const toeByControl = groupByControl(toeTests, test =>
+      test.controlId || test.control?.id
+    );
+    const monitoringByControl = groupByControl(monitoringRules, rule =>
+      rule.controlId || rule.control?.id
+    );
+    const issuesByControl = groupByControl(remediation.issues || [], issue =>
+      issue.controlId || issue.control?.id
+    );
+
     const enrichedControls = (rcsa.controls || []).map((control: any) => {
-      const controlTodTests = todTests.filter((test: any) => {
-        const sourceControlId = test.controlDomain?.sourceControlId || test.control?.id;
-        return String(sourceControlId || '') === String(control.id);
-      });
-      const controlToeTests = toeTests.filter(
-        (test: any) => String(test.controlId || test.control?.id || '') === String(control.id)
-      );
-      const controlMonitoring = monitoringRules.filter(
-        (rule: any) => String(rule.controlId || rule.control?.id || '') === String(control.id)
-      );
-      const controlIssues = (remediation.issues || []).filter(
-        (issue: any) => String(issue.controlId || issue.control?.id || '') === String(control.id)
-      );
+      const controlKey = String(control.id);
+      const controlTodTests = todByControl.get(controlKey) || [];
+      const controlToeTests = toeByControl.get(controlKey) || [];
+      const controlMonitoring = monitoringByControl.get(controlKey) || [];
+      const controlIssues = issuesByControl.get(controlKey) || [];
 
       const latestToe: any = controlToeTests[0] || null;
       const latestMonitoringRun: any =
@@ -195,6 +213,10 @@ export async function GET() {
       testingPlanItems: testingPlan.planItems || [],
       testingPlanMetrics: testingPlan.metrics || {},
       storage: 'cloudflare-d1'
+    }, {
+      headers: {
+        'Cache-Control': 'private, max-age=15, stale-while-revalidate=45'
+      }
     });
   } catch (error) {
     console.error('Failed to load persistent assurance data:', error);
