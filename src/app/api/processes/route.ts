@@ -19,31 +19,28 @@ export async function GET(request: Request) {
     const categoryId = (url.searchParams.get('categoryId') || '').trim() || null;
     const orgUnitId = (url.searchParams.get('orgUnitId') || '').trim() || null;
     const mode = url.searchParams.get('mode') || 'register';
-
-    const [organization, authorizedOrgUnitIds] = await Promise.all([
-      getOrganizationData(auth.user.institutionId),
-      resolveAuthorizedOrgUnitIds(auth.user)
-    ]);
-    const scopedOrganization = scopeOrganizationData(
-      organization,
-      authorizedOrgUnitIds,
-      auth.user.id
-    );
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
 
     if (mode === 'options') {
-      const processes = await listProcessOptions(
-        auth.user.institutionId,
-        { authorizedOrgUnitIds, orgUnitId },
-        pagination.search
+      const [processes, organization] = await Promise.all([
+        listProcessOptions(
+          auth.user.institutionId,
+          { authorizedOrgUnitIds, orgUnitId },
+          pagination.search
+        ),
+        getOrganizationData(auth.user.institutionId)
+      ]);
+      const scopedOrganization = scopeOrganizationData(
+        organization,
+        authorizedOrgUnitIds,
+        auth.user.id
       );
 
       return NextResponse.json({
         processes,
         organization: {
           legalEntities: scopedOrganization.legalEntities,
-          organizationUnits: scopedOrganization.organizationUnits,
-          positions: scopedOrganization.positions,
-          users: scopedOrganization.users
+          organizationUnits: scopedOrganization.organizationUnits
         },
         storage: 'cloudflare-d1'
       });
@@ -61,12 +58,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       ...page,
-      organization: {
-        legalEntities: scopedOrganization.legalEntities,
-        organizationUnits: scopedOrganization.organizationUnits,
-        positions: scopedOrganization.positions,
-        users: scopedOrganization.users
-      },
       storage: 'cloudflare-d1'
     }, {
       headers: {
