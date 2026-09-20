@@ -193,6 +193,11 @@ export function canAccessPath(role: AuthRole, pathname: string, method = 'GET') 
 
   if (path === '/profile' || path.startsWith('/api/auth/profile')) return true;
 
+  if (path === '/certification' || path.startsWith('/api/icofr/certification')) {
+    if (!write) return true;
+    return ['SuperAdmin', 'InstitutionAdmin', 'Reviewer', 'Executive', 'InternalAudit'].includes(role);
+  }
+
   if (
     path.startsWith('/icofr') ||
     path === '/tod' ||
@@ -221,11 +226,6 @@ export function canAccessPath(role: AuthRole, pathname: string, method = 'GET') 
   ) {
     if (!write) return true;
     return !['Executive'].includes(role);
-  }
-
-  if (path === '/certification' || path.startsWith('/api/icofr/certification')) {
-    if (!write) return true;
-    return ['SuperAdmin', 'InstitutionAdmin', 'Reviewer', 'Executive', 'InternalAudit'].includes(role);
   }
 
   return true;
