@@ -115,7 +115,7 @@ export default function ProcessesPage() {
       setPagination(data.pagination || EMPTY_PAGINATION);
       setPage(targetPage);
 
-      setSelectedProcess(current =>
+      setSelectedProcess((current: any) =>
         current && nextProcesses.some((item: any) => item.id === current.id)
           ? current
           : nextProcesses[0] || null
