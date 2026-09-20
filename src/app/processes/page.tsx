@@ -16,6 +16,8 @@ import {
   GitBranch,
   Target,
   Clock,
+  Pencil,
+  Trash2,
   X
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
@@ -30,6 +32,10 @@ export default function ProcessesPage() {
   const [newProcessModal, setNewProcessModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [editingProcess, setEditingProcess] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // New process form state
   const [formData, setFormData] = useState({
@@ -71,35 +77,75 @@ export default function ProcessesPage() {
     loadProcesses();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const openCreate = () => {
+    setEditingProcess(null);
+    setSaveError('');
+    setFormData({
+      processId: '',
+      name: '',
+      categoryId: categories[0]?.id || '',
+      ownerName: '',
+      criticality: 'Critical',
+      classification: 'Core',
+      isIcofrRelevant: true,
+      description: ''
+    });
+    setNewProcessModal(true);
+  };
+
+  const openEdit = (process: any) => {
+    setEditingProcess(process);
+    setSaveError('');
+    setFormData({
+      processId: process.processId || '',
+      name: process.name || '',
+      categoryId: process.categoryId || categories[0]?.id || '',
+      ownerName: process.ownerName || '',
+      criticality: process.criticality || 'Critical',
+      classification: process.classification || 'Core',
+      isIcofrRelevant: Boolean(process.isIcofrRelevant),
+      description: process.description || ''
+    });
+    setNewProcessModal(true);
+  };
+
+  const closeProcessModal = () => {
+    if (saving) return;
+    setNewProcessModal(false);
+    setEditingProcess(null);
+    setSaveError('');
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setSaveError('');
 
     try {
+      const isEditing = Boolean(editingProcess?.id);
       const res = await fetch('/api/processes', {
-        method: 'POST',
+        method: isEditing ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(isEditing ? { id: editingProcess.id, ...formData } : formData)
       });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error || 'Unable to save process.');
 
-      setProcesses(current =>
-        [...current, payload].sort((a, b) => String(a.processId).localeCompare(String(b.processId)))
-      );
+      if (isEditing) {
+        setProcesses(current =>
+          current
+            .map(process => (process.id === payload.id ? payload : process))
+            .sort((a, b) => String(a.processId).localeCompare(String(b.processId)))
+        );
+      } else {
+        setProcesses(current =>
+          [...current, payload].sort((a, b) => String(a.processId).localeCompare(String(b.processId)))
+        );
+      }
+
       setSelectedProcess(payload);
-      setFormData({
-        processId: '',
-        name: '',
-        categoryId: categories[0]?.id || '',
-        ownerName: '',
-        criticality: 'Critical',
-        classification: 'Core',
-        isIcofrRelevant: true,
-        description: ''
-      });
       setNewProcessModal(false);
+      setEditingProcess(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Unable to save process.');
     } finally {
@@ -107,11 +153,38 @@ export default function ProcessesPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget?.id) return;
+
+    setDeleting(true);
+    setDeleteError('');
+
+    try {
+      const res = await fetch(`/api/processes?id=${encodeURIComponent(deleteTarget.id)}`, {
+        method: 'DELETE'
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Unable to delete process.');
+
+      const remaining = processes.filter(process => process.id !== deleteTarget.id);
+      setProcesses(remaining);
+      if (selectedProcess?.id === deleteTarget.id) {
+        setSelectedProcess(remaining[0] || null);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Unable to delete process.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const filtered = processes.filter(p => {
     const matchCat = selectedCategory === 'ALL' || p.categoryId === selectedCategory;
     const matchSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.processId.toLowerCase().includes(search.toLowerCase());
+      p.processId.toLowerCase().includes(search.toLowerCase()) ||
+      String(p.ownerName || '').toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
 
@@ -142,7 +215,7 @@ export default function ProcessesPage() {
           </button>
 
           <button
-            onClick={() => setNewProcessModal(true)}
+            onClick={openCreate}
             className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -242,12 +315,39 @@ export default function ProcessesPage() {
                   {proc.description}
                 </p>
 
-                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>Owner: <strong>{proc.ownerName}</strong></span>
-                  <span className="text-brand-600 font-bold flex items-center space-x-1">
-                    <span>Inspect 360°</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </span>
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                  <span className="min-w-0 truncate">Owner: <strong>{proc.ownerName}</strong></span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={event => {
+                        event.stopPropagation();
+                        openEdit(proc);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 font-bold text-slate-600 hover:border-brand-200 hover:text-brand-700"
+                      aria-label={`Update ${proc.name}`}
+                    >
+                      <Pencil className="w-3 h-3" />
+                      <span className="hidden sm:inline">Update</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={event => {
+                        event.stopPropagation();
+                        setDeleteError('');
+                        setDeleteTarget(proc);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 font-bold text-rose-700 hover:bg-rose-100"
+                      aria-label={`Delete ${proc.name}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span className="hidden sm:inline">Delete</span>
+                    </button>
+                    <span className="text-brand-600 font-bold flex items-center space-x-1">
+                      <span className="hidden sm:inline">Inspect 360°</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </span>
+                  </div>
                 </div>
               </div>
             );
@@ -260,7 +360,7 @@ export default function ProcessesPage() {
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
               {/* Process Title & Metadata */}
               <div className="border-b border-slate-100 pb-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex items-center space-x-2">
                     <span className="font-mono text-sm font-bold text-brand-700 bg-brand-50 px-2.5 py-1 rounded border border-brand-200">
                       {selectedProcess.processId}
@@ -269,7 +369,26 @@ export default function ProcessesPage() {
                       Level {selectedProcess.level} Business Process
                     </span>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center justify-end gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(selectedProcess)}
+                      className="text-xs font-bold text-slate-700 hover:text-brand-700 bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:border-brand-200 flex items-center space-x-1"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Update BP</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteError('');
+                        setDeleteTarget(selectedProcess);
+                      }}
+                      className="text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-100 flex items-center space-x-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete BP</span>
+                    </button>
                     <Link
                       href="/rcm"
                       className="text-xs font-bold text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-200 flex items-center space-x-1"
@@ -405,16 +524,18 @@ export default function ProcessesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-100">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-base text-slate-900">Register Business Process</h3>
+              <h3 className="font-bold text-base text-slate-900">
+                {editingProcess ? 'Update Business Process' : 'Register Business Process'}
+              </h3>
               <button
-                onClick={() => setNewProcessModal(false)}
+                onClick={closeProcessModal}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
+            <form onSubmit={handleSave} className="space-y-3 text-xs">
               {saveError && (
                 <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
                   {saveError}
@@ -488,6 +609,31 @@ export default function ProcessesPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Classification</label>
+                  <select
+                    value={formData.classification}
+                    onChange={e => setFormData({ ...formData, classification: e.target.value })}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  >
+                    <option value="Core">Core</option>
+                    <option value="Support">Support</option>
+                    <option value="Management">Management</option>
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-2.5 cursor-pointer sm:mt-5">
+                  <input
+                    type="checkbox"
+                    checked={formData.isIcofrRelevant}
+                    onChange={e => setFormData({ ...formData, isIcofrRelevant: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  />
+                  <span className="font-semibold text-slate-700">ICOFR Relevant</span>
+                </label>
+              </div>
+
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Description</label>
                 <textarea
@@ -502,7 +648,7 @@ export default function ProcessesPage() {
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
                 <button
                   type="button"
-                  onClick={() => setNewProcessModal(false)}
+                  onClick={closeProcessModal}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold"
                 >
                   Cancel
@@ -512,10 +658,62 @@ export default function ProcessesPage() {
                   disabled={saving}
                   className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Saving…' : 'Save Process Master'}
+                  {saving ? 'Saving…' : editingProcess ? 'Update Process Master' : 'Save Process Master'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl bg-rose-50 p-2 text-rose-700">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Delete Business Process?</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  {deleteTarget.processId} — {deleteTarget.name}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+              Deletion is permanent. Total ARC will block deletion when this BP is already referenced by
+              risk, control, assurance, or ICOFR scoping records.
+            </div>
+
+            {deleteError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteError('');
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDelete}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{deleting ? 'Deleting…' : 'Delete BP'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
