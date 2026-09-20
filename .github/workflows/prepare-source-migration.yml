@@ -1,0 +1,54 @@
+name: Prepare encrypted source migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/prepare-source-migration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Request migration public key
+        env:
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is not configured."
+            exit 1
+          fi
+
+          BASE_URL="${PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          URL="$BASE_URL/api/system/source-migration?op=key"
+
+          success=false
+          for attempt in $(seq 1 36); do
+            HTTP_CODE="$(curl --silent --show-error --max-time 20               --output /tmp/source-migration-key.json               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$URL" || true)"
+            if [ "$HTTP_CODE" = "200" ] && jq -e '.ok == true and (.publicKeySpkiBase64|length) > 100' /tmp/source-migration-key.json >/dev/null 2>&1; then
+              success=true
+              break
+            fi
+            echo "Source migration endpoint not ready (HTTP ${HTTP_CODE:-unknown}, attempt $attempt/36)."
+            sleep 5
+          done
+
+          if [ "$success" != "true" ]; then
+            echo "::error::Could not obtain source migration public key."
+            cat /tmp/source-migration-key.json 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "MIGRATION_PUBLIC_KEY_BEGIN"
+          jq -r '.migrationId, .publicKeySpkiBase64, .expiresAt' /tmp/source-migration-key.json
+          echo "MIGRATION_PUBLIC_KEY_END"
