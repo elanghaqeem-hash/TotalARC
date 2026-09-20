@@ -16,6 +16,10 @@ export default function CalendarPage() {
     for (const item of data.retests || []) rows.push({ id: 'retest-'+item.id, date: item.retestedAt, type: 'Retest', title: item.retestId, status: item.result, owner: item.testerName });
     for (const item of data.certifications || []) rows.push({ id: 'cert-'+item.id, date: item.certifiedAt, type: 'Certification', title: item.control?.controlId || 'Control certification', status: item.status, owner: item.certifierName });
     for (const item of data.attestations || []) rows.push({ id: 'att-'+item.id, date: item.attestedAt, type: 'Attestation', title: item.period, status: item.overallOpinion || 'Recorded', owner: [item.cfoName,item.croName].filter(Boolean).join(' / ') || 'Not specified' });
+    for (const item of data.tasks || []) {
+      if (!item.dueDate) continue;
+      rows.push({ id: 'task-'+item.id, date: item.dueDate, type: item.type || 'Task', title: item.title, status: item.status, owner: item.user?.name || 'Unassigned' });
+    }
     return rows.sort((a,b) => new Date(a.date).getTime()-new Date(b.date).getTime());
   }, [data]);
 
@@ -24,7 +28,7 @@ export default function CalendarPage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
         <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 uppercase"><CalendarIcon className="w-4 h-4" />Assurance Calendar</div>
         <h1 className="text-2xl font-black text-slate-900 mt-1">Enterprise Assurance Schedule</h1>
-        <p className="text-xs text-slate-500 mt-1">Schedule entries are composed from actual campaign, testing, remediation, retest, certification, and attestation records.</p>
+        <p className="text-xs text-slate-500 mt-1">Schedule entries are composed from actual campaign, testing, remediation, certification, attestation, and assurance task/PBC records.</p>
       </div>
       {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
       {loading ? <div className="text-xs text-slate-500">Loading…</div> : events.length === 0 ? (<div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl"><div className="font-bold text-slate-700">No records available</div><p className="text-xs text-slate-500 mt-1">This module will populate only from persisted database records.</p></div>) : (
