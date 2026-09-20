@@ -20,24 +20,57 @@ import {
 } from 'lucide-react';
 import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
 
+let rcmCache: any[] | null = null;
+let rcmRequest: Promise<any[]> | null = null;
+
+function fetchRcmRows() {
+  if (!rcmRequest) {
+    rcmRequest = fetch('/api/rcm', { cache: 'no-store' })
+      .then(res => {
+        if (!res.ok) throw new Error('RCM data unavailable');
+        return res.json();
+      })
+      .then(payload => {
+        const rows = Array.isArray(payload.rcm) ? payload.rcm : [];
+        rcmCache = rows;
+        return rows;
+      })
+      .finally(() => {
+        rcmRequest = null;
+      });
+  }
+  return rcmRequest;
+}
+
 export default function RCMWorkspacePage() {
-  const [rcmRows, setRcmRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rcmRows, setRcmRows] = useState<any[]>(rcmCache || []);
+  const [loading, setLoading] = useState(rcmCache === null);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   useEffect(() => {
-    fetch('/api/rcm')
-      .then(res => res.json())
-      .then(d => {
-        setRcmRows(d.rcm || []);
-        setLoading(false);
+    let active = true;
+
+    if (rcmCache !== null) {
+      setRcmRows(rcmCache);
+      setLoading(false);
+    }
+
+    fetchRcmRows()
+      .then(rows => {
+        if (active) setRcmRows(rows);
       })
       .catch(err => {
         console.error(err);
-        setLoading(false);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filtered = rcmRows.filter(row => {
