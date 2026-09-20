@@ -113,7 +113,7 @@ export async function ensureAuthSchema() {
         emailNormalized TEXT NOT NULL,
         passwordHash TEXT NOT NULL,
         passwordSalt TEXT NOT NULL,
-        passwordIterations INTEGER NOT NULL DEFAULT 210000,
+        passwordIterations INTEGER NOT NULL DEFAULT 100000,
         role TEXT NOT NULL,
         department TEXT,
         active INTEGER NOT NULL DEFAULT 1,
@@ -197,9 +197,11 @@ async function derivePasswordHash(password: string, salt: Uint8Array, iterations
   return encodeBytes(new Uint8Array(bits));
 }
 
+const PASSWORD_ITERATIONS = 100000;
+
 async function createPasswordHash(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iterations = 210000;
+  const iterations = PASSWORD_ITERATIONS;
   return {
     hash: await derivePasswordHash(password, salt, iterations),
     salt: encodeBytes(salt),
@@ -208,10 +210,14 @@ async function createPasswordHash(password: string) {
 }
 
 async function verifyPassword(password: string, row: AuthUserRow) {
+  const iterations = Number(row.passwordIterations || PASSWORD_ITERATIONS);
+  if (iterations > PASSWORD_ITERATIONS) {
+    throw new Error('PASSWORD_HASH_RUNTIME_UNSUPPORTED');
+  }
   const calculated = await derivePasswordHash(
     password,
     decodeBytes(row.passwordSalt),
-    Number(row.passwordIterations || 210000)
+    iterations
   );
   if (calculated.length !== row.passwordHash.length) return false;
   let difference = 0;
@@ -834,7 +840,7 @@ export async function updateManagedUser(input: {
       password: input.password,
       currentHash: existing.passwordHash,
       currentSalt: existing.passwordSalt,
-      currentIterations: Number(existing.passwordIterations || 210000)
+      currentIterations: Number(existing.passwordIterations || 100000)
     });
     const passwordRecord = await createPasswordHash(input.password);
     passwordHash = passwordRecord.hash;
@@ -982,7 +988,7 @@ export async function changeOwnPassword(input: {
     password: input.newPassword,
     currentHash: existing.passwordHash,
     currentSalt: existing.passwordSalt,
-    currentIterations: Number(existing.passwordIterations || 210000)
+    currentIterations: Number(existing.passwordIterations || 100000)
   });
 
   const password = await createPasswordHash(input.newPassword);
