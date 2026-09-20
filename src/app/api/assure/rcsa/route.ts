@@ -5,6 +5,7 @@ import {
   upsertCsaResponse
 } from '@/lib/d1-assurance';
 import { listControls, recordMutationAudit } from '@/lib/d1-core';
+import { getOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
@@ -83,6 +84,10 @@ export async function POST(request: Request) {
       const approverName = textValue(body, 'approverName') || null;
       const orgUnitId = textValue(body, 'orgUnitId') || null;
       const legalEntityId = textValue(body, 'legalEntityId') || null;
+      const organization = await getOrganizationData(auth.user.institutionId);
+      const selectedUnit = orgUnitId
+        ? organization.organizationUnits.find(unit => unit.id === orgUnitId)
+        : null;
 
       if (!name || !period || !startDate || !dueDate || !ownerName) {
         return NextResponse.json(
@@ -92,6 +97,25 @@ export async function POST(request: Request) {
       }
       if (!['RCSA', 'CSA', 'ICOFR'].includes(type)) {
         return NextResponse.json({ error: 'Unsupported assessment campaign type.' }, { status: 400 });
+      }
+      if (orgUnitId && !selectedUnit) {
+        return NextResponse.json(
+          { error: 'Selected campaign organization unit was not found.' },
+          { status: 400 }
+        );
+      }
+      if (
+        legalEntityId
+        && selectedUnit?.legalEntityId
+        && selectedUnit.legalEntityId !== legalEntityId
+      ) {
+        return NextResponse.json(
+          {
+            error: 'The selected campaign unit belongs to a different legal entity.',
+            code: 'RCSA_ORGANIZATION_ENTITY_MISMATCH'
+          },
+          { status: 409 }
+        );
       }
       if (
         authorizedOrgUnitIds !== null
@@ -115,7 +139,7 @@ export async function POST(request: Request) {
         ownerName,
         approverName,
         orgUnitId,
-        legalEntityId
+        legalEntityId: legalEntityId || selectedUnit?.legalEntityId || null
       }, auth.user.institutionId);
 
       await recordMutationAudit({
