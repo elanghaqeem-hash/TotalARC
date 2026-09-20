@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { getOrganizationStructure } from '@/lib/d1-organization';
 import { listDesignAssessments } from '@/lib/d1-icofr-traceability';
 import { listPbcTasks } from '@/lib/d1-icofr-executive-reporting';
+import { listToeTests, listRemediationData, listMonitoringRules } from '@/lib/d1-assurance';
+import { getCertificationData } from '@/lib/d1-icofr-certification';
+import { listFinancialItems, listInformationRegister } from '@/lib/d1-icofr-domains';
+import { getTestingPlanData } from '@/lib/d1-icofr-testing-plan';
 import {
   addAssessmentScope,
   createAssessmentCampaign,
@@ -16,12 +20,149 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const organization = await getOrganizationStructure();
-    const [todTests, rcsa, pbcTasks] = await Promise.all([
+    const [
+      todTests,
+      rcsa,
+      pbcTasks,
+      toeTests,
+      remediation,
+      monitoringRules,
+      certification,
+      financialItems,
+      informationRegister,
+      testingPlan
+    ] = await Promise.all([
       listDesignAssessments(),
       getRcsaWorkspaceData(),
-      listPbcTasks()
+      listPbcTasks(),
+      listToeTests(),
+      listRemediationData(),
+      listMonitoringRules(),
+      getCertificationData(),
+      listFinancialItems(),
+      listInformationRegister(),
+      getTestingPlanData()
     ]);
+
     const institution = organization.institution;
+    const processById = new Map(
+      (rcsa.processes || []).map((process: any) => [String(process.id), process])
+    );
+
+    const enrichedControls = (rcsa.controls || []).map((control: any) => {
+      const controlTodTests = todTests.filter((test: any) => {
+        const sourceControlId = test.controlDomain?.sourceControlId || test.control?.id;
+        return String(sourceControlId || '') === String(control.id);
+      });
+      const controlToeTests = toeTests.filter(
+        (test: any) => String(test.controlId || test.control?.id || '') === String(control.id)
+      );
+      const controlMonitoring = monitoringRules.filter(
+        (rule: any) => String(rule.controlId || rule.control?.id || '') === String(control.id)
+      );
+      const controlIssues = (remediation.issues || []).filter(
+        (issue: any) => String(issue.controlId || issue.control?.id || '') === String(control.id)
+      );
+
+      const latestToe = controlToeTests[0] || null;
+      const latestMonitoringRun =
+        controlMonitoring.flatMap((rule: any) => rule.runs || [])[0] || null;
+      const hasOpenIssue = controlIssues.some(
+        (issue: any) => !['Closed', 'Completed', 'Cancelled'].includes(String(issue.status))
+      );
+
+      let computedHealth = String(control.overallHealth || 'Not Assessed');
+      let healthBasis = 'Control Master';
+
+      if (
+        hasOpenIssue ||
+        latestMonitoringRun?.status === 'Exception Detected' ||
+        ['Ineffective', 'Failed'].includes(String(latestToe?.finalConclusion || ''))
+      ) {
+        computedHealth = 'Attention Required';
+        healthBasis = hasOpenIssue
+          ? 'Open issue'
+          : latestMonitoringRun?.status === 'Exception Detected'
+            ? 'CCM exception'
+            : 'Latest ToE result';
+      } else if (
+        computedHealth === 'Not Assessed' &&
+        ['Effective', 'Partially Effective'].includes(String(latestToe?.finalConclusion || ''))
+      ) {
+        computedHealth = String(latestToe.finalConclusion);
+        healthBasis = 'Latest ToE result';
+      }
+
+      return {
+        ...control,
+        process: processById.get(String(control.processId)) || null,
+        todTests: controlTodTests,
+        toeTests: controlToeTests,
+        monitoringRules: controlMonitoring,
+        issues: controlIssues,
+        computedHealth,
+        healthBasis
+      };
+    });
+
+    const remediationTasks = (remediation.maps || [])
+      .filter((map: any) => !['Closed', 'Completed', 'Cancelled'].includes(String(map.status)))
+      .map((map: any) => ({
+        id: 'map-' + String(map.id),
+        type: 'Remediation MAP',
+        title:
+          String(map.mapId || 'MAP') +
+          ' · ' +
+          String(map.issue?.title || map.agreedAction || 'Management action plan'),
+        dueDate: map.revisedDueDate || map.originalDueDate,
+        priority:
+          String(map.issue?.severity || '').toLowerCase() === 'critical' ? 'Critical' : 'High',
+        status: map.status,
+        link: '/remediation',
+        user: { name: map.actionOwner || 'Unassigned' },
+        sourceId: map.id
+      }));
+
+    const testingTasks = (testingPlan.planItems || [])
+      .filter((item: any) => item.derivedExecutionStatus !== 'Completed')
+      .map((item: any) => ({
+        id: 'test-plan-' + String(item.id),
+        type: 'ICOFR ' + String(item.testType || 'Testing'),
+        title:
+          String(item.control?.controlCode || 'Control') +
+          ' · ' +
+          String(item.control?.name || 'Testing plan item'),
+        dueDate: item.dueDate,
+        priority: item.control?.keyControl ? 'High' : 'Medium',
+        status: item.derivedExecutionStatus || item.status,
+        link:
+          item.testType === 'ToD'
+            ? '/tod'
+            : item.testType === 'ToE'
+              ? '/toe'
+              : '/icofr/testing-plan',
+        user: { name: item.testerName || 'Unassigned' },
+        sourceId: item.id
+      }));
+
+    const combinedTasks = [
+      ...(rcsa.tasks || []),
+      ...pbcTasks,
+      ...remediationTasks,
+      ...testingTasks
+    ];
+
+    const walkthroughs = todTests
+      .filter((test: any) => Boolean(test.walkthroughComplete))
+      .map((test: any) => ({
+        id: 'walk-' + String(test.id),
+        controlId: test.control?.controlId || test.controlDomain?.controlCode || 'Control',
+        conclusion: test.conclusion,
+        date: test.updatedAt || test.createdAt,
+        participants: [test.testerName, test.reviewerName].filter(Boolean).join(' / '),
+        observations: test.notes || 'Walkthrough completed; no separate observation note recorded.',
+        process: test.process || null
+      }));
 
     return NextResponse.json({
       institution: institution
@@ -35,17 +176,24 @@ export async function GET() {
       campaigns: rcsa.campaigns,
       processes: rcsa.processes,
       risks: rcsa.risks,
-      controls: rcsa.controls,
-      tasks: [...rcsa.tasks, ...pbcTasks],
+      controls: enrichedControls,
+      tasks: combinedTasks,
       todTests,
-      walkthroughs: [],
-      financialAccounts: [],
-      ipeRegisters: [],
-      certifications: [],
-      attestations: [],
-      toeTests: [],
-      actionPlans: [],
-      retests: [],
+      walkthroughs,
+      financialAccounts: financialItems.records || [],
+      ipeRegisters: informationRegister.records || [],
+      certifications: certification.subCertifications || [],
+      attestations: certification.attestations || [],
+      evidencePacks: certification.evidencePacks || [],
+      toeTests,
+      actionPlans: remediation.maps || [],
+      issues: remediation.issues || [],
+      deficiencies: remediation.deficiencies || [],
+      retests: remediation.retests || [],
+      monitoringRules,
+      testingCycles: testingPlan.cycles || [],
+      testingPlanItems: testingPlan.planItems || [],
+      testingPlanMetrics: testingPlan.metrics || {},
       storage: 'cloudflare-d1'
     });
   } catch (error) {
