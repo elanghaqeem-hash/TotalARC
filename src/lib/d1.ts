@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { ensureAuthSchema } from '@/lib/d1-auth';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -282,6 +283,7 @@ export async function upsertInstitution(
 }
 
 export async function getD1Health() {
+  await ensureAuthSchema();
   const db = await getD1();
 
   const query = await db.prepare('SELECT 1 AS ok').first<{ ok?: number }>();
@@ -321,7 +323,12 @@ export async function getD1Health() {
     'RetestRecord',
     'MonitoringRule',
     'MonitoringRun',
-    'CCMException'
+    'CCMException',
+    'AuthUser',
+    'AuthUserUnitAccess',
+    'AuthSession',
+    'AuthPasswordHistory',
+    'AuthSecurityEvent'
   ];
   const existing = new Set(tableNames);
   const missingRequiredTables = requiredTables.filter(name => !existing.has(name));
