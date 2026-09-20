@@ -89,6 +89,7 @@ const navGroups: NavGroup[] = [
       { name: 'ICOFR Certification & Close', href: '/certification', icon: BadgeCheck, badge: 'SIGN' },
       { name: 'ICOFR Executive Reporting', href: '/icofr/reporting', icon: BarChart3, badge: 'BOARD' },
       { name: 'ICOFR Period Close & Archive', href: '/icofr/period-close', icon: FileCheck, badge: 'LOCK' },
+      { name: 'ICOFR Roll-Forward', href: '/icofr/roll-forward', icon: Calendar, badge: 'NEW FY' },
       { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
       { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
       { name: 'Analytics', href: '/reports', icon: BarChart3 }
