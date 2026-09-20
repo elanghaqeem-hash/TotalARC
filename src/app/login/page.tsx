@@ -1,7 +1,8 @@
 'use client';
 
 import React, { FormEvent, useEffect, useState } from 'react';
-import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, UserPlus } from 'lucide-react';
 
 function safeNextPath(value: string | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
@@ -174,6 +175,14 @@ export default function LoginPage() {
                   )}
                   {submitting ? 'Signing in…' : 'Sign in to Total ARC'}
                 </button>
+
+                <Link
+                  href="/admin/users"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-xs font-black text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Admin Setup · Daftarkan User
+                </Link>
               </form>
 
             </div>
