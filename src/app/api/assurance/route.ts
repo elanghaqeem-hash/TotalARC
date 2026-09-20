@@ -91,14 +91,14 @@ export async function GET(request: Request) {
       'organization',
       needOrganization,
       getOrganizationStructure,
-      { institution: null, legalEntities: [], organizationUnits: [], users: [] }
+      { institution: null, legalEntities: [], organizationUnits: [], users: [] } as any
     ),
     loadModule('tod', needTod, listDesignAssessments, [] as any[]),
     loadModule(
       'rcsa',
       needRcsa,
       getRcsaWorkspaceData,
-      { campaigns: [], processes: [], risks: [], controls: [], tasks: [] }
+      { institution: null, campaigns: [], processes: [], risks: [], controls: [], tasks: [] } as any
     ),
     loadModule('pbc-tasks', needPbc, listPbcTasks, [] as any[]),
     loadModule('toe', needToe, listToeTests, [] as any[]),
@@ -106,7 +106,7 @@ export async function GET(request: Request) {
       'remediation',
       needRemediation,
       listRemediationData,
-      { exceptions: [], deficiencies: [], issues: [], maps: [], retests: [] }
+      { exceptions: [], deficiencies: [], issues: [], maps: [], retests: [] } as any
     ),
     loadModule('ccm', needCcm, listMonitoringRules, [] as any[]),
     loadModule(
