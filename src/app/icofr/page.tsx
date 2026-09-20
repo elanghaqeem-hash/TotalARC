@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { AlertTriangle, BadgeCheck, Cpu, FileCheck, FileSpreadsheet, Shield, Target, Workflow } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Cpu, FileCheck, FileSpreadsheet, Link2, Shield, Target, Workflow } from 'lucide-react';
 
 const modules = [
   { href: '/icofr/scoping', title: 'Scoping & Materiality', detail: 'Reporting perimeter, OM, PM, clearly-trivial/SAD and component materiality.', icon: Target },
   { href: '/icofr/accounts', title: 'Accounts, Disclosures & Assertions', detail: 'Significant accounts/disclosures, relevant assertions, risk factors and process references.', icon: FileSpreadsheet },
+  { href: '/icofr/traceability', title: 'End-to-End Traceability Matrix', detail: 'Connect account/disclosure → assertion → risk → control → IPE/EUC → ToD → ToE → deficiency → MAP.', icon: Link2 },
   { href: '/icofr/elc', title: 'Entity-Level Controls (ELC)', detail: 'Governance, control environment, monitoring, fraud risk and period-end reporting controls.', icon: Shield },
   { href: '/icofr/plc', title: 'Process-Level Controls (PLC)', detail: 'Transaction-cycle and process controls linked to financial reporting risks and assertions.', icon: FileCheck },
   { href: '/icofr/itgc', title: 'IT General Controls (ITGC)', detail: 'Logical access, change management, operations, backup, SDLC and other IT general controls.', icon: Cpu },
