@@ -163,6 +163,58 @@ for (const path of standardizedReadPages) {
   requirePattern(path, content, /jsonRead/, 'interactive reads must use the standard request deadline helper');
 }
 
+const paginationHelper = read('src/lib/pagination.ts');
+for (const pattern of [
+  /DEFAULT_REGISTER_PAGE_SIZE\s*=\s*50/,
+  /MAX_REGISTER_PAGE_SIZE\s*=\s*100/,
+  /parsePaginationRequest/,
+  /paginationMeta/
+]) {
+  requirePattern('src/lib/pagination.ts', paginationHelper, pattern, 'bounded register pagination contract is required');
+}
+
+const registerPagination = read('src/lib/d1-register-pagination.ts');
+for (const pattern of [
+  /listProcessRegisterPage/,
+  /listRiskRegisterPage/,
+  /listControlRegisterPage/,
+  /listRcmRegisterPage/,
+  /listToeRegisterPage/,
+  /listAuditRegisterPage/,
+  /LIMIT \? OFFSET \?/,
+  /json_each/
+]) {
+  requirePattern('src/lib/d1-register-pagination.ts', registerPagination, pattern, 'server-side paginated register query is required');
+}
+
+const pagedRoutes = [
+  'src/app/api/processes/route.ts',
+  'src/app/api/risks/route.ts',
+  'src/app/api/controls/route.ts',
+  'src/app/api/rcm/route.ts',
+  'src/app/api/assure/toe/route.ts',
+  'src/app/api/audit/route.ts'
+];
+
+for (const path of pagedRoutes) {
+  const content = read(path);
+  requirePattern(path, content, /parsePaginationRequest/, 'large register routes must enforce bounded server-side pagination');
+}
+
+const pagedPages = [
+  'src/app/processes/page.tsx',
+  'src/app/risks/page.tsx',
+  'src/app/controls/page.tsx',
+  'src/app/rcm/page.tsx',
+  'src/app/toe/page.tsx',
+  'src/app/audit/page.tsx'
+];
+
+for (const path of pagedPages) {
+  const content = read(path);
+  requirePattern(path, content, /RegisterPager/, 'large register UI must keep rendered rows bounded with server paging');
+}
+
 const transactionHelper = read('src/lib/client-transaction.ts');
 for (const pattern of [
   /clientHardTimeoutMs/,
