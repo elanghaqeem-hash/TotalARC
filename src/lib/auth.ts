@@ -778,9 +778,9 @@ export async function createManagedUser(input: {
     `INSERT INTO AuthUser (
       id, institutionId, orgUnitId, name, email, emailNormalized,
       passwordHash, passwordSalt, passwordIterations, role, department,
-      active, mustChangePassword, failedLoginCount, lockedUntil,
-      lastLoginAt, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, NULL, NULL, ?, ?)`,
+      active, mustChangePassword, credentialResetAt, temporaryCredentialExpiresAt,
+      failedLoginCount, lockedUntil, lastLoginAt, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, 0, NULL, NULL, ?, ?)`,
     [
       id,
       institution?.id || null,
@@ -793,6 +793,8 @@ export async function createManagedUser(input: {
       passwordRecord.iterations,
       input.role,
       input.department?.trim() || null,
+      now,
+      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       now,
       now
     ]
