@@ -1,64 +1,112 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { ROLE_TITLES, type UserRole } from '@/lib/access-control';
 
-export type UserRole = 'Admin' | 'ProcessOwner' | 'ControlOwner' | 'Tester' | 'Reviewer' | 'Executive';
+export type { UserRole } from '@/lib/access-control';
 
 export interface UserProfile {
   id: string;
+  institutionId: string | null;
+  institutionName: string;
+  orgUnitId: string | null;
   name: string;
   role: UserRole;
   roleTitle: string;
   email: string;
   department: string;
+  mustChangePassword?: boolean;
 }
 
-const titles: Record<UserRole, string> = {
-  Admin: 'Administrator View',
-  ProcessOwner: 'Process Owner View',
-  ControlOwner: 'Control Owner View',
-  Tester: 'Independent Tester View',
-  Reviewer: 'Reviewer View',
-  Executive: 'Executive View'
+const loadingUser: UserProfile = {
+  id: '',
+  institutionId: null,
+  institutionName: '',
+  orgUnitId: null,
+  name: '',
+  role: 'Admin',
+  roleTitle: ROLE_TITLES.Admin,
+  email: '',
+  department: ''
 };
-
-export const USERS = Object.fromEntries(
-  (Object.keys(titles) as UserRole[]).map((role) => [
-    role,
-    {
-      id: `role-${role.toLowerCase()}`,
-      name: 'No authenticated user',
-      role,
-      roleTitle: titles[role],
-      email: '',
-      department: ''
-    }
-  ])
-) as Record<UserRole, UserProfile>;
 
 interface RoleContextType {
   currentUser: UserProfile;
-  setRole: (role: UserRole) => void;
+  authenticated: boolean;
+  loading: boolean;
   institutionName: string;
-  setInstitutionName: (name: string) => void;
+  refreshSession: () => Promise<boolean>;
+  logout: () => Promise<void>;
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [currentRole, setCurrentRole] = useState<UserRole>('Admin');
-  const [institutionName, setInstitutionName] = useState('No institution registered');
+  const [currentUser, setCurrentUser] = useState<UserProfile>(loadingUser);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const refreshSession = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
+
+      if (!response.ok) {
+        setAuthenticated(false);
+        setCurrentUser(loadingUser);
+        return false;
+      }
+
+      const payload = await response.json();
+      if (!payload?.authenticated || !payload?.user) {
+        setAuthenticated(false);
+        setCurrentUser(loadingUser);
+        return false;
+      }
+
+      setCurrentUser(payload.user as UserProfile);
+      setAuthenticated(true);
+      return true;
+    } catch {
+      setAuthenticated(false);
+      setCurrentUser(loadingUser);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetch('/api/organization', { cache: 'default' })
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Unable to load institution')))
-      .then((data) => setInstitutionName(data.institution?.name || 'No institution registered'))
-      .catch(() => setInstitutionName('No institution registered'));
+    void refreshSession();
+  }, [refreshSession]);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin'
+      });
+    } finally {
+      setAuthenticated(false);
+      setCurrentUser(loadingUser);
+      window.location.assign('/login');
+    }
   }, []);
 
   return (
     <RoleContext.Provider
-      value={{ currentUser: USERS[currentRole], setRole: setCurrentRole, institutionName, setInstitutionName }}
+      value={{
+        currentUser,
+        authenticated,
+        loading,
+        institutionName: currentUser.institutionName || 'No institution registered',
+        refreshSession,
+        logout
+      }}
     >
       {children}
     </RoleContext.Provider>
