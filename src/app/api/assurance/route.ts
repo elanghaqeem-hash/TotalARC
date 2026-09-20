@@ -290,7 +290,7 @@ export async function POST(request: Request) {
         startDate,
         dueDate,
         ownerName,
-        reviewerName: security.displayName,
+        reviewerName,
         approverName,
         methodology: methodology || 'COSO / ISO 31000 aligned',
         ratingScale: ratingScale || '5x5',
@@ -303,7 +303,7 @@ export async function POST(request: Request) {
                 processId,
                 riskId: textValue(body, 'riskId') || null,
                 controlId: textValue(body, 'controlId') || null,
-                assessorName: security.displayName,
+                assessorName,
                 dueDate: textValue(body, 'scopeDueDate') || dueDate
               }
             : null
@@ -338,7 +338,6 @@ export async function POST(request: Request) {
     if (actionType === 'SUBMIT_ASSESSMENT') {
       requirePermission('rcsa.assess');
       const scopeId = textValue(body, 'scopeId');
-      const assessorName = textValue(body, 'assessorName');
       const designEffectiveness = textValue(body, 'designEffectiveness');
       const operatingEffectiveness = textValue(body, 'operatingEffectiveness');
       const evidenceQuality = textValue(body, 'evidenceQuality');
@@ -349,7 +348,6 @@ export async function POST(request: Request) {
 
       if (
         !scopeId ||
-        !assessorName ||
         !designEffectiveness ||
         !operatingEffectiveness ||
         !evidenceQuality ||
@@ -361,7 +359,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              'scopeId, assessorName, effectiveness ratings, evidenceQuality, conclusion, confidenceLevel, and integer residual ratings are required.'
+              'scopeId, effectiveness ratings, evidenceQuality, conclusion, confidenceLevel, and integer residual ratings are required.'
           },
           { status: 400 }
         );
@@ -369,7 +367,7 @@ export async function POST(request: Request) {
 
       const response = await submitAssessmentResponse({
         scopeId,
-        assessorName,
+        assessorName: security.displayName,
         designEffectiveness,
         operatingEffectiveness,
         evidenceQuality,
@@ -391,19 +389,18 @@ export async function POST(request: Request) {
     if (actionType === 'REVIEW_ASSESSMENT') {
       requirePermission('rcsa.review');
       const responseId = textValue(body, 'responseId');
-      const reviewerName = textValue(body, 'reviewerName');
       const reviewStatus = textValue(body, 'reviewStatus');
 
-      if (!responseId || !reviewerName || !reviewStatus) {
+      if (!responseId || !reviewStatus) {
         return NextResponse.json(
-          { error: 'responseId, reviewerName, and reviewStatus are required.' },
+          { error: 'responseId and reviewStatus are required.' },
           { status: 400 }
         );
       }
 
       const response = await reviewAssessmentResponse({
         responseId,
-        reviewerName,
+        reviewerName: security.displayName,
         reviewStatus,
         reviewNotes: textValue(body, 'reviewNotes') || null
       });
