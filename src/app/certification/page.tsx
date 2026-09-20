@@ -200,9 +200,9 @@ export default function CertificationPage() {
               <label className="text-xs font-bold text-slate-700">
                 Certifier *
                 <input
-                  className={inputClass}
-                  value={form.certifierName || ''}
-                  onChange={e => setField('certifierName', e.target.value)}
+                  className={inputClass + ' bg-slate-50'}
+                  value={currentUser?.name || ''}
+                  disabled
                   required
                 />
               </label>
