@@ -106,7 +106,15 @@ export async function middleware(request: NextRequest) {
   const session = token ? await verifySessionToken(token, secret) : null;
 
   if (pathname === '/login') {
-    if (session) return NextResponse.redirect(new URL('/', request.url));
+    if (session) {
+      try {
+        if (await isAuthSessionActive(session, false)) {
+          return NextResponse.redirect(new URL('/', request.url));
+        }
+      } catch {
+        // A stale/pre-hardening cookie must never prevent access to the login page.
+      }
+    }
     return NextResponse.next();
   }
 
