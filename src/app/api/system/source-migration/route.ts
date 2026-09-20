@@ -55,6 +55,7 @@ type MigrationPayload = {
   downloadUrl?: string | null;
   rawBase64?: string | null;
   extractedText?: string | null;
+  extractedTextGzipBase64?: string | null;
 };
 
 async function runtimeEnv() {
@@ -100,6 +101,13 @@ function base64ToBytes(value: string) {
   const bytes = new Uint8Array(raw.length);
   for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
   return bytes;
+}
+
+async function gunzipBase64Utf8(value: string) {
+  const compressed = base64ToBytes(value);
+  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  return new TextDecoder().decode(bytes);
 }
 
 async function ensureMigrationSchema(db: D1DatabaseLike) {
@@ -322,6 +330,11 @@ export async function POST(request: Request) {
     if (rawBytes && rawBytes.byteLength > MAX_SOURCE_BYTES) {
       throw new Error('SOURCE_LIBRARY_FILE_TOO_LARGE');
     }
+    const extractedText = payload.extractedText ?? (
+      payload.extractedTextGzipBase64
+        ? await gunzipBase64Utf8(payload.extractedTextGzipBase64)
+        : null
+    );
     const result = await upsertSourceDocument(institution.id, {
       provider: payload.provider || 'GOOGLE_DRIVE',
       externalId: payload.externalId,
@@ -340,7 +353,7 @@ export async function POST(request: Request) {
         importedVia: 'encrypted-source-migration'
       },
       rawBytes,
-      extractedText: payload.extractedText || null
+      extractedText
     }, 'Encrypted Google Drive migration into Total ARC source library.');
 
     return NextResponse.json({
