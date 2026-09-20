@@ -570,7 +570,7 @@ export async function getIcofrCoverageData() {
     }
   }
 
-  for (const riskId of riskIdsFromAssertions) {
+  for (const riskId of Array.from(riskIdsFromAssertions)) {
     if (riskIdsWithControl.has(riskId)) continue;
     const risk = risks.find(item => String(item.id) === riskId);
     if (!risk) continue;
