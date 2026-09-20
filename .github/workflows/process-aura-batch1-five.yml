@@ -1,0 +1,487 @@
+name: Process Aura batch 1 (five sources)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/process-aura-batch1-five.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-aura-batch1-normalization
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize five Aura baseline sources into D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize-aura-batch1.mjs <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import fs from 'node:fs';
+
+          function wrangler(args) {
+            return execFileSync('npx', ['wrangler', ...args], {
+              encoding: 'utf8',
+              env: process.env,
+              maxBuffer: 64 * 1024 * 1024
+            });
+          }
+
+          function resultRows(raw) {
+            const parsed = JSON.parse(raw);
+            const blocks = Array.isArray(parsed) ? parsed : [parsed];
+            return blocks.flatMap(block => block?.results || []);
+          }
+
+          function q(value) {
+            if (value === null || value === undefined) return 'NULL';
+            return "'" + String(value).replaceAll("'", "''") + "'";
+          }
+
+          function deterministicId(...parts) {
+            return createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 40);
+          }
+
+          function parseValue(value) {
+            const trimmed = String(value ?? '').trim();
+            if (!trimmed) return null;
+            if (/^-?\d+(?:\.\d+)?(?:E[+-]?\d+)?$/i.test(trimmed)) {
+              const number = Number(trimmed);
+              if (Number.isFinite(number)) return number;
+            }
+            return trimmed;
+          }
+
+          function splitSheet(text, name) {
+            const marker = '### SHEET: ' + name;
+            const start = text.indexOf(marker);
+            if (start < 0) return '';
+            const rest = text.slice(start + marker.length);
+            const next = rest.indexOf('### SHEET: ');
+            return (next >= 0 ? rest.slice(0, next) : rest).trim();
+          }
+
+          const databases = JSON.parse(wrangler(['d1', 'list', '--json']));
+          const db = databases.find(item => /total.?arc/i.test(item.name)) || (databases.length === 1 ? databases[0] : null);
+          if (!db?.name) throw new Error('TOTAL_ARC_D1_NOT_FOUND');
+          const dbName = db.name;
+
+          function query(sql) {
+            return resultRows(wrangler(['d1', 'execute', dbName, '--remote', '--json', '--command', sql]));
+          }
+
+          const catalog = query(`
+            SELECT id, institutionId, title, sourceModifiedAt, metadataJson, textLength
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='aurakasih6987@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='BASELINE'
+            ORDER BY title;
+          `);
+
+          const targets = [
+            { code: 'NERACA_2024', token: 'NERACA 31 12 2024 AUDITED' },
+            { code: 'LLNTY', token: 'LLNTY_202509031507' },
+            { code: 'LLNTY2', token: 'LLNTY2_202509031510' },
+            { code: 'MATERIALITY', token: 'Analisis_Materialitas_ICoFR_Paparan_TaskForce_Direksi' },
+            { code: 'WT_INTEREST_INCOME', token: 'Otomatisasi Pengakuan Pend Bunga' }
+          ];
+
+          const selected = targets.map(target => {
+            const matches = catalog.filter(row => String(row.title || '').toLowerCase().includes(target.token.toLowerCase()));
+            if (matches.length !== 1) {
+              throw new Error(`SOURCE_MATCH_${target.code}_${matches.length}`);
+            }
+            return { ...target, doc: matches[0] };
+          });
+
+          function documentText(documentId) {
+            const rows = query(`
+              SELECT chunkIndex, textContent
+              FROM SourceTextChunk
+              WHERE documentId=${q(documentId)}
+              ORDER BY chunkIndex;
+            `);
+            return rows.map(row => String(row.textContent || '')).join('');
+          }
+
+          const docs = Object.fromEntries(selected.map(item => {
+            const text = documentText(item.doc.id);
+            if (!text.trim()) throw new Error('SOURCE_TEXT_MISSING_' + item.code);
+            const metadata = JSON.parse(item.doc.metadataJson || '{}');
+            return [item.code, {
+              ...item.doc,
+              text,
+              sourceRole: metadata.sourceRole || 'BASELINE',
+              precedencePriority: Number(metadata.precedencePriority ?? 10)
+            }];
+          }));
+
+          const records = [];
+          function add(doc, recordType, recordKey, recordTitle, period, payload) {
+            records.push({
+              id: deterministicId(doc.id, recordType, recordKey),
+              institutionId: doc.institutionId,
+              sourceDocumentId: doc.id,
+              recordType,
+              recordKey,
+              recordTitle,
+              period,
+              payloadJson: JSON.stringify(payload),
+              sourceRole: doc.sourceRole,
+              precedencePriority: doc.precedencePriority,
+              sourceModifiedAt: doc.sourceModifiedAt || null
+            });
+          }
+
+          // 1) Audited balance sheet 31 Dec 2024
+          {
+            const doc = docs.NERACA_2024;
+            const sheet = splitSheet(doc.text, 'NERACA');
+            const lines = sheet.split(/\r?\n/).filter(Boolean);
+            const headerLine = lines.find(line => line.startsWith('NRC01\t'));
+            if (!headerLine) throw new Error('NERACA_HEADER_NOT_FOUND');
+            const headers = headerLine.split('\t').slice(1);
+            let count = 0;
+            for (const line of lines) {
+              const parts = line.split('\t');
+              if (!/^\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}$/.test(parts[0] || '')) continue;
+              const accountCode = parts[0];
+              const accountName = parts[1] || accountCode;
+              const values = {};
+              headers.forEach((header, index) => {
+                values[header] = parseValue(parts[index + 2]);
+              });
+              add(doc, 'FINANCIAL_STATEMENT_LINE', 'BS:2024:' + accountCode, accountName, '2024-12-31', {
+                statement: 'Balance Sheet',
+                accountCode,
+                accountName,
+                values,
+                sourceSheet: 'NERACA',
+                baselineOnly: true
+              });
+              count += 1;
+            }
+            if (count < 90) throw new Error('NERACA_RECORD_COUNT_TOO_LOW_' + count);
+            console.log('NERACA_2024 normalized records=' + count);
+          }
+
+          // 2) Loan type master / account mapping part 1
+          {
+            const doc = docs.LLNTY;
+            const lines = doc.text.split(/\r?\n/).filter(line => line && !line.startsWith('### SHEET:'));
+            const headerIndex = lines.findIndex(line => line.includes('LYLNTY/LOAN TYPE') && line.includes('LYTITL/TITLE'));
+            if (headerIndex < 0) throw new Error('LLNTY_HEADER_NOT_FOUND');
+            const headers = lines[headerIndex].split('\t');
+            const codeIndex = headers.findIndex(value => value.includes('LYLNTY/LOAN TYPE'));
+            const titleIndex = headers.findIndex(value => value.includes('LYTITL/TITLE'));
+            let count = 0;
+            for (const line of lines.slice(headerIndex + 1)) {
+              const parts = line.split('\t');
+              const code = String(parts[codeIndex] || '').trim();
+              if (!code) continue;
+              const fields = {};
+              headers.forEach((header, index) => { fields[header] = parseValue(parts[index]); });
+              add(doc, 'LOAN_TYPE_MASTER', 'LOAN_TYPE:' + code, String(parts[titleIndex] || code), null, {
+                loanType: code,
+                title: String(parts[titleIndex] || ''),
+                fields,
+                baselineOnly: true
+              });
+              count += 1;
+            }
+            if (count < 250) throw new Error('LLNTY_RECORD_COUNT_TOO_LOW_' + count);
+            console.log('LLNTY normalized records=' + count);
+          }
+
+          // 3) Loan type account extension / account mapping part 2
+          {
+            const doc = docs.LLNTY2;
+            const lines = doc.text.split(/\r?\n/).filter(line => line && !line.startsWith('### SHEET:'));
+            const headerIndex = lines.findIndex(line => line.startsWith('LYLNTY/LOAN TYPE\t'));
+            if (headerIndex < 0) throw new Error('LLNTY2_HEADER_NOT_FOUND');
+            const headers = lines[headerIndex].split('\t');
+            let count = 0;
+            for (const line of lines.slice(headerIndex + 1)) {
+              const parts = line.split('\t');
+              const code = String(parts[0] || '').trim();
+              if (!code) continue;
+              const fields = {};
+              headers.forEach((header, index) => { fields[header] = parseValue(parts[index]); });
+              add(doc, 'LOAN_TYPE_ACCOUNT_EXTENSION', 'LOAN_TYPE:' + code, code, null, {
+                loanType: code,
+                fields,
+                baselineOnly: true
+              });
+              count += 1;
+            }
+            if (count < 280) throw new Error('LLNTY2_RECORD_COUNT_TOO_LOW_' + count);
+            console.log('LLNTY2 normalized records=' + count);
+          }
+
+          // 4) ICoFR materiality parameters. Preserve source status as draft.
+          {
+            const doc = docs.MATERIALITY;
+            const text = doc.text;
+            const draft = /status dokumen saat ini adalah DRAFT/i.test(text) || /bersifat sementara\/draft/i.test(text);
+            const specs = [
+              ['OM', /Overall Materiality \(OM\)\s*\nRp\s*([\d.]+,\d+)\s*juta/i, 'Rp juta'],
+              ['PM', /Performance Materiality \(PM\)\s*\nRp\s*([\d.]+,\d+)\s*juta/i, 'Rp juta'],
+              ['CLEARLY_TRIVIAL', /Clearly Trivial Threshold\s*\nRp\s*([\d.]+,\d+)\s*juta/i, 'Rp juta'],
+              ['HAIRCUT', /Haircut Ambang Toleransi\s*\n([\d,]+)%/i, 'percent'],
+              ['POST_HAIRCUT_TOLERANCE', /Ambang Batas Toleransi \(post-haircut\)\s*\nRp\s*([\d.]+,\d+)\s*juta/i, 'Rp juta']
+            ];
+            const normalizeDecimal = value => Number(String(value).replaceAll('.', '').replace(',', '.'));
+            for (const [key, regex, unit] of specs) {
+              const match = text.match(regex);
+              if (!match) throw new Error('MATERIALITY_VALUE_NOT_FOUND_' + key);
+              add(doc, 'ICOFR_MATERIALITY_PARAMETER', 'MATERIALITY:2026:' + key, key, '2026', {
+                parameter: key,
+                sourceValue: match[1],
+                normalizedValue: normalizeDecimal(match[1]),
+                unit,
+                approvalStatus: draft ? 'Draft' : 'Unspecified',
+                baselineOnly: true
+              });
+            }
+            console.log('MATERIALITY normalized records=5');
+          }
+
+          // 5) Only the Bank Kalbar "Walkthrough IT" sheet. Other template sheets are not operationalized.
+          {
+            const doc = docs.WT_INTEREST_INCOME;
+            const sheet = splitSheet(doc.text, 'Walkthrough IT');
+            if (!/Nama Perusahaan\tPT Bank Kalbar/i.test(sheet)) throw new Error('WALKTHROUGH_BANK_KALBAR_SHEET_NOT_FOUND');
+            const lines = sheet.split(/\r?\n/).filter(Boolean);
+            const company = (lines.find(line => line.startsWith('Nama Perusahaan\t')) || '').split('\t')[1] || '';
+            const periodText = (lines.find(line => line.startsWith('Periode Buku\t')) || '').split('\t')[1] || '';
+            const subject = (lines.find(line => line.startsWith('Subject\t')) || '').split('\t')[1] || '';
+            const headerIndex = lines.findIndex(line => line.startsWith('Nama Dokumen\tPIC\tAktivitas Pengendalian'));
+            if (headerIndex < 0) throw new Error('WALKTHROUGH_CONTROL_HEADER_NOT_FOUND');
+            let count = 0;
+            let lastSequence = '';
+            for (const line of lines.slice(headerIndex + 1)) {
+              if (line.startsWith('↓') || /^Tolong dicek/i.test(line)) break;
+              const parts = line.split('\t');
+              let sequence = '';
+              let documentName = '';
+              let pic = '';
+              let activity = '';
+              let controlType = null;
+              let nature = null;
+              let frequency = null;
+              let system = null;
+              if (/^\d+\.\d+$/.test(parts[0] || '')) {
+                sequence = parts[0];
+                lastSequence = sequence;
+                documentName = parts[1] || '';
+                pic = parts[2] || '';
+                activity = parts[3] || '';
+                controlType = parts[4] || null;
+                nature = parts[5] || null;
+                frequency = parts[6] || null;
+                system = parts[7] || null;
+              } else if (lastSequence && parts.length >= 4 && /Divisi|Alco/i.test(parts[1] || '')) {
+                sequence = lastSequence + 'A';
+                documentName = parts[0] || '';
+                pic = parts[1] || '';
+                activity = parts[2] || '';
+                frequency = parts[3] || null;
+              } else {
+                continue;
+              }
+              add(doc, 'WALKTHROUGH_CONTROL_CANDIDATE', 'WT:INTEREST_INCOME:' + sequence, activity.slice(0, 180) || sequence, '2025-12-31', {
+                sequence,
+                company,
+                periodText,
+                subject,
+                documentName,
+                pic,
+                controlActivity: activity,
+                controlType,
+                nature,
+                frequency,
+                system,
+                sourceSheet: 'Walkthrough IT',
+                reviewRequired: true,
+                operationalMasterCreated: false,
+                baselineOnly: true
+              });
+              count += 1;
+            }
+            if (count < 5) throw new Error('WALKTHROUGH_RECORD_COUNT_TOO_LOW_' + count);
+            console.log('WALKTHROUGH normalized candidate records=' + count);
+          }
+
+          const now = new Date().toISOString();
+          const batchCode = 'AURA_BATCH1_5_20260921';
+          const institutionId = selected[0].doc.institutionId;
+
+          let sql = `
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,
+            recordKey TEXT NOT NULL,
+            recordTitle TEXT,
+            period TEXT,
+            payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL DEFAULT 0,
+            sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',
+            normalizationBatch TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId, recordType, recordKey);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_precedence
+            ON SourceStructuredRecord(institutionId, recordType, recordKey, precedencePriority);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_batch
+            ON SourceStructuredRecord(institutionId, normalizationBatch);
+
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            batchCode TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,
+            totalDocuments INTEGER NOT NULL,
+            processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            summaryJson TEXT,
+            startedAt TEXT NOT NULL,
+            completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId, batchCode);
+
+          DROP VIEW IF EXISTS SourceStructuredEffective;
+          CREATE VIEW SourceStructuredEffective AS
+          SELECT *
+          FROM (
+            SELECT r.*,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY institutionId, recordType, recordKey
+                     ORDER BY precedencePriority DESC,
+                              COALESCE(sourceModifiedAt, updatedAt) DESC,
+                              updatedAt DESC
+                   ) AS precedenceRank
+            FROM SourceStructuredRecord r
+            WHERE status='Active'
+          )
+          WHERE precedenceRank=1;
+          `;
+
+          for (const item of selected) {
+            sql += `UPDATE SourceStructuredRecord SET status='Superseded', updatedAt=${q(now)}
+                    WHERE sourceDocumentId=${q(item.doc.id)} AND status='Active';\n`;
+          }
+
+          for (const record of records) {
+            sql += `
+            INSERT INTO SourceStructuredRecord (
+              id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+              sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt
+            ) VALUES (
+              ${q(record.id)},${q(record.institutionId)},${q(record.sourceDocumentId)},${q(record.recordType)},
+              ${q(record.recordKey)},${q(record.recordTitle)},${q(record.period)},${q(record.payloadJson)},
+              ${q(record.sourceRole)},${Number(record.precedencePriority)},${q(record.sourceModifiedAt)},
+              'Active',${q(batchCode)},${q(now)},${q(now)}
+            )
+            ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+              recordTitle=excluded.recordTitle,
+              period=excluded.period,
+              payloadJson=excluded.payloadJson,
+              sourceRole=excluded.sourceRole,
+              precedencePriority=excluded.precedencePriority,
+              sourceModifiedAt=excluded.sourceModifiedAt,
+              status='Active',
+              normalizationBatch=excluded.normalizationBatch,
+              updatedAt=excluded.updatedAt;
+            `;
+          }
+
+          const summary = {
+            files: selected.map(item => item.code),
+            recordCounts: Object.fromEntries(
+              [...new Set(records.map(record => record.recordType))].map(type => [
+                type, records.filter(record => record.recordType === type).length
+              ])
+            )
+          };
+          const runId = deterministicId(institutionId, batchCode);
+          sql += `
+          INSERT INTO SourceNormalizationRun (
+            id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,
+            totalRecords,status,summaryJson,startedAt,completedAt
+          ) VALUES (
+            ${q(runId)},${q(institutionId)},${q(batchCode)},'BASELINE',10,5,5,${records.length},
+            'Completed',${q(JSON.stringify(summary))},${q(now)},${q(now)}
+          )
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+            sourceRole='BASELINE',
+            precedencePriority=10,
+            totalDocuments=5,
+            processedDocuments=5,
+            totalRecords=${records.length},
+            status='Completed',
+            summaryJson=${q(JSON.stringify(summary))},
+            completedAt=${q(now)};
+          `;
+
+          fs.writeFileSync('/tmp/aura-batch1.sql', sql);
+          wrangler(['d1', 'execute', dbName, '--remote', '--file', '/tmp/aura-batch1.sql']);
+
+          const verify = query(`
+            SELECT recordType, COUNT(*) AS records
+            FROM SourceStructuredRecord
+            WHERE institutionId=${q(institutionId)}
+              AND normalizationBatch=${q(batchCode)}
+              AND status='Active'
+            GROUP BY recordType
+            ORDER BY recordType;
+          `);
+          const run = query(`
+            SELECT batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status
+            FROM SourceNormalizationRun
+            WHERE institutionId=${q(institutionId)} AND batchCode=${q(batchCode)}
+            LIMIT 1;
+          `)[0];
+
+          const activeTotal = verify.reduce((sum, row) => sum + Number(row.records || 0), 0);
+          if (!run || run.status !== 'Completed' || Number(run.processedDocuments) !== 5) {
+            throw new Error('NORMALIZATION_RUN_NOT_VERIFIED');
+          }
+          if (activeTotal !== records.length) {
+            throw new Error(`NORMALIZATION_COUNT_MISMATCH_${activeTotal}_${records.length}`);
+          }
+
+          console.log('Aura batch 1 verification:');
+          console.log(JSON.stringify({ run, recordCounts: verify, activeTotal }, null, 2));
+          NODE
+
+          node /tmp/normalize-aura-batch1.mjs
+          rm -f /tmp/normalize-aura-batch1.mjs /tmp/aura-batch1.sql
