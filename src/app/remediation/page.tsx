@@ -12,6 +12,7 @@ import {
   X
 } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 type WorkflowType = 'DEFICIENCY' | 'ISSUE' | 'MAP' | 'MILESTONE' | 'RETEST';
 
@@ -99,18 +100,8 @@ export default function RemediationPage() {
     loadData();
   }, []);
 
-  const postAction = async (body: Record<string, unknown>) => {
-    const response = await fetch('/api/assure/remediation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || 'Unable to persist remediation action.');
-    }
-    return payload;
-  };
+  const postAction = async (body: Record<string, unknown>) =>
+    jsonTransaction('/api/assure/remediation', body);
 
   const openExtension = (map: any) => {
     setExtensionMap(map);
