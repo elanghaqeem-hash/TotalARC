@@ -1,6 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 type D1DatabaseLike = {
+  exec: (sql: string) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -21,9 +22,7 @@ async function getDb(): Promise<D1DatabaseLike> {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  for (const statement of script.split(';').map(item => item.trim()).filter(Boolean)) {
-    await db.prepare(statement).run();
-  }
+  await db.exec(script);
 }
 
 let schemaReady: Promise<D1DatabaseLike> | null = null;
