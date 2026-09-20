@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 let assuranceCache: any = null;
 let assuranceRequest: Promise<any> | null = null;
 
-function fetchAssuranceData() {
+function fetchAssuranceData(force = false) {
+  if (force) assuranceCache = null;
   if (!assuranceRequest) {
     assuranceRequest = fetch('/api/assurance', { cache: 'no-store' })
       .then(res =>
@@ -55,5 +56,20 @@ export function useAssuranceData() {
     };
   }, []);
 
-  return { data, loading, error };
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const payload = await fetchAssuranceData(true);
+      setData(payload);
+      setError('');
+      return payload;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Assurance data unavailable');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { data, loading, error, refresh };
 }
