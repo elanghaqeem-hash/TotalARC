@@ -6,6 +6,7 @@ import {
 } from '@/lib/cloudflare-db';
 import { ensureAuthSchema } from '@/lib/d1-auth';
 import type { SessionPayload } from '@/lib/auth-token';
+import { getTenantContext } from '@/lib/tenant-context';
 
 export type TenantInstitutionInput = {
   name: string;
@@ -294,4 +295,113 @@ export async function listTenantDatabaseSlots() {
     assignedInstitutionId: usedMap.get(binding) || null,
     available: !usedMap.has(binding)
   }));
+}
+
+
+export async function updateCurrentInstitutionProfile(
+  input: TenantInstitutionInput & { yearEstablished?: number | null; taxId?: string | null; logo?: string | null },
+  actor: SessionPayload
+) {
+  if (!actor.permissions.includes('institution.manage')) throw new Error('ACCESS_DENIED');
+
+  const controlDb = await ensureAuthSchema();
+  const tenantContext = await getTenantContext();
+  if (tenantContext.institutionId !== actor.institution.id) throw new Error('INSTITUTION_ACCESS_DENIED');
+  const tenantDb = tenantContext.db;
+
+  const legalName = input.legalName.trim();
+  const name = input.name.trim();
+  const shortName = input.shortName.trim() || name;
+  const institutionType = input.institutionType.trim();
+  if (!name || !legalName || !institutionType) throw new Error('INSTITUTION_REQUIRED_FIELDS');
+
+  const duplicate = await first<Record<string, unknown>>(
+    controlDb,
+    'SELECT id FROM Institution WHERE lower(legalName)=lower(?) AND id<>? LIMIT 1',
+    [legalName, actor.institution.id]
+  );
+  if (duplicate) throw new Error('INSTITUTION_CONFLICT');
+
+  const current = await first<Record<string, unknown>>(
+    controlDb,
+    'SELECT * FROM Institution WHERE id=? LIMIT 1',
+    [actor.institution.id]
+  );
+  if (!current) throw new Error('TENANT_NOT_FOUND');
+
+  const values = [
+    name,
+    legalName,
+    shortName,
+    institutionType,
+    input.country?.trim() || 'Indonesia',
+    clean(input.provinceState),
+    clean(input.city),
+    clean(input.registeredAddress),
+    clean(input.operationalAddress),
+    clean(input.website),
+    clean(input.generalEmail),
+    clean(input.telephone),
+    input.yearEstablished ?? null,
+    clean(input.registrationNumber),
+    clean(input.taxId),
+    clean(input.parentCompany),
+    clean(input.holdingCompany),
+    clean(input.stockExchange),
+    clean(input.ticker),
+    clean(input.logo),
+    clean(input.employeeCount),
+    clean(input.revenueRange),
+    clean(input.businessModel),
+    clean(input.operatingModel),
+    nowIso(),
+    actor.institution.id
+  ];
+
+  const sql = `UPDATE Institution SET
+    name=?,legalName=?,shortName=?,institutionType=?,country=?,provinceState=?,city=?,
+    registeredAddress=?,operationalAddress=?,website=?,generalEmail=?,telephone=?,yearEstablished=?,
+    registrationNumber=?,taxId=?,parentCompany=?,holdingCompany=?,stockExchange=?,ticker=?,logo=?,
+    employeeCount=?,revenueRange=?,businessModel=?,operatingModel=?,updatedAt=?
+    WHERE id=?`;
+
+  await run(controlDb, sql, values);
+  await ensureInstitutionSchema(tenantDb);
+  const tenantInstitution = await first<Record<string, unknown>>(
+    tenantDb,
+    'SELECT id FROM Institution WHERE id=? LIMIT 1',
+    [actor.institution.id]
+  );
+  if (tenantInstitution) {
+    await run(tenantDb, sql, values);
+  } else {
+    await insertInstitution(tenantDb, actor.institution.id, input);
+  }
+
+  const updated = await first<Record<string, unknown>>(
+    controlDb,
+    'SELECT * FROM Institution WHERE id=? LIMIT 1',
+    [actor.institution.id]
+  );
+
+  await run(
+    controlDb,
+    `INSERT INTO AuditLog (
+      id,institutionId,userName,userRole,action,entityType,recordId,
+      oldValue,newValue,reason,ipAddress,timestamp
+    ) VALUES (?,?,?,?, 'UPDATE','Institution',?,?,?,?,NULL,?)`,
+    [
+      crypto.randomUUID(),
+      actor.institution.id,
+      actor.username,
+      actor.roles.join(','),
+      actor.institution.id,
+      JSON.stringify(current),
+      JSON.stringify(updated),
+      'Institution profile updated by authorized institution administrator.',
+      nowIso()
+    ]
+  );
+
+  return updated;
 }
