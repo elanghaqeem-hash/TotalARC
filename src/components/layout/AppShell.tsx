@@ -24,6 +24,7 @@ import {
   FolderTree,
   Layers,
   Link2,
+  LockKeyhole,
   LogOut,
   Menu,
   Shield,
@@ -60,6 +61,7 @@ const navGroups: NavGroup[] = [
       { name: 'Institution Onboarding', href: '/onboarding', icon: Building2 },
       { name: 'Organization Structure', href: '/organization', icon: FolderTree },
       { name: 'User & Role Management', href: '/admin/users', icon: Users, badge: 'RBAC' },
+      { name: 'Authentication Security', href: '/admin/security', icon: LockKeyhole, badge: 'AUTH' },
       { name: 'Process Architecture (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
       { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
       { name: 'Single Control Library', href: '/controls', icon: Shield },
@@ -394,10 +396,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </p>
                   </div>
 
+                  <div className="mt-3 grid gap-2">
+                    <Link
+                      href="/profile"
+                      onClick={() => setAccountMenuOpen(false)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <UserRound className="h-4 w-4" />
+                      My profile
+                    </Link>
+                    {currentUser.role === 'Admin' && (
+                      <Link
+                        href="/admin/security"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-50"
+                      >
+                        <LockKeyhole className="h-4 w-4" />
+                        Security administration
+                      </Link>
+                    )}
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => void logout()}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-100"
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-100"
                   >
                     <LogOut className="h-4 w-4" />
                     Sign out
