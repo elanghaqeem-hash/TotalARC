@@ -60,6 +60,37 @@ export default function ProcessesPage() {
     description: ''
   });
 
+  const loadOrganization = async () => {
+    try {
+      const data = await jsonRead<any>('/api/organization', { dedupe: false });
+      const nextEntities = Array.isArray(data.legalEntities) ? data.legalEntities : [];
+      const nextUnits = Array.isArray(data.organizationUnits) ? data.organizationUnits : [];
+      const nextPositions = Array.isArray(data.positions) ? data.positions : [];
+      const nextUsers = Array.isArray(data.users) ? data.users : [];
+
+      setLegalEntities(nextEntities);
+      setOrganizationUnits(nextUnits);
+      setOrganizationPositions(nextPositions);
+      setOrganizationUsers(nextUsers);
+
+      setFormData(prev => {
+        const currentUnit = nextUnits.find(
+          (unit: any) => unit.id === prev.orgUnitId && unit.status === 'Active'
+        );
+        const defaultUnit =
+          currentUnit || nextUnits.find((unit: any) => unit.status === 'Active') || null;
+
+        return {
+          ...prev,
+          orgUnitId: defaultUnit?.id || '',
+          legalEntityId: defaultUnit?.legalEntityId || prev.legalEntityId || ''
+        };
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const loadProcesses = async (targetPage = page) => {
     setPageLoading(true);
     try {
@@ -78,17 +109,9 @@ export default function ProcessesPage() {
 
       const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
       const nextCategories = Array.isArray(data.categories) ? data.categories : [];
-      const nextEntities = Array.isArray(data.organization?.legalEntities) ? data.organization.legalEntities : [];
-      const nextUnits = Array.isArray(data.organization?.organizationUnits) ? data.organization.organizationUnits : [];
-      const nextPositions = Array.isArray(data.organization?.positions) ? data.organization.positions : [];
-      const nextUsers = Array.isArray(data.organization?.users) ? data.organization.users : [];
 
       setProcesses(nextProcesses);
       setCategories(nextCategories);
-      setLegalEntities(nextEntities);
-      setOrganizationUnits(nextUnits);
-      setOrganizationPositions(nextPositions);
-      setOrganizationUsers(nextUsers);
       setPagination(data.pagination || EMPTY_PAGINATION);
       setPage(targetPage);
 
@@ -98,25 +121,23 @@ export default function ProcessesPage() {
           : nextProcesses[0] || null
       );
 
-      setFormData(prev => {
-        const currentUnit = nextUnits.find((unit: any) => unit.id === prev.orgUnitId && unit.status === 'Active');
-        const defaultUnit = currentUnit || nextUnits.find((unit: any) => unit.status === 'Active') || null;
-        return {
-          ...prev,
-          categoryId:
-            prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
-              ? prev.categoryId
-              : nextCategories[0]?.id || '',
-          orgUnitId: defaultUnit?.id || '',
-          legalEntityId: defaultUnit?.legalEntityId || prev.legalEntityId || ''
-        };
-      });
+      setFormData(prev => ({
+        ...prev,
+        categoryId:
+          prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
+            ? prev.categoryId
+            : nextCategories[0]?.id || ''
+      }));
     } catch (error) {
       console.error(error);
     } finally {
       setPageLoading(false);
     }
   };
+
+  useEffect(() => {
+    void loadOrganization();
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -246,7 +267,7 @@ export default function ProcessesPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            All Categories ({pagination.total})
+            All Categories
           </button>
           {categories.map(cat => (
             <button
