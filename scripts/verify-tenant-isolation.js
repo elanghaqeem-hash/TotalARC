@@ -10,6 +10,9 @@ const tenantRoutes = [
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
   'src/app/api/organization/route.ts',
+  'src/app/api/assure/rcsa/route.ts',
+  'src/app/api/assure/tod/route.ts',
+  'src/app/api/assure/icofr/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
@@ -88,6 +91,9 @@ for (const pattern of requiredCoreSignatures) {
 
 const assurance = fs.existsSync(assurancePath) ? fs.readFileSync(assurancePath, 'utf8') : '';
 const requiredAssuranceSignatures = [
+  /listRcsaData\(institutionId:\s*string\)/,
+  /listTodData\(institutionId:\s*string\)/,
+  /listIcofrData\(institutionId:\s*string\)/,
   /listToeTests\(institutionId:\s*string\)/,
   /listRemediationData\(institutionId:\s*string\)/,
   /listMonitoringRules\(institutionId:\s*string\)/,
