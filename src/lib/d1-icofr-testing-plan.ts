@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureIcofrScopeSchema } from '@/lib/d1-icofr';
 import {
   ensureIcofrTraceabilitySchema,
@@ -86,12 +86,14 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-let testingPlanSchemaReady: Promise<D1DatabaseLike> | null = null;
+const testingPlanSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrTestingPlanSchema() {
-  if (testingPlanSchemaReady) return testingPlanSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = testingPlanSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  testingPlanSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchema(db, `
@@ -152,11 +154,12 @@ export async function ensureIcofrTestingPlanSchema() {
 
     return db;
   })().catch(error => {
-    testingPlanSchemaReady = null;
+    testingPlanSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return testingPlanSchemaReady;
+  testingPlanSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
