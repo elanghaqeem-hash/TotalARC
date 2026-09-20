@@ -878,6 +878,8 @@ export async function getTestingPlanData() {
     return {
       ...item,
       dueDate: String(item.dueDate || ''),
+      todAssessmentId: item.todAssessmentId ? String(item.todAssessmentId) : null,
+      toeTestId: item.toeTestId ? String(item.toeTestId) : null,
       populationSize: numberOrNull(item.populationSize),
       plannedSampleSize: numberOrNull(item.plannedSampleSize),
       carryForward: bool(item.carryForward),
