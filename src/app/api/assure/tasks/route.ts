@@ -64,6 +64,7 @@ export async function POST(request: Request) {
       const type = textValue(body, 'type');
       const dueDate = textValue(body, 'dueDate');
       const priority = textValue(body, 'priority') || 'High';
+      const taskStatus = textValue(body, 'status') || 'Pending';
       const userId = textValue(body, 'userId') || null;
       const orgUnitId = textValue(body, 'orgUnitId') || null;
 
@@ -72,6 +73,12 @@ export async function POST(request: Request) {
           { error: 'title, type, and dueDate are required.' },
           { status: 400 }
         );
+      }
+      if (!['Critical', 'High', 'Medium', 'Low'].includes(priority)) {
+        return NextResponse.json({ error: 'Invalid task priority.' }, { status: 400 });
+      }
+      if (!['Pending', 'In Progress', 'Completed', 'Overdue'].includes(taskStatus)) {
+        return NextResponse.json({ error: 'Invalid task status.' }, { status: 400 });
       }
 
       const organization = await getOrganizationData(auth.user.institutionId);
@@ -120,7 +127,7 @@ export async function POST(request: Request) {
         type,
         dueDate,
         priority,
-        status: textValue(body, 'status') || 'Pending',
+        status: taskStatus,
         entityRef: textValue(body, 'entityRef') || null,
         link: textValue(body, 'link') || null
       }, auth.user.institutionId);
@@ -142,6 +149,9 @@ export async function POST(request: Request) {
       const status = textValue(body, 'status');
       if (!taskId || !status) {
         return NextResponse.json({ error: 'taskId and status are required.' }, { status: 400 });
+      }
+      if (!['Pending', 'In Progress', 'Completed', 'Overdue'].includes(status)) {
+        return NextResponse.json({ error: 'Invalid task status.' }, { status: 400 });
       }
 
       const tasks = await listTasksData(auth.user.institutionId);
