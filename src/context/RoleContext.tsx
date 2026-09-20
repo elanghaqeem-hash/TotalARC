@@ -35,6 +35,7 @@ interface RoleContextType {
   authenticated: boolean;
   loading: boolean;
   institutionName: string;
+  setInstitutionName: (name: string) => void;
   refreshSession: () => Promise<boolean>;
   logout: () => Promise<void>;
 }
@@ -84,6 +85,10 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     void refreshSession();
   }, [refreshSession]);
 
+  const setInstitutionName = useCallback((name: string) => {
+    setCurrentUser(current => ({ ...current, institutionName: name }));
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await fetch('/api/auth/logout', {
@@ -104,6 +109,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         authenticated,
         loading,
         institutionName: currentUser.institutionName || 'No institution registered',
+        setInstitutionName,
         refreshSession,
         logout
       }}
