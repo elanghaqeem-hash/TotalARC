@@ -429,6 +429,7 @@ export default function IcofrTestingPlanPage() {
           <Link href="/tod" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600 hover:border-brand-300">ToD Workspace</Link>
           <Link href="/toe" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600 hover:border-brand-300">ToE Workspace</Link>
           <Link href="/icofr/coverage" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600 hover:border-brand-300">Coverage & Gaps</Link>
+          <Link href="/icofr/smart-testing" className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-indigo-700 hover:border-indigo-300">Smart Testing Strategy</Link>
           <Link href="/certification" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600 hover:border-brand-300">Certification</Link>
         </div>
       </div>
