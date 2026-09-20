@@ -4,6 +4,7 @@ import { getOrganizationStructure } from '@/lib/d1-organization';
 import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 
 type D1DatabaseLike = {
+  exec: (sql: string) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -90,14 +91,7 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 }
 
 async function executeSchemaScript(db: D1DatabaseLike, script: string) {
-  const statements = script
-    .split(';')
-    .map(statement => statement.trim())
-    .filter(Boolean);
-
-  for (const statement of statements) {
-    await db.prepare(statement).run();
-  }
+  await db.exec(script);
 }
 
 function nowIso() {
