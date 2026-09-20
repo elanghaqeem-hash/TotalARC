@@ -292,15 +292,29 @@ export async function listProcessOptions(
     values.push(term, term);
   }
 
-  return all<Record<string, unknown>>(
+  const rows = await all<Record<string, unknown>>(
     db,
     `SELECT p.id, p.processId, p.name, p.categoryId, p.legalEntityId, p.orgUnitId,
-            p.ownerName, p.criticality, p.classification
+            p.ownerName, p.criticality, p.classification,
+            ou.code AS orgUnitCode, ou.name AS orgUnitName,
+            le.code AS legalEntityCode, le.name AS legalEntityName
        FROM BusinessProcess p
+       LEFT JOIN OrganizationUnit ou ON ou.id = p.orgUnitId AND ou.institutionId = p.institutionId
+       LEFT JOIN LegalEntity le ON le.id = p.legalEntityId AND le.institutionId = p.institutionId
       WHERE ${where.join(' AND ')}
       ORDER BY p.processId ASC`,
     values
   );
+
+  return rows.map(row => ({
+    ...row,
+    orgUnit: row.orgUnitId
+      ? { id: row.orgUnitId, code: row.orgUnitCode, name: row.orgUnitName }
+      : null,
+    legalEntity: row.legalEntityId
+      ? { id: row.legalEntityId, code: row.legalEntityCode, name: row.legalEntityName }
+      : null
+  }));
 }
 
 export async function listRiskRegisterPage(
