@@ -8,6 +8,9 @@ const mutationRoutes = [
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
   'src/app/api/organization/route.ts',
+  'src/app/api/assure/rcsa/route.ts',
+  'src/app/api/assure/tod/route.ts',
+  'src/app/api/assure/icofr/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
@@ -53,6 +56,9 @@ for (const route of actorRoutes) {
 }
 
 const auditedAssuranceRoutes = [
+  'src/app/api/assure/rcsa/route.ts',
+  'src/app/api/assure/tod/route.ts',
+  'src/app/api/assure/icofr/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
