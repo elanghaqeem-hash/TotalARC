@@ -19,7 +19,7 @@ function fetchAssuranceData(force = false) {
 
   if (!assuranceRequest) {
     assuranceRequest = fetch('/api/assurance', {
-      cache: 'no-store',
+      cache: force ? 'no-store' : 'default',
       headers: { 'x-totalarc-client-cache': force ? 'refresh' : 'warm' }
     })
       .then(res =>
