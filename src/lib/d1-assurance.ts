@@ -1360,6 +1360,110 @@ export async function updateTaskStatus(input: {
   );
 }
 
+
+export async function listCalendarData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  const [
+    campaigns,
+    toeTests,
+    actionPlans,
+    retests,
+    certificationRows,
+    attestations,
+    taskRows
+  ] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, name, type, period, dueDate, status, ownerName, orgUnitId
+         FROM AssessmentCampaign
+        WHERE institutionId = ?
+        ORDER BY dueDate ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT t.id, t.testId, t.testedAt, t.status, t.testerName, p.orgUnitId
+         FROM ToETest t
+         JOIN BusinessProcess p ON p.id = t.processId
+        WHERE p.institutionId = ?
+        ORDER BY t.testedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.id, m.mapId, m.originalDueDate, m.revisedDueDate, m.status,
+              m.actionOwner, p.orgUnitId
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+         JOIN BusinessProcess p ON p.id = i.processId
+        WHERE i.institutionId = ?
+        ORDER BY COALESCE(m.revisedDueDate, m.originalDueDate) ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.id, r.retestId, r.retestedAt, r.result, r.testerName, p.orgUnitId
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+         JOIN BusinessProcess p ON p.id = i.processId
+        WHERE i.institutionId = ?
+        ORDER BY r.retestedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT cert.id, cert.certifiedAt, cert.period, cert.status,
+              cert.certifierName, c.controlId AS enterpriseControlId, p.orgUnitId
+         FROM ControlCertification cert
+         JOIN ControlMaster c ON c.id = cert.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
+        WHERE c.institutionId = ?
+        ORDER BY cert.certifiedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, period, overallOpinion, cfoName, croName, attestedAt, orgUnitId
+         FROM ManagementAttestation
+        WHERE institutionId = ?
+        ORDER BY attestedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT t.id, t.title, t.type, t.dueDate, t.priority, t.status, t.orgUnitId,
+              t.userId, u.name AS assigneeName
+         FROM Task t
+         LEFT JOIN AccessUser u ON u.id = t.userId AND u.institutionId = t.institutionId
+        WHERE t.institutionId = ?
+        ORDER BY t.dueDate ASC`,
+      [institutionId]
+    )
+  ]);
+
+  return {
+    campaigns,
+    toeTests,
+    actionPlans,
+    retests,
+    certifications: certificationRows.map(row => ({
+      ...row,
+      control: {
+        controlId: row.enterpriseControlId
+      }
+    })),
+    attestations,
+    tasks: taskRows.map(row => ({
+      ...row,
+      user: row.userId
+        ? { id: row.userId, name: row.assigneeName || null }
+        : null
+    }))
+  };
+}
+
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
   const [issue, milestones, retests] = await Promise.all([
     first<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE id = ? AND institutionId = ? LIMIT 1', [row.issueId, institutionId]),
