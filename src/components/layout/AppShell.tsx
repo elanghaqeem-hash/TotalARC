@@ -87,6 +87,7 @@ const navGroups: NavGroup[] = [
       { name: 'Control Health Cockpit', href: '/health', icon: Activity },
       { name: 'Continuous Monitoring (CCM)', href: '/ccm', icon: Cpu },
       { name: 'ICOFR Certification & Close', href: '/certification', icon: BadgeCheck, badge: 'SIGN' },
+      { name: 'ICOFR Executive Reporting', href: '/icofr/reporting', icon: BarChart3, badge: 'BOARD' },
       { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
       { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
       { name: 'Analytics', href: '/reports', icon: BarChart3 }
