@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { canAccessApi, canAccessPage } from '@/lib/access-control';
 import { AUTH_COOKIE_NAME, isAuthSecretUsable, verifySessionToken } from '@/lib/auth-token';
+import { isAuthSessionActive } from '@/lib/auth-security';
 
 async function runtimeValue(name: string) {
   const fromProcess = process.env[name];
@@ -110,6 +111,42 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!session) return unauthorized(request);
+
+  let activeSession = false;
+  try {
+    activeSession = await isAuthSessionActive(session, true);
+  } catch (error) {
+    console.error('Session registry validation failed:', error);
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Session validation is temporarily unavailable.', code: 'SESSION_VALIDATION_UNAVAILABLE' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+    return unauthorized(request);
+  }
+  if (!activeSession) return unauthorized(request);
+
+  const passwordChangePath =
+    pathname === '/profile' ||
+    pathname === '/api/auth/profile' ||
+    pathname === '/api/auth/me' ||
+    pathname === '/api/auth/logout';
+
+  if (session.mustChangePassword && !passwordChangePath) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        {
+          error: 'Password change is required before using other protected functions.',
+          code: 'PASSWORD_CHANGE_REQUIRED'
+        },
+        { status: 428, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+    const profile = new URL('/profile', request.url);
+    profile.searchParams.set('password', 'required');
+    return NextResponse.redirect(profile);
+  }
 
   if (pathname.startsWith('/api/')) {
     if (!canAccessApi(session.role, pathname, request.method)) return forbidden(request);
