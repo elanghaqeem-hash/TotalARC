@@ -16,7 +16,8 @@ const modules = [
   { href: '/toe', title: 'Test of Operating Effectiveness', detail: 'Evidence-based operating effectiveness testing and sample evaluation.', icon: Cpu },
   { href: '/icofr/deficiencies', title: 'Deficiency Evaluation', detail: 'Evaluate control deficiencies, significant deficiencies and material weaknesses.', icon: AlertTriangle },
   { href: '/remediation', title: 'Remediation & MAP', detail: 'Management action plans, ownership, due dates and retesting follow-up.', icon: BadgeCheck },
-  { href: '/certification', title: 'Certification & Year-End Close', detail: 'Entity/unit sub-certification, readiness gates, management representation, evidence pack and CFO/CEO sign-off.', icon: BadgeCheck }
+  { href: '/certification', title: 'Certification & Year-End Close', detail: 'Entity/unit sub-certification, readiness gates, management representation, evidence pack and CFO/CEO sign-off.', icon: BadgeCheck },
+  { href: '/icofr/reporting', title: 'Executive Reporting & Audit Reliance', detail: 'Board/Audit Committee reporting, deficiency aging, external-auditor reliance and PBC/evidence request tracking.', icon: BarChart3 }
 ];
 
 export default function ICOFRPage() {
