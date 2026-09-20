@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRole } from '@/context/RoleContext';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 import {
   Building2,
   CheckCircle2,
@@ -51,8 +52,7 @@ export default function OnboardingPage() {
   });
 
   useEffect(() => {
-    fetch('/api/onboarding')
-      .then(res => res.json())
+    jsonRead<any>('/api/onboarding')
       .then(d => {
         setIndustries(d.industries || []);
         setFrameworks(d.frameworks || []);
