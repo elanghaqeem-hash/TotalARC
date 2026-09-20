@@ -5,6 +5,7 @@ import { ensureIcofrCoverageSchema, getIcofrCoverageData } from '@/lib/d1-icofr-
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
 import { getOrganizationStructure } from '@/lib/d1-organization';
 import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
+import { ensureIcofrWorkpaperReviewSchema } from '@/lib/d1-icofr-workpaper-review';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -25,7 +26,8 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureIcofrScopeSchema(),
     ensureIcofrTestingPlanSchema(),
     ensureIcofrCoverageSchema(),
-    ensureAssuranceSchema()
+    ensureAssuranceSchema(),
+    ensureIcofrWorkpaperReviewSchema()
   ]);
 
   const { env } = await getCloudflareContext({ async: true });
@@ -903,6 +905,12 @@ async function readinessForAttestation(
     [institutionId]
   );
 
+  const workpaperReviews = await all<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ICOFRWorkpaperReview WHERE institutionId=?',
+    [institutionId]
+  );
+
   const significantDeficiencies = await all<Record<string, unknown>>(
     db,
     `SELECT d.*, i.status AS issueStatus
@@ -935,6 +943,21 @@ async function readinessForAttestation(
   let completedTod = 0;
   let requiredToe = 0;
   let completedToe = 0;
+  let requiredWorkpaperReviews = 0;
+  let approvedWorkpaperReviews = 0;
+
+  const approvedReviewByKey = new Map(
+    workpaperReviews
+      .filter(
+        item =>
+          String(item.status) === 'Approved' &&
+          String(item.reviewerConclusion) !== 'Not Assessed'
+      )
+      .map(item => [
+        String(item.workpaperType) + ':' + String(item.workpaperId),
+        item
+      ])
+  );
 
   for (const item of planItems) {
     const testType = String(item.testType);
@@ -948,6 +971,13 @@ async function readinessForAttestation(
       ) {
         completedTod += 1;
       }
+      requiredWorkpaperReviews += 1;
+      if (
+        tod &&
+        approvedReviewByKey.has('ToD:' + String(tod.id))
+      ) {
+        approvedWorkpaperReviews += 1;
+      }
     }
 
     if (['ToE', 'Both'].includes(testType)) {
@@ -960,6 +990,13 @@ async function readinessForAttestation(
       ) {
         completedToe += 1;
       }
+      requiredWorkpaperReviews += 1;
+      if (
+        toe &&
+        approvedReviewByKey.has('ToE:' + String(toe.id))
+      ) {
+        approvedWorkpaperReviews += 1;
+      }
     }
   }
 
@@ -967,6 +1004,9 @@ async function readinessForAttestation(
   const planReady = testingCycleId ? missingKeyControlPlans.length === 0 && planItems.length > 0 : false;
   const todReady = requiredTod === completedTod;
   const toeReady = requiredToe === completedToe;
+  const workpaperReviewReady =
+    requiredWorkpaperReviews > 0 &&
+    requiredWorkpaperReviews === approvedWorkpaperReviews;
   const deficiencyReady = unresolvedDeficiencies.length === 0;
   const subCertificationReady = pendingSubCerts.length === 0;
 
@@ -1007,6 +1047,12 @@ async function readinessForAttestation(
       detail: `${completedToe} of ${requiredToe} required ToE workpapers completed.`
     },
     {
+      key: 'WORKPAPER_QUALITY_REVIEW',
+      label: 'Required ToD/ToE workpapers passed independent quality review',
+      passed: workpaperReviewReady,
+      detail: `${approvedWorkpaperReviews} of ${requiredWorkpaperReviews} required workpaper review(s) approved.`
+    },
+    {
       key: 'NO_UNRESOLVED_SIGNIFICANT_DEFICIENCY',
       label: 'No unresolved significant deficiency/material weakness',
       passed: deficiencyReady,
@@ -1040,6 +1086,8 @@ async function readinessForAttestation(
       completedTod,
       requiredToe,
       completedToe,
+      requiredWorkpaperReviews,
+      approvedWorkpaperReviews,
       unresolvedSignificantDeficiencies: unresolvedDeficiencies.length,
       highPriorityOpenGapActions: highPriorityOpenActions.length,
       subCertifications: subCerts.length,

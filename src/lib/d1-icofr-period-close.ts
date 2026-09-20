@@ -8,6 +8,7 @@ import { ensureAssuranceSchema } from '@/lib/d1-assurance';
 import { ensureIcofrCertificationSchema } from '@/lib/d1-icofr-certification';
 import { ensureIcofrExecutiveReportingSchema } from '@/lib/d1-icofr-executive-reporting';
 import { ensureIcofrSamplingEvidenceSchema } from '@/lib/d1-icofr-sampling-evidence';
+import { ensureIcofrWorkpaperReviewSchema } from '@/lib/d1-icofr-workpaper-review';
 import {
   ensureIcofrPeriodLockSchema,
   getIcofrPeriodLockState
@@ -38,6 +39,7 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureIcofrCertificationSchema(),
     ensureIcofrExecutiveReportingSchema(),
     ensureIcofrSamplingEvidenceSchema(),
+    ensureIcofrWorkpaperReviewSchema(),
     ensureIcofrPeriodLockSchema()
   ]);
 
@@ -227,6 +229,9 @@ async function captureSnapshotSections(
     samplingPlans,
     samplingCandidates,
     samplingEvidenceRequests,
+    workpaperReviews,
+    workpaperReviewNotes,
+    workpaperEvidenceIndex,
     designAssessments,
     toeTests,
     testSamples,
@@ -310,6 +315,55 @@ async function captureSnapshotSections(
              JOIN ICOFRSamplingPlan p ON p.id=r.samplingPlanId
             WHERE p.institutionId=? AND p.period=?
             ORDER BY r.dueDate,r.createdAt`,
+          [institutionId, testingPeriod]
+        ),
+    testingCycleId
+      ? all(
+          db,
+          'SELECT * FROM ICOFRWorkpaperReview WHERE institutionId=? AND testingCycleId=? ORDER BY updatedAt',
+          [institutionId, testingCycleId]
+        )
+      : all(
+          db,
+          'SELECT * FROM ICOFRWorkpaperReview WHERE institutionId=? AND period=? ORDER BY updatedAt',
+          [institutionId, testingPeriod]
+        ),
+    testingCycleId
+      ? all(
+          db,
+          `SELECT n.*
+             FROM ICOFRWorkpaperReviewNote n
+             JOIN ICOFRWorkpaperReview r ON r.id=n.reviewId
+            WHERE r.institutionId=? AND r.testingCycleId=?
+            ORDER BY n.createdAt`,
+          [institutionId, testingCycleId]
+        )
+      : all(
+          db,
+          `SELECT n.*
+             FROM ICOFRWorkpaperReviewNote n
+             JOIN ICOFRWorkpaperReview r ON r.id=n.reviewId
+            WHERE r.institutionId=? AND r.period=?
+            ORDER BY n.createdAt`,
+          [institutionId, testingPeriod]
+        ),
+    testingCycleId
+      ? all(
+          db,
+          `SELECT e.*
+             FROM ICOFRWorkpaperEvidenceIndex e
+             JOIN ICOFRWorkpaperReview r ON r.id=e.reviewId
+            WHERE r.institutionId=? AND r.testingCycleId=?
+            ORDER BY e.createdAt`,
+          [institutionId, testingCycleId]
+        )
+      : all(
+          db,
+          `SELECT e.*
+             FROM ICOFRWorkpaperEvidenceIndex e
+             JOIN ICOFRWorkpaperReview r ON r.id=e.reviewId
+            WHERE r.institutionId=? AND r.period=?
+            ORDER BY e.createdAt`,
           [institutionId, testingPeriod]
         ),
     all(db, 'SELECT * FROM ICOFRDesignAssessment WHERE institutionId=? AND period=? ORDER BY createdAt', [institutionId, testingPeriod]),
@@ -455,6 +509,9 @@ async function captureSnapshotSections(
         samplingPlans,
         samplingCandidates,
         samplingEvidenceRequests,
+        workpaperReviews,
+        workpaperReviewNotes,
+        workpaperEvidenceIndex,
         designAssessments,
         toeTests,
         testSamples,
@@ -1136,6 +1193,9 @@ export async function buildBoardAuditCommitteePdf(closeId: string, version?: num
   const samplingPlans = arrayFromSection(testingSection, 'samplingPlans');
   const samplingCandidates = arrayFromSection(testingSection, 'samplingCandidates');
   const samplingEvidenceRequests = arrayFromSection(testingSection, 'samplingEvidenceRequests');
+  const workpaperReviews = arrayFromSection(testingSection, 'workpaperReviews');
+  const workpaperReviewNotes = arrayFromSection(testingSection, 'workpaperReviewNotes');
+  const workpaperEvidenceIndex = arrayFromSection(testingSection, 'workpaperEvidenceIndex');
   const deficiencies = arrayFromSection(testingSection, 'deficiencies');
   const maps = arrayFromSection(testingSection, 'managementActionPlans');
   const attestations = arrayFromSection(certificationSection, 'attestations');
@@ -1179,6 +1239,10 @@ export async function buildBoardAuditCommitteePdf(closeId: string, version?: num
     'Sampling plans captured: ' + samplingPlans.length,
     'Selected sampling candidates: ' + samplingCandidates.filter(item => bool(item.selected)).length,
     'Sampling evidence requests: ' + samplingEvidenceRequests.length,
+    'Workpaper reviews captured: ' + workpaperReviews.length,
+    'Approved workpaper reviews: ' + workpaperReviews.filter(item => String(item.status) === 'Approved').length,
+    'Open workpaper review notes: ' + workpaperReviewNotes.filter(item => !['Cleared','Waived'].includes(String(item.status))).length,
+    'Workpaper evidence-index records: ' + workpaperEvidenceIndex.length,
     'Control deficiencies captured: ' + deficiencies.length,
     'Significant deficiencies / material weaknesses: ' + significant.length,
     'Open MAP at snapshot: ' + openMaps.length,
@@ -1313,6 +1377,9 @@ export async function buildExternalAuditorExcel(closeId: string, version?: numbe
     worksheet('Sampling Plans', arrayFromSection(testing, 'samplingPlans')),
     worksheet('Sampling Population', arrayFromSection(testing, 'samplingCandidates')),
     worksheet('Evidence Requests', arrayFromSection(testing, 'samplingEvidenceRequests')),
+    worksheet('Workpaper Reviews', arrayFromSection(testing, 'workpaperReviews')),
+    worksheet('Review Notes', arrayFromSection(testing, 'workpaperReviewNotes')),
+    worksheet('Workpaper Evidence', arrayFromSection(testing, 'workpaperEvidenceIndex')),
     worksheet('ToD', arrayFromSection(testing, 'designAssessments')),
     worksheet('ToE', arrayFromSection(testing, 'toeTests')),
     worksheet('Samples', arrayFromSection(testing, 'testSamples')),

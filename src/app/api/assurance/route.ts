@@ -6,6 +6,7 @@ import { listToeTests, listRemediationData, listMonitoringRules } from '@/lib/d1
 import { getCertificationData } from '@/lib/d1-icofr-certification';
 import { listFinancialItems, listInformationRegister } from '@/lib/d1-icofr-domains';
 import { getTestingPlanData } from '@/lib/d1-icofr-testing-plan';
+import { listWorkpaperReviewTasks } from '@/lib/d1-icofr-workpaper-review';
 import {
   addAssessmentScope,
   createAssessmentCampaign,
@@ -73,6 +74,7 @@ export async function GET(request: Request) {
   const needFinancial = wants('financial');
   const needInformation = wants('information');
   const needTesting = wants('testing', 'integration', 'tasks', 'calendar');
+  const needWorkpaperReviewTasks = wants('workpaper-review', 'tasks', 'integration');
 
   const [
     organizationResult,
@@ -85,7 +87,8 @@ export async function GET(request: Request) {
     certificationResult,
     financialResult,
     informationResult,
-    testingResult
+    testingResult,
+    workpaperReviewTaskResult
   ] = await Promise.all([
     loadModule(
       'organization',
@@ -122,6 +125,12 @@ export async function GET(request: Request) {
       needTesting,
       getTestingPlanData,
       { cycles: [], planItems: [], metrics: {} } as any
+    ),
+    loadModule(
+      'workpaper-review-tasks',
+      needWorkpaperReviewTasks,
+      listWorkpaperReviewTasks,
+      [] as any[]
     )
   ]);
 
@@ -136,6 +145,7 @@ export async function GET(request: Request) {
   const financialItems = financialResult.value as any;
   const informationRegister = informationResult.value as any;
   const testingPlan = testingResult.value as any;
+  const workpaperReviewTasks = workpaperReviewTaskResult.value as any[];
 
   const issues = [
     organizationResult.issue,
@@ -148,7 +158,8 @@ export async function GET(request: Request) {
     certificationResult.issue,
     financialResult.issue,
     informationResult.issue,
-    testingResult.issue
+    testingResult.issue,
+    workpaperReviewTaskResult.issue
   ].filter(Boolean) as ModuleIssue[];
 
   const institution = organization.institution;
@@ -273,7 +284,8 @@ export async function GET(request: Request) {
     ...(rcsa.tasks || []),
     ...pbcTasks,
     ...remediationTasks,
-    ...testingTasks
+    ...testingTasks,
+    ...workpaperReviewTasks
   ];
 
   const walkthroughs = todTests

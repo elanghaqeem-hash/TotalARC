@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, FlaskConical, Plus, Save, X } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, FileCheck, FlaskConical, Plus, Save, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 
 const EMPTY_TEST_FORM = {
@@ -299,15 +300,24 @@ export default function ToEPage() {
             Population, samples, exceptions, and conclusions come only from persisted testing records.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setTestModal(true)}
-          disabled={controls.length === 0}
-          className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Plus className="w-4 h-4" />
-          Register ToE Test
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/icofr/workpaper-review"
+            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700"
+          >
+            <FileCheck className="w-4 h-4" />
+            Workpaper Review
+          </Link>
+          <button
+            type="button"
+            onClick={() => setTestModal(true)}
+            disabled={controls.length === 0}
+            className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus className="w-4 h-4" />
+            Register ToE Test
+          </button>
+        </div>
       </div>
 
       <TraceabilityFlow currentStep="ToE Test" />
