@@ -25,6 +25,7 @@ import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 export default function ProcessesPage() {
   const [processes, setProcesses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [organizationUnits, setOrganizationUnits] = useState<any[]>([]);
   const [selectedProcess, setSelectedProcess] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -43,6 +44,7 @@ export default function ProcessesPage() {
     processId: '',
     name: '',
     categoryId: '',
+    orgUnitId: '',
     ownerName: '',
     criticality: 'Critical',
     classification: 'Core',
@@ -58,8 +60,10 @@ export default function ProcessesPage() {
 
       const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
       const nextCategories = Array.isArray(data.categories) ? data.categories : [];
+      const nextUnits = Array.isArray(data.organizationUnits) ? data.organizationUnits : [];
       setProcesses(nextProcesses);
       setCategories(nextCategories);
+      setOrganizationUnits(nextUnits);
 
       const nextSelected =
         nextProcesses.find((process: any) => process.id === preferredProcessId) ||
@@ -81,7 +85,12 @@ export default function ProcessesPage() {
           prev.categoryId &&
           nextCategories.some((category: any) => String(category.id) === String(prev.categoryId))
             ? prev.categoryId
-            : nextCategories[0]?.id || ''
+            : nextCategories[0]?.id || '',
+        orgUnitId:
+          prev.orgUnitId &&
+          nextUnits.some((unit: any) => String(unit.id) === String(prev.orgUnitId))
+            ? prev.orgUnitId
+            : nextUnits.length === 1 ? String(nextUnits[0].id) : prev.orgUnitId
       }));
     } catch (error) {
       console.error(error);
@@ -99,6 +108,7 @@ export default function ProcessesPage() {
       processId: '',
       name: '',
       categoryId: categories[0]?.id || '',
+      orgUnitId: organizationUnits.length === 1 ? String(organizationUnits[0].id) : '',
       ownerName: '',
       criticality: 'Critical',
       classification: 'Core',
@@ -115,6 +125,7 @@ export default function ProcessesPage() {
       processId: process.processId || '',
       name: process.name || '',
       categoryId: process.categoryId || categories[0]?.id || '',
+      orgUnitId: process.orgUnitId || process.orgUnit?.id || '',
       ownerName: process.ownerName || '',
       criticality: process.criticality || 'Critical',
       classification: process.classification || 'Core',
@@ -352,7 +363,7 @@ export default function ProcessesPage() {
                 </p>
 
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                  <span className="min-w-0 truncate">Owner: <strong>{proc.ownerName}</strong></span>
+                  <span className="min-w-0 truncate">Unit: <strong>{proc.orgUnit?.name || 'Unassigned'}</strong> · Owner: <strong>{proc.ownerName}</strong></span>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
@@ -626,6 +637,26 @@ export default function ProcessesPage() {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Organizational Unit *</label>
+                <select
+                  required
+                  value={formData.orgUnitId}
+                  onChange={e => setFormData({ ...formData, orgUnitId: e.target.value })}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                >
+                  <option value="">Select organizational unit</option>
+                  {organizationUnits.map(unit => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.code ? unit.code + ' · ' : ''}{unit.name}
+                    </option>
+                  ))}
+                </select>
+                {organizationUnits.length === 0 && (
+                  <p className="mt-1 text-[10px] text-amber-700">No organization unit is available in your assigned scope. Ask an administrator to configure organization structure/access first.</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
