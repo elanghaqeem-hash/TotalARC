@@ -307,7 +307,7 @@ export async function getIcofrScopingData() {
   const itemsByScope = new Map<string, Record<string, unknown>[]>();
   for (const rawItem of itemRows) {
     const item = itemRow(rawItem);
-    const scopeId = String(item.scopeId);
+    const scopeId = String(rawItem.scopeId);
     const list = itemsByScope.get(scopeId) || [];
     list.push(item);
     itemsByScope.set(scopeId, list);
