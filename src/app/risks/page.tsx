@@ -95,7 +95,7 @@ export default function RisksPage() {
       setRisks(nextRisks);
       setPagination(riskData.pagination || EMPTY_PAGINATION);
       setPage(targetPage);
-      setSelectedRisk(current =>
+      setSelectedRisk((current: any) =>
         current && nextRisks.some((item: any) => item.id === current.id)
           ? current
           : nextRisks[0] || null
