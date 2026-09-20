@@ -1064,10 +1064,31 @@ export async function listToeRegisterPage(
     ),
     all<Record<string, unknown>>(
       db,
-      `SELECT t.*
+      `SELECT
+          t.*,
+          c.controlId AS enterpriseControlId,
+          c.name AS controlName,
+          c.description AS controlDescription,
+          c.objective AS controlObjective,
+          c.controlOwner,
+          c.isKeyControl,
+          c.isIcofrKey,
+          c.isItgc,
+          p.processId AS enterpriseProcessId,
+          p.name AS processName,
+          p.legalEntityId,
+          p.orgUnitId,
+          r.riskId AS enterpriseRiskId,
+          r.name AS riskName,
+          (
+            SELECT COUNT(*)
+              FROM TestingException exceptionCount
+             WHERE exceptionCount.toeTestId = t.id
+          ) AS exceptionCount
          FROM ToETest t
          JOIN BusinessProcess p ON p.id = t.processId
          JOIN ControlMaster c ON c.id = t.controlId
+         LEFT JOIN RiskMaster r ON r.id = t.riskId AND r.institutionId = p.institutionId
         WHERE ${whereSql}
         ORDER BY t.testedAt DESC, t.testId ASC
         LIMIT ? OFFSET ?`,
@@ -1076,107 +1097,200 @@ export async function listToeRegisterPage(
   ]);
 
   const total = Number(countRow?.count || 0);
-  if (rows.length === 0) {
-    return {
-      tests: [],
-      pagination: paginationMeta(filters.page, filters.pageSize, total)
-    };
-  }
-
-  const testIds = idsJson(rows);
-  const controlIds = uniqueJson(rows.map(row => row.controlId));
-  const processIds = uniqueJson(rows.map(row => row.processId));
-  const riskIds = uniqueJson(rows.map(row => row.riskId));
-
-  const [controls, processes, risks, samples, exceptions, deficiencies] =
-    await Promise.all([
-      all<Record<string, unknown>>(
-        db,
-        `SELECT *
-           FROM ControlMaster
-          WHERE institutionId = ?
-            AND id IN (SELECT value FROM json_each(?))`,
-        [institutionId, controlIds]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT *
-           FROM BusinessProcess
-          WHERE institutionId = ?
-            AND id IN (SELECT value FROM json_each(?))`,
-        [institutionId, processIds]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT *
-           FROM RiskMaster
-          WHERE institutionId = ?
-            AND id IN (SELECT value FROM json_each(?))`,
-        [institutionId, riskIds]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT *
-           FROM TestSample
-          WHERE toeTestId IN (SELECT value FROM json_each(?))
-          ORDER BY sampleNumber ASC`,
-        [testIds]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT *
-           FROM TestingException
-          WHERE toeTestId IN (SELECT value FROM json_each(?))
-          ORDER BY createdAt ASC`,
-        [testIds]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT d.*
-           FROM ControlDeficiency d
-           JOIN TestingException e ON e.id = d.exceptionId
-          WHERE e.toeTestId IN (SELECT value FROM json_each(?))
-          ORDER BY d.createdAt ASC`,
-        [testIds]
-      )
-    ]);
-
-  const controlMap = new Map(
-    controls.map(row => [
-      String(row.id),
-      {
-        ...row,
-        isKeyControl: bool(row.isKeyControl),
-        isIcofrKey: bool(row.isIcofrKey),
-        isItgc: bool(row.isItgc)
-      }
-    ])
-  );
-  const processMap = new Map(processes.map(row => [String(row.id), row]));
-  const riskMap = new Map(risks.map(row => [String(row.id), row]));
-  const samplesByTest = groupRows(samples, 'toeTestId');
-  const exceptionsByTest = groupRows(exceptions, 'toeTestId');
-  const deficienciesByException = groupRows(deficiencies, 'exceptionId');
-
   const tests = rows.map(test => ({
     ...test,
     populationSize: Number(test.populationSize || 0),
     sampleSize: Number(test.sampleSize || 0),
     passCount: Number(test.passCount || 0),
     failCount: Number(test.failCount || 0),
-    control: controlMap.get(String(test.controlId)) || null,
-    process: processMap.get(String(test.processId)) || null,
-    risk: test.riskId ? riskMap.get(String(test.riskId)) || null : null,
-    samples: samplesByTest.get(String(test.id)) || [],
-    exceptions: (exceptionsByTest.get(String(test.id)) || []).map(exception => ({
-      ...exception,
-      deficiencies: deficienciesByException.get(String(exception.id)) || []
-    }))
+    exceptionCount: Number(test.exceptionCount || 0),
+    control: {
+      id: test.controlId,
+      controlId: test.enterpriseControlId,
+      name: test.controlName,
+      description: test.controlDescription,
+      objective: test.controlObjective,
+      controlOwner: test.controlOwner,
+      isKeyControl: bool(test.isKeyControl),
+      isIcofrKey: bool(test.isIcofrKey),
+      isItgc: bool(test.isItgc)
+    },
+    process: {
+      id: test.processId,
+      processId: test.enterpriseProcessId,
+      name: test.processName,
+      legalEntityId: test.legalEntityId || null,
+      orgUnitId: test.orgUnitId || null
+    },
+    risk: test.riskId
+      ? {
+          id: test.riskId,
+          riskId: test.enterpriseRiskId,
+          name: test.riskName
+        }
+      : null
   }));
 
   return {
     tests,
     pagination: paginationMeta(filters.page, filters.pageSize, total)
+  };
+}
+
+export async function getToeTestDetailPage(
+  institutionId: string,
+  toeTestId: string,
+  pagination: PaginationInput,
+  sampleFilter: 'ALL' | 'PASS' | 'FAIL'
+) {
+  const db = await getDb(false);
+
+  const test = await first<Record<string, unknown>>(
+    db,
+    `SELECT
+        t.*,
+        c.controlId AS enterpriseControlId,
+        c.name AS controlName,
+        c.description AS controlDescription,
+        c.objective AS controlObjective,
+        c.controlOwner,
+        c.isKeyControl,
+        c.isIcofrKey,
+        c.isItgc,
+        p.processId AS enterpriseProcessId,
+        p.name AS processName,
+        p.legalEntityId,
+        p.orgUnitId,
+        r.riskId AS enterpriseRiskId,
+        r.name AS riskName
+       FROM ToETest t
+       JOIN BusinessProcess p ON p.id = t.processId
+       JOIN ControlMaster c ON c.id = t.controlId
+       LEFT JOIN RiskMaster r ON r.id = t.riskId AND r.institutionId = p.institutionId
+      WHERE p.institutionId = ? AND t.id = ?
+      LIMIT 1`,
+    [institutionId, toeTestId]
+  );
+
+  if (!test) return null;
+
+  const sampleWhere = ['s.toeTestId = ?'];
+  const sampleValues: unknown[] = [toeTestId];
+
+  if (sampleFilter === 'PASS') {
+    sampleWhere.push("s.result = 'Pass'");
+  } else if (sampleFilter === 'FAIL') {
+    sampleWhere.push("s.result = 'Fail'");
+  }
+
+  if (pagination.search) {
+    const term = searchLike(pagination.search);
+    sampleWhere.push(`(
+      lower(s.transactionRef) LIKE ?
+      OR lower(COALESCE(s.attributesTested, '')) LIKE ?
+      OR lower(COALESCE(s.failureReason, '')) LIKE ?
+      OR lower(COALESCE(s.evidenceRef, '')) LIKE ?
+    )`);
+    sampleValues.push(term, term, term, term);
+  }
+
+  const sampleWhereSql = sampleWhere.join(' AND ');
+  const offset = (pagination.page - 1) * pagination.pageSize;
+
+  const [sampleCountRow, exceptionCountRow, samples] = await Promise.all([
+    first<{ count?: number }>(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM TestSample s
+        WHERE ${sampleWhereSql}`,
+      sampleValues
+    ),
+    first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM TestingException WHERE toeTestId = ?',
+      [toeTestId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT s.*
+         FROM TestSample s
+        WHERE ${sampleWhereSql}
+        ORDER BY s.sampleNumber ASC
+        LIMIT ? OFFSET ?`,
+      [...sampleValues, pagination.pageSize, offset]
+    )
+  ]);
+
+  const sampleRefs = uniqueJson(samples.map(sample => sample.transactionRef));
+  const exceptions = samples.length
+    ? await all<Record<string, unknown>>(
+        db,
+        `SELECT e.*
+           FROM TestingException e
+          WHERE e.toeTestId = ?
+            AND e.sampleRef IN (SELECT value FROM json_each(?))
+          ORDER BY e.createdAt ASC`,
+        [toeTestId, sampleRefs]
+      )
+    : [];
+
+  const exceptionIds = uniqueJson(exceptions.map(exception => exception.id));
+  const deficiencies = exceptions.length
+    ? await all<Record<string, unknown>>(
+        db,
+        `SELECT d.*
+           FROM ControlDeficiency d
+          WHERE d.exceptionId IN (SELECT value FROM json_each(?))
+          ORDER BY d.createdAt ASC`,
+        [exceptionIds]
+      )
+    : [];
+
+  const deficienciesByException = groupRows(deficiencies, 'exceptionId');
+  const hydratedExceptions = exceptions.map(exception => ({
+    ...exception,
+    deficiencies: deficienciesByException.get(String(exception.id)) || []
+  }));
+
+  return {
+    ...test,
+    populationSize: Number(test.populationSize || 0),
+    sampleSize: Number(test.sampleSize || 0),
+    passCount: Number(test.passCount || 0),
+    failCount: Number(test.failCount || 0),
+    exceptionCount: Number(exceptionCountRow?.count || 0),
+    control: {
+      id: test.controlId,
+      controlId: test.enterpriseControlId,
+      name: test.controlName,
+      description: test.controlDescription,
+      objective: test.controlObjective,
+      controlOwner: test.controlOwner,
+      isKeyControl: bool(test.isKeyControl),
+      isIcofrKey: bool(test.isIcofrKey),
+      isItgc: bool(test.isItgc)
+    },
+    process: {
+      id: test.processId,
+      processId: test.enterpriseProcessId,
+      name: test.processName,
+      legalEntityId: test.legalEntityId || null,
+      orgUnitId: test.orgUnitId || null
+    },
+    risk: test.riskId
+      ? {
+          id: test.riskId,
+          riskId: test.enterpriseRiskId,
+          name: test.riskName
+        }
+      : null,
+    samples,
+    exceptions: hydratedExceptions,
+    samplePagination: paginationMeta(
+      pagination.page,
+      pagination.pageSize,
+      Number(sampleCountRow?.count || 0)
+    )
   };
 }
 
