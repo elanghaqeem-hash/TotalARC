@@ -59,7 +59,14 @@ export async function GET() {
       storage: 'cloudflare-d1'
     });
   } catch (error) {
-    return apiError(error);
+    console.error('Organization read error:', error);
+    return NextResponse.json(
+      {
+        error: 'Organization data could not be loaded from the production database.',
+        code: error instanceof Error ? error.message : 'ORGANIZATION_READ_ERROR'
+      },
+      { status: 500 }
+    );
   }
 }
 
