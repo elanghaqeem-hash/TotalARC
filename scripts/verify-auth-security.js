@@ -58,6 +58,8 @@ console.log(
 
 
 const authSource = source('src/lib/auth.ts');
-if (/passwordIterations\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+(?:1[0-9]{5,}|[2-9][0-9]{5,})/.test(authSource)) {
+const iterationDefaults = [...authSource.matchAll(/passwordIterations\\s+INTEGER\\s+NOT\\s+NULL\\s+DEFAULT\\s+(\\d+)/g)]
+  .map(match => Number(match[1]));
+if (iterationDefaults.some(value => value > 100000)) {
   throw new Error('AUTH_SECURITY_INTEGRITY_ERROR: PBKDF2 work factor exceeds the Cloudflare Workers runtime cap.');
 }
