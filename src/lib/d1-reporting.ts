@@ -178,6 +178,104 @@ function mapReport(row: Record<string, unknown>) {
   };
 }
 
+export async function getReportingSourceCounts(
+  institutionId: string,
+  authorizedOrgUnitIds: string[] | null
+) {
+  const db = await ensureReportingSchema();
+
+  const processValues: unknown[] = [institutionId];
+  let processScope = 'p.institutionId = ?';
+
+  const directScope = (alias: string) => {
+    const values: unknown[] = [institutionId];
+    let sql = `${alias}.institutionId = ?`;
+
+    if (authorizedOrgUnitIds !== null) {
+      if (authorizedOrgUnitIds.length === 0) {
+        sql += ' AND 1 = 0';
+      } else {
+        sql += ` AND ${alias}.orgUnitId IN (SELECT value FROM json_each(?))`;
+        values.push(JSON.stringify(authorizedOrgUnitIds));
+      }
+    }
+
+    return { sql, values };
+  };
+
+  if (authorizedOrgUnitIds !== null) {
+    if (authorizedOrgUnitIds.length === 0) {
+      processScope += ' AND 1 = 0';
+    } else {
+      processScope += ' AND p.orgUnitId IN (SELECT value FROM json_each(?))';
+      processValues.push(JSON.stringify(authorizedOrgUnitIds));
+    }
+  }
+
+  const campaignScope = directScope('a');
+  const accountScope = directScope('f');
+  const attestationScope = directScope('ma');
+
+  const [toe, issues, certifications, attestations, campaigns, accounts] =
+    await Promise.all([
+      first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count
+           FROM ToETest t
+           JOIN BusinessProcess p ON p.id = t.processId
+          WHERE ${processScope}`,
+        processValues
+      ),
+      first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count
+           FROM Issue i
+           JOIN BusinessProcess p ON p.id = i.processId
+          WHERE ${processScope}`,
+        processValues
+      ),
+      first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count
+           FROM ControlCertification cert
+           JOIN ControlMaster c ON c.id = cert.controlId
+           JOIN BusinessProcess p ON p.id = c.processId
+          WHERE ${processScope}`,
+        processValues
+      ),
+      first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count
+           FROM ManagementAttestation ma
+          WHERE ${attestationScope.sql}`,
+        attestationScope.values
+      ),
+      first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count
+           FROM AssessmentCampaign a
+          WHERE ${campaignScope.sql}`,
+        campaignScope.values
+      ),
+      first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count
+           FROM FinancialAccount f
+          WHERE ${accountScope.sql}`,
+        accountScope.values
+      )
+    ]);
+
+  return {
+    toeWorkpapers: Number(toe?.count || 0),
+    issuesRemediation: Number(issues?.count || 0),
+    controlCertifications: Number(certifications?.count || 0),
+    managementAttestations: Number(attestations?.count || 0),
+    rcsaCampaigns: Number(campaigns?.count || 0),
+    icofrFinancialAccounts: Number(accounts?.count || 0)
+  };
+}
+
 export async function listRegulatoryReports(
   institutionId: string,
   authorizedOrgUnitIds: string[] | null
