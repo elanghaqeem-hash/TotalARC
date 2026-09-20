@@ -169,6 +169,126 @@ export async function ensureAssuranceSchema() {
   const db = await getDb();
 
   await executeSchemaScript(db, `
+    CREATE TABLE IF NOT EXISTS AssessmentCampaign (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'RCSA',
+      period TEXT NOT NULL,
+      startDate TEXT NOT NULL,
+      dueDate TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Draft',
+      ownerName TEXT NOT NULL,
+      approverName TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_assessment_campaign_institution ON AssessmentCampaign(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_assessment_campaign_org_unit ON AssessmentCampaign(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS CSAResponse (
+      id TEXT PRIMARY KEY NOT NULL,
+      campaignId TEXT NOT NULL,
+      controlId TEXT NOT NULL,
+      wasPerformed INTEGER NOT NULL DEFAULT 0,
+      frequencyMet INTEGER NOT NULL DEFAULT 0,
+      evidenceAttached INTEGER NOT NULL DEFAULT 0,
+      exceptionsFound INTEGER NOT NULL DEFAULT 0,
+      exceptionCount INTEGER NOT NULL DEFAULT 0,
+      processChanged INTEGER NOT NULL DEFAULT 0,
+      controlChanged INTEGER NOT NULL DEFAULT 0,
+      csaConclusion TEXT NOT NULL DEFAULT 'Not Performed',
+      assessorNotes TEXT,
+      assessorName TEXT NOT NULL,
+      assessedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_csa_campaign_control ON CSAResponse(campaignId, controlId);
+    CREATE INDEX IF NOT EXISTS idx_csa_control ON CSAResponse(controlId);
+
+    CREATE TABLE IF NOT EXISTS FinancialAccount (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      accountCode TEXT NOT NULL,
+      accountName TEXT NOT NULL,
+      financialStatement TEXT NOT NULL,
+      balanceAmount REAL NOT NULL DEFAULT 0,
+      isSignificant INTEGER NOT NULL DEFAULT 0,
+      scopingRationale TEXT,
+      fraudExposure TEXT NOT NULL DEFAULT 'Not Assessed',
+      complexity TEXT NOT NULL DEFAULT 'Not Assessed',
+      createdAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_account_code ON FinancialAccount(institutionId, accountCode);
+    CREATE INDEX IF NOT EXISTS idx_financial_account_org_unit ON FinancialAccount(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS AccountAssertionMapping (
+      id TEXT PRIMARY KEY NOT NULL,
+      accountId TEXT NOT NULL,
+      assertion TEXT NOT NULL,
+      isInScope INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_account_assertion ON AccountAssertionMapping(accountId, assertion);
+
+    CREATE TABLE IF NOT EXISTS IPERegister (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      reportName TEXT NOT NULL,
+      systemSource TEXT NOT NULL,
+      reportOwner TEXT NOT NULL,
+      parameters TEXT,
+      logicSummary TEXT,
+      completenessTested INTEGER NOT NULL DEFAULT 0,
+      accuracyTested INTEGER NOT NULL DEFAULT 0,
+      evidenceDoc TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ipe_institution ON IPERegister(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_ipe_org_unit ON IPERegister(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS Walkthrough (
+      id TEXT PRIMARY KEY NOT NULL,
+      controlId TEXT NOT NULL,
+      date TEXT NOT NULL,
+      participants TEXT,
+      transactionRef TEXT,
+      systemsInspected TEXT,
+      observations TEXT,
+      processChanged INTEGER NOT NULL DEFAULT 0,
+      conclusion TEXT NOT NULL DEFAULT 'Not Assessed',
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_walkthrough_control ON Walkthrough(controlId);
+
+    CREATE TABLE IF NOT EXISTS ToDTest (
+      id TEXT PRIMARY KEY NOT NULL,
+      testId TEXT NOT NULL,
+      controlId TEXT NOT NULL,
+      processId TEXT NOT NULL,
+      riskId TEXT,
+      testerName TEXT NOT NULL,
+      reviewerName TEXT,
+      period TEXT NOT NULL,
+      testObjective TEXT NOT NULL,
+      objectiveAlignment INTEGER NOT NULL DEFAULT 0,
+      riskCoverage INTEGER NOT NULL DEFAULT 0,
+      precisionAdequate INTEGER NOT NULL DEFAULT 0,
+      segregationDuties INTEGER NOT NULL DEFAULT 0,
+      evidenceSufficiency INTEGER NOT NULL DEFAULT 0,
+      observations TEXT,
+      conclusion TEXT NOT NULL DEFAULT 'Not Assessed',
+      status TEXT NOT NULL DEFAULT 'Draft',
+      testedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tod_test_id ON ToDTest(testId);
+    CREATE INDEX IF NOT EXISTS idx_tod_control ON ToDTest(controlId);
+    CREATE INDEX IF NOT EXISTS idx_tod_process ON ToDTest(processId);
+
     CREATE TABLE IF NOT EXISTS ToETest (
       id TEXT PRIMARY KEY NOT NULL,
       testId TEXT NOT NULL,
