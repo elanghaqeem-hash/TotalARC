@@ -1,19 +1,29 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useAssuranceData() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetch('/api/assurance')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Assurance data unavailable')))
-      .then((payload) => setData(payload))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/assurance', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Assurance data unavailable');
+      setData(await res.json());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Assurance data unavailable');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  return { data, loading, error };
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return { data, loading, error, reload };
 }
