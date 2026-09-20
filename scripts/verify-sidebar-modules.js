@@ -27,6 +27,7 @@ const moduleChecks = {
   '/icofr/smart-testing': { page: 'src/app/icofr/smart-testing/page.tsx', markers: ['/api/icofr/smart-testing'] },
   '/icofr/sampling-evidence': { page: 'src/app/icofr/sampling-evidence/page.tsx', markers: ['/api/icofr/sampling-evidence'] },
   '/icofr/roll-forward': { page: 'src/app/icofr/roll-forward/page.tsx', markers: ['/api/icofr/roll-forward'] },
+  '/icofr/period-close': { page: 'src/app/icofr/period-close/page.tsx', markers: ['/api/icofr/period-close'] },
   '/tod': { page: 'src/app/tod/page.tsx', markers: ['useAssuranceData'] },
   '/toe': { page: 'src/app/toe/page.tsx', markers: ['/api/assure/toe'] },
   '/icofr/deficiencies': { page: 'src/app/icofr/deficiencies/page.tsx', markers: ['/api/icofr/deficiencies'] },
@@ -36,7 +37,10 @@ const moduleChecks = {
   '/certification': { page: 'src/app/certification/page.tsx', markers: ['/api/icofr/certification'] },
   '/calendar': { page: 'src/app/calendar/page.tsx', markers: ['useAssuranceData'] },
   '/tasks': { page: 'src/app/tasks/page.tsx', markers: ['useAssuranceData'] },
-  '/reports': { page: 'src/app/reports/page.tsx', markers: ['useAssuranceData'] }
+  '/reports': { page: 'src/app/reports/page.tsx', markers: ['useAssuranceData'] },
+  '/admin/users': { page: 'src/app/admin/users/page.tsx', markers: ['/api/admin/users'] },
+  '/admin/institutions': { page: 'src/app/admin/institutions/page.tsx', markers: ['/api/admin/institutions'] },
+  '/admin/security': { page: 'src/app/admin/security/page.tsx', markers: ['/api/admin/security'] }
 };
 
 function fail(message) {
@@ -52,7 +56,7 @@ if (!fs.existsSync(appShellPath)) {
 const appShell = fs.readFileSync(appShellPath, 'utf8');
 const sidebarHrefs = [...appShell.matchAll(/href:\s*['"]([^'"]+)['"]/g)]
   .map(match => match[1])
-  .filter(href => Object.prototype.hasOwnProperty.call(moduleChecks, href));
+  .filter(href => href.startsWith('/') && href !== '/profile');
 
 const uniqueSidebarHrefs = [...new Set(sidebarHrefs)];
 
@@ -99,11 +103,21 @@ const apiFiles = [
   'src/app/api/icofr/smart-testing/route.ts',
   'src/app/api/icofr/sampling-evidence/route.ts',
   'src/app/api/icofr/roll-forward/route.ts',
+  'src/app/api/icofr/period-close/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/icofr/deficiencies/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
-  'src/app/api/icofr/certification/route.ts'
+  'src/app/api/icofr/certification/route.ts',
+  'src/app/api/auth/login/route.ts',
+  'src/app/api/auth/logout/route.ts',
+  'src/app/api/auth/me/route.ts',
+  'src/app/api/auth/switch-institution/route.ts',
+  'src/app/api/profile/route.ts',
+  'src/app/api/admin/users/route.ts',
+  'src/app/api/admin/institutions/route.ts',
+  'src/app/api/admin/security/route.ts',
+  'src/middleware.ts'
 ];
 
 for (const apiFile of apiFiles) {
