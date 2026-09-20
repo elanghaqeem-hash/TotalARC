@@ -26,22 +26,45 @@ async function tokenMatches(provided: string | null, expected: string): Promise<
   return mismatch === 0;
 }
 
-export async function POST(request: Request) {
+async function authorizeProbe(request: Request) {
   const expectedToken = process.env.AI_PROBE_TOKEN || '';
   if (!expectedToken) {
-    return NextResponse.json(
-      { ok: false, error: 'AI production probe is not configured.' },
-      { status: 503, headers: { 'Cache-Control': 'no-store, max-age=0' } }
-    );
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { ok: false, error: 'AI production probe is not configured.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store, max-age=0' } }
+      )
+    };
   }
 
   const authorized = await tokenMatches(request.headers.get('authorization'), expectedToken);
   if (!authorized) {
-    return NextResponse.json(
-      { ok: false, error: 'Unauthorized.' },
-      { status: 401, headers: { 'Cache-Control': 'no-store, max-age=0' } }
-    );
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { ok: false, error: 'Unauthorized.' },
+        { status: 401, headers: { 'Cache-Control': 'no-store, max-age=0' } }
+      )
+    };
   }
+
+  return { ok: true as const };
+}
+
+export async function GET(request: Request) {
+  const authorization = await authorizeProbe(request);
+  if (!authorization.ok) return authorization.response;
+
+  return NextResponse.json(
+    { ok: true, authorized: true },
+    { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+  );
+}
+
+export async function POST(request: Request) {
+  const authorization = await authorizeProbe(request);
+  if (!authorization.ok) return authorization.response;
 
   const providers = await probeAiProviders();
   const privateProvider = providers.find(provider => provider.provider === 'cloudflare');
