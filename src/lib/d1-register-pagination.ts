@@ -69,7 +69,9 @@ function idsJson(rows: Array<Record<string, unknown>>, field = 'id') {
 }
 
 function uniqueJson(values: unknown[]) {
-  return JSON.stringify([...new Set(values.map(value => String(value || '')).filter(Boolean))]);
+  return JSON.stringify(
+    Array.from(new Set(values.map(value => String(value || '')).filter(Boolean)))
+  );
 }
 
 function scopeSql(
