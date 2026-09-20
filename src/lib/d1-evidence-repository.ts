@@ -1094,6 +1094,8 @@ export async function verifyEvidenceVersion(
 export async function recordEvidenceDownload(
   documentId: string,
   versionId: string,
+  actorName: string,
+  actorRole: string,
   reason?: string | null
 ) {
   const db = await ensureEvidenceRepositorySchema();
@@ -1106,9 +1108,9 @@ export async function recordEvidenceDownload(
     documentId,
     versionId,
     'DOWNLOAD',
-    'Unverified client',
-    'Unauthenticated',
-    reason || 'Evidence file downloaded before identity-backed authentication is implemented.'
+    actorName,
+    actorRole,
+    reason || 'Evidence file downloaded after authenticated access and SHA-256 verification.'
   );
 }
 
