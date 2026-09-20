@@ -17,6 +17,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { getRiskBadgeClasses } from '@/lib/utils';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
@@ -85,15 +86,9 @@ export default function RisksPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/risks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      if (res.ok) {
-        setNewRiskModal(false);
-        loadRisks();
-      }
+      await jsonTransaction('/api/risks', formData);
+      setNewRiskModal(false);
+      loadRisks();
     } catch (e) {
       console.error(e);
     }
