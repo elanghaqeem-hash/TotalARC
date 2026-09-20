@@ -1,4 +1,4 @@
-import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureIcofrScopeSchema } from '@/lib/d1-icofr';
 import { ensureIcofrTestingPlanSchema } from '@/lib/d1-icofr-testing-plan';
 import { ensureIcofrCoverageSchema, getIcofrCoverageData } from '@/lib/d1-icofr-coverage';
@@ -30,10 +30,7 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureIcofrWorkpaperReviewSchema()
   ]);
 
-  const { env } = await getCloudflareContext({ async: true });
-  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
-  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
-  return db;
+  return getTenantDb();
 }
 
 async function all<T = Record<string, unknown>>(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
@@ -82,12 +79,14 @@ function bool(value: unknown) {
   return value === true || value === 1 || value === '1';
 }
 
-let certificationSchemaReady: Promise<D1DatabaseLike> | null = null;
+const certificationSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrCertificationSchema() {
-  if (certificationSchemaReady) return certificationSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = certificationSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  certificationSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchema(db, `
@@ -221,11 +220,12 @@ export async function ensureIcofrCertificationSchema() {
 
     return db;
   })().catch(error => {
-    certificationSchemaReady = null;
+    certificationSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return certificationSchemaReady;
+  certificationSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
