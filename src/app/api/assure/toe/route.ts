@@ -3,13 +3,16 @@ import {
   addToeSample,
   createTestingExceptionFromSample,
   createToeTest,
-  listToeTests,
   updateToeSample
 } from '@/lib/d1-assurance';
-import { listToeRegisterPage } from '@/lib/d1-register-pagination';
+import {
+  getControlScopeById,
+  getToeSampleScopeById,
+  getToeTestScopeById,
+  listToeRegisterPage
+} from '@/lib/d1-register-pagination';
 import { parsePaginationRequest } from '@/lib/pagination';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
-import { listControls } from '@/lib/d1-core';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { recordMutationAudit } from '@/lib/d1-core';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
@@ -57,18 +60,13 @@ export async function POST(request: Request) {
     const actionType =
       typeof body.actionType === 'string' ? body.actionType : 'UPDATE_SAMPLE';
 
-    const [authorizedOrgUnitIds, existingTests] = await Promise.all([
-      resolveAuthorizedOrgUnitIds(auth.user),
-      listToeTests(auth.user.institutionId)
-    ]);
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
 
-    const ensureTestScope = (test: Record<string, unknown> | null | undefined) => {
-      if (!test) return true;
-      return isOrgUnitAuthorized(
+    const isAuthorizedScope = (orgUnitId: unknown) =>
+      isOrgUnitAuthorized(
         authorizedOrgUnitIds,
-        (test.process as Record<string, unknown> | null)?.orgUnitId as string | null | undefined
+        typeof orgUnitId === 'string' ? orgUnitId : null
       );
-    };
 
     if (actionType === 'CREATE_TEST') {
       const controlId = typeof body.controlId === 'string' ? body.controlId.trim() : '';
@@ -100,15 +98,11 @@ export async function POST(request: Request) {
         );
       }
 
-      const controls = await listControls(auth.user.institutionId);
-      const selectedControl = controls.find(control => (control as Record<string, unknown>).id === controlId);
-      if (
-        selectedControl
-        && !isOrgUnitAuthorized(
-          authorizedOrgUnitIds,
-          (selectedControl.process as Record<string, unknown> | null)?.orgUnitId as string | null | undefined
-        )
-      ) {
+      const selectedControl = await getControlScopeById(
+        auth.user.institutionId,
+        controlId
+      );
+      if (selectedControl && !isAuthorizedScope(selectedControl.orgUnitId)) {
         return NextResponse.json(
           {
             error: 'Your account is not authorized for the selected control organization unit.',
@@ -159,8 +153,11 @@ export async function POST(request: Request) {
         );
       }
 
-      const scopedTest = existingTests.find(test => (test as Record<string, unknown>).id === toeTestId);
-      if (scopedTest && !ensureTestScope(scopedTest)) {
+      const scopedTest = await getToeTestScopeById(
+        auth.user.institutionId,
+        toeTestId
+      );
+      if (scopedTest && !isAuthorizedScope(scopedTest.orgUnitId)) {
         return NextResponse.json(
           {
             error: 'Your account is not authorized for this ToE test organization unit.',
@@ -212,8 +209,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'amount must be numeric when provided.' }, { status: 400 });
       }
 
-      const scopedTest = existingTests.find(test => (test as Record<string, unknown>).id === toeTestId);
-      if (scopedTest && !ensureTestScope(scopedTest)) {
+      const scopedTest = await getToeTestScopeById(
+        auth.user.institutionId,
+        toeTestId
+      );
+      if (scopedTest && !isAuthorizedScope(scopedTest.orgUnitId)) {
         return NextResponse.json(
           {
             error: 'Your account is not authorized for this ToE test organization unit.',
@@ -262,11 +262,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const sampleTest = existingTests.find(test =>
-      Array.isArray(test.samples)
-        && (test.samples as Array<Record<string, unknown>>).some(sample => sample.id === sampleId)
+    const sampleScope = await getToeSampleScopeById(
+      auth.user.institutionId,
+      sampleId
     );
-    if (sampleTest && !ensureTestScope(sampleTest)) {
+    if (sampleScope && !isAuthorizedScope(sampleScope.orgUnitId)) {
       return NextResponse.json(
         {
           error: 'Your account is not authorized for this ToE sample organization unit.',
