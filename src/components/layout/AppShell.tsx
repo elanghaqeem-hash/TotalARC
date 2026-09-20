@@ -67,6 +67,7 @@ const navGroups: NavGroup[] = [
       { name: 'ICOFR Scoping & Materiality', href: '/icofr/scoping', icon: Target, badge: 'OM · PM' },
       { name: 'Accounts, Disclosures & Assertions', href: '/icofr/accounts', icon: FileSpreadsheet },
       { name: 'ICOFR Traceability Matrix', href: '/icofr/traceability', icon: Link2, badge: 'E2E' },
+      { name: 'ICOFR Coverage & Gap Analytics', href: '/icofr/coverage', icon: BarChart3, badge: 'GAP' },
       { name: 'Entity-Level Controls (ELC)', href: '/icofr/elc', icon: Shield },
       { name: 'Process-Level Controls (PLC)', href: '/icofr/plc', icon: ClipboardCheck },
       { name: 'IT General Controls (ITGC)', href: '/icofr/itgc', icon: Cpu },
