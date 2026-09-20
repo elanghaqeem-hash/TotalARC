@@ -25,6 +25,7 @@ type ManagedUser = {
   failedLoginCount: number;
   lockedUntil: string | null;
   lastLoginAt: string | null;
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -46,9 +47,30 @@ const emptyForm = {
 };
 
 function generatePassword() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*_-';
-  const bytes = crypto.getRandomValues(new Uint8Array(18));
-  return Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('');
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%*_-';
+  const all = upper + lower + digits + symbols;
+  const randomChar = (set: string) => {
+    const byte = crypto.getRandomValues(new Uint8Array(1))[0];
+    return set[byte % set.length];
+  };
+
+  const chars = [
+    randomChar(upper),
+    randomChar(lower),
+    randomChar(digits),
+    randomChar(symbols)
+  ];
+  while (chars.length < 18) chars.push(randomChar(all));
+
+  const shuffle = crypto.getRandomValues(new Uint8Array(chars.length));
+  return chars
+    .map((value, index) => ({ value, key: shuffle[index] }))
+    .sort((a, b) => a.key - b.key)
+    .map(item => item.value)
+    .join('');
 }
 
 export default function UserManagementPage() {
@@ -116,7 +138,7 @@ export default function UserManagementPage() {
 
       setUsers(current => [...current, payload.user].sort((a, b) => a.name.localeCompare(b.name)));
       setForm(emptyForm);
-      setSuccess('User berhasil dibuat. Role dan akses menu akan mengikuti akun tersebut saat login.');
+      setSuccess('User berhasil dibuat. Password sementara wajib diganti pada login pertama dan akses mengikuti role akun tersebut.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'User tidak dapat dibuat.');
     } finally {
@@ -158,7 +180,7 @@ export default function UserManagementPage() {
     if (ok) {
       setResetUserId('');
       setResetPassword('');
-      setSuccess('Password user berhasil di-reset. Password lama tidak lagi berlaku.');
+      setSuccess('Password user berhasil di-reset. Semua sesi aktif dicabut dan user wajib mengganti password pada login berikutnya.');
     }
   };
 
@@ -298,7 +320,7 @@ export default function UserManagementPage() {
                   Generate
                 </button>
               </div>
-              <span className="mt-1.5 block text-[10px] text-slate-400">Minimum 12 karakter. Password tidak ditampilkan kembali setelah user dibuat.</span>
+              <span className="mt-1.5 block text-[10px] text-slate-400">12–128 karakter dengan huruf besar, huruf kecil, angka, dan simbol. Password umum/default ditolak dan user wajib menggantinya pada login pertama.</span>
             </label>
 
             <button
@@ -350,6 +372,9 @@ export default function UserManagementPage() {
                           )}
                           {locked && (
                             <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[9px] font-black text-rose-700">LOCKED</span>
+                          )}
+                          {user.mustChangePassword && (
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">PASSWORD CHANGE</span>
                           )}
                         </div>
                         <div className="mt-1 truncate text-[11px] text-slate-500">{user.email}</div>

@@ -108,6 +108,7 @@ export function isUserRole(value: unknown): value is UserRole {
 }
 
 export function canAccessPage(role: UserRole, pathname: string) {
+  if (pathname === '/profile') return true;
   if (role === 'Admin') return true;
   return PAGE_ACCESS[role].some(rule => matches(rule, pathname));
 }
@@ -121,6 +122,7 @@ const API_PAGE_MAP: Array<{ api: string; page: string }> = [
   { api: '/api/controls', page: '/controls' },
   { api: '/api/rcm', page: '/rcm' },
   { api: '/api/evidence', page: '/evidence' },
+  { api: '/api/admin/security', page: '/admin/security' },
   { api: '/api/assure/toe', page: '/toe' },
   { api: '/api/assure/remediation', page: '/remediation' },
   { api: '/api/monitor/ccm', page: '/ccm' },
@@ -150,6 +152,7 @@ function mappedPageForApi(pathname: string) {
 }
 
 export function canAccessApi(role: UserRole, pathname: string, method: string) {
+  if (pathname === '/api/auth/profile') return true;
   if (role === 'Admin') return true;
 
   if (pathname.startsWith('/api/ai/')) return true;

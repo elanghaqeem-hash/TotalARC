@@ -7,6 +7,16 @@ import {
   verifySessionToken,
   type SessionPayload
 } from '@/lib/auth-token';
+import {
+  assertPasswordNotReused,
+  getSecurityAdministration,
+  isAuthSessionActive,
+  registerAuthSession,
+  revokeSession,
+  revokeUserSessions,
+  savePasswordHistory,
+  validatePasswordPolicy
+} from '@/lib/auth-security';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -272,7 +282,9 @@ async function findPrimaryInstitution(db: D1DatabaseLike) {
   }
 }
 
-export async function provisionBootstrapAdministrator() {
+export async function provisionBootstrapAdministrator(
+  options: { reconcilePendingAdmin?: boolean } = { reconcilePendingAdmin: true }
+) {
   const db = await ensureAuthSchema();
   const env = await runtimeEnv();
   const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
@@ -280,14 +292,17 @@ export async function provisionBootstrapAdministrator() {
   const bootstrapName = envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_NAME') || 'Total ARC Administrator';
 
   if (!bootstrapEmail || !bootstrapPassword) throw new Error('AUTH_BOOTSTRAP_REQUIRED');
-  if (bootstrapPassword.length < 12) throw new Error('AUTH_BOOTSTRAP_WEAK_PASSWORD');
+  try {
+    validatePasswordPolicy(bootstrapPassword, bootstrapEmail);
+  } catch {
+    throw new Error('AUTH_BOOTSTRAP_WEAK_PASSWORD');
+  }
 
   const institution = await findPrimaryInstitution(db);
   const count = await first<{ count: number }>(
     db,
     'SELECT COUNT(*) AS count FROM AuthUser'
   );
-
   const password = await createPasswordHash(bootstrapPassword);
   const now = new Date().toISOString();
 
@@ -301,7 +316,7 @@ export async function provisionBootstrapAdministrator() {
         passwordHash, passwordSalt, passwordIterations, role, department,
         active, mustChangePassword, failedLoginCount, lockedUntil,
         lastLoginAt, createdAt, updatedAt
-      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'Admin', NULL, 1, 0, 0, NULL, NULL, ?, ?)`,
+      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'Admin', NULL, 1, 1, 0, NULL, NULL, ?, ?)`,
       [
         id,
         institution?.id || null,
@@ -316,25 +331,37 @@ export async function provisionBootstrapAdministrator() {
       ]
     );
 
+    await savePasswordHistory(id, password.hash, password.salt, password.iterations);
     await writeAuthEvent(db, {
       userId: id,
       institutionId: institution?.id || null,
       eventType: 'BOOTSTRAP_ADMIN_CREATED',
       email: bootstrapEmail,
       role: 'Admin',
-      detail: 'Initial administrator provisioned from deployment secrets.'
+      detail: 'Initial administrator provisioned from deployment secrets. Password change is required at first sign-in.'
     });
 
     return { status: 'created' as const, userId: id };
   }
 
-  const candidate = await first<AuthUserRow>(
+  let candidate = await first<AuthUserRow>(
     db,
     `SELECT * FROM AuthUser
-     WHERE role = 'Admin' AND lastLoginAt IS NULL
+     WHERE role = 'Admin' AND lastLoginAt IS NULL AND emailNormalized = ?
      ORDER BY createdAt ASC
-     LIMIT 1`
+     LIMIT 1`,
+    [bootstrapEmail]
   );
+
+  if (!candidate && options.reconcilePendingAdmin) {
+    candidate = await first<AuthUserRow>(
+      db,
+      `SELECT * FROM AuthUser
+       WHERE role = 'Admin' AND lastLoginAt IS NULL
+       ORDER BY createdAt ASC
+       LIMIT 1`
+    );
+  }
 
   if (candidate) {
     const emailConflict = await first<{ id: string }>(
@@ -355,6 +382,7 @@ export async function provisionBootstrapAdministrator() {
         passwordSalt = ?,
         passwordIterations = ?,
         active = 1,
+        mustChangePassword = 1,
         failedLoginCount = 0,
         lockedUntil = NULL,
         updatedAt = ?
@@ -372,13 +400,24 @@ export async function provisionBootstrapAdministrator() {
       ]
     );
 
+    await savePasswordHistory(
+      candidate.id,
+      password.hash,
+      password.salt,
+      password.iterations
+    );
+    await revokeUserSessions(
+      candidate.id,
+      'Bootstrap administrator credentials reconciled',
+      candidate.id
+    );
     await writeAuthEvent(db, {
       userId: candidate.id,
       institutionId: candidate.institutionId || institution?.id || null,
       eventType: 'BOOTSTRAP_ADMIN_RECONCILED',
       email: bootstrapEmail,
       role: 'Admin',
-      detail: 'Pre-login bootstrap administrator credentials reconciled from deployment secrets.'
+      detail: 'Pre-login bootstrap administrator credentials reconciled from deployment secrets. Password change is required at first sign-in.'
     });
 
     return { status: 'reconciled' as const, userId: candidate.id };
@@ -394,20 +433,25 @@ async function ensureBootstrapAdministratorForLogin(db: D1DatabaseLike) {
   );
 
   if (Number(count?.count || 0) === 0) {
-    await provisionBootstrapAdministrator();
+    await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
     return;
   }
+
+  const env = await runtimeEnv();
+  const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
+  if (!bootstrapEmail) return;
 
   const pendingAdmin = await first<{ id: string }>(
     db,
     `SELECT id FROM AuthUser
-     WHERE role = 'Admin' AND lastLoginAt IS NULL
+     WHERE role = 'Admin' AND lastLoginAt IS NULL AND emailNormalized = ?
      ORDER BY createdAt ASC
-     LIMIT 1`
+     LIMIT 1`,
+    [bootstrapEmail]
   );
 
   if (pendingAdmin) {
-    await provisionBootstrapAdministrator();
+    await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
   }
 }
 
@@ -544,6 +588,7 @@ export async function authenticateUser(input: {
     institutionId: profile.institutionId,
     orgUnitId: profile.orgUnitId,
     department: profile.department || null,
+    mustChangePassword: profile.mustChangePassword,
     iat: nowSeconds,
     exp: nowSeconds + AUTH_SESSION_SECONDS,
     jti: crypto.randomUUID()
@@ -551,6 +596,10 @@ export async function authenticateUser(input: {
 
   const secret = await getRuntimeAuthSecret();
   const token = await signSessionToken(payload, secret);
+  await registerAuthSession(payload, {
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent
+  });
   return { profile, token };
 }
 
@@ -558,6 +607,7 @@ export async function getAuthenticatedProfile(token: string) {
   const secret = await getRuntimeAuthSecret();
   const session = await verifySessionToken(token, secret);
   if (!session) return null;
+  if (!(await isAuthSessionActive(session, true))) return null;
 
   const db = await ensureAuthSchema();
   const row = await first<AuthUserRow>(
@@ -580,6 +630,7 @@ export async function recordLogout(
     if (!session) return;
 
     const db = await ensureAuthSchema();
+    await revokeSession(session.jti, 'User logout', session.sub);
     await writeAuthEvent(db, {
       userId: session.sub,
       institutionId: session.institutionId,
@@ -607,6 +658,7 @@ export type ManagedUserSummary = {
   failedLoginCount: number;
   lockedUntil: string | null;
   lastLoginAt: string | null;
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -625,6 +677,7 @@ function managedSummary(row: AuthUserRow): ManagedUserSummary {
     failedLoginCount: Number(row.failedLoginCount || 0),
     lockedUntil: row.lockedUntil,
     lastLoginAt: row.lastLoginAt,
+    mustChangePassword: Boolean(row.mustChangePassword),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
@@ -661,7 +714,7 @@ export async function createManagedUser(input: {
     throw new Error('USER_REQUIRED_FIELDS');
   }
   if (!isUserRole(input.role)) throw new Error('AUTH_ROLE_INVALID');
-  if (!password || password.length < 12) throw new Error('PASSWORD_TOO_SHORT');
+  validatePasswordPolicy(password, emailNormalized);
 
   const existing = await first<{ id: string }>(
     db,
@@ -686,7 +739,7 @@ export async function createManagedUser(input: {
       passwordHash, passwordSalt, passwordIterations, role, department,
       active, mustChangePassword, failedLoginCount, lockedUntil,
       lastLoginAt, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, NULL, NULL, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, NULL, NULL, ?, ?)`,
     [
       id,
       institution?.id || null,
@@ -702,6 +755,13 @@ export async function createManagedUser(input: {
       now,
       now
     ]
+  );
+
+  await savePasswordHistory(
+    id,
+    passwordRecord.hash,
+    passwordRecord.salt,
+    passwordRecord.iterations
   );
 
   await writeAuthEvent(db, {
@@ -768,7 +828,14 @@ export async function updateManagedUser(input: {
   let passwordIterations = existing.passwordIterations;
 
   if (input.password) {
-    if (input.password.length < 12) throw new Error('PASSWORD_TOO_SHORT');
+    validatePasswordPolicy(input.password, existing.emailNormalized);
+    await assertPasswordNotReused({
+      userId: existing.id,
+      password: input.password,
+      currentHash: existing.passwordHash,
+      currentSalt: existing.passwordSalt,
+      currentIterations: Number(existing.passwordIterations || 210000)
+    });
     const passwordRecord = await createPasswordHash(input.password);
     passwordHash = passwordRecord.hash;
     passwordSalt = passwordRecord.salt;
@@ -784,6 +851,7 @@ export async function updateManagedUser(input: {
       passwordHash = ?,
       passwordSalt = ?,
       passwordIterations = ?,
+      mustChangePassword = CASE WHEN ? = 1 THEN 1 ELSE mustChangePassword END,
       failedLoginCount = CASE WHEN ? = 1 THEN 0 ELSE failedLoginCount END,
       lockedUntil = CASE WHEN ? = 1 THEN NULL ELSE lockedUntil END,
       updatedAt = ?
@@ -797,10 +865,31 @@ export async function updateManagedUser(input: {
       passwordIterations,
       input.password ? 1 : 0,
       input.password ? 1 : 0,
+      input.password ? 1 : 0,
       now,
       existing.id
     ]
   );
+
+  if (input.password) {
+    await savePasswordHistory(existing.id, passwordHash, passwordSalt, passwordIterations);
+  }
+
+  if (
+    input.password ||
+    nextRole !== existing.role ||
+    nextActive !== Boolean(existing.active)
+  ) {
+    await revokeUserSessions(
+      existing.id,
+      input.password
+        ? 'Administrator password reset'
+        : nextRole !== existing.role
+          ? 'Role changed by administrator'
+          : 'Account status changed by administrator',
+      input.actorUserId
+    );
+  }
 
   const updated = await first<AuthUserRow>(
     db,
@@ -819,4 +908,169 @@ export async function updateManagedUser(input: {
   });
 
   return managedSummary(updated);
+}
+
+
+export async function updateOwnProfile(input: {
+  userId: string;
+  name: string;
+}) {
+  const db = await ensureAuthSchema();
+  const name = input.name.trim();
+  if (!name) throw new Error('USER_REQUIRED_FIELDS');
+
+  const existing = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [input.userId]
+  );
+  if (!existing || !existing.active) throw new Error('USER_NOT_FOUND');
+
+  const now = new Date().toISOString();
+  await run(
+    db,
+    'UPDATE AuthUser SET name = ?, updatedAt = ? WHERE id = ?',
+    [name, now, existing.id]
+  );
+
+  await writeAuthEvent(db, {
+    userId: existing.id,
+    institutionId: existing.institutionId,
+    eventType: 'PROFILE_UPDATED',
+    email: existing.email,
+    role: existing.role,
+    detail: 'User updated their own display name.'
+  });
+
+  const updated = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [existing.id]
+  );
+  if (!updated) throw new Error('USER_UPDATE_FAILED');
+  return profileFromRow(db, updated);
+}
+
+export async function changeOwnPassword(input: {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+}) {
+  const db = await ensureAuthSchema();
+  const existing = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [input.userId]
+  );
+  if (!existing || !existing.active) throw new Error('USER_NOT_FOUND');
+
+  if (!(await verifyPassword(input.currentPassword, existing))) {
+    await writeAuthEvent(db, {
+      userId: existing.id,
+      institutionId: existing.institutionId,
+      eventType: 'PASSWORD_CHANGE_FAILED',
+      email: existing.email,
+      role: existing.role,
+      detail: 'Current password verification failed.'
+    });
+    throw new Error('CURRENT_PASSWORD_INVALID');
+  }
+
+  validatePasswordPolicy(input.newPassword, existing.emailNormalized);
+  await assertPasswordNotReused({
+    userId: existing.id,
+    password: input.newPassword,
+    currentHash: existing.passwordHash,
+    currentSalt: existing.passwordSalt,
+    currentIterations: Number(existing.passwordIterations || 210000)
+  });
+
+  const password = await createPasswordHash(input.newPassword);
+  const now = new Date().toISOString();
+  await run(
+    db,
+    `UPDATE AuthUser SET
+      passwordHash = ?,
+      passwordSalt = ?,
+      passwordIterations = ?,
+      mustChangePassword = 0,
+      failedLoginCount = 0,
+      lockedUntil = NULL,
+      updatedAt = ?
+    WHERE id = ?`,
+    [
+      password.hash,
+      password.salt,
+      password.iterations,
+      now,
+      existing.id
+    ]
+  );
+
+  await savePasswordHistory(
+    existing.id,
+    password.hash,
+    password.salt,
+    password.iterations
+  );
+  await revokeUserSessions(existing.id, 'Password changed by user', existing.id);
+  await writeAuthEvent(db, {
+    userId: existing.id,
+    institutionId: existing.institutionId,
+    eventType: 'PASSWORD_CHANGED',
+    email: existing.email,
+    role: existing.role,
+    detail: 'Password changed successfully; active sessions revoked.'
+  });
+
+  return { success: true, requiresLogin: true };
+}
+
+export async function loadSecurityAdministration(actorInstitutionId: string | null) {
+  await ensureAuthSchema();
+  return getSecurityAdministration(actorInstitutionId);
+}
+
+export async function revokeManagedSession(input: {
+  actorUserId: string;
+  actorInstitutionId: string | null;
+  sessionId: string;
+}) {
+  const db = await ensureAuthSchema();
+  const session = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AuthSession WHERE id = ? LIMIT 1',
+    [input.sessionId]
+  );
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+
+  if (
+    input.actorInstitutionId &&
+    session.institutionId &&
+    String(session.institutionId) !== input.actorInstitutionId
+  ) {
+    throw new Error('SESSION_NOT_FOUND');
+  }
+
+  await revokeSession(
+    input.sessionId,
+    'Session revoked by administrator',
+    input.actorUserId
+  );
+
+  const user = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [String(session.userId)]
+  );
+  await writeAuthEvent(db, {
+    userId: user?.id || String(session.userId || ''),
+    institutionId: user?.institutionId || (session.institutionId ? String(session.institutionId) : null),
+    eventType: 'SESSION_REVOKED',
+    email: user?.email || null,
+    role: user?.role || null,
+    detail: 'Active session revoked by administrator ' + input.actorUserId + '.'
+  });
+
+  return { success: true };
 }

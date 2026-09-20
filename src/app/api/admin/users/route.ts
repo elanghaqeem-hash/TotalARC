@@ -30,6 +30,8 @@ function apiError(error: unknown) {
     USER_REQUIRED_FIELDS: { status: 400, error: 'Nama dan email user wajib diisi.' },
     AUTH_ROLE_INVALID: { status: 400, error: 'Role user tidak valid.' },
     PASSWORD_TOO_SHORT: { status: 400, error: 'Password minimum 12 karakter.' },
+    PASSWORD_POLICY: { status: 400, error: 'Password harus 12–128 karakter dan mengandung huruf besar, huruf kecil, angka, serta simbol. Password umum/default tidak diperbolehkan.' },
+    PASSWORD_REUSE: { status: 409, error: 'Password sama dengan password saat ini atau salah satu dari lima password terakhir.' },
     USER_EMAIL_CONFLICT: { status: 409, error: 'Email tersebut sudah digunakan.' },
     USER_NOT_FOUND: { status: 404, error: 'User tidak ditemukan.' },
     CANNOT_DISABLE_SELF: { status: 400, error: 'Administrator tidak dapat menonaktifkan akunnya sendiri.' },
