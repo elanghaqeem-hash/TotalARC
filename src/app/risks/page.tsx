@@ -19,6 +19,7 @@ import {
 import { getRiskBadgeClasses } from '@/lib/utils';
 import { jsonTransaction } from '@/lib/client-transaction';
 import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
@@ -29,6 +30,10 @@ export default function RisksPage() {
   const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
   const [activeTab, setActiveTab] = useState<'register' | 'inherent_heatmap' | 'residual_heatmap'>('register');
   const [newRiskModal, setNewRiskModal] = useState(false);
+  const [heatmapRisks, setHeatmapRisks] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [pageLoading, setPageLoading] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -44,46 +49,81 @@ export default function RisksPage() {
     inherentImpact: 0
   });
 
-  const loadRisks = () => {
-    Promise.all([
-      jsonRead<any>('/api/risks', { dedupe: false }),
-      jsonRead<any>('/api/processes', { dedupe: false })
-    ])
-      .then(([riskData, processData]) => {
-        const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
-        const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
-        const nextOrganizationUnits = Array.isArray(processData.organization?.organizationUnits)
-          ? processData.organization.organizationUnits
-          : [];
-        setRisks(nextRisks);
-        setProcesses(nextProcesses);
-        setOrganizationUnits(nextOrganizationUnits);
+  const loadReferenceData = async () => {
+    try {
+      const [processData, heatmapData] = await Promise.all([
+        jsonRead<any>('/api/processes?mode=options', { dedupe: false }),
+        jsonRead<any>('/api/risks?mode=options', { dedupe: false })
+      ]);
 
-        if (nextRisks.length > 0 && !selectedRisk) {
-          setSelectedRisk(nextRisks[0]);
-        }
+      const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
+      const nextOrganizationUnits = Array.isArray(processData.organization?.organizationUnits)
+        ? processData.organization.organizationUnits
+        : [];
 
-        setFormData(prev => ({
-          ...prev,
-          processId:
-            prev.processId && nextProcesses.some((process: any) => process.id === prev.processId)
-              ? prev.processId
-              : nextProcesses[0]?.id || ''
-        }));
-      })
-      .catch(console.error);
+      setProcesses(nextProcesses);
+      setOrganizationUnits(nextOrganizationUnits);
+      setHeatmapRisks(Array.isArray(heatmapData.risks) ? heatmapData.risks : []);
+
+      setFormData(prev => ({
+        ...prev,
+        processId:
+          prev.processId && nextProcesses.some((process: any) => process.id === prev.processId)
+            ? prev.processId
+            : nextProcesses[0]?.id || ''
+      }));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const loadRisks = async (targetPage = page) => {
+    setPageLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: '50'
+      });
+      if (search.trim()) params.set('search', search.trim());
+      if (selectedOrgUnit !== 'ALL') params.set('orgUnitId', selectedOrgUnit);
+
+      const riskData = await jsonRead<any>(
+        '/api/risks?' + params.toString(),
+        { dedupe: false }
+      );
+      const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
+      setRisks(nextRisks);
+      setPagination(riskData.pagination || EMPTY_PAGINATION);
+      setPage(targetPage);
+      setSelectedRisk(current =>
+        current && nextRisks.some((item: any) => item.id === current.id)
+          ? current
+          : nextRisks[0] || null
+      );
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPageLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadRisks();
+    void loadReferenceData();
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadRisks(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedOrgUnit]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await jsonTransaction('/api/risks', formData);
       setNewRiskModal(false);
-      loadRisks();
+      await Promise.all([loadRisks(page), loadReferenceData()]);
     } catch (e) {
       console.error(e);
     }
@@ -93,16 +133,7 @@ export default function RisksPage() {
   const unitById = new Map(organizationUnits.map(unit => [unit.id, unit]));
   const selectedRiskProcess = selectedRisk ? processById.get(selectedRisk.processId) : null;
 
-  const filtered = risks.filter(r => {
-    const process = processById.get(r.processId);
-    const matchesOrg = selectedOrgUnit === 'ALL' || process?.orgUnitId === selectedOrgUnit;
-    return matchesOrg && (
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.riskId.toLowerCase().includes(search.toLowerCase()) ||
-      r.category.toLowerCase().includes(search.toLowerCase()) ||
-      String(process?.orgUnit?.name || '').toLowerCase().includes(search.toLowerCase())
-    );
-  });
+  const filtered = risks;
 
   return (
     <div className="space-y-6">
@@ -165,7 +196,7 @@ export default function RisksPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Risk Register ({risks.length})
+            Risk Register ({pagination.total})
           </button>
           <button
             onClick={() => setActiveTab('inherent_heatmap')}
@@ -189,6 +220,14 @@ export default function RisksPage() {
           </button>
         </div>
       </div>
+
+      {activeTab === 'register' && (
+        <RegisterPager
+          pagination={pagination}
+          loading={pageLoading}
+          onPageChange={nextPage => void loadRisks(nextPage)}
+        />
+      )}
 
       {/* Main Content Area */}
       {activeTab === 'register' ? (
@@ -423,7 +462,7 @@ export default function RisksPage() {
                       </div>
                       <div className="text-center font-extrabold text-sm">{score}</div>
                       <div className="text-center text-[9px] opacity-60">
-                        {risks.filter((risk: any) => {
+                        {heatmapRisks.filter((risk: any) => {
                           const likelihood = activeTab === 'inherent_heatmap' ? risk.inherentLikelihood : risk.residualLikelihood;
                           const impact = activeTab === 'inherent_heatmap' ? risk.inherentImpact : risk.residualImpact;
                           return likelihood === l && impact === i;
