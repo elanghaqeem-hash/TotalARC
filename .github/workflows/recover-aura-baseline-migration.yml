@@ -1,0 +1,151 @@
+name: Recover Aura baseline source migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/recover-aura-baseline-migration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Recover and import Aura baseline
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          POINTER="migration-input/aura-source-bundle.txt"
+          test -f "$POINTER"
+          EXPECTED_SHA="$(awk 'NR==1 {print $1}' "$POINTER")"
+          BUNDLE_URL="$(awk 'NR==1 {print $2}' "$POINTER")"
+          BASE_URL="${PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          IMPORT_URL="$BASE_URL/api/system/source-migration"
+          KEY_URL="$BASE_URL/api/system/source-migration?op=key"
+          STATUS_URL="$BASE_URL/api/system/source-migration?op=status"
+
+          curl --fail --silent --show-error --max-time 180 -L "$BUNDLE_URL" -o /tmp/aura-old.zip
+          test "$(sha256sum /tmp/aura-old.zip | awk '{print $1}')" = "$EXPECTED_SHA"
+          mkdir -p /tmp/aura-old /tmp/aura-new
+          unzip -q /tmp/aura-old.zip -d /tmp/aura-old
+          test "$(find /tmp/aura-old -type f -name '*.json' | wc -l | tr -d ' ')" = "22"
+
+          npx wrangler d1 list --json > /tmp/d1.json
+          DB_NAME="$(jq -r '(map(select((.name|ascii_downcase|contains("totalarc")) or (.name|ascii_downcase|contains("total-arc")))) | .[0].name) // (if length == 1 then .[0].name else empty end)' /tmp/d1.json)"
+          test -n "$DB_NAME"
+
+          # Preserve the expired private key only inside this ephemeral runner.
+          npx wrangler d1 execute "$DB_NAME" --remote --json --command "SELECT privateKeyPkcs8Base64 FROM SourceMigrationKey WHERE id='gdrive-seraya-20260920' LIMIT 1;" > /tmp/old-key-row.json
+          jq -r '.[0].results[0].privateKeyPkcs8Base64 // empty' /tmp/old-key-row.json > /tmp/old-private.b64
+          chmod 600 /tmp/old-private.b64
+          if [ ! -s /tmp/old-private.b64 ]; then
+            echo "::error::Expired migration private key is no longer recoverable from D1."
+            exit 1
+          fi
+
+          # Existing 43 records are the verified Seraya update population.
+          npx wrangler d1 execute "$DB_NAME" --remote --command "
+            UPDATE SourceDocument
+            SET metadataJson=json_patch(
+              COALESCE(metadataJson,'{}'),
+              json_object(
+                'sourceAccount','serayamg@gmail.com',
+                'sourceRole','UPDATE',
+                'precedencePriority',20
+              )
+            )
+            WHERE status='Active';
+          " >/dev/null
+
+          curl --fail --silent --show-error --max-time 30             --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"             "$KEY_URL" > /tmp/new-key.json
+          jq -e '.ok == true and (.publicKeySpkiBase64|length>0)' /tmp/new-key.json >/dev/null
+
+          cat > /tmp/reencrypt.mjs <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import crypto from 'node:crypto';
+          const subtle=crypto.webcrypto.subtle;
+          const b64=s=>Buffer.from(s,'base64');
+          const b64s=b=>Buffer.from(b).toString('base64');
+          const oldPrivate=fs.readFileSync('/tmp/old-private.b64','utf8').trim();
+          const newKey=JSON.parse(fs.readFileSync('/tmp/new-key.json','utf8'));
+          const privateKey=await subtle.importKey('pkcs8',b64(oldPrivate),{name:'RSA-OAEP',hash:'SHA-256'},false,['decrypt']);
+          const publicKey=await subtle.importKey('spki',b64(newKey.publicKeySpkiBase64),{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+          const files=fs.readdirSync('/tmp/aura-old').filter(x=>x.endsWith('.json')).sort();
+          for(const file of files){
+            const env=JSON.parse(fs.readFileSync(path.join('/tmp/aura-old',file),'utf8'));
+            const aesRaw=await subtle.decrypt({name:'RSA-OAEP'},privateKey,b64(env.encryptedKeyBase64));
+            const oldAes=await subtle.importKey('raw',aesRaw,{name:'AES-GCM'},false,['decrypt']);
+            const clear=await subtle.decrypt({name:'AES-GCM',iv:b64(env.ivBase64)},oldAes,b64(env.ciphertextBase64));
+            const payload=JSON.parse(Buffer.from(clear).toString('utf8'));
+            payload.metadata={
+              ...(payload.metadata||{}),
+              sourceAccount:'aurakasih6987@gmail.com',
+              sourceRole:'BASELINE',
+              precedencePriority:10,
+              sourceCollection:'AURA_BASELINE_CANONICAL_20260920'
+            };
+            const clearNew=Buffer.from(JSON.stringify(payload),'utf8');
+            const aesBytes=crypto.randomBytes(32);
+            const iv=crypto.randomBytes(12);
+            const newAes=await subtle.importKey('raw',aesBytes,{name:'AES-GCM'},false,['encrypt']);
+            const cipher=await subtle.encrypt({name:'AES-GCM',iv},newAes,clearNew);
+            const wrapped=await subtle.encrypt({name:'RSA-OAEP'},publicKey,aesBytes);
+            fs.writeFileSync(path.join('/tmp/aura-new',file),JSON.stringify({
+              migrationId:newKey.migrationId,
+              encryptedKeyBase64:b64s(wrapped),
+              ivBase64:b64s(iv),
+              ciphertextBase64:b64s(cipher)
+            }));
+          }
+          NODE
+          node /tmp/reencrypt.mjs
+          rm -f /tmp/old-private.b64 /tmp/old-key-row.json
+
+          total=0; ok=0; failed=0
+          while IFS= read -r file; do
+            total=$((total+1))
+            code="$(curl --silent --show-error --max-time 180               --output /tmp/import.json --write-out "%{http_code}"               --request POST               --header "Content-Type: application/json"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               --data-binary "@$file" "$IMPORT_URL" || true)"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 300 ] && jq -e '.ok==true' /tmp/import.json >/dev/null 2>&1; then
+              ok=$((ok+1))
+            else
+              failed=$((failed+1))
+              echo "::error::Aura baseline item $total failed (HTTP $code)."
+              jq -c '{ok,code}' /tmp/import.json 2>/dev/null || true
+            fi
+          done < <(find /tmp/aura-new -type f -name '*.json' | sort)
+          echo "Aura recovered migration: total=$total ok=$ok failed=$failed"
+          test "$ok" = "22"
+          test "$failed" = "0"
+
+          curl --fail --silent --show-error --max-time 30             --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"             "$STATUS_URL" > /tmp/status.json
+          docs="$(jq -r '.metrics.documents // 0' /tmp/status.json)"
+          raw="$(jq -r '.metrics.documentsWithRawBytes // 0' /tmp/status.json)"
+          indexed="$(jq -r '.metrics.documentsWithIndexedText // 0' /tmp/status.json)"
+          echo "Source library verified: documents=$docs raw=$raw indexed=$indexed"
+          test "$docs" -ge 65
+          test "$raw" -ge 39
+          test "$indexed" -ge 54
+
+          cleanup="$(curl --silent --show-error --max-time 30             --request POST             --header "Content-Type: application/json"             --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"             --data '{"op":"cleanup"}' "$IMPORT_URL")"
+          printf '%s' "$cleanup" | jq -e '.ok==true and .cleaned==true' >/dev/null
+
+          rm -rf /tmp/aura-old /tmp/aura-new /tmp/aura-old.zip /tmp/new-key.json /tmp/reencrypt.mjs /tmp/status.json /tmp/import.json
+          echo "Aura baseline imported with priority 10; Seraya population tagged UPDATE with priority 20."
