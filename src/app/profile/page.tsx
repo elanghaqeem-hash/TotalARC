@@ -5,7 +5,7 @@ import { AlertCircle, CheckCircle2, KeyRound, Save, ShieldCheck, UserRound } fro
 import { useRole } from '@/context/RoleContext';
 
 export default function ProfilePage() {
-  const { currentUser, refreshSession, logout } = useRole();
+  const { currentUser, refreshSession } = useRole();
   const [name, setName] = useState(currentUser.name || '');
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -13,6 +13,7 @@ export default function ProfilePage() {
     confirmPassword: ''
   });
   const [required, setRequired] = useState(Boolean(currentUser.mustChangePassword));
+  const [nextPath, setNextPath] = useState('/');
   const [saving, setSaving] = useState(false);
   const [changing, setChanging] = useState(false);
   const [error, setError] = useState('');
@@ -23,6 +24,10 @@ export default function ProfilePage() {
     setRequired(Boolean(currentUser.mustChangePassword));
     const params = new URLSearchParams(window.location.search);
     if (params.get('password') === 'required') setRequired(true);
+    const requestedNext = params.get('next');
+    if (requestedNext && requestedNext.startsWith('/') && !requestedNext.startsWith('//')) {
+      setNextPath(requestedNext);
+    }
   }, [currentUser.name, currentUser.mustChangePassword]);
 
   const saveProfile = async (event: FormEvent) => {
@@ -74,7 +79,10 @@ export default function ProfilePage() {
 
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setMessage('Password berhasil diubah. Seluruh sesi lama telah dicabut; silakan login kembali.');
-      window.setTimeout(() => void logout(), 900);
+      window.setTimeout(() => {
+        const target = nextPath && nextPath !== '/' ? '?next=' + encodeURIComponent(nextPath) : '';
+        window.location.assign('/login' + target);
+      }, 900);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Password tidak dapat diubah.');
     } finally {
