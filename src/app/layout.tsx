@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { RoleProvider } from '@/context/RoleContext';
-import { AppShell } from '@/components/layout/AppShell';
+import { AppFrame } from '@/components/layout/AppFrame';
 
 export const metadata: Metadata = {
   title: 'TOTAL ARC — Total Assurance, Risk & Control Platform',
@@ -17,7 +17,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased bg-slate-50 text-slate-900">
         <RoleProvider>
-          <AppShell>{children}</AppShell>
+          <AppFrame>{children}</AppFrame>
         </RoleProvider>
       </body>
     </html>
