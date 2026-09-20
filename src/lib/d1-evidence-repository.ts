@@ -165,7 +165,9 @@ function base64ToBytes(value: string) {
 }
 
 async function sha256(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(digest))
     .map(byte => byte.toString(16).padStart(2, '0'))
     .join('');
