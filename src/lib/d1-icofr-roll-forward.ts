@@ -1,4 +1,4 @@
-import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureIcofrScopeSchema } from '@/lib/d1-icofr';
 import { ensureIcofrDomainSchema } from '@/lib/d1-icofr-domains';
@@ -44,10 +44,7 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureIcofrPeriodCloseSchema()
   ]);
 
-  const { env } = await getCloudflareContext({ async: true });
-  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
-  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
-  return db;
+  return getTenantDb();
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
@@ -104,12 +101,14 @@ function arrayValue(value: unknown): Array<Record<string, unknown>> {
     : [];
 }
 
-let schemaReady: Promise<D1DatabaseLike> | null = null;
+const schemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrRollForwardSchema() {
-  if (schemaReady) return schemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = schemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  schemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
     await executeSchema(db, `
       CREATE TABLE IF NOT EXISTS ICOFRRollForward (
@@ -179,11 +178,12 @@ export async function ensureIcofrRollForwardSchema() {
     `);
     return db;
   })().catch(error => {
-    schemaReady = null;
+    schemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return schemaReady;
+  schemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
