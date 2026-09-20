@@ -19,6 +19,8 @@ import {
   SlidersHorizontal
 } from 'lucide-react';
 import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
+import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 export default function RCMWorkspacePage() {
   const [rcmRows, setRcmRows] = useState<any[]>([]);
@@ -28,43 +30,51 @@ export default function RCMWorkspacePage() {
   const [filterType, setFilterType] = useState('ALL');
   const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [filterCounts, setFilterCounts] = useState({ all: 0, keyControls: 0, icofr: 0, issues: 0 });
+
+  const loadRcm = async (targetPage = page) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: '50',
+        filterType
+      });
+      if (search.trim()) params.set('search', search.trim());
+      if (selectedOrgUnit !== 'ALL') params.set('orgUnitId', selectedOrgUnit);
+
+      const d = await jsonRead<any>(
+        '/api/rcm?' + params.toString(),
+        { dedupe: false }
+      );
+      setRcmRows(Array.isArray(d.rcm) ? d.rcm : []);
+      setOrganizationUnits(
+        Array.isArray(d.organization?.organizationUnits)
+          ? d.organization.organizationUnits
+          : []
+      );
+      setPagination(d.pagination || EMPTY_PAGINATION);
+      setFilterCounts(d.filterCounts || { all: 0, keyControls: 0, icofr: 0, issues: 0 });
+      setPage(targetPage);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/rcm')
-      .then(res => res.json())
-      .then(d => {
-        setRcmRows(d.rcm || []);
-        setOrganizationUnits(
-          Array.isArray(d.organization?.organizationUnits)
-            ? d.organization.organizationUnits
-            : []
-        );
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  }, []);
+    const timer = window.setTimeout(() => {
+      void loadRcm(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedOrgUnit, filterType]);
 
   const unitById = new Map(organizationUnits.map(unit => [unit.id, unit]));
 
-  const filtered = rcmRows.filter(row => {
-    const unitName = unitById.get(row.orgUnitId)?.name || '';
-    const matchSearch =
-      row.processName?.toLowerCase().includes(search.toLowerCase()) ||
-      row.riskName?.toLowerCase().includes(search.toLowerCase()) ||
-      row.controlName?.toLowerCase().includes(search.toLowerCase()) ||
-      row.controlId?.toLowerCase().includes(search.toLowerCase()) ||
-      unitName.toLowerCase().includes(search.toLowerCase());
-    const matchOrg = selectedOrgUnit === 'ALL' || row.orgUnitId === selectedOrgUnit;
-    const baseMatch = matchSearch && matchOrg;
-
-    if (filterType === 'KEY_ONLY') return baseMatch && row.isKeyControl;
-    if (filterType === 'ICOFR_ONLY') return baseMatch && row.isIcofrKey;
-    if (filterType === 'ISSUES_ONLY') return baseMatch && row.issueId;
-    return baseMatch;
-  });
+  const filtered = rcmRows;
 
   // Client CSV Export
   const exportToCSV = () => {
@@ -164,7 +174,7 @@ export default function RCMWorkspacePage() {
             className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm shadow-emerald-500/20 transition-all"
           >
             <Download className="w-4 h-4" />
-            <span>Export RCM (CSV/Excel)</span>
+            <span>Export Current Page (CSV)</span>
           </button>
         </div>
       </div>
@@ -206,25 +216,25 @@ export default function RCMWorkspacePage() {
                 {
                   key: 'ALL',
                   label: 'All Mappings',
-                  count: rcmRows.length,
+                  count: filterCounts.all,
                   icon: Layers
                 },
                 {
                   key: 'KEY_ONLY',
                   label: 'Key Controls',
-                  count: rcmRows.filter(row => row.isKeyControl).length,
+                  count: filterCounts.keyControls,
                   icon: Shield
                 },
                 {
                   key: 'ICOFR_ONLY',
                   label: 'ICOFR Scope',
-                  count: rcmRows.filter(row => row.isIcofrKey).length,
+                  count: filterCounts.icofr,
                   icon: FileCheck2
                 },
                 {
                   key: 'ISSUES_ONLY',
                   label: 'Remediation / MAP',
-                  count: rcmRows.filter(row => row.issueId).length,
+                  count: filterCounts.issues,
                   icon: BadgeCheck
                 }
               ].map(option => {
@@ -270,7 +280,7 @@ export default function RCMWorkspacePage() {
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-[10px] text-slate-500">
           <span>
-            Showing <strong className="text-slate-700">{filtered.length}</strong> of <strong className="text-slate-700">{rcmRows.length}</strong> mappings
+            Showing page <strong className="text-slate-700">{pagination.page}</strong> of <strong className="text-slate-700">{pagination.totalPages}</strong> · <strong className="text-slate-700">{pagination.total}</strong> matching mappings
           </span>
           {(search || filterType !== 'ALL' || selectedOrgUnit !== 'ALL') && (
             <button
@@ -287,6 +297,12 @@ export default function RCMWorkspacePage() {
           )}
         </div>
       </section>
+
+      <RegisterPager
+        pagination={pagination}
+        loading={loading}
+        onPageChange={nextPage => void loadRcm(nextPage)}
+      />
 
       {/* SPREADSHEET GRID VIEW (Desktop) */}
       {viewMode === 'table' ? (
