@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 export default function ProcessesPage() {
   const { currentUser } = useRole();
@@ -102,15 +103,7 @@ export default function ProcessesPage() {
     setFormError('');
 
     try {
-      const res = await fetch('/api/processes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      const payload = await res.json();
-      if (!res.ok) {
-        throw new Error(payload.error || 'Unable to register business process.');
-      }
+      const payload = await jsonTransaction<any>('/api/processes', formData);
 
       setNewProcessModal(false);
       setSelectedProcess(payload);
