@@ -38,6 +38,34 @@ for (const file of files) {
   }
 }
 
+
+
+const hubPath = path.join(root, 'src', 'app', 'api', 'icofr', 'hub', 'route.ts');
+if (!fs.existsSync(hubPath)) {
+  findings.push('src/app/api/icofr/hub/route.ts: missing ICOFR hub route');
+} else {
+  const hub = fs.readFileSync(hubPath, 'utf8');
+  const requiredHubPrewarm = [
+    'await ensureIcofrScopeSchema();',
+    'await ensureIcofrDomainSchema();',
+    'await ensureIcofrTraceabilitySchema();',
+    'await ensureIcofrCoverageSchema();',
+    'await ensureIcofrTestingPlanSchema();',
+    'await ensureIcofrCertificationSchema();',
+    'await ensureIcofrExecutiveReportingSchema();'
+  ];
+  const fanOutIndex = hub.indexOf('const [');
+  for (const marker of requiredHubPrewarm) {
+    const markerIndex = hub.indexOf(marker);
+    if (markerIndex < 0 || fanOutIndex < 0 || markerIndex > fanOutIndex) {
+      findings.push(
+        'src/app/api/icofr/hub/route.ts: ICOFR hub schema prewarm must complete before parallel read fan-out: ' + marker
+      );
+    }
+  }
+}
+
+
 if (findings.length) {
   console.error('D1 schema stability violations detected:');
   for (const finding of findings) console.error(' - ' + finding);

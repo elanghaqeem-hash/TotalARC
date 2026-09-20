@@ -1,21 +1,47 @@
 import { NextResponse } from 'next/server';
-import { getIcofrScopingData } from '@/lib/d1-icofr';
+import { ensureIcofrScopeSchema, getIcofrScopingData } from '@/lib/d1-icofr';
 import {
+  ensureIcofrDomainSchema,
   listDeficiencies,
   listFinancialItems,
   listIcofrControls,
   listInformationRegister
 } from '@/lib/d1-icofr-domains';
-import { getTraceabilityData } from '@/lib/d1-icofr-traceability';
-import { getIcofrCoverageData } from '@/lib/d1-icofr-coverage';
-import { getTestingPlanData } from '@/lib/d1-icofr-testing-plan';
-import { getCertificationData } from '@/lib/d1-icofr-certification';
-import { getExecutiveReportingData } from '@/lib/d1-icofr-executive-reporting';
+import {
+  ensureIcofrTraceabilitySchema,
+  getTraceabilityData
+} from '@/lib/d1-icofr-traceability';
+import {
+  ensureIcofrCoverageSchema,
+  getIcofrCoverageData
+} from '@/lib/d1-icofr-coverage';
+import {
+  ensureIcofrTestingPlanSchema,
+  getTestingPlanData
+} from '@/lib/d1-icofr-testing-plan';
+import {
+  ensureIcofrCertificationSchema,
+  getCertificationData
+} from '@/lib/d1-icofr-certification';
+import {
+  ensureIcofrExecutiveReportingSchema,
+  getExecutiveReportingData
+} from '@/lib/d1-icofr-executive-reporting';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    // Runtime DDL must complete deterministically before the hub fans out
+    // into parallel read queries. Each ensure* call is memoized per Worker.
+    await ensureIcofrScopeSchema();
+    await ensureIcofrDomainSchema();
+    await ensureIcofrTraceabilitySchema();
+    await ensureIcofrCoverageSchema();
+    await ensureIcofrTestingPlanSchema();
+    await ensureIcofrCertificationSchema();
+    await ensureIcofrExecutiveReportingSchema();
+
     const [
       scoping,
       financial,
