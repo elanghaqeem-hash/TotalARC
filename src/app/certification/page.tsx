@@ -5,6 +5,7 @@ import { BadgeCheck, Plus, Save, X } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100';
@@ -74,18 +75,10 @@ export default function CertificationPage() {
     setMessage('');
     try {
       const selectedUnit = units.find((unit: any) => unit.id === form.orgUnitId);
-      const response = await fetch('/api/assure/certification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          legalEntityId: selectedUnit?.legalEntityId || null
-        })
+      await jsonTransaction('/api/assure/certification', {
+        ...form,
+        legalEntityId: selectedUnit?.legalEntityId || null
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to save certification record.');
-      }
       await reload();
       setMode(null);
       setMessage(
