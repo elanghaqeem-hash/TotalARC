@@ -31,13 +31,11 @@ const EVIDENCE_STATUSES = ['Missing', 'Requested', 'Received', 'Incomplete', 'Co
 const EVIDENCE_REVIEWS = ['Pending', 'Accepted', 'Rejected'] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrTestingPlanSchema(),
-    ensureIcofrTraceabilitySchema(),
-    ensureAssuranceSchema(),
-    ensureIcofrExecutiveReportingSchema()
-  ]);
+  await ensureCoreDomainSchema();
+    await ensureIcofrTestingPlanSchema();
+    await ensureIcofrTraceabilitySchema();
+    await ensureAssuranceSchema();
+    await ensureIcofrExecutiveReportingSchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -46,7 +44,14 @@ async function getDb(): Promise<D1DatabaseLike> {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  await db.exec(script);
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
 }
 
 async function all<T = Record<string, unknown>>(
