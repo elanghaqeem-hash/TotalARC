@@ -1673,7 +1673,7 @@ export async function getSamplingEvidenceData() {
       summary: {
         candidates: planCandidates.length,
         selected: planCandidates.filter(item => item.selected).length,
-        linkedToToe: planCandidates.filter(item => item.selected && item.toeSampleId).length,
+        linkedToToe: planCandidates.filter(item => item.selected && item.toeSample).length,
         evidenceComplete: planCandidates.filter(
           item =>
             item.selected &&
