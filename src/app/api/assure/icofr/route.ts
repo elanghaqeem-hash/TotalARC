@@ -30,13 +30,13 @@ export async function GET(request: Request) {
     const financialAccounts = data.financialAccounts.filter(account =>
       isOrgUnitAuthorized(
         authorizedOrgUnitIds,
-        account.orgUnitId as string | null | undefined
+        (account as Record<string, unknown>).orgUnitId as string | null | undefined
       )
     );
     const ipeRegisters = data.ipeRegisters.filter(ipe =>
       isOrgUnitAuthorized(
         authorizedOrgUnitIds,
-        ipe.orgUnitId as string | null | undefined
+        (ipe as Record<string, unknown>).orgUnitId as string | null | undefined
       )
     );
 
@@ -220,7 +220,7 @@ export async function POST(request: Request) {
         !account
         || !isOrgUnitAuthorized(
           authorizedOrgUnitIds,
-          account.orgUnitId as string | null | undefined
+          (account as Record<string, unknown>).orgUnitId as string | null | undefined
         )
       ) {
         return NextResponse.json(
