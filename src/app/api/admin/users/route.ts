@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import {
   createManagedUser,
+  forceManagedUserPasswordChange,
   getAuthenticatedProfile,
   listManagedUsers,
+  resetManagedUserCredential,
+  unlockManagedUser,
   updateManagedUser
 } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
@@ -35,7 +38,8 @@ function apiError(error: unknown) {
     USER_EMAIL_CONFLICT: { status: 409, error: 'Email tersebut sudah digunakan.' },
     USER_NOT_FOUND: { status: 404, error: 'User tidak ditemukan.' },
     CANNOT_DISABLE_SELF: { status: 400, error: 'Administrator tidak dapat menonaktifkan akunnya sendiri.' },
-    CANNOT_CHANGE_OWN_ROLE: { status: 400, error: 'Administrator tidak dapat mengubah role akunnya sendiri.' }
+    CANNOT_CHANGE_OWN_ROLE: { status: 400, error: 'Administrator tidak dapat mengubah role akunnya sendiri.' },
+    CANNOT_RESET_SELF_CREDENTIAL: { status: 409, error: 'Gunakan menu Profile untuk mengubah password akun administrator yang sedang digunakan.' }
   };
   const mapped = mapping[code];
   if (mapped) {
@@ -77,6 +81,35 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+    const actionType = typeof body.actionType === 'string' ? body.actionType : '';
+
+    if (actionType === 'RESET_CREDENTIAL') {
+      const result = await resetManagedUserCredential({
+        actorUserId: admin.id,
+        actorInstitutionId: admin.institutionId,
+        userId: String(body.userId || '')
+      });
+      return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (actionType === 'FORCE_PASSWORD_CHANGE') {
+      const result = await forceManagedUserPasswordChange({
+        actorUserId: admin.id,
+        actorInstitutionId: admin.institutionId,
+        userId: String(body.userId || '')
+      });
+      return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (actionType === 'UNLOCK_USER') {
+      const result = await unlockManagedUser({
+        actorUserId: admin.id,
+        actorInstitutionId: admin.institutionId,
+        userId: String(body.userId || '')
+      });
+      return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
     if (!isUserRole(body.role)) throw new Error('AUTH_ROLE_INVALID');
 
     const user = await createManagedUser({
