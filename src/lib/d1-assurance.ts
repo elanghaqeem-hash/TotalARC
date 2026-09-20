@@ -445,6 +445,54 @@ export async function ensureAssuranceSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_retest_enterprise_id ON RetestRecord(retestId);
     CREATE INDEX IF NOT EXISTS idx_retest_map ON RetestRecord(mapId);
 
+    CREATE TABLE IF NOT EXISTS ControlCertification (
+      id TEXT PRIMARY KEY NOT NULL,
+      controlId TEXT NOT NULL,
+      period TEXT NOT NULL,
+      declarationText TEXT NOT NULL,
+      certifierName TEXT NOT NULL,
+      certifierRole TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      certifiedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_certification_control ON ControlCertification(controlId);
+
+    CREATE TABLE IF NOT EXISTS ManagementAttestation (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      period TEXT NOT NULL,
+      scopeSummary TEXT NOT NULL,
+      cfoSignOff INTEGER NOT NULL DEFAULT 0,
+      cfoName TEXT,
+      croSignOff INTEGER NOT NULL DEFAULT 0,
+      croName TEXT,
+      overallOpinion TEXT,
+      attestedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_attestation_institution ON ManagementAttestation(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_attestation_org_unit ON ManagementAttestation(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS Task (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      userId TEXT,
+      orgUnitId TEXT,
+      title TEXT NOT NULL,
+      type TEXT NOT NULL,
+      dueDate TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'High',
+      status TEXT NOT NULL DEFAULT 'Pending',
+      entityRef TEXT,
+      link TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_institution ON Task(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_task_user ON Task(userId);
+    CREATE INDEX IF NOT EXISTS idx_task_org_unit ON Task(orgUnitId);
+    CREATE INDEX IF NOT EXISTS idx_task_due_date ON Task(dueDate);
+
     CREATE TABLE IF NOT EXISTS MonitoringRule (
       id TEXT PRIMARY KEY NOT NULL,
       ruleId TEXT NOT NULL,
