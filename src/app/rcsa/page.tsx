@@ -47,7 +47,7 @@ function riskClass(rating: string) {
 }
 
 export default function RCSAPage() {
-  const { data, loading, error, refresh } = useAssuranceData();
+  const { data, loading, error, refresh } = useAssuranceData(['rcsa']);
   const campaigns = data?.campaigns || [];
   const processes = data?.processes || [];
   const risks = data?.risks || [];
