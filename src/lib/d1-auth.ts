@@ -36,6 +36,8 @@ type UserRow = {
   mustChangePassword: number;
   passwordChangedAt: string | null;
   passwordExpiresAt: string | null;
+  credentialResetAt: string | null;
+  temporaryCredentialExpiresAt: string | null;
   failedAttempts: number;
   lockedUntil: string | null;
   lastLoginAt: string | null;
@@ -247,9 +249,10 @@ async function seedBootstrapSuperAdmin(db: D1DatabaseLike) {
     `INSERT INTO AppUser (
       id, homeInstitutionId, employeeId, username, displayName, email, mobile, jobTitle,
       employmentStatus, status, authType, passwordHash, passwordSalt, passwordIterations,
-      mustChangePassword, passwordChangedAt, passwordExpiresAt, failedAttempts, lockedUntil,
+      mustChangePassword, passwordChangedAt, passwordExpiresAt, credentialResetAt,
+      temporaryCredentialExpiresAt, failedAttempts, lockedUntil,
       lastLoginAt, lastLoginIp, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, 'Permanent', 'Active', 'LOCAL', ?, ?, ?, 1, ?, ?, 0, NULL, NULL, NULL, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, 'Permanent', 'Active', 'LOCAL', ?, ?, ?, 1, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?, ?)`,
     [
       id,
       institutionId,
@@ -262,6 +265,8 @@ async function seedBootstrapSuperAdmin(db: D1DatabaseLike) {
       BOOTSTRAP_PASSWORD_ITERATIONS,
       now.toISOString(),
       plusDays(now, PASSWORD_POLICY.expiryDays),
+      now.toISOString(),
+      plusDays(now, 7),
       now.toISOString(),
       now.toISOString()
     ]
@@ -346,6 +351,8 @@ export async function ensureAuthSchema() {
         mustChangePassword INTEGER NOT NULL DEFAULT 1,
         passwordChangedAt TEXT,
         passwordExpiresAt TEXT,
+        credentialResetAt TEXT,
+        temporaryCredentialExpiresAt TEXT,
         failedAttempts INTEGER NOT NULL DEFAULT 0,
         lockedUntil TEXT,
         lastLoginAt TEXT,
@@ -446,6 +453,15 @@ export async function ensureAuthSchema() {
         PRIMARY KEY (institutionId, parameterKey)
       );
     `);
+
+    const userColumns = await all<{ name?: string }>(db, 'PRAGMA table_info(AppUser)');
+    const userColumnNames = new Set(userColumns.map(column => String(column.name || '')));
+    if (!userColumnNames.has('credentialResetAt')) {
+      await db.exec('ALTER TABLE AppUser ADD COLUMN credentialResetAt TEXT;');
+    }
+    if (!userColumnNames.has('temporaryCredentialExpiresAt')) {
+      await db.exec('ALTER TABLE AppUser ADD COLUMN temporaryCredentialExpiresAt TEXT;');
+    }
 
     await ensureDefaultTenantRegistry(db);
     await seedBootstrapSuperAdmin(db);
@@ -682,6 +698,24 @@ export async function authenticateUser(input: {
     throw new Error(shouldLock ? 'ACCOUNT_LOCKED' : 'INVALID_CREDENTIALS');
   }
 
+  const temporaryCredentialExpired =
+    Boolean(user.mustChangePassword) &&
+    Boolean(user.temporaryCredentialExpiresAt) &&
+    new Date(String(user.temporaryCredentialExpiresAt)).getTime() <= now.getTime();
+
+  if (temporaryCredentialExpired) {
+    await recordLogin(db, {
+      userId: user.id,
+      identifier,
+      institutionId: user.homeInstitutionId,
+      result: 'FAILED',
+      reason: 'TEMPORARY_CREDENTIAL_EXPIRED',
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent
+    });
+    throw new Error('TEMPORARY_CREDENTIAL_EXPIRED');
+  }
+
   const passwordExpired =
     Boolean(user.passwordExpiresAt) && new Date(String(user.passwordExpiresAt)).getTime() <= now.getTime();
 
@@ -832,6 +866,8 @@ export async function listUsers(institutionId: string) {
         mustChangePassword: Boolean(user.mustChangePassword),
         passwordChangedAt: user.passwordChangedAt,
         passwordExpiresAt: user.passwordExpiresAt,
+        credentialResetAt: user.credentialResetAt,
+        temporaryCredentialExpiresAt: user.temporaryCredentialExpiresAt,
         failedAttempts: Number(user.failedAttempts || 0),
         lockedUntil: user.lockedUntil,
         lastLoginAt: user.lastLoginAt,
@@ -896,9 +932,10 @@ export async function createUser(input: UserAdminInput, actor: SessionPayload) {
     `INSERT INTO AppUser (
       id,homeInstitutionId,employeeId,username,displayName,email,mobile,jobTitle,
       employmentStatus,status,authType,passwordHash,passwordSalt,passwordIterations,
-      mustChangePassword,passwordChangedAt,passwordExpiresAt,failedAttempts,lockedUntil,
+      mustChangePassword,passwordChangedAt,passwordExpiresAt,credentialResetAt,
+      temporaryCredentialExpiresAt,failedAttempts,lockedUntil,
       lastLoginAt,lastLoginIp,createdAt,updatedAt
-    ) VALUES (?,?,?,?,?,?,?,?,?,'Active','LOCAL',?,?,?,1,?,?,0,NULL,NULL,NULL,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,'Active','LOCAL',?,?,?,1,?,?,?,?,0,NULL,NULL,NULL,?,?)`,
     [
       id,
       input.institutionId,
@@ -914,6 +951,8 @@ export async function createUser(input: UserAdminInput, actor: SessionPayload) {
       password.iterations,
       now.toISOString(),
       plusDays(now, PASSWORD_POLICY.expiryDays),
+      now.toISOString(),
+      plusDays(now, 1),
       now.toISOString(),
       now.toISOString()
     ]
@@ -1163,6 +1202,8 @@ export async function resetUserCredential(
             mustChangePassword=1,
             passwordChangedAt=?,
             passwordExpiresAt=?,
+            credentialResetAt=?,
+            temporaryCredentialExpiresAt=?,
             failedAttempts=0,
             lockedUntil=NULL,
             updatedAt=?
@@ -1171,6 +1212,8 @@ export async function resetUserCredential(
       password.hash,
       password.salt,
       password.iterations,
+      now.toISOString(),
+      plusDays(now, PASSWORD_POLICY.expiryDays),
       now.toISOString(),
       plusDays(now, 1),
       now.toISOString(),
@@ -1392,7 +1435,8 @@ export async function changeOwnPassword(
     db,
     `UPDATE AppUser
         SET passwordHash=?,passwordSalt=?,passwordIterations=?,mustChangePassword=0,
-            passwordChangedAt=?,passwordExpiresAt=?,failedAttempts=0,lockedUntil=NULL,updatedAt=?
+            passwordChangedAt=?,passwordExpiresAt=?,credentialResetAt=NULL,
+            temporaryCredentialExpiresAt=NULL,failedAttempts=0,lockedUntil=NULL,updatedAt=?
       WHERE id=?`,
     [
       next.hash,
