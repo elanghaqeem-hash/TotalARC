@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getOrganizationStructure } from '@/lib/d1-organization';
 import { listDesignAssessments } from '@/lib/d1-icofr-traceability';
+import { listPbcTasks } from '@/lib/d1-icofr-executive-reporting';
 import {
   addAssessmentScope,
   createAssessmentCampaign,
@@ -15,9 +16,10 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const organization = await getOrganizationStructure();
-    const [todTests, rcsa] = await Promise.all([
+    const [todTests, rcsa, pbcTasks] = await Promise.all([
       listDesignAssessments(),
-      getRcsaWorkspaceData()
+      getRcsaWorkspaceData(),
+      listPbcTasks()
     ]);
     const institution = organization.institution;
 
@@ -34,7 +36,7 @@ export async function GET() {
       processes: rcsa.processes,
       risks: rcsa.risks,
       controls: rcsa.controls,
-      tasks: rcsa.tasks,
+      tasks: [...rcsa.tasks, ...pbcTasks],
       todTests,
       walkthroughs: [],
       financialAccounts: [],
