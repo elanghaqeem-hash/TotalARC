@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Activity, Database, Plus, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 
 const EMPTY_FORM = {
   ruleId: '',
@@ -27,17 +28,9 @@ export default function CCMPage() {
   const loadData = async () => {
     setError('');
     try {
-      const [ruleResponse, controlResponse] = await Promise.all([
-        fetch('/api/monitor/ccm'),
-        fetch('/api/controls')
-      ]);
-
-      if (!ruleResponse.ok) throw new Error('CCM data unavailable');
-      if (!controlResponse.ok) throw new Error('Control library unavailable');
-
       const [ruleData, controlData] = await Promise.all([
-        ruleResponse.json(),
-        controlResponse.json()
+        jsonRead<any>('/api/monitor/ccm', { dedupe: false }),
+        jsonRead<any>('/api/controls', { dedupe: false })
       ]);
 
       const nextRules = Array.isArray(ruleData.rules) ? ruleData.rules : [];
