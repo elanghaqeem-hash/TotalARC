@@ -78,6 +78,18 @@ export async function POST(request: Request) {
         { status: 423 }
       );
     }
+    if (code === 'LOGIN_RATE_LIMITED') {
+      return NextResponse.json(
+        { error: 'Too many failed sign-in attempts. Try again later.' },
+        { status: 429 }
+      );
+    }
+    if (code.includes('AUTH_SESSION_SECRET')) {
+      return NextResponse.json(
+        { error: 'Authentication runtime is not configured.' },
+        { status: 503 }
+      );
+    }
     if (code === 'NO_ACTIVE_INSTITUTION_ACCESS') {
       return NextResponse.json(
         { error: 'No active institution access is assigned to this user.' },
