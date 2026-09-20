@@ -21,6 +21,7 @@ function requireMarker(file, marker) {
 const requirements = [
   ['src/lib/auth-token.ts', 'export const AUTH_SESSION_SECONDS = 60 * 60;'],
   ['src/lib/auth-token.ts', 'mustChangePassword: boolean;'],
+  ['src/lib/auth.ts', 'const PASSWORD_ITERATIONS = 100000;'],
   ['src/lib/auth-security.ts', 'CREATE TABLE IF NOT EXISTS AuthSession'],
   ['src/lib/auth-security.ts', 'CREATE TABLE IF NOT EXISTS AuthPasswordHistory'],
   ['src/lib/auth-security.ts', 'LIMIT 5'],
@@ -54,3 +55,11 @@ for (const code of ['PASSWORD_POLICY', 'PASSWORD_REUSE']) {
 console.log(
   'Authentication security integrity verified: revocable D1 sessions, forced password change, password history, profile security, and administrator session controls are present.'
 );
+
+
+const authSource = source('src/lib/auth.ts');
+const iterationDefaults = [...authSource.matchAll(/passwordIterations\\s+INTEGER\\s+NOT\\s+NULL\\s+DEFAULT\\s+(\\d+)/g)]
+  .map(match => Number(match[1]));
+if (iterationDefaults.some(value => value > 100000)) {
+  throw new Error('AUTH_SECURITY_INTEGRITY_ERROR: PBKDF2 work factor exceeds the Cloudflare Workers runtime cap.');
+}

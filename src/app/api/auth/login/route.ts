@@ -62,6 +62,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (code === 'PASSWORD_HASH_RUNTIME_UNSUPPORTED') {
+      return NextResponse.json(
+        { error: 'Hash password akun ini dibuat dengan work factor yang tidak didukung Cloudflare Workers. Administrator harus melakukan reset password akun.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     if (code === 'AUTH_DATABASE_UNAVAILABLE') {
       return NextResponse.json(
         { error: 'Database authentication sedang tidak tersedia.' },
