@@ -28,7 +28,9 @@ function safeEqual(left: string, right: string) {
 
 async function authorizedHealthProbe(request: NextRequest) {
   if (!request.nextUrl.pathname.startsWith('/api/')) return false;
-  if (request.method !== 'GET' && request.method !== 'HEAD') return false;
+  const bootstrapPost =
+    request.nextUrl.pathname === '/api/auth/bootstrap' && request.method === 'POST';
+  if (!bootstrapPost && request.method !== 'GET' && request.method !== 'HEAD') return false;
 
   const configured = await runtimeValue('TOTAL_ARC_HEALTHCHECK_TOKEN');
   if (!configured || configured.length < 24) return false;
@@ -79,6 +81,7 @@ export async function middleware(request: NextRequest) {
     pathname === '/api/auth/login' ||
     pathname === '/api/auth/logout' ||
     pathname === '/api/auth/me' ||
+    pathname === '/api/auth/bootstrap' ||
     pathname === '/api/ai/ready' ||
     pathname === '/api/ai/status' ||
     pathname === '/api/ai/probe'
