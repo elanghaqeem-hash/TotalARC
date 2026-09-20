@@ -283,6 +283,14 @@ jobs:
             (.metrics | type) == "object"
           '
 
+          check_json "evidence-repository" "/api/evidence" '
+            .storage == "cloudflare-d1" and
+            (.documents | type) == "array" and
+            (.linkTargets | type) == "array" and
+            (.metrics | type) == "object" and
+            .limits.storageMode == "D1_CHUNKED"
+          '
+
           check_json "database-final" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and
