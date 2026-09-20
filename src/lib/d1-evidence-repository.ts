@@ -247,7 +247,7 @@ export async function ensureEvidenceRepositorySchema() {
         id TEXT PRIMARY KEY NOT NULL,
         institutionId TEXT NOT NULL,
         documentId TEXT NOT NULL,
-        versionId TEXT,
+        versionId TEXT NOT NULL,
         entityType TEXT NOT NULL,
         entityId TEXT NOT NULL,
         relationship TEXT NOT NULL DEFAULT 'SUPPORTS',
@@ -255,7 +255,7 @@ export async function ensureEvidenceRepositorySchema() {
         createdAt TEXT NOT NULL
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_link_unique
-        ON EvidenceLink(documentId,COALESCE(versionId,''),entityType,entityId,relationship);
+        ON EvidenceLink(documentId,versionId,entityType,entityId,relationship);
       CREATE INDEX IF NOT EXISTS idx_evidence_link_target
         ON EvidenceLink(institutionId,entityType,entityId);
 
@@ -801,7 +801,7 @@ export async function linkEvidence(input: {
   const existing = await first<Record<string, unknown>>(
     db,
     `SELECT * FROM EvidenceLink
-      WHERE documentId=? AND COALESCE(versionId,'')=? AND entityType=? AND entityId=? AND relationship=?
+      WHERE documentId=? AND versionId=? AND entityType=? AND entityId=? AND relationship=?
       LIMIT 1`,
     [documentId, versionId, entityType, entityId, relationship]
   );
@@ -809,6 +809,22 @@ export async function linkEvidence(input: {
 
   const id = crypto.randomUUID();
   const now = nowIso();
+
+  let workpaperEvidence: Record<string, unknown> | null = null;
+  if (entityType === 'WORKPAPER_REVIEW' && input.syncWorkpaperIndex) {
+    const evidenceType = String(input.evidenceType || '').trim();
+    const evidenceOwner = String(input.evidenceOwner || document.ownerName || '').trim();
+    if (!evidenceType || !evidenceOwner) throw new Error('WORKPAPER_SYNC_REQUIRED');
+
+    workpaperEvidence = await saveWorkpaperEvidence({
+      reviewId: entityId,
+      evidenceRef: String(document.evidenceId) + '@v' + String(version.versionNo),
+      evidenceType,
+      description: String(document.title),
+      source: String(document.sourceSystem || 'Enterprise Evidence Repository'),
+      owner: evidenceOwner
+    });
+  }
 
   await run(
     db,
@@ -828,26 +844,12 @@ export async function linkEvidence(input: {
     ]
   );
 
-  let workpaperEvidence: Record<string, unknown> | null = null;
-  if (entityType === 'WORKPAPER_REVIEW' && input.syncWorkpaperIndex) {
-    const evidenceType = String(input.evidenceType || '').trim();
-    const evidenceOwner = String(input.evidenceOwner || document.ownerName || '').trim();
-    if (!evidenceType || !evidenceOwner) throw new Error('WORKPAPER_SYNC_REQUIRED');
-
-    workpaperEvidence = await saveWorkpaperEvidence({
-      reviewId: entityId,
-      evidenceRef: String(document.evidenceId) + '@v' + String(version.versionNo),
-      evidenceType,
-      description: String(document.title),
-      source: String(document.sourceSystem || 'Enterprise Evidence Repository'),
-      owner: evidenceOwner
-    });
-
+  if (workpaperEvidence) {
     await run(
       db,
       `INSERT OR IGNORE INTO EvidenceLink (
         id,institutionId,documentId,versionId,entityType,entityId,relationship,notes,createdAt
-      ) VALUES (?,?,?,?,? ,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?)`,
       [
         crypto.randomUUID(),
         institution.id,
