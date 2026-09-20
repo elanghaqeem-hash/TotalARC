@@ -1649,7 +1649,12 @@ export async function getSamplingEvidenceData() {
   }));
 
   const enrichedPlans = samplingPlans.map(plan => {
-    const planCandidates = candidates
+    const planCandidates: Array<
+      Record<string, unknown> & {
+        selected: boolean;
+        toeSample: Record<string, unknown> | null;
+      }
+    > = candidates
       .filter(item => String(item.samplingPlanId) === String(plan.id))
       .map(candidate => ({
         ...candidate,
