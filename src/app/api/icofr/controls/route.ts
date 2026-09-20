@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ICOFR_CONTROL_CATEGORIES, listIcofrControls, saveIcofrControl, type IcofrControlCategory } from '@/lib/d1-icofr-domains';
+import { listBusinessProcesses, listControls } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,8 +13,18 @@ export async function GET(request: Request) {
   try {
     const category = categoryFrom(new URL(request.url).searchParams.get('category'));
     if (!category) return NextResponse.json({ error: 'Valid ICOFR control category is required.' }, { status: 400 });
-    const data = await listIcofrControls(category);
-    return NextResponse.json({ ...data, category, storage: 'cloudflare-d1' });
+    const [data, processData, sourceControls] = await Promise.all([
+      listIcofrControls(category),
+      listBusinessProcesses(),
+      listControls()
+    ]);
+    return NextResponse.json({
+      ...data,
+      category,
+      processes: processData.processes,
+      sourceControls,
+      storage: 'cloudflare-d1'
+    });
   } catch (error) {
     console.error('Failed to load ICOFR controls:', error);
     return NextResponse.json({ error: 'Failed to load ICOFR control register.' }, { status: 503 });
