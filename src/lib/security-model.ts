@@ -34,6 +34,8 @@ export type PermissionKey =
   | 'certification.sign'
   | 'report.view'
   | 'report.export'
+  | 'evidence.view'
+  | 'evidence.manage'
   | 'task.view'
   | 'calendar.view'
   | 'ai.use'
@@ -108,7 +110,8 @@ const VIEW_ASSURANCE: PermissionKey[] = [
   'remediation.view',
   'ccm.view',
   'certification.view',
-  'report.view'
+  'report.view',
+  'evidence.view'
 ];
 
 const ALL_PERMISSIONS: PermissionKey[] = [
@@ -119,7 +122,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   'icofr.view','icofr.prepare','icofr.test','icofr.review','icofr.approve',
   'remediation.view','remediation.own','remediation.approve','remediation.retest',
   'ccm.view','ccm.manage','certification.view','certification.sign',
-  'report.view','report.export','task.view','calendar.view','ai.use','profile.self',
+  'report.view','report.export','evidence.view','evidence.manage','task.view','calendar.view','ai.use','profile.self',
   'user.view','user.manage','user.approve','security.admin','audit.view','tenant.switch','tenant.manage'
 ];
 
@@ -170,7 +173,7 @@ export const BANK_ROLE_CATALOG: BankRoleDefinition[] = [
     description: 'Maintains GRC master data, methodology and cross-module configuration within the institution.',
     permissions: unique(BASIC, VIEW_CORE, VIEW_ASSURANCE, [
       'process.edit','risk.edit','control.edit','rcm.edit','rcsa.review',
-      'icofr.prepare','ccm.manage','report.export'
+      'icofr.prepare','ccm.manage','report.export','evidence.manage'
     ])
   },
   {
@@ -216,7 +219,7 @@ export const BANK_ROLE_CATALOG: BankRoleDefinition[] = [
     description: 'Maintains and performs assigned controls, responds to CSA and owns control remediation.',
     permissions: unique(BASIC, VIEW_CORE, [
       'control.edit','rcm.edit','rcsa.view','rcsa.assess',
-      'remediation.view','remediation.own','certification.view'
+      'remediation.view','remediation.own','certification.view','evidence.view','evidence.manage'
     ])
   },
   {
@@ -224,7 +227,7 @@ export const BANK_ROLE_CATALOG: BankRoleDefinition[] = [
     name: 'RCSA / CSA Assessor',
     category: 'Business',
     description: 'Performs assigned RCSA/CSA assessments and provides evidence for assigned units.',
-    permissions: unique(BASIC, VIEW_CORE, ['rcsa.view','rcsa.assess','remediation.view'])
+    permissions: unique(BASIC, VIEW_CORE, ['rcsa.view','rcsa.assess','remediation.view','evidence.view','evidence.manage'])
   },
   {
     key: 'RCSA_REVIEWER',
@@ -247,7 +250,7 @@ export const BANK_ROLE_CATALOG: BankRoleDefinition[] = [
     description: 'Owns ICOFR scope, control framework, testing plan, deficiency evaluation and certification workflow.',
     permissions: unique(BASIC, VIEW_CORE, VIEW_ASSURANCE, [
       'icofr.prepare','icofr.review','icofr.approve',
-      'remediation.approve','certification.sign','report.export'
+      'remediation.approve','certification.sign','report.export','evidence.manage'
     ])
   },
   {
@@ -256,7 +259,7 @@ export const BANK_ROLE_CATALOG: BankRoleDefinition[] = [
     category: 'Assurance',
     description: 'Prepares ICOFR scope, financial items, assertions, control mapping and evidence.',
     permissions: unique(BASIC, VIEW_CORE, [
-      'icofr.view','icofr.prepare','remediation.view','report.view'
+      'icofr.view','icofr.prepare','remediation.view','report.view','evidence.view','evidence.manage'
     ])
   },
   {
@@ -265,7 +268,7 @@ export const BANK_ROLE_CATALOG: BankRoleDefinition[] = [
     category: 'Assurance',
     description: 'Executes walkthrough, Test of Design and Test of Operating Effectiveness independently from control ownership.',
     permissions: unique(BASIC, VIEW_CORE, [
-      'icofr.view','icofr.test','remediation.view','remediation.retest','report.view'
+      'icofr.view','icofr.test','remediation.view','remediation.retest','report.view','evidence.view','evidence.manage'
     ]),
     independentAssurance: true
   },
@@ -285,7 +288,7 @@ export const BANK_ROLE_CATALOG: BankRoleDefinition[] = [
     category: 'Assurance',
     description: 'Independent assurance access to process, risk, control, testing, remediation and reporting records.',
     permissions: unique(BASIC, VIEW_CORE, VIEW_ASSURANCE, [
-      'icofr.test','icofr.review','remediation.retest','report.export','audit.view'
+      'icofr.test','icofr.review','remediation.retest','report.export','audit.view','evidence.view'
     ]),
     independentAssurance: true
   },
@@ -420,6 +423,7 @@ export function requiredPermissionForPage(pathname: string): PermissionKey | nul
   if (pathname.startsWith('/admin/institutions')) return 'tenant.manage';
   if (pathname.startsWith('/admin/security')) return 'security.admin';
   if (pathname.startsWith('/onboarding')) return 'institution.manage';
+  if (pathname.startsWith('/evidence')) return 'evidence.view';
   if (pathname.startsWith('/organization')) return 'organization.view';
   if (pathname.startsWith('/processes')) return 'process.view';
   if (pathname.startsWith('/risks')) return 'risk.view';
@@ -443,6 +447,7 @@ export function requiredPermissionForApi(pathname: string, method: string): Perm
 
   if (pathname.startsWith('/api/ai/')) return 'ai.use';
   if (pathname.startsWith('/api/onboarding')) return 'institution.manage';
+  if (pathname.startsWith('/api/evidence')) return write ? 'evidence.manage' : 'evidence.view';
   if (pathname.startsWith('/api/organization')) return write ? 'organization.manage' : 'organization.view';
   if (pathname.startsWith('/api/processes')) return write ? 'process.edit' : 'process.view';
   if (pathname.startsWith('/api/risks')) return write ? 'risk.edit' : 'risk.view';
