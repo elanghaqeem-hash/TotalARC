@@ -67,8 +67,12 @@ async function executeSchemaScript(db: D1DatabaseLike, script: string) {
   }
 }
 
+let institutionSchemaReady: Promise<void> | null = null;
+
 async function ensureSchema(db: D1DatabaseLike) {
-  await executeSchemaScript(db, `
+  if (institutionSchemaReady) return institutionSchemaReady;
+
+  institutionSchemaReady = executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS Institution (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -115,7 +119,12 @@ async function ensureSchema(db: D1DatabaseLike) {
     );
     CREATE INDEX IF NOT EXISTS idx_audit_institution ON AuditLog(institutionId);
     CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON AuditLog(timestamp);
-  `);
+  `).catch(error => {
+    institutionSchemaReady = null;
+    throw error;
+  });
+
+  return institutionSchemaReady;
 }
 
 function nullable(value: unknown) {
