@@ -53,6 +53,7 @@ type MigrationPayload = {
   module?: string | null;
   metadata?: Record<string, unknown> | null;
   downloadUrl?: string | null;
+  extractedText?: string | null;
 };
 
 async function runtimeEnv() {
@@ -330,7 +331,8 @@ export async function POST(request: Request) {
         migrationId: MIGRATION_ID,
         importedVia: 'encrypted-source-migration'
       },
-      rawBytes
+      rawBytes,
+      extractedText: payload.extractedText || null
     }, 'Encrypted Google Drive migration into Total ARC source library.');
 
     return NextResponse.json({
@@ -338,7 +340,9 @@ export async function POST(request: Request) {
       changed: result.changed,
       documentId: result.record.id,
       rawSizeBytes: result.record.rawSizeBytes,
-      rawSha256: result.record.rawSha256
+      rawSha256: result.record.rawSha256,
+      textLength: result.record.textLength,
+      textSha256: result.record.textSha256
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return responseError(error);
