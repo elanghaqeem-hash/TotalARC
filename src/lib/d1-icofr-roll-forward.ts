@@ -34,15 +34,13 @@ const ITEM_DECISIONS = [
 ] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrScopeSchema(),
-    ensureIcofrDomainSchema(),
-    ensureIcofrTraceabilitySchema(),
-    ensureIcofrTestingPlanSchema(),
-    ensureAssuranceSchema(),
-    ensureIcofrPeriodCloseSchema()
-  ]);
+  await ensureCoreDomainSchema();
+  await ensureIcofrScopeSchema();
+  await ensureIcofrDomainSchema();
+  await ensureIcofrTraceabilitySchema();
+  await ensureIcofrTestingPlanSchema();
+  await ensureAssuranceSchema();
+  await ensureIcofrPeriodCloseSchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
