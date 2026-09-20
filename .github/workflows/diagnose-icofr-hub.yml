@@ -1,0 +1,57 @@
+name: Diagnose ICOFR Hub production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-icofr-hub.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe ICOFR component endpoints
+        env:
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -u
+          BASE_URL="${PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          endpoints=(
+            "hub|/api/icofr/hub"
+            "scoping|/api/icofr/scoping"
+            "financial-items|/api/icofr/financial-items"
+            "information|/api/icofr/information"
+            "deficiencies|/api/icofr/deficiencies"
+            "elc|/api/icofr/controls?category=ELC"
+            "plc|/api/icofr/controls?category=PLC"
+            "itgc|/api/icofr/controls?category=ITGC"
+            "itac|/api/icofr/controls?category=ITAC"
+            "traceability|/api/icofr/traceability"
+            "coverage|/api/icofr/coverage"
+            "testing-plan|/api/icofr/testing-plan"
+            "certification|/api/icofr/certification"
+            "reporting|/api/icofr/reporting"
+          )
+          failed=0
+          for entry in "${endpoints[@]}"; do
+            name="${entry%%|*}"
+            path="${entry#*|}"
+            code="$(curl --silent --show-error --max-time 30               --output "/tmp/${name}.json"               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$BASE_URL$path" || true)"
+            echo "$name HTTP $code"
+            if [ "$code" != "200" ]; then
+              failed=$((failed+1))
+              echo "--- $name response ---"
+              cat "/tmp/${name}.json" 2>/dev/null || true
+              echo
+            fi
+          done
+          echo "ICOFR component failures: $failed"
+          exit 0
