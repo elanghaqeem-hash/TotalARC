@@ -461,7 +461,8 @@ export async function listRiskOptions(
   return all<Record<string, unknown>>(
     db,
     `SELECT r.id, r.riskId, r.name, r.processId, r.category,
-            r.inherentRating, r.residualRating
+            r.inherentLikelihood, r.inherentImpact, r.inherentScore, r.inherentRating,
+            r.residualLikelihood, r.residualImpact, r.residualScore, r.residualRating
        FROM RiskMaster r
        JOIN BusinessProcess p ON p.id = r.processId
       WHERE ${where.join(' AND ')}
