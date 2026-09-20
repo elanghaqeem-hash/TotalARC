@@ -75,6 +75,7 @@ const navGroups: NavGroup[] = [
       { name: 'IPE & EUC Register', href: '/icofr/information', icon: FileSpreadsheet },
       { name: 'ICOFR Testing Plan & Cycle', href: '/icofr/testing-plan', icon: Calendar, badge: 'PLAN' },
       { name: 'ICOFR Smart Testing Strategy', href: '/icofr/smart-testing', icon: Sparkles, badge: 'SMART' },
+      { name: 'ICOFR Sampling & Evidence', href: '/icofr/sampling-evidence', icon: FileSpreadsheet, badge: 'SAMPLE' },
       { name: 'Walkthrough & ToD', href: '/tod', icon: Workflow },
       { name: 'ToE Testing & Samples', href: '/toe', icon: Cpu },
       { name: 'ICOFR Deficiency Evaluation', href: '/icofr/deficiencies', icon: AlertTriangle },

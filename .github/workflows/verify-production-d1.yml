@@ -265,6 +265,14 @@ jobs:
             (.metrics | type) == "object"
           '
 
+          check_json "icofr-sampling-evidence" "/api/icofr/sampling-evidence" '
+            .storage == "cloudflare-d1" and
+            (.eligiblePlanItems | type) == "array" and
+            (.samplingPlans | type) == "array" and
+            (.evidenceRequests | type) == "array" and
+            (.metrics | type) == "object"
+          '
+
           check_json "database-final" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and

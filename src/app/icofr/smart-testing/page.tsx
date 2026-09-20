@@ -201,6 +201,7 @@ export default function SmartTestingPage() {
         <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-bold">
           <Link href="/icofr/roll-forward" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Roll-Forward</Link>
           <Link href="/icofr/testing-plan" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Testing Plan</Link>
+          <Link href="/icofr/sampling-evidence" className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">Sampling & Evidence</Link>
           <Link href="/icofr/coverage" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Coverage & ITGC Dependencies</Link>
           <Link href="/toe" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToE Evidence</Link>
         </div>
