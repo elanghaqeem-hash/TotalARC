@@ -7,6 +7,8 @@ const mutationRoutes = [
   'src/app/api/processes/route.ts',
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
+  'src/app/api/reports/route.ts',
+  'src/app/api/reports/ai/route.ts',
   'src/app/api/organization/route.ts',
   'src/app/api/assure/rcsa/route.ts',
   'src/app/api/assure/tod/route.ts',
@@ -42,6 +44,8 @@ const actorRoutes = [
   'src/app/api/processes/route.ts',
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
+  'src/app/api/reports/route.ts',
+  'src/app/api/reports/ai/route.ts',
   'src/app/api/organization/route.ts',
   'src/app/api/assure/rcsa/route.ts',
   'src/app/api/assure/tod/route.ts',
@@ -78,6 +82,23 @@ for (const route of auditedAssuranceRoutes) {
   const content = fs.existsSync(route) ? fs.readFileSync(route, 'utf8') : '';
   if (!/recordMutationAudit\s*\(/.test(content)) {
     findings.push(`${route}: authenticated mutation audit is required`);
+  }
+}
+
+const reportingDomainPath = 'src/lib/d1-reporting.ts';
+if (!fs.existsSync(reportingDomainPath)) {
+  findings.push(`${reportingDomainPath}: regulatory reporting D1 domain is required`);
+} else {
+  const content = fs.readFileSync(reportingDomainPath, 'utf8');
+  for (const required of [
+    /recordMutationAudit\s*\(/,
+    /actor:\s*MutationActor/,
+    /AI Draft — Human Review Required/,
+    /RegulatoryReportSourceSnapshot/
+  ]) {
+    if (!required.test(content)) {
+      findings.push(`${reportingDomainPath}: missing reporting mutation control ${required}`);
+    }
   }
 }
 
