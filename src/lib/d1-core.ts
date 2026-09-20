@@ -185,6 +185,8 @@ async function initializeCoreDomainSchema() {
       ON BusinessProcess(institutionId, processId);
     CREATE INDEX IF NOT EXISTS idx_process_institution ON BusinessProcess(institutionId);
     CREATE INDEX IF NOT EXISTS idx_process_category ON BusinessProcess(categoryId);
+    CREATE INDEX IF NOT EXISTS idx_process_org_unit ON BusinessProcess(institutionId, orgUnitId);
+    CREATE INDEX IF NOT EXISTS idx_process_legal_entity ON BusinessProcess(institutionId, legalEntityId);
 
     CREATE TABLE IF NOT EXISTS ProcessObjective (
       id TEXT PRIMARY KEY NOT NULL,
@@ -259,6 +261,7 @@ async function initializeCoreDomainSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_institution_risk_id
       ON RiskMaster(institutionId, riskId);
     CREATE INDEX IF NOT EXISTS idx_risk_process ON RiskMaster(processId);
+    CREATE INDEX IF NOT EXISTS idx_risk_institution ON RiskMaster(institutionId, riskId);
 
     CREATE TABLE IF NOT EXISTS ControlMaster (
       id TEXT PRIMARY KEY NOT NULL,
@@ -296,6 +299,7 @@ async function initializeCoreDomainSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_control_institution_control_id
       ON ControlMaster(institutionId, controlId);
     CREATE INDEX IF NOT EXISTS idx_control_process ON ControlMaster(processId);
+    CREATE INDEX IF NOT EXISTS idx_control_institution ON ControlMaster(institutionId, controlId);
 
     CREATE TABLE IF NOT EXISTS ControlRiskMapping (
       id TEXT PRIMARY KEY NOT NULL,
