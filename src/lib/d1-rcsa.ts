@@ -394,7 +394,7 @@ async function loadCampaign(db: D1DatabaseLike, row: Record<string, unknown>) {
     'SELECT * FROM AssessmentScope WHERE campaignId = ? ORDER BY dueDate ASC, createdAt ASC',
     [row.id]
   );
-  const scopes = await Promise.all(scopeRows.map(scope => loadScope(db, scope)));
+  const scopes: any[] = await Promise.all(scopeRows.map(scope => loadScope(db, scope)));
   const total = scopes.length;
   const submitted = scopes.filter(scope =>
     ['Submitted', 'Reviewed', 'Approved'].includes(String(scope.status))
