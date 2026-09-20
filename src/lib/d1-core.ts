@@ -763,7 +763,7 @@ export async function deleteBusinessProcess(id: string) {
   ]);
 
   let assuranceCount = 0;
-  const assuranceTables = ['ToETest', 'Issue'] as const;
+  const assuranceTables = ['ToDTest', 'ToETest', 'Issue'] as const;
   for (const tableName of assuranceTables) {
     const table = await first<{ count?: number }>(
       db,
@@ -788,7 +788,7 @@ export async function deleteBusinessProcess(id: string) {
   if (Number(scopeTable?.count || 0) > 0) {
     const scopeDependencies = await first<{ count?: number }>(
       db,
-      "SELECT COUNT(*) AS count FROM ICOFRScopeItem WHERE sourceId = ? AND lower(itemType) = 'process'",
+      "SELECT COUNT(*) AS count FROM ICOFRScopeItem WHERE sourceId = ? AND lower(itemType) = 'business process'",
       [id]
     );
     icofrScopeCount = Number(scopeDependencies?.count || 0);
