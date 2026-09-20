@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, KeyRound, Pencil, Plus, RefreshCcw, ShieldCheck, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, LockKeyhole, Pencil, Plus, RefreshCcw, RotateCcw, ShieldCheck, Users } from 'lucide-react';
 
 type Role = {
   key: string;
@@ -56,6 +56,7 @@ export default function UserAdministrationPage() {
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [credentialBusyUserId, setCredentialBusyUserId] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -197,31 +198,64 @@ export default function UserAdministrationPage() {
     }
   };
 
-  const unlock = async (user: UserRow) => {
+  const credentialAction = async (
+    user: UserRow,
+    actionType: 'RESET_CREDENTIAL' | 'FORCE_PASSWORD_CHANGE' | 'UNLOCK_USER'
+  ) => {
+    const prompts: Record<typeof actionType, string> = {
+      RESET_CREDENTIAL:
+        `Reset credential for ${user.displayName}? A new one-time temporary password will be generated, all active sessions will be revoked, and password change will be mandatory at next sign-in.`,
+      FORCE_PASSWORD_CHANGE:
+        `Require ${user.displayName} to change the password at next sign-in? All active sessions will be revoked.`,
+      UNLOCK_USER:
+        `Unlock ${user.displayName}'s account and clear failed sign-in counters?`
+    };
+
+    if (!window.confirm(prompts[actionType])) return;
+
+    setCredentialBusyUserId(user.id);
+    setError('');
+    setMessage('');
+    setTemporaryPassword('');
     try {
       const response = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'UPDATE_ACCESS',
-          userId: user.id,
-          roleKeys: user.roles,
-          units: (user.units || []).map(unit => ({
-            id: unit.orgUnitId,
-            name: unit.orgUnitName,
-            accessMode: unit.accessMode
-          })),
-          status: user.status,
-          unlock: true
-        })
+        body: JSON.stringify({ actionType, userId: user.id })
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Unable to unlock user.');
-      setMessage('User lockout cleared.');
+      if (!response.ok) throw new Error(body.error || 'Unable to process credential action.');
+
+      if (actionType === 'RESET_CREDENTIAL') {
+        setTemporaryPassword(body.temporaryPassword || '');
+        setMessage(
+          `Credential reset for ${user.displayName}. Active sessions were revoked and the temporary credential must be changed on next sign-in.`
+        );
+      } else if (actionType === 'FORCE_PASSWORD_CHANGE') {
+        setMessage(
+          `${user.displayName} must change the password at next sign-in. Active sessions were revoked.`
+        );
+      } else {
+        setMessage(`${user.displayName}'s account lockout was cleared.`);
+      }
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to unlock user.');
+      setError(err instanceof Error ? err.message : 'Unable to process credential action.');
+    } finally {
+      setCredentialBusyUserId('');
     }
+  };
+
+  const unlock = async (user: UserRow) => {
+    await credentialAction(user, 'UNLOCK_USER');
+  };
+
+  const resetCredential = async (user: UserRow) => {
+    await credentialAction(user, 'RESET_CREDENTIAL');
+  };
+
+  const forcePasswordChange = async (user: UserRow) => {
+    await credentialAction(user, 'FORCE_PASSWORD_CHANGE');
   };
 
   const roleGroups = useMemo(() => {
@@ -274,7 +308,7 @@ export default function UserAdministrationPage() {
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <div className="flex items-center gap-2 text-xs font-black text-amber-900"><KeyRound className="h-4 w-4" />One-time temporary credential</div>
           <div className="mt-2 rounded-xl bg-white px-4 py-3 font-mono text-sm font-black text-slate-900 ring-1 ring-amber-200">{temporaryPassword}</div>
-          <p className="mt-2 text-[10px] leading-4 text-amber-800">Provide this securely to the user. It is not retrievable later and must be changed at first sign-in.</p>
+          <p className="mt-2 text-[10px] leading-4 text-amber-800">Provide this securely to the user. It is displayed only in this browser response, cannot be retrieved later, expires as a temporary credential after 24 hours, and must be changed at first sign-in.</p>
         </div>
       )}
 
@@ -421,10 +455,33 @@ export default function UserAdministrationPage() {
                       Units: {user.units.length ? user.units.map(unit=>unit.orgUnitName).join(', ') : 'Institution / role-defined scope'} · Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('id-ID') : 'Never'}
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex max-w-full flex-wrap gap-2">
                     {user.lockedUntil && new Date(user.lockedUntil).getTime()>Date.now() && (
-                      <button type="button" onClick={()=>void unlock(user)} className="rounded-lg border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-700">Unlock</button>
+                      <button
+                        type="button"
+                        disabled={credentialBusyUserId === user.id}
+                        onClick={()=>void unlock(user)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-700 disabled:opacity-50"
+                      >
+                        <LockKeyhole className="h-3.5 w-3.5" /> Unlock
+                      </button>
                     )}
+                    <button
+                      type="button"
+                      disabled={credentialBusyUserId === user.id}
+                      onClick={()=>void forcePasswordChange(user)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-800 disabled:opacity-50"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" /> Force Change
+                    </button>
+                    <button
+                      type="button"
+                      disabled={credentialBusyUserId === user.id}
+                      onClick={()=>void resetCredential(user)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-bold text-sky-800 disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Reset Credential
+                    </button>
                     <button type="button" onClick={()=>edit(user)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-bold text-slate-600 hover:text-brand-700">
                       <Pencil className="h-3.5 w-3.5" /> Edit Access
                     </button>
