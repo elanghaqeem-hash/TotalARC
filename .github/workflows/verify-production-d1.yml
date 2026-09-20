@@ -258,6 +258,13 @@ jobs:
             (.metrics | type) == "object"
           '
 
+          check_json "icofr-smart-testing" "/api/icofr/smart-testing" '
+            .storage == "cloudflare-d1" and
+            (.cycles | type) == "array" and
+            (.runs | type) == "array" and
+            (.metrics | type) == "object"
+          '
+
           check_json "database-final" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and
