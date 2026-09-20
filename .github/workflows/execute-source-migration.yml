@@ -1,0 +1,113 @@
+name: Execute encrypted source migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'secure-migration/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-source-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Import encrypted source records
+        env:
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is not configured."
+            exit 1
+          fi
+
+          BASE_URL="${PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          IMPORT_URL="$BASE_URL/api/system/source-migration"
+          STATUS_URL="$BASE_URL/api/system/source-migration"
+
+          total=0
+          ok=0
+          failed=0
+          : > /tmp/migration-results.ndjson
+
+          shopt -s nullglob
+          files=(secure-migration/*.ndjson)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No encrypted migration manifests found."
+            exit 1
+          fi
+
+          for file in "${files[@]}"; do
+            while IFS= read -r envelope || [ -n "$envelope" ]; do
+              [ -z "$envelope" ] && continue
+              total=$((total + 1))
+              HTTP_CODE="$(curl --silent --show-error --max-time 90                 --output /tmp/migration-response.json                 --write-out "%{http_code}"                 --request POST                 --header "Content-Type: application/json"                 --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"                 --data-binary "$envelope"                 "$IMPORT_URL" || true)"
+
+              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && jq -e '.ok == true' /tmp/migration-response.json >/dev/null 2>&1; then
+                ok=$((ok + 1))
+              else
+                failed=$((failed + 1))
+                echo "::error::Migration item $total failed (HTTP ${HTTP_CODE:-unknown})."
+                cat /tmp/migration-response.json 2>/dev/null || true
+              fi
+              jq -c --argjson item "$total" '{item:$item,response:.}' /tmp/migration-response.json 2>/dev/null >> /tmp/migration-results.ndjson || true
+            done < "$file"
+          done
+
+          echo "Migration envelopes processed: total=$total ok=$ok failed=$failed"
+          if [ "$failed" -ne 0 ]; then exit 1; fi
+
+          status_ok=false
+          for attempt in $(seq 1 12); do
+            HTTP_CODE="$(curl --silent --show-error --max-time 20               --output /tmp/migration-status.json               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$STATUS_URL" || true)"
+            if [ "$HTTP_CODE" = "200" ]; then
+              docs="$(jq -r '.metrics.documents // 0' /tmp/migration-status.json)"
+              raw="$(jq -r '.metrics.documentsWithRawBytes // 0' /tmp/migration-status.json)"
+              members="$(jq -r '.metrics.archiveMembers // 0' /tmp/migration-status.json)"
+              indexed="$(jq -r '.metrics.documentsWithIndexedText // 0' /tmp/migration-status.json)"
+              if [ "$docs" -eq 43 ] && [ "$raw" -eq 22 ] && [ "$members" -eq 21 ] && [ "$indexed" -eq 42 ]; then
+                status_ok=true
+                break
+              fi
+              echo "Verification pending: documents=$docs raw=$raw archiveMembers=$members indexed=$indexed"
+            fi
+            sleep 3
+          done
+
+          cat /tmp/migration-status.json || true
+          if [ "$status_ok" != "true" ]; then
+            echo "::error::Source migration metrics do not match the expected complete population."
+            exit 1
+          fi
+
+          cleanup="$(curl --silent --show-error --max-time 20             --request POST             --header "Content-Type: application/json"             --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"             --data '{"op":"cleanup"}'             "$IMPORT_URL")"
+          if ! printf '%s' "$cleanup" | jq -e '.ok == true and .cleaned == true' >/dev/null 2>&1; then
+            echo "::error::Migration succeeded but temporary key cleanup failed."
+            printf '%s\n' "$cleanup"
+            exit 1
+          fi
+
+          echo "### Total ARC source migration" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Envelopes processed: $total" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source documents: $(jq -r '.metrics.documents' /tmp/migration-status.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Original raw files: $(jq -r '.metrics.documentsWithRawBytes' /tmp/migration-status.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Archive members: $(jq -r '.metrics.archiveMembers' /tmp/migration-status.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Indexed documents: $(jq -r '.metrics.documentsWithIndexedText' /tmp/migration-status.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Indexed characters: $(jq -r '.metrics.indexedCharacters' /tmp/migration-status.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Raw bytes stored: $(jq -r '.metrics.rawBytes' /tmp/migration-status.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Temporary migration private key: removed" >> "$GITHUB_STEP_SUMMARY"
