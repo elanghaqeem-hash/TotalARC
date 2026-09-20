@@ -53,6 +53,18 @@ async function executeSchema(db: D1DatabaseLike, script: string) {
   }
 }
 
+async function ensureColumn(
+  db: D1DatabaseLike,
+  table: string,
+  column: string,
+  definition: string
+) {
+  const columns = await all<Record<string, unknown>>(db, `PRAGMA table_info(${table})`);
+  if (columns.some(item => String(item.name) === column)) return;
+  await run(db, `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -160,6 +172,50 @@ export async function ensureIcofrCertificationSchema() {
         ON ICOFREvidencePack(institutionId, period);
     `);
 
+    for (const [column, definition] of [
+      ['certificationRef', 'TEXT'],
+      ['certificationType', "TEXT NOT NULL DEFAULT 'Year-End'"],
+      ['certificationDate', 'TEXT'],
+      ['certifierEmail', 'TEXT'],
+      ['scopeComplete', 'INTEGER NOT NULL DEFAULT 0'],
+      ['evidenceComplete', 'INTEGER NOT NULL DEFAULT 0'],
+      ['judgmentsDisclosed', 'INTEGER NOT NULL DEFAULT 0'],
+      ['subsequentEventsDisclosed', 'INTEGER NOT NULL DEFAULT 0'],
+      ['managementOverrideDisclosed', 'INTEGER NOT NULL DEFAULT 0'],
+      ['materialChangeDetails', 'TEXT'],
+      ['deficiencyDetails', 'TEXT'],
+      ['fraudDetails', 'TEXT'],
+      ['remediationDetails', 'TEXT'],
+      ['judgmentDetails', 'TEXT'],
+      ['subsequentEventDetails', 'TEXT'],
+      ['managementOverrideDetails', 'TEXT'],
+      ['evidenceReference', 'TEXT'],
+      ['exceptionRationale', 'TEXT'],
+      ['additionalComments', 'TEXT'],
+      ['reviewerRole', 'TEXT'],
+      ['reviewerEmail', 'TEXT']
+    ] as const) {
+      await ensureColumn(db, 'ICOFRSubCertification', column, definition);
+    }
+
+    await run(
+      db,
+      `UPDATE ICOFRSubCertification
+          SET certificationRef = 'ICOFR-CERT-' || substr(replace(id, '-', ''), 1, 10)
+        WHERE certificationRef IS NULL OR trim(certificationRef) = ''`
+    );
+    await run(
+      db,
+      `UPDATE ICOFRSubCertification
+          SET certificationDate = substr(createdAt, 1, 10)
+        WHERE certificationDate IS NULL OR trim(certificationDate) = ''`
+    );
+    await run(
+      db,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_icofr_subcert_reference
+         ON ICOFRSubCertification(institutionId, certificationRef)`
+    );
+
     return db;
   })().catch(error => {
     certificationSchemaReady = null;
@@ -243,13 +299,28 @@ export async function saveSubCertification(input: Record<string, unknown>) {
   const subjectId = String(input.subjectId || '').trim();
   const certifierName = String(input.certifierName || '').trim();
   const certifierRole = String(input.certifierRole || '').trim();
+  const certifierEmail = String(input.certifierEmail || '').trim();
   const declarationText = String(input.declarationText || '').trim();
+  const certificationType = String(input.certificationType || 'Year-End').trim();
+  const certificationDate = String(input.certificationDate || '').trim();
 
-  if (!scopeId || !period || !subjectType || !subjectId || !certifierName || !certifierRole || !declarationText) {
+  if (
+    !scopeId ||
+    !period ||
+    !subjectType ||
+    !subjectId ||
+    !certifierName ||
+    !certifierRole ||
+    !certifierEmail ||
+    !declarationText
+  ) {
     throw new Error('SUBCERT_REQUIRED');
   }
   if (!['Legal Entity', 'Organization Unit'].includes(subjectType)) {
     throw new Error('INVALID_SUBJECT_TYPE');
+  }
+  if (!['Quarterly', 'Semi-Annual', 'Year-End', 'Ad Hoc'].includes(certificationType)) {
+    throw new Error('INVALID_CERTIFICATION_TYPE');
   }
 
   await validateScopeAndCycle(db, String(institution.id), scopeId, testingCycleId);
@@ -289,26 +360,68 @@ export async function saveSubCertification(input: Record<string, unknown>) {
 
   const now = nowIso();
   const status = String(input.status || 'Draft');
+  const conclusion = String(input.conclusion || 'Not Concluded');
+  const reviewerDecision = clean(input.reviewerDecision);
+  const certificationRef =
+    clean(existing?.certificationRef) ||
+    clean(input.certificationRef) ||
+    'ICOFR-CERT-' + period.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10) + '-' +
+      crypto.randomUUID().slice(0, 6).toUpperCase();
+
+  if (!['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected'].includes(status)) {
+    throw new Error('INVALID_SUBCERT_STATUS');
+  }
+  if (!['Not Concluded', 'Effective', 'Effective with Exceptions', 'Ineffective'].includes(conclusion)) {
+    throw new Error('INVALID_SUBCERT_CONCLUSION');
+  }
+  if (
+    reviewerDecision &&
+    !['Approved', 'Returned for Revision', 'Rejected'].includes(reviewerDecision)
+  ) {
+    throw new Error('INVALID_REVIEWER_DECISION');
+  }
+
   const record = {
     id,
     institutionId: String(institution.id),
+    certificationRef,
     scopeId,
     testingCycleId,
     period,
+    certificationType,
+    certificationDate: certificationDate || existing?.certificationDate || now.slice(0, 10),
     subjectType,
     subjectId,
     certifierName,
     certifierRole,
+    certifierEmail,
     declarationText,
+    scopeComplete: bool(input.scopeComplete),
     controlsPerformed: bool(input.controlsPerformed),
+    evidenceComplete: bool(input.evidenceComplete),
     changesDisclosed: bool(input.changesDisclosed),
     deficienciesDisclosed: bool(input.deficienciesDisclosed),
     fraudDisclosed: bool(input.fraudDisclosed),
     remediationAccurate: bool(input.remediationAccurate),
-    conclusion: String(input.conclusion || 'Not Concluded'),
+    judgmentsDisclosed: bool(input.judgmentsDisclosed),
+    subsequentEventsDisclosed: bool(input.subsequentEventsDisclosed),
+    managementOverrideDisclosed: bool(input.managementOverrideDisclosed),
+    materialChangeDetails: clean(input.materialChangeDetails),
+    deficiencyDetails: clean(input.deficiencyDetails),
+    fraudDetails: clean(input.fraudDetails),
+    remediationDetails: clean(input.remediationDetails),
+    judgmentDetails: clean(input.judgmentDetails),
+    subsequentEventDetails: clean(input.subsequentEventDetails),
+    managementOverrideDetails: clean(input.managementOverrideDetails),
+    evidenceReference: clean(input.evidenceReference),
+    exceptionRationale: clean(input.exceptionRationale),
+    additionalComments: clean(input.additionalComments),
+    conclusion,
     status,
     reviewerName: clean(input.reviewerName),
-    reviewerDecision: clean(input.reviewerDecision),
+    reviewerRole: clean(input.reviewerRole),
+    reviewerEmail: clean(input.reviewerEmail),
+    reviewerDecision,
     reviewerComments: clean(input.reviewerComments),
     signedAt:
       ['Submitted', 'Approved'].includes(status)
@@ -324,85 +437,157 @@ export async function saveSubCertification(input: Record<string, unknown>) {
 
   if (['Submitted', 'Approved'].includes(status)) {
     if (
+      !record.scopeComplete ||
       !record.controlsPerformed ||
+      !record.evidenceComplete ||
       !record.changesDisclosed ||
       !record.deficienciesDisclosed ||
       !record.fraudDisclosed ||
       !record.remediationAccurate ||
+      !record.judgmentsDisclosed ||
+      !record.subsequentEventsDisclosed ||
+      !record.managementOverrideDisclosed ||
+      !record.certificationDate ||
+      !record.evidenceReference ||
       record.conclusion === 'Not Concluded'
     ) {
       throw new Error('SUBCERT_DECLARATIONS_INCOMPLETE');
     }
   }
 
-  if (status === 'Approved' && (!record.reviewerName || !record.reviewerDecision)) {
+  if (
+    ['Effective with Exceptions', 'Ineffective'].includes(record.conclusion) &&
+    !record.exceptionRationale
+  ) {
+    throw new Error('SUBCERT_EXCEPTION_RATIONALE_REQUIRED');
+  }
+
+  if (
+    status === 'Approved' &&
+    (
+      !record.reviewerName ||
+      !record.reviewerRole ||
+      record.reviewerDecision !== 'Approved'
+    )
+  ) {
     throw new Error('SUBCERT_REVIEW_REQUIRED');
   }
+
+  const values = [
+    record.scopeId,
+    record.testingCycleId,
+    record.period,
+    record.certificationRef,
+    record.certificationType,
+    record.certificationDate,
+    record.subjectType,
+    record.subjectId,
+    record.certifierName,
+    record.certifierRole,
+    record.certifierEmail,
+    record.declarationText,
+    record.scopeComplete ? 1 : 0,
+    record.controlsPerformed ? 1 : 0,
+    record.evidenceComplete ? 1 : 0,
+    record.changesDisclosed ? 1 : 0,
+    record.deficienciesDisclosed ? 1 : 0,
+    record.fraudDisclosed ? 1 : 0,
+    record.remediationAccurate ? 1 : 0,
+    record.judgmentsDisclosed ? 1 : 0,
+    record.subsequentEventsDisclosed ? 1 : 0,
+    record.managementOverrideDisclosed ? 1 : 0,
+    record.materialChangeDetails,
+    record.deficiencyDetails,
+    record.fraudDetails,
+    record.remediationDetails,
+    record.judgmentDetails,
+    record.subsequentEventDetails,
+    record.managementOverrideDetails,
+    record.evidenceReference,
+    record.exceptionRationale,
+    record.additionalComments,
+    record.conclusion,
+    record.status,
+    record.reviewerName,
+    record.reviewerRole,
+    record.reviewerEmail,
+    record.reviewerDecision,
+    record.reviewerComments,
+    record.signedAt,
+    record.reviewedAt,
+    record.updatedAt
+  ];
 
   if (existing) {
     await run(
       db,
       `UPDATE ICOFRSubCertification SET
-        scopeId=?,testingCycleId=?,period=?,subjectType=?,subjectId=?,certifierName=?,certifierRole=?,
-        declarationText=?,controlsPerformed=?,changesDisclosed=?,deficienciesDisclosed=?,fraudDisclosed=?,
-        remediationAccurate=?,conclusion=?,status=?,reviewerName=?,reviewerDecision=?,reviewerComments=?,
+        scopeId=?,testingCycleId=?,period=?,certificationRef=?,certificationType=?,certificationDate=?,
+        subjectType=?,subjectId=?,certifierName=?,certifierRole=?,certifierEmail=?,declarationText=?,
+        scopeComplete=?,controlsPerformed=?,evidenceComplete=?,changesDisclosed=?,deficienciesDisclosed=?,
+        fraudDisclosed=?,remediationAccurate=?,judgmentsDisclosed=?,subsequentEventsDisclosed=?,
+        managementOverrideDisclosed=?,materialChangeDetails=?,deficiencyDetails=?,fraudDetails=?,
+        remediationDetails=?,judgmentDetails=?,subsequentEventDetails=?,managementOverrideDetails=?,
+        evidenceReference=?,exceptionRationale=?,additionalComments=?,conclusion=?,status=?,
+        reviewerName=?,reviewerRole=?,reviewerEmail=?,reviewerDecision=?,reviewerComments=?,
         signedAt=?,reviewedAt=?,updatedAt=?
        WHERE id=? AND institutionId=?`,
-      [
-        record.scopeId,
-        record.testingCycleId,
-        record.period,
-        record.subjectType,
-        record.subjectId,
-        record.certifierName,
-        record.certifierRole,
-        record.declarationText,
-        record.controlsPerformed ? 1 : 0,
-        record.changesDisclosed ? 1 : 0,
-        record.deficienciesDisclosed ? 1 : 0,
-        record.fraudDisclosed ? 1 : 0,
-        record.remediationAccurate ? 1 : 0,
-        record.conclusion,
-        record.status,
-        record.reviewerName,
-        record.reviewerDecision,
-        record.reviewerComments,
-        record.signedAt,
-        record.reviewedAt,
-        record.updatedAt,
-        id,
-        institution.id
-      ]
+      [...values, id, institution.id]
     );
     await audit(db, String(institution.id), 'UPDATE', 'ICOFRSubCertification', id, record, existing);
   } else {
     await run(
       db,
       `INSERT INTO ICOFRSubCertification (
-        id,institutionId,scopeId,testingCycleId,period,subjectType,subjectId,certifierName,certifierRole,
-        declarationText,controlsPerformed,changesDisclosed,deficienciesDisclosed,fraudDisclosed,
-        remediationAccurate,conclusion,status,reviewerName,reviewerDecision,reviewerComments,
+        id,institutionId,scopeId,testingCycleId,period,certificationRef,certificationType,certificationDate,
+        subjectType,subjectId,certifierName,certifierRole,certifierEmail,declarationText,
+        scopeComplete,controlsPerformed,evidenceComplete,changesDisclosed,deficienciesDisclosed,fraudDisclosed,
+        remediationAccurate,judgmentsDisclosed,subsequentEventsDisclosed,managementOverrideDisclosed,
+        materialChangeDetails,deficiencyDetails,fraudDetails,remediationDetails,judgmentDetails,
+        subsequentEventDetails,managementOverrideDetails,evidenceReference,exceptionRationale,additionalComments,
+        conclusion,status,reviewerName,reviewerRole,reviewerEmail,reviewerDecision,reviewerComments,
         signedAt,reviewedAt,createdAt,updatedAt
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         record.id,
         record.institutionId,
         record.scopeId,
         record.testingCycleId,
         record.period,
+        record.certificationRef,
+        record.certificationType,
+        record.certificationDate,
         record.subjectType,
         record.subjectId,
         record.certifierName,
         record.certifierRole,
+        record.certifierEmail,
         record.declarationText,
+        record.scopeComplete ? 1 : 0,
         record.controlsPerformed ? 1 : 0,
+        record.evidenceComplete ? 1 : 0,
         record.changesDisclosed ? 1 : 0,
         record.deficienciesDisclosed ? 1 : 0,
         record.fraudDisclosed ? 1 : 0,
         record.remediationAccurate ? 1 : 0,
+        record.judgmentsDisclosed ? 1 : 0,
+        record.subsequentEventsDisclosed ? 1 : 0,
+        record.managementOverrideDisclosed ? 1 : 0,
+        record.materialChangeDetails,
+        record.deficiencyDetails,
+        record.fraudDetails,
+        record.remediationDetails,
+        record.judgmentDetails,
+        record.subsequentEventDetails,
+        record.managementOverrideDetails,
+        record.evidenceReference,
+        record.exceptionRationale,
+        record.additionalComments,
         record.conclusion,
         record.status,
         record.reviewerName,
+        record.reviewerRole,
+        record.reviewerEmail,
         record.reviewerDecision,
         record.reviewerComments,
         record.signedAt,
