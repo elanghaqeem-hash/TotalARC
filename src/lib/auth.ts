@@ -98,6 +98,17 @@ function envString(env: RuntimeEnv, key: string) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+async function executeSchemaScript(db: D1DatabaseLike, script: string) {
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
+}
+
 let authSchemaReady: Promise<D1DatabaseLike> | null = null;
 
 export async function ensureAuthSchema() {
@@ -105,7 +116,7 @@ export async function ensureAuthSchema() {
 
   authSchemaReady = (async () => {
     const db = await getDb();
-    await db.exec(`
+    await executeSchemaScript(db, `
       CREATE TABLE IF NOT EXISTS AuthUser (
         id TEXT PRIMARY KEY NOT NULL,
         institutionId TEXT,
@@ -155,10 +166,10 @@ export async function ensureAuthSchema() {
     const columns = await db.prepare('PRAGMA table_info(AuthUser)').all<{ name?: string }>();
     const names = new Set((columns.results || []).map(column => String(column.name || '')));
     if (!names.has('credentialResetAt')) {
-      await db.exec('ALTER TABLE AuthUser ADD COLUMN credentialResetAt TEXT;');
+      await executeSchemaScript(db, 'ALTER TABLE AuthUser ADD COLUMN credentialResetAt TEXT;');
     }
     if (!names.has('temporaryCredentialExpiresAt')) {
-      await db.exec('ALTER TABLE AuthUser ADD COLUMN temporaryCredentialExpiresAt TEXT;');
+      await executeSchemaScript(db, 'ALTER TABLE AuthUser ADD COLUMN temporaryCredentialExpiresAt TEXT;');
     }
 
     return db;

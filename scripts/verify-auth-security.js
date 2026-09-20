@@ -22,6 +22,8 @@ const requirements = [
   ['src/lib/auth-token.ts', 'export const AUTH_SESSION_SECONDS = 60 * 60;'],
   ['src/lib/auth-token.ts', 'mustChangePassword: boolean;'],
   ['src/lib/auth.ts', 'const PASSWORD_ITERATIONS = 100000;'],
+  ['src/lib/auth.ts', 'executeSchemaScript'],
+  ['src/lib/auth-security.ts', 'executeSchemaScript'],
   ['src/lib/auth-security.ts', 'CREATE TABLE IF NOT EXISTS AuthSession'],
   ['src/lib/auth-security.ts', 'CREATE TABLE IF NOT EXISTS AuthPasswordHistory'],
   ['src/lib/auth-security.ts', 'LIMIT 5'],
@@ -62,4 +64,15 @@ const iterationDefaults = [...authSource.matchAll(/passwordIterations\\s+INTEGER
   .map(match => Number(match[1]));
 if (iterationDefaults.some(value => value > 100000)) {
   throw new Error('AUTH_SECURITY_INTEGRITY_ERROR: PBKDF2 work factor exceeds the Cloudflare Workers runtime cap.');
+}
+
+
+for (const file of ['src/lib/auth.ts', 'src/lib/auth-security.ts']) {
+  const content = source(file);
+  if (/await\s+db\.exec\s*\(\s*`/.test(content)) {
+    throw new Error(
+      'AUTH_SECURITY_INTEGRITY_ERROR: ' + file +
+      ' must execute multi-statement D1 schema scripts statement-by-statement.'
+    );
+  }
 }
