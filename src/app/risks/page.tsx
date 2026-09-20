@@ -48,7 +48,7 @@ export default function RisksPage() {
         if (!res.ok) throw new Error('Unable to load risks.');
         return res.json();
       }),
-      fetch('/api/processes').then(res => {
+      fetch('/api/processes?view=lookup').then(res => {
         if (!res.ok) throw new Error('Unable to load processes.');
         return res.json();
       })
