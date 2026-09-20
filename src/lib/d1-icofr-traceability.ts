@@ -385,6 +385,37 @@ export async function saveTraceabilityChain(input: {
   return result;
 }
 
+export async function removeTraceabilityChain(input: {
+  assertionId: string;
+  riskId: string;
+}) {
+  const db = await ensureIcofrTraceabilitySchema();
+  const institution = await primaryInstitution(db);
+  if (!institution) throw new Error('INSTITUTION_REQUIRED');
+
+  const link = await first<Record<string, unknown>>(
+    db,
+    `SELECT * FROM ICOFRTraceabilityLink
+      WHERE institutionId=? AND sourceType='ASSERTION' AND sourceId=?
+        AND targetType='RISK' AND targetId=? AND relationship='ASSERTION_ADDRESSES_RISK'
+      LIMIT 1`,
+    [institution.id, input.assertionId, input.riskId]
+  );
+  if (!link) throw new Error('TRACE_LINK_NOT_FOUND');
+
+  await run(db, 'DELETE FROM ICOFRTraceabilityLink WHERE id=?', [link.id]);
+  await audit(
+    db,
+    String(institution.id),
+    'DELETE',
+    'ICOFRTraceabilityChain',
+    String(link.id),
+    { assertionId: input.assertionId, riskId: input.riskId },
+    link
+  );
+  return { success: true };
+}
+
 export async function saveDesignAssessment(input: Record<string, unknown>) {
   const db = await ensureIcofrTraceabilitySchema();
   const institution = await primaryInstitution(db);
