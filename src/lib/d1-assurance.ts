@@ -382,7 +382,7 @@ async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
   };
 }
 
-async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>) {
+async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>): Promise<Record<string, any>> {
   const [process, risk, control, deficiency, actionPlanRows] = await Promise.all([
     first<Record<string, unknown>>(
       db,
