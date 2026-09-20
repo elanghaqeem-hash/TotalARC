@@ -583,41 +583,80 @@ async function loadControlContext(
 
 export async function listRcsaData(institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const campaignRows = await all<Record<string, unknown>>(
-    db,
-    'SELECT * FROM AssessmentCampaign WHERE institutionId = ? ORDER BY startDate DESC, createdAt DESC',
-    [institutionId]
-  );
 
-  const campaigns = await Promise.all(
-    campaignRows.map(async campaign => {
-      const responseRows = await all<Record<string, unknown>>(
-        db,
-        'SELECT * FROM CSAResponse WHERE campaignId = ? ORDER BY assessedAt DESC',
-        [campaign.id]
-      );
-      const csaResponses = await Promise.all(
-        responseRows.map(async response => ({
-          ...response,
-          wasPerformed: storedBoolean(response.wasPerformed),
-          frequencyMet: storedBoolean(response.frequencyMet),
-          evidenceAttached: storedBoolean(response.evidenceAttached),
-          exceptionsFound: storedBoolean(response.exceptionsFound),
-          processChanged: storedBoolean(response.processChanged),
-          controlChanged: storedBoolean(response.controlChanged),
-          exceptionCount: Number(response.exceptionCount || 0),
-          control: await loadControlContext(
-            db,
-            String(response.controlId || ''),
-            institutionId
-          )
-        }))
-      );
-      return { ...campaign, csaResponses };
-    })
-  );
+  const [campaignRows, responseRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM AssessmentCampaign WHERE institutionId = ? ORDER BY startDate DESC, createdAt DESC',
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.objective AS controlObjective,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              c.processId AS controlProcessId,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId
+         FROM CSAResponse r
+         JOIN AssessmentCampaign a ON a.id = r.campaignId
+         JOIN ControlMaster c ON c.id = r.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
+        WHERE a.institutionId = ? AND c.institutionId = ?
+        ORDER BY r.assessedAt DESC`,
+      [institutionId, institutionId]
+    )
+  ]);
 
-  return { campaigns };
+  const responsesByCampaign = new Map<string, Record<string, unknown>[]>();
+  for (const response of responseRows) {
+    const campaignId = String(response.campaignId);
+    const current = responsesByCampaign.get(campaignId) || [];
+    current.push({
+      ...response,
+      wasPerformed: storedBoolean(response.wasPerformed),
+      frequencyMet: storedBoolean(response.frequencyMet),
+      evidenceAttached: storedBoolean(response.evidenceAttached),
+      exceptionsFound: storedBoolean(response.exceptionsFound),
+      processChanged: storedBoolean(response.processChanged),
+      controlChanged: storedBoolean(response.controlChanged),
+      exceptionCount: Number(response.exceptionCount || 0),
+      control: {
+        id: response.controlId,
+        controlId: response.enterpriseControlId,
+        name: response.controlName,
+        description: response.controlDescription,
+        objective: response.controlObjective,
+        controlOwner: response.controlOwner,
+        isKeyControl: storedBoolean(response.isKeyControl),
+        isIcofrKey: storedBoolean(response.isIcofrKey),
+        isItgc: storedBoolean(response.isItgc),
+        process: {
+          id: response.controlProcessId,
+          processId: response.enterpriseProcessId,
+          name: response.processName,
+          legalEntityId: response.legalEntityId,
+          orgUnitId: response.orgUnitId
+        }
+      }
+    });
+    responsesByCampaign.set(campaignId, current);
+  }
+
+  return {
+    campaigns: campaignRows.map(campaign => ({
+      ...campaign,
+      csaResponses: responsesByCampaign.get(String(campaign.id)) || []
+    }))
+  };
 }
 
 export async function createAssessmentCampaign(input: {
@@ -757,62 +796,121 @@ export async function upsertCsaResponse(input: {
 
 export async function listTodData(institutionId: string) {
   const db = await ensureAssuranceSchema();
+
   const [testRows, walkthroughRows] = await Promise.all([
     all<Record<string, unknown>>(
       db,
-      `SELECT t.*
+      `SELECT t.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId,
+              r.riskId AS enterpriseRiskId,
+              r.name AS riskName
          FROM ToDTest t
+         JOIN ControlMaster c ON c.id = t.controlId
          JOIN BusinessProcess p ON p.id = t.processId
-        WHERE p.institutionId = ?
+         LEFT JOIN RiskMaster r ON r.id = t.riskId
+        WHERE p.institutionId = ? AND c.institutionId = ?
         ORDER BY t.testedAt DESC, t.testId ASC`,
-      [institutionId]
+      [institutionId, institutionId]
     ),
     all<Record<string, unknown>>(
       db,
-      `SELECT w.*
+      `SELECT w.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              p.id AS processRecordId,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId
          FROM Walkthrough w
          JOIN ControlMaster c ON c.id = w.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
         WHERE c.institutionId = ?
         ORDER BY w.date DESC, w.createdAt DESC`,
       [institutionId]
     )
   ]);
 
-  const todTests = await Promise.all(
-    testRows.map(async test => ({
-      ...test,
-      objectiveAlignment: storedBoolean(test.objectiveAlignment),
-      riskCoverage: storedBoolean(test.riskCoverage),
-      precisionAdequate: storedBoolean(test.precisionAdequate),
-      segregationDuties: storedBoolean(test.segregationDuties),
-      evidenceSufficiency: storedBoolean(test.evidenceSufficiency),
-      control: await loadControlContext(db, String(test.controlId || ''), institutionId),
-      process: await first<Record<string, unknown>>(
-        db,
-        'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
-        [test.processId, institutionId]
-      ),
-      risk: test.riskId
-        ? await first<Record<string, unknown>>(
-            db,
-            'SELECT id, riskId, name FROM RiskMaster WHERE id = ? AND institutionId = ? LIMIT 1',
-            [test.riskId, institutionId]
-          )
-        : null
-    }))
-  );
+  const todTests = testRows.map(test => ({
+    ...test,
+    objectiveAlignment: storedBoolean(test.objectiveAlignment),
+    riskCoverage: storedBoolean(test.riskCoverage),
+    precisionAdequate: storedBoolean(test.precisionAdequate),
+    segregationDuties: storedBoolean(test.segregationDuties),
+    evidenceSufficiency: storedBoolean(test.evidenceSufficiency),
+    control: {
+      id: test.controlId,
+      controlId: test.enterpriseControlId,
+      name: test.controlName,
+      description: test.controlDescription,
+      controlOwner: test.controlOwner,
+      isKeyControl: storedBoolean(test.isKeyControl),
+      isIcofrKey: storedBoolean(test.isIcofrKey),
+      isItgc: storedBoolean(test.isItgc),
+      process: {
+        id: test.processId,
+        processId: test.enterpriseProcessId,
+        name: test.processName,
+        legalEntityId: test.legalEntityId,
+        orgUnitId: test.orgUnitId
+      }
+    },
+    process: {
+      id: test.processId,
+      processId: test.enterpriseProcessId,
+      name: test.processName,
+      legalEntityId: test.legalEntityId,
+      orgUnitId: test.orgUnitId
+    },
+    risk: test.riskId
+      ? {
+          id: test.riskId,
+          riskId: test.enterpriseRiskId,
+          name: test.riskName
+        }
+      : null
+  }));
 
-  const walkthroughs = await Promise.all(
-    walkthroughRows.map(async walk => {
-      const control = await loadControlContext(db, String(walk.controlId || ''), institutionId);
-      return {
-        ...walk,
-        processChanged: storedBoolean(walk.processChanged),
-        control,
-        process: (control?.process as Record<string, unknown> | null) || null
-      };
-    })
-  );
+  const walkthroughs = walkthroughRows.map(walk => {
+    const process = {
+      id: walk.processRecordId,
+      processId: walk.enterpriseProcessId,
+      name: walk.processName,
+      legalEntityId: walk.legalEntityId,
+      orgUnitId: walk.orgUnitId
+    };
+    return {
+      ...walk,
+      processChanged: storedBoolean(walk.processChanged),
+      control: {
+        id: walk.controlId,
+        controlId: walk.enterpriseControlId,
+        name: walk.controlName,
+        description: walk.controlDescription,
+        controlOwner: walk.controlOwner,
+        isKeyControl: storedBoolean(walk.isKeyControl),
+        isIcofrKey: storedBoolean(walk.isIcofrKey),
+        isItgc: storedBoolean(walk.isItgc),
+        process
+      },
+      process
+    };
+  });
 
   return { todTests, walkthroughs };
 }
@@ -943,10 +1041,20 @@ export async function createWalkthrough(input: {
 
 export async function listIcofrData(institutionId: string) {
   const db = await ensureAssuranceSchema();
-  const [accountRows, ipeRows] = await Promise.all([
+
+  const [accountRows, assertionRows, ipeRows] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM FinancialAccount WHERE institutionId = ? ORDER BY accountCode ASC',
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT a.*
+         FROM AccountAssertionMapping a
+         JOIN FinancialAccount f ON f.id = a.accountId
+        WHERE f.institutionId = ?
+        ORDER BY a.assertion ASC`,
       [institutionId]
     ),
     all<Record<string, unknown>>(
@@ -956,21 +1064,23 @@ export async function listIcofrData(institutionId: string) {
     )
   ]);
 
-  const financialAccounts = await Promise.all(
-    accountRows.map(async account => ({
-      ...account,
-      balanceAmount: Number(account.balanceAmount || 0),
-      isSignificant: storedBoolean(account.isSignificant),
-      assertions: (await all<Record<string, unknown>>(
-        db,
-        'SELECT * FROM AccountAssertionMapping WHERE accountId = ? ORDER BY assertion ASC',
-        [account.id]
-      )).map(assertion => ({
-        ...assertion,
-        isInScope: storedBoolean(assertion.isInScope)
-      }))
-    }))
-  );
+  const assertionsByAccount = new Map<string, Record<string, unknown>[]>();
+  for (const assertion of assertionRows) {
+    const accountId = String(assertion.accountId);
+    const current = assertionsByAccount.get(accountId) || [];
+    current.push({
+      ...assertion,
+      isInScope: storedBoolean(assertion.isInScope)
+    });
+    assertionsByAccount.set(accountId, current);
+  }
+
+  const financialAccounts = accountRows.map(account => ({
+    ...account,
+    balanceAmount: Number(account.balanceAmount || 0),
+    isSignificant: storedBoolean(account.isSignificant),
+    assertions: assertionsByAccount.get(String(account.id)) || []
+  }));
 
   const ipeRegisters = ipeRows.map(ipe => ({
     ...ipe,
@@ -1136,12 +1246,26 @@ export async function createIpeRegister(input: {
 
 export async function listCertificationData(institutionId: string) {
   const db = await ensureAssuranceSchema();
+
   const [certRows, attestationRows] = await Promise.all([
     all<Record<string, unknown>>(
       db,
-      `SELECT cert.*
+      `SELECT cert.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              p.id AS processRecordId,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId
          FROM ControlCertification cert
          JOIN ControlMaster c ON c.id = cert.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
         WHERE c.institutionId = ?
         ORDER BY cert.certifiedAt DESC`,
       [institutionId]
@@ -1153,12 +1277,26 @@ export async function listCertificationData(institutionId: string) {
     )
   ]);
 
-  const certifications = await Promise.all(
-    certRows.map(async cert => ({
-      ...cert,
-      control: await loadControlContext(db, String(cert.controlId || ''), institutionId)
-    }))
-  );
+  const certifications = certRows.map(cert => ({
+    ...cert,
+    control: {
+      id: cert.controlId,
+      controlId: cert.enterpriseControlId,
+      name: cert.controlName,
+      description: cert.controlDescription,
+      controlOwner: cert.controlOwner,
+      isKeyControl: storedBoolean(cert.isKeyControl),
+      isIcofrKey: storedBoolean(cert.isIcofrKey),
+      isItgc: storedBoolean(cert.isItgc),
+      process: {
+        id: cert.processRecordId,
+        processId: cert.enterpriseProcessId,
+        name: cert.processName,
+        legalEntityId: cert.legalEntityId,
+        orgUnitId: cert.orgUnitId
+      }
+    }
+  }));
 
   const attestations = attestationRows.map(attestation => ({
     ...attestation,
@@ -1255,32 +1393,37 @@ export async function createManagementAttestation(input: {
 
 export async function listTasksData(institutionId: string) {
   const db = await ensureAssuranceSchema();
+
   const rows = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM Task WHERE institutionId = ? ORDER BY dueDate ASC, createdAt DESC',
+    `SELECT t.*,
+            u.email AS assigneeEmail,
+            u.name AS assigneeName,
+            u.role AS assigneeRole,
+            u.department AS assigneeDepartment,
+            u.orgUnitId AS assigneeOrgUnitId,
+            u.active AS assigneeActive
+       FROM Task t
+       LEFT JOIN AccessUser u ON u.id = t.userId AND u.institutionId = t.institutionId
+      WHERE t.institutionId = ?
+      ORDER BY t.dueDate ASC, t.createdAt DESC`,
     [institutionId]
   );
 
-  return Promise.all(
-    rows.map(async task => {
-      const user = task.userId
-        ? await first<Record<string, unknown>>(
-            db,
-            'SELECT id, email, name, role, department, orgUnitId, active FROM AccessUser WHERE id = ? AND institutionId = ? LIMIT 1',
-            [task.userId, institutionId]
-          )
-        : null;
-      return {
-        ...task,
-        user: user
-          ? {
-              ...user,
-              active: Number(user.active) === 1
-            }
-          : null
-      };
-    })
-  );
+  return rows.map(task => ({
+    ...task,
+    user: task.userId
+      ? {
+          id: task.userId,
+          email: task.assigneeEmail,
+          name: task.assigneeName,
+          role: task.assigneeRole,
+          department: task.assigneeDepartment,
+          orgUnitId: task.assigneeOrgUnitId,
+          active: Number(task.assigneeActive) === 1
+        }
+      : null
+  }));
 }
 
 export async function createTask(input: {
