@@ -8,7 +8,6 @@ import {
   ArrowRight,
   BadgeCheck,
   BarChart3,
-  CheckCircle2,
   ChevronRight,
   ClipboardCheck,
   Clock3,
@@ -279,19 +278,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="mt-4 flex items-center gap-2 border-t border-white/10 pt-4 text-[11px] text-slate-300">
-              {error ? (
-                <>
-                  <AlertTriangle className="h-4 w-4 text-amber-300" />
-                  Data source sedang tidak tersedia
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-                  Metrics berasal dari database terhubung
-                </>
-              )}
-            </div>
           </div>
         </div>
       </section>
