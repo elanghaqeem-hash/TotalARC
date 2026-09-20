@@ -238,6 +238,7 @@ export default function WorkpaperReviewPage() {
           <Link href="/tod" className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">ToD</Link>
           <Link href="/toe" className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700">ToE</Link>
           <Link href="/icofr/sampling-evidence" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Sampling & Evidence</Link>
+          <Link href="/evidence" className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-700">Evidence Repository</Link>
           <Link href="/icofr/deficiencies" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Deficiencies</Link>
           <Link href="/certification" className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">Certification</Link>
         </div>

@@ -259,6 +259,7 @@ export default function SamplingEvidencePage() {
           <Link href="/icofr/smart-testing" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Smart Testing Strategy</Link>
           <Link href="/icofr/testing-plan" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Testing Plan</Link>
           <Link href="/toe" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToE Workpapers</Link>
+          <Link href="/evidence" className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-700">Evidence Repository</Link>
           <Link href="/icofr/reporting" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">External Audit / PBC</Link>
           <Link href="/icofr/deficiencies" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Deficiencies</Link>
         </div>
