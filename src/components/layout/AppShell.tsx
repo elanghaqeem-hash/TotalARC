@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useRole, USERS, type UserRole } from '@/context/RoleContext';
+import { useRole } from '@/context/RoleContext';
+import { canAccessPage } from '@/lib/access-control';
 import {
   Activity,
   AlertTriangle,
@@ -23,10 +24,12 @@ import {
   FolderTree,
   Layers,
   Link2,
+  LogOut,
   Menu,
   Shield,
   Sparkles,
   Target,
+  UserRound,
   Workflow,
   X
 } from 'lucide-react';
@@ -104,17 +107,65 @@ const navGroups: NavGroup[] = [
   }
 ];
 
+const mobileCandidates = [
+  { label: 'Home', href: '/', icon: Activity },
+  { label: 'Process', href: '/processes', icon: Layers },
+  { label: 'Controls', href: '/controls', icon: Shield },
+  { label: 'ToE', href: '/toe', icon: Cpu },
+  { label: 'Tasks', href: '/tasks', icon: CheckSquare },
+  { label: 'Reports', href: '/reports', icon: BarChart3 }
+];
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { currentUser, authenticated, loading, logout } = useRole();
 
-  const prefetchRoute = useCallback((href: string) => {
-    if (!href || warmedRoutes.has(href)) return;
-    warmedRoutes.add(href);
-    router.prefetch(href);
-  }, [router]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const isLoginPage = pathname === '/login';
+
+  const visibleNavGroups = useMemo(
+    () =>
+      navGroups
+        .map(group => ({
+          ...group,
+          items: group.items.filter(item => canAccessPage(currentUser.role, item.href))
+        }))
+        .filter(group => group.items.length > 0),
+    [currentUser.role]
+  );
+
+  const mobileItems = useMemo(
+    () =>
+      mobileCandidates
+        .filter(item => canAccessPage(currentUser.role, item.href))
+        .slice(0, 4),
+    [currentUser.role]
+  );
+
+  const prefetchRoute = useCallback(
+    (href: string) => {
+      if (!authenticated || !href || warmedRoutes.has(href)) return;
+      if (!canAccessPage(currentUser.role, href)) return;
+      warmedRoutes.add(href);
+      router.prefetch(href);
+    },
+    [authenticated, currentUser.role, router]
+  );
 
   useEffect(() => {
+    if (isLoginPage || loading || authenticated) return;
+    const target = pathname && pathname !== '/' ? '?next=' + encodeURIComponent(pathname) : '';
+    router.replace('/login' + target);
+  }, [authenticated, isLoginPage, loading, pathname, router]);
+
+  useEffect(() => {
+    if (!authenticated || loading || isLoginPage) return;
+
     const connection = (
       navigator as Navigator & {
         connection?: { saveData?: boolean; effectiveType?: string };
@@ -125,7 +176,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const allItems = navGroups.flatMap(group => group.items);
+    const allItems = visibleNavGroups.flatMap(group => group.items);
     const currentIndex = allItems.findIndex(item => item.href === pathname);
     if (currentIndex < 0) return;
 
@@ -151,12 +202,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     const timer = window.setTimeout(warmNeighbors, 650);
     return () => window.clearTimeout(timer);
-  }, [pathname, prefetchRoute]);
-  const { currentUser, setRole } = useRole();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  }, [authenticated, isLoginPage, loading, pathname, prefetchRoute, visibleNavGroups]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem('total-arc-sidebar-collapsed');
@@ -164,7 +210,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleSidebar = () => {
-    setSidebarCollapsed((current) => {
+    setSidebarCollapsed(current => {
       const next = !current;
       window.localStorage.setItem('total-arc-sidebar-collapsed', String(next));
       return next;
@@ -173,7 +219,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const Nav = ({ mobile = false, collapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
     <div className={collapsed ? 'space-y-2' : 'space-y-4'}>
-      {navGroups.map((group) => (
+      {visibleNavGroups.map(group => (
         <section
           key={group.title}
           className={`border border-slate-200 bg-white shadow-sm transition-all duration-200 ${
@@ -188,7 +234,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
 
           <div className={collapsed ? 'space-y-1.5' : 'space-y-1'}>
-            {group.items.map((item) => {
+            {group.items.map(item => {
               const Icon = item.icon;
               const active = pathname === item.href;
 
@@ -214,7 +260,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <span className={`flex min-w-0 items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
                     <span
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                        active ? 'bg-white/15' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-brand-700'
+                        active
+                          ? 'bg-white/15'
+                          : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-brand-700'
                       }`}
                     >
                       <Icon className="h-3.5 w-3.5" />
@@ -234,6 +282,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ))}
     </div>
   );
+
+  if (isLoginPage) return <>{children}</>;
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-600 shadow-sm">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-brand-600" />
+          Memverifikasi sesi Total ARC…
+        </div>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-sm text-slate-500">
+        Mengarahkan ke halaman login…
+      </div>
+    );
+  }
+
+  const initial = (currentUser.name || currentUser.email || 'U').charAt(0).toUpperCase();
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -275,41 +346,60 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <div className="relative">
               <button
-                onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+                onClick={() => setAccountMenuOpen(current => !current)}
                 className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50"
+                aria-label="Open user account menu"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-xs font-black text-brand-700 ring-1 ring-brand-100">
-                  {currentUser.role.charAt(0)}
+                  {initial}
                 </div>
-                <div className="hidden max-w-[150px] text-left sm:block">
-                  <div className="truncate text-[11px] font-black text-slate-800">{currentUser.role}</div>
+                <div className="hidden max-w-[170px] text-left sm:block">
+                  <div className="truncate text-[11px] font-black text-slate-800">{currentUser.name}</div>
                   <div className="truncate text-[9px] text-slate-400">{currentUser.roleTitle}</div>
                 </div>
                 <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
               </button>
 
-              {roleDropdownOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10">
-                  <div className="px-2.5 pb-2 pt-1">
-                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">View as role</div>
-                    <div className="mt-1 text-[10px] leading-4 text-slate-500">Ubah perspektif tampilan tanpa membuat identitas pengguna palsu.</div>
+              {accountMenuOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-[310px] max-w-[calc(100vw-24px)] rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl shadow-slate-900/10">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                        <UserRound className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-black text-slate-900">{currentUser.name}</div>
+                        <div className="mt-0.5 truncate text-[11px] text-slate-500">{currentUser.email}</div>
+                        <div className="mt-2 inline-flex rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-bold text-brand-700">
+                          {currentUser.roleTitle}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {(Object.keys(USERS) as UserRole[]).map((role) => (
-                    <button
-                      key={role}
-                      onClick={() => {
-                        setRole(role);
-                        setRoleDropdownOpen(false);
-                      }}
-                      className={`w-full rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-50 ${
-                        currentUser.role === role ? 'bg-brand-50 text-brand-800' : 'text-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{role}</div>
-                      <div className="mt-0.5 text-[10px] text-slate-500">{USERS[role].roleTitle}</div>
-                    </button>
-                  ))}
+                  <div className="mt-3 space-y-2 px-1 text-[10px] text-slate-500">
+                    <div>
+                      <span className="font-bold text-slate-700">Institution:</span>{' '}
+                      {currentUser.institutionName || 'Not assigned'}
+                    </div>
+                    {currentUser.department && (
+                      <div>
+                        <span className="font-bold text-slate-700">Unit:</span> {currentUser.department}
+                      </div>
+                    )}
+                    <p className="leading-4">
+                      Role dan hak akses ditetapkan oleh administrator. Pengguna tidak dapat berpindah role dari sesi ini.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void logout()}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-100"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </button>
                 </div>
               )}
             </div>
@@ -381,23 +471,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex justify-around border-t border-slate-200 bg-white/95 px-2 py-2 shadow-[0_-8px_30px_-20px_rgba(15,23,42,0.45)] backdrop-blur lg:hidden">
-        {[
-          ['Home', '/', Activity],
-          ['Process', '/processes', Layers],
-          ['Controls', '/controls', Shield],
-          ['Tasks', '/tasks', CheckSquare]
-        ].map(([label, href, Icon]: any) => (
-          <Link
-            key={href}
-            href={href}
-            className={`flex min-w-[56px] flex-col items-center rounded-xl px-2 py-1 text-[9px] font-bold ${
-              pathname === href ? 'bg-brand-50 text-brand-700' : 'text-slate-500'
-            }`}
-          >
-            <Icon className="h-[18px] w-[18px]" />
-            <span className="mt-0.5">{label}</span>
-          </Link>
-        ))}
+        {mobileItems.map(item => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex min-w-[56px] flex-col items-center rounded-xl px-2 py-1 text-[9px] font-bold ${
+                pathname === item.href ? 'bg-brand-50 text-brand-700' : 'text-slate-500'
+              }`}
+            >
+              <Icon className="h-[18px] w-[18px]" />
+              <span className="mt-0.5">{item.label}</span>
+            </Link>
+          );
+        })}
         <button
           onClick={() => setMobileMenuOpen(true)}
           className="flex min-w-[56px] flex-col items-center rounded-xl px-2 py-1 text-[9px] font-bold text-slate-500"
