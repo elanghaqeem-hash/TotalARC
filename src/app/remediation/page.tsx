@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 
 type WorkflowType = 'DEFICIENCY' | 'ISSUE' | 'MAP' | 'MILESTONE' | 'RETEST';
 
@@ -81,9 +82,7 @@ export default function RemediationPage() {
   const loadData = async () => {
     setError('');
     try {
-      const response = await fetch('/api/assure/remediation');
-      if (!response.ok) throw new Error('Remediation data unavailable');
-      const payload = await response.json();
+      const payload = await jsonRead<any>('/api/assure/remediation', { dedupe: false });
       setData({
         exceptions: payload.exceptions || [],
         deficiencies: payload.deficiencies || [],
