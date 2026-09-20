@@ -5,6 +5,7 @@ import { getOrganizationData } from '@/lib/d1-organization';
 import {
   createRegulatoryReport,
   getRegulatoryReport,
+  getReportingSourceCounts,
   listRegulatoryReports,
   updateRegulatoryReport,
   updateRegulatoryReportSection
@@ -86,9 +87,10 @@ export async function GET(request: Request) {
       });
     }
 
-    const [reports, organization] = await Promise.all([
+    const [reports, organization, sourceCounts] = await Promise.all([
       listRegulatoryReports(auth.user.institutionId, authorizedOrgUnitIds),
-      getOrganizationData(auth.user.institutionId)
+      getOrganizationData(auth.user.institutionId),
+      getReportingSourceCounts(auth.user.institutionId, authorizedOrgUnitIds)
     ]);
 
     const allowedUnits =
@@ -107,6 +109,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       templates: REGULATORY_REPORT_TEMPLATES,
       reports,
+      sourceCounts,
       organization: {
         legalEntities:
           authorizedOrgUnitIds === null
