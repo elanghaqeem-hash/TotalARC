@@ -1,68 +1,159 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { PermissionKey } from '@/lib/security-model';
 
-export type UserRole = 'Admin' | 'ProcessOwner' | 'ControlOwner' | 'Tester' | 'Reviewer' | 'Executive';
+export interface InstitutionAccess {
+  id: string;
+  name: string;
+  legalName?: string | null;
+  databaseBinding: string;
+  folderKey: string;
+}
 
 export interface UserProfile {
   id: string;
+  username: string;
   name: string;
-  role: UserRole;
+  employeeId?: string | null;
+  email?: string | null;
+  jobTitle?: string | null;
+  role: string;
   roleTitle: string;
-  email: string;
+  roles: string[];
+  permissions: PermissionKey[];
+  unitIds: string[];
   department: string;
+  mustChangePassword: boolean;
+  institution: InstitutionAccess;
+  institutions: InstitutionAccess[];
 }
 
-const titles: Record<UserRole, string> = {
-  Admin: 'Administrator View',
-  ProcessOwner: 'Process Owner View',
-  ControlOwner: 'Control Owner View',
-  Tester: 'Independent Tester View',
-  Reviewer: 'Reviewer View',
-  Executive: 'Executive View'
+const anonymous: UserProfile = {
+  id: '',
+  username: '',
+  name: 'Unauthenticated',
+  email: null,
+  role: '',
+  roleTitle: 'Authentication required',
+  roles: [],
+  permissions: [],
+  unitIds: [],
+  department: '',
+  mustChangePassword: false,
+  institution: {
+    id: '',
+    name: 'No active institution',
+    databaseBinding: 'DB',
+    folderKey: ''
+  },
+  institutions: []
 };
-
-export const USERS = Object.fromEntries(
-  (Object.keys(titles) as UserRole[]).map((role) => [
-    role,
-    {
-      id: `role-${role.toLowerCase()}`,
-      name: 'No authenticated user',
-      role,
-      roleTitle: titles[role],
-      email: '',
-      department: ''
-    }
-  ])
-) as Record<UserRole, UserProfile>;
 
 interface RoleContextType {
   currentUser: UserProfile;
-  setRole: (role: UserRole) => void;
+  authenticated: boolean;
+  loading: boolean;
   institutionName: string;
-  setInstitutionName: (name: string) => void;
+  hasPermission: (permission: PermissionKey) => boolean;
+  refreshSession: () => Promise<void>;
+  logout: () => Promise<void>;
+  switchInstitution: (institutionId: string) => Promise<void>;
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
-export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [currentRole, setCurrentRole] = useState<UserRole>('Admin');
-  const [institutionName, setInstitutionName] = useState('No institution registered');
+function normalizeUser(payload: any): UserProfile {
+  const roles = Array.isArray(payload?.roles) ? payload.roles.map(String) : [];
+  const primaryRole = roles[0] || 'Authenticated User';
+  return {
+    id: String(payload?.sub || ''),
+    username: String(payload?.username || ''),
+    name: String(payload?.displayName || payload?.username || 'Authenticated User'),
+    employeeId: payload?.employeeId || null,
+    email: payload?.email || null,
+    jobTitle: payload?.jobTitle || null,
+    role: primaryRole,
+    roleTitle: roles.length > 1 ? roles.join(' · ') : primaryRole.replaceAll('_', ' '),
+    roles,
+    permissions: Array.isArray(payload?.permissions) ? payload.permissions : [],
+    unitIds: Array.isArray(payload?.unitIds) ? payload.unitIds.map(String) : [],
+    department: '',
+    mustChangePassword: Boolean(payload?.mustChangePassword),
+    institution: payload?.institution || anonymous.institution,
+    institutions: Array.isArray(payload?.institutions) ? payload.institutions : []
+  };
+}
 
-  useEffect(() => {
-    fetch('/api/assurance')
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Unable to load institution')))
-      .then((data) => setInstitutionName(data.institution?.name || 'No institution registered'))
-      .catch(() => setInstitutionName('No institution registered'));
+export function RoleProvider({ children }: { children: React.ReactNode }) {
+  const [currentUser, setCurrentUser] = useState<UserProfile>(anonymous);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const refreshSession = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/me', { cache: 'no-store' });
+      if (!response.ok) {
+        setCurrentUser(anonymous);
+        setAuthenticated(false);
+        return;
+      }
+      const body = await response.json();
+      if (!body.authenticated || !body.user) {
+        setCurrentUser(anonymous);
+        setAuthenticated(false);
+        return;
+      }
+      setCurrentUser(normalizeUser(body.user));
+      setAuthenticated(true);
+    } catch {
+      setCurrentUser(anonymous);
+      setAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  return (
-    <RoleContext.Provider
-      value={{ currentUser: USERS[currentRole], setRole: setCurrentRole, institutionName, setInstitutionName }}
-    >
-      {children}
-    </RoleContext.Provider>
-  );
+  useEffect(() => {
+    void refreshSession();
+  }, [refreshSession]);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      setCurrentUser(anonymous);
+      setAuthenticated(false);
+      window.location.assign('/login');
+    }
+  }, []);
+
+  const switchInstitution = useCallback(async (institutionId: string) => {
+    const response = await fetch('/api/auth/switch-institution', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ institutionId })
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'Unable to switch institution.');
+    setCurrentUser(normalizeUser(body.user));
+    setAuthenticated(true);
+    window.location.assign('/');
+  }, []);
+
+  const value = useMemo<RoleContextType>(() => ({
+    currentUser,
+    authenticated,
+    loading,
+    institutionName: currentUser.institution.name,
+    hasPermission: permission => currentUser.permissions.includes(permission),
+    refreshSession,
+    logout,
+    switchInstitution
+  }), [currentUser, authenticated, loading, refreshSession, logout, switchInstitution]);
+
+  return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
 }
 
 export function useRole() {
