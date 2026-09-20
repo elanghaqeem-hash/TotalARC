@@ -151,10 +151,12 @@ jobs:
           echo "::add-mask::$AI_PROBE_TOKEN"
           echo "AI_PROBE_TOKEN=$AI_PROBE_TOKEN" >> "$GITHUB_ENV"
 
-          put_secret AI_PROBE_TOKEN "$AI_PROBE_TOKEN"
           put_secret GEMINI_API_KEY "$GEMINI_API_KEY"
           put_secret GROQ_API_KEY "$GROQ_API_KEY"
           put_secret OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
+          # Write the short-lived probe token last so the final secret-only
+          # deployment is the one the verification step waits for.
+          put_secret AI_PROBE_TOKEN "$AI_PROBE_TOKEN"
 
       - name: Verify AI runtime and provider connectivity
         env:
@@ -191,6 +193,30 @@ jobs:
             exit 1
           fi
 
+          probe_authorized=false
+          for attempt in $(seq 1 12); do
+            AUTH_HTTP=$(curl --silent --show-error --max-time 15 --output /tmp/totalarc-ai-probe-auth.json --write-out "%{http_code}"               -H "Authorization: Bearer $AI_PROBE_TOKEN" "$PROBE_URL")
+            if [ "$AUTH_HTTP" -ge 200 ] && [ "$AUTH_HTTP" -lt 300 ]; then
+              probe_authorized=true
+              break
+            fi
+
+            if [ "$AUTH_HTTP" = "401" ] || [ "$AUTH_HTTP" = "503" ]; then
+              echo "AI probe secret not active on the serving Worker yet (HTTP $AUTH_HTTP, attempt $attempt/12)."
+              sleep 5
+              continue
+            fi
+
+            echo "::error::AI probe authorization check failed unexpectedly (HTTP $AUTH_HTTP)."
+            cat /tmp/totalarc-ai-probe-auth.json || true
+            exit 1
+          done
+
+          if [ "$probe_authorized" != "true" ]; then
+            echo "::error::AI probe secret did not propagate to the serving Worker within the verification window."
+            exit 1
+          fi
+
           PROBE_HTTP=$(curl --silent --show-error --max-time 60 --output /tmp/totalarc-ai-probe.json --write-out "%{http_code}"             -X POST -H "Authorization: Bearer $AI_PROBE_TOKEN" "$PROBE_URL")
           probe=$(cat /tmp/totalarc-ai-probe.json)
           provider_summary=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);for(const p of j.providers||[]){console.log('- '+p.provider+': configured='+p.configured+', healthy='+p.ok+', model='+p.model+(p.error?(', error='+p.error):''))}}catch{console.log('- Probe response was not valid JSON')}})")
@@ -198,6 +224,7 @@ jobs:
           echo "### AI production verification" >> "$GITHUB_STEP_SUMMARY"
           echo "- Worker deployment: successful" >> "$GITHUB_STEP_SUMMARY"
           echo "- Workers AI binding: ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "- AI probe secret: propagated and authorized" >> "$GITHUB_STEP_SUMMARY"
           echo "$provider_summary"
           echo "$provider_summary" >> "$GITHUB_STEP_SUMMARY"
 
