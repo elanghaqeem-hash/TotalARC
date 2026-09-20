@@ -86,10 +86,15 @@ function clean(value: unknown) {
   return next ? next : null;
 }
 
-async function ensureOrganizationSchema() {
-  const db = await getDb();
+let organizationSchemaReady: Promise<D1DatabaseLike> | null = null;
 
-  await executeSchemaScript(db, `
+async function ensureOrganizationSchema() {
+  if (organizationSchemaReady) return organizationSchemaReady;
+
+  organizationSchemaReady = (async () => {
+    const db = await getDb();
+
+    await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS LegalEntity (
       id TEXT PRIMARY KEY NOT NULL,
       institutionId TEXT NOT NULL,
@@ -142,9 +147,15 @@ async function ensureOrganizationSchema() {
       ipAddress TEXT,
       timestamp TEXT NOT NULL
     );
-  `);
+    `);
 
-  return db;
+    return db;
+  })().catch(error => {
+    organizationSchemaReady = null;
+    throw error;
+  });
+
+  return organizationSchemaReady;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
@@ -237,6 +248,19 @@ export async function createLegalEntity(input: LegalEntityInput) {
 
   const id = crypto.randomUUID();
   const now = nowIso();
+  const country = input.country?.trim() || 'Indonesia';
+  const taxId = clean(input.taxId);
+  const created = {
+    id,
+    institutionId: String(institution.id),
+    code,
+    name,
+    country,
+    taxId,
+    createdAt: now,
+    updatedAt: now
+  };
+
   await run(
     db,
     `INSERT INTO LegalEntity (
@@ -247,19 +271,12 @@ export async function createLegalEntity(input: LegalEntityInput) {
       institution.id,
       code,
       name,
-      input.country?.trim() || 'Indonesia',
-      clean(input.taxId),
+      country,
+      taxId,
       now,
       now
     ]
   );
-
-  const created = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM LegalEntity WHERE id = ? LIMIT 1',
-    [id]
-  );
-  if (!created) throw new Error('LEGAL_ENTITY_CREATE_FAILED');
 
   await writeAudit(
     db,
@@ -312,6 +329,23 @@ export async function createOrganizationUnit(input: OrganizationUnitInput) {
 
   const id = crypto.randomUUID();
   const now = nowIso();
+  const headName = clean(input.headName);
+  const headEmail = clean(input.headEmail);
+  const created = {
+    id,
+    institutionId: String(institution.id),
+    legalEntityId,
+    parentId,
+    type,
+    code,
+    name,
+    headName,
+    headEmail,
+    status: 'Active',
+    createdAt: now,
+    updatedAt: now
+  };
+
   await run(
     db,
     `INSERT INTO OrganizationUnit (
@@ -326,19 +360,12 @@ export async function createOrganizationUnit(input: OrganizationUnitInput) {
       type,
       code,
       name,
-      clean(input.headName),
-      clean(input.headEmail),
+      headName,
+      headEmail,
       now,
       now
     ]
   );
-
-  const created = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM OrganizationUnit WHERE id = ? LIMIT 1',
-    [id]
-  );
-  if (!created) throw new Error('ORG_UNIT_CREATE_FAILED');
 
   await writeAudit(
     db,
