@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 
@@ -61,12 +61,14 @@ function nullable(value: unknown) {
   return value === undefined || value === '' ? null : value;
 }
 
-let assuranceSchemaReady: Promise<D1DatabaseLike> | null = null;
+const assuranceSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureAssuranceSchema() {
-  if (assuranceSchemaReady) return assuranceSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = assuranceSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  assuranceSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchemaScript(db, `
@@ -268,11 +270,12 @@ export async function ensureAssuranceSchema() {
 
     return db;
   })().catch(error => {
-    assuranceSchemaReady = null;
+    assuranceSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return assuranceSchemaReady;
+  assuranceSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
