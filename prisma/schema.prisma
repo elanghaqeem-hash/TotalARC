@@ -396,6 +396,8 @@ model ControlRiskMapping {
 model AssessmentCampaign {
   id            String   @id @default(uuid())
   institutionId String
+  legalEntityId String?
+  orgUnitId     String?
   name          String   // e.g. Annual RCSA 2026 Q3
   type          String   @default("RCSA") // RCSA, CSA, ICOFR
   period        String
@@ -435,6 +437,9 @@ model CSAResponse {
 // -------------------------------------------------------------
 model FinancialAccount {
   id             String   @id @default(uuid())
+  institutionId  String
+  legalEntityId  String?
+  orgUnitId      String?
   accountCode    String
   accountName    String
   financialStatement String // Balance Sheet, Income Statement, Cash Flow
@@ -446,6 +451,8 @@ model FinancialAccount {
   createdAt      DateTime @default(now())
 
   assertions     AccountAssertionMapping[]
+
+  @@unique([institutionId, accountCode])
 }
 
 model AccountAssertionMapping {
@@ -460,6 +467,9 @@ model AccountAssertionMapping {
 
 model IPERegister {
   id            String   @id @default(uuid())
+  institutionId String
+  legalEntityId String?
+  orgUnitId     String?
   reportName    String
   systemSource  String
   reportOwner   String
