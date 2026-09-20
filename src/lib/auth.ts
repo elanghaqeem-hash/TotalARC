@@ -514,3 +514,230 @@ export async function recordLogout(
     // Logout must remain idempotent even if audit storage is temporarily unavailable.
   }
 }
+
+
+export type ManagedUserSummary = {
+  id: string;
+  institutionId: string | null;
+  orgUnitId: string | null;
+  name: string;
+  email: string;
+  role: UserRole;
+  department: string;
+  active: boolean;
+  failedLoginCount: number;
+  lockedUntil: string | null;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function managedSummary(row: AuthUserRow): ManagedUserSummary {
+  if (!isUserRole(row.role)) throw new Error('AUTH_ROLE_INVALID');
+  return {
+    id: row.id,
+    institutionId: row.institutionId,
+    orgUnitId: row.orgUnitId,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    department: row.department || '',
+    active: Boolean(row.active),
+    failedLoginCount: Number(row.failedLoginCount || 0),
+    lockedUntil: row.lockedUntil,
+    lastLoginAt: row.lastLoginAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+export async function listManagedUsers(institutionId: string | null) {
+  const db = await ensureAuthSchema();
+  const statement = institutionId
+    ? db.prepare(
+        'SELECT * FROM AuthUser WHERE institutionId = ? ORDER BY active DESC, name ASC, email ASC'
+      ).bind(institutionId)
+    : db.prepare('SELECT * FROM AuthUser ORDER BY active DESC, name ASC, email ASC');
+  const result = await statement.all<AuthUserRow>();
+  return (result.results || []).map(managedSummary);
+}
+
+export async function createManagedUser(input: {
+  actorUserId: string;
+  actorInstitutionId: string | null;
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  department?: string | null;
+  orgUnitId?: string | null;
+}) {
+  const db = await ensureAuthSchema();
+  const name = input.name.trim();
+  const email = input.email.trim();
+  const emailNormalized = normalizeEmail(email);
+  const password = input.password;
+
+  if (!name || !emailNormalized || !emailNormalized.includes('@')) {
+    throw new Error('USER_REQUIRED_FIELDS');
+  }
+  if (!isUserRole(input.role)) throw new Error('AUTH_ROLE_INVALID');
+  if (!password || password.length < 12) throw new Error('PASSWORD_TOO_SHORT');
+
+  const existing = await first<{ id: string }>(
+    db,
+    'SELECT id FROM AuthUser WHERE emailNormalized = ? LIMIT 1',
+    [emailNormalized]
+  );
+  if (existing) throw new Error('USER_EMAIL_CONFLICT');
+
+  const institution =
+    input.actorInstitutionId
+      ? { id: input.actorInstitutionId }
+      : await findPrimaryInstitution(db);
+
+  const passwordRecord = await createPasswordHash(password);
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  await run(
+    db,
+    `INSERT INTO AuthUser (
+      id, institutionId, orgUnitId, name, email, emailNormalized,
+      passwordHash, passwordSalt, passwordIterations, role, department,
+      active, mustChangePassword, failedLoginCount, lockedUntil,
+      lastLoginAt, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, NULL, NULL, ?, ?)`,
+    [
+      id,
+      institution?.id || null,
+      input.orgUnitId || null,
+      name,
+      email,
+      emailNormalized,
+      passwordRecord.hash,
+      passwordRecord.salt,
+      passwordRecord.iterations,
+      input.role,
+      input.department?.trim() || null,
+      now,
+      now
+    ]
+  );
+
+  await writeAuthEvent(db, {
+    userId: id,
+    institutionId: institution?.id || null,
+    eventType: 'USER_CREATED',
+    email,
+    role: input.role,
+    detail: 'User account created by administrator ' + input.actorUserId + '.'
+  });
+
+  const created = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [id]
+  );
+  if (!created) throw new Error('USER_CREATE_FAILED');
+  return managedSummary(created);
+}
+
+export async function updateManagedUser(input: {
+  actorUserId: string;
+  actorInstitutionId: string | null;
+  userId: string;
+  role?: UserRole;
+  department?: string | null;
+  active?: boolean;
+  password?: string | null;
+}) {
+  const db = await ensureAuthSchema();
+  const existing = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [input.userId]
+  );
+  if (!existing) throw new Error('USER_NOT_FOUND');
+
+  if (
+    input.actorInstitutionId &&
+    existing.institutionId &&
+    existing.institutionId !== input.actorInstitutionId
+  ) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  if (input.userId === input.actorUserId) {
+    if (input.active === false) throw new Error('CANNOT_DISABLE_SELF');
+    if (input.role && input.role !== existing.role) throw new Error('CANNOT_CHANGE_OWN_ROLE');
+  }
+
+  const nextRole = input.role ?? (isUserRole(existing.role) ? existing.role : 'Admin');
+  if (!isUserRole(nextRole)) throw new Error('AUTH_ROLE_INVALID');
+
+  const nextDepartment =
+    input.department === undefined
+      ? existing.department
+      : input.department?.trim() || null;
+  const nextActive =
+    input.active === undefined ? Boolean(existing.active) : Boolean(input.active);
+  const now = new Date().toISOString();
+
+  let passwordHash = existing.passwordHash;
+  let passwordSalt = existing.passwordSalt;
+  let passwordIterations = existing.passwordIterations;
+
+  if (input.password) {
+    if (input.password.length < 12) throw new Error('PASSWORD_TOO_SHORT');
+    const passwordRecord = await createPasswordHash(input.password);
+    passwordHash = passwordRecord.hash;
+    passwordSalt = passwordRecord.salt;
+    passwordIterations = passwordRecord.iterations;
+  }
+
+  await run(
+    db,
+    `UPDATE AuthUser SET
+      role = ?,
+      department = ?,
+      active = ?,
+      passwordHash = ?,
+      passwordSalt = ?,
+      passwordIterations = ?,
+      failedLoginCount = CASE WHEN ? = 1 THEN 0 ELSE failedLoginCount END,
+      lockedUntil = CASE WHEN ? = 1 THEN NULL ELSE lockedUntil END,
+      updatedAt = ?
+    WHERE id = ?`,
+    [
+      nextRole,
+      nextDepartment,
+      nextActive ? 1 : 0,
+      passwordHash,
+      passwordSalt,
+      passwordIterations,
+      input.password ? 1 : 0,
+      input.password ? 1 : 0,
+      now,
+      existing.id
+    ]
+  );
+
+  const updated = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [existing.id]
+  );
+  if (!updated) throw new Error('USER_UPDATE_FAILED');
+
+  await writeAuthEvent(db, {
+    userId: updated.id,
+    institutionId: updated.institutionId,
+    eventType: input.password ? 'USER_UPDATED_PASSWORD_RESET' : 'USER_UPDATED',
+    email: updated.email,
+    role: updated.role,
+    detail: 'User account updated by administrator ' + input.actorUserId + '.'
+  });
+
+  return managedSummary(updated);
+}
