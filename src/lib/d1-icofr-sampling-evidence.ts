@@ -1648,7 +1648,7 @@ export async function getSamplingEvidenceData() {
     toe: item.toeTestId ? toeById.get(String(item.toeTestId)) || null : null
   }));
 
-  const enrichedPlans = samplingPlans.map(plan => {
+  const enrichedPlans: Array<Record<string, any>> = samplingPlans.map(plan => {
     const planCandidates: Array<
       Record<string, unknown> & {
         selected: boolean;
