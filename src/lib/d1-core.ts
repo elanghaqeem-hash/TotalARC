@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -99,12 +99,14 @@ function riskRating(score: number) {
   return 'Low';
 }
 
-let coreDomainSchemaReady: Promise<D1DatabaseLike> | null = null;
+const coreDomainSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureCoreDomainSchema() {
-  if (coreDomainSchemaReady) return coreDomainSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = coreDomainSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  coreDomainSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchemaScript(db, `
@@ -331,11 +333,12 @@ export async function ensureCoreDomainSchema() {
 
     return db;
   })().catch(error => {
-    coreDomainSchemaReady = null;
+    coreDomainSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return coreDomainSchemaReady;
+  coreDomainSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
