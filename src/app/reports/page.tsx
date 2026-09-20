@@ -6,7 +6,7 @@ import { Download } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function ReportsPage() {
-  const { data, loading, error } = useAssuranceData();
+  const { data, loading, error } = useAssuranceData(['rcsa', 'icofr', 'toe', 'remediation', 'certification']);
 
   const sources = data ? [
     { title: 'ToE workpapers', count: data.toeTests?.length || 0, href: '/toe' },
