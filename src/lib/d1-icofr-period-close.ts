@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureIcofrScopeSchema } from '@/lib/d1-icofr';
 import { ensureIcofrDomainSchema } from '@/lib/d1-icofr-domains';
@@ -86,12 +86,14 @@ function bool(value: unknown) {
   return value === true || value === 1 || value === '1';
 }
 
-let closeSchemaReady: Promise<D1DatabaseLike> | null = null;
+const closeSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrPeriodCloseSchema() {
-  if (closeSchemaReady) return closeSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = closeSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  closeSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
     await executeSchema(db, `
       CREATE TABLE IF NOT EXISTS ICOFRPeriodSnapshot (
@@ -115,11 +117,12 @@ export async function ensureIcofrPeriodCloseSchema() {
     `);
     return db;
   })().catch(error => {
-    closeSchemaReady = null;
+    closeSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return closeSchemaReady;
+  closeSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
