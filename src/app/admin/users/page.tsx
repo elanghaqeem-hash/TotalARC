@@ -6,6 +6,7 @@ import {
   KeyRound,
   LockKeyhole,
   Plus,
+  Power,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
@@ -448,13 +449,15 @@ export default function UserManagementPage() {
                           type="button"
                           disabled={isSelf}
                           onClick={() => void updateUser(user.id, { active: !user.active })}
-                          className={`h-9 rounded-lg border px-3 text-[10px] font-black disabled:cursor-not-allowed disabled:opacity-40 ${
+                          aria-label={user.active ? 'Deactivate user' : 'Activate user'}
+                          title={user.active ? 'Deactivate user' : 'Activate user'}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border disabled:cursor-not-allowed disabled:opacity-40 ${
                             user.active
-                              ? 'border-rose-200 bg-rose-50 text-rose-700'
-                              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                              : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                           }`}
                         >
-                          {user.active ? 'Deactivate' : 'Activate'}
+                          <Power className="h-4 w-4" />
                         </button>
 
                         {locked && (
@@ -462,29 +465,32 @@ export default function UserManagementPage() {
                             type="button"
                             disabled={isSelf || credentialBusyUserId === user.id}
                             onClick={() => void credentialAction(user, 'UNLOCK_USER')}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[10px] font-black text-rose-700 disabled:opacity-40"
+                            aria-label="Unlock user"
+                            title="Unlock user"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-40"
                           >
-                            <LockKeyhole className="h-3.5 w-3.5" />
-                            Unlock
+                            <LockKeyhole className="h-4 w-4" />
                           </button>
                         )}
                         <button
                           type="button"
                           disabled={isSelf || credentialBusyUserId === user.id}
                           onClick={() => void credentialAction(user, 'FORCE_PASSWORD_CHANGE')}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-black text-amber-800 disabled:opacity-40"
+                          aria-label="Force password change"
+                          title="Force password change"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-40"
                         >
-                          <KeyRound className="h-3.5 w-3.5" />
-                          Force change
+                          <KeyRound className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
                           disabled={isSelf || credentialBusyUserId === user.id}
                           onClick={() => void credentialAction(user, 'RESET_CREDENTIAL')}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[10px] font-black text-sky-800 disabled:opacity-40"
+                          aria-label="Reset credential"
+                          title="Reset credential"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 disabled:opacity-40"
                         >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          Reset credential
+                          <RotateCcw className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
