@@ -5,7 +5,7 @@ import { Calendar as CalendarIcon } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function CalendarPage() {
-  const { data, loading, error } = useAssuranceData();
+  const { data, loading, error } = useAssuranceData(['calendar']);
 
   const events = useMemo(() => {
     if (!data) return [];
