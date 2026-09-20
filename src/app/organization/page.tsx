@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react';
 import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 type Institution = {
   id: string;
@@ -465,16 +466,12 @@ export default function OrganizationPage() {
     setModal('user-scope');
   };
 
-  const mutate = async (method: 'POST' | 'PATCH', body: Record<string, unknown>) => {
-    const response = await fetch('/api/organization', {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const payload = (await response.json()) as { error?: string; importedCount?: number };
-    if (!response.ok) throw new Error(payload.error || 'Organization change could not be saved.');
-    return payload;
-  };
+  const mutate = async (method: 'POST' | 'PATCH', body: Record<string, unknown>) =>
+    jsonTransaction<{ error?: string; importedCount?: number }>(
+      '/api/organization',
+      body,
+      method
+    );
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -507,19 +504,15 @@ export default function OrganizationPage() {
       }
 
       if (modal === 'user-scope') {
-        const response = await fetch('/api/auth/users', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        await jsonTransaction(
+          '/api/auth/users',
+          {
             id: form.id,
             orgUnitId: form.orgAccessScope === 'ALL' ? null : form.orgUnitId || null,
             orgAccessScope: form.orgAccessScope
-          })
-        });
-        const payload = (await response.json()) as { error?: string };
-        if (!response.ok) {
-          throw new Error(payload.error || 'Unable to update user organization access scope.');
-        }
+          },
+          'PATCH'
+        );
       }
 
       setModal(null);
