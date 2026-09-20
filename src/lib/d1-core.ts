@@ -1,5 +1,6 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { auditActorLabel, appendRequestAuditContext, type MutationActor } from '@/lib/mutation-security';
+import { recordApiPerformance } from '@/lib/performance';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -394,6 +395,14 @@ async function writeAudit(
       nowIso()
     ]
   );
+  if (input.actor && input.action !== 'AI_ANALYZE') {
+    recordApiPerformance(
+      `MUTATION ${input.entityType} ${input.action}`,
+      input.actor.performanceStartedAt,
+      'mutation'
+    );
+  }
+
 }
 
 function processRow(row: Record<string, unknown>) {
