@@ -22,13 +22,11 @@ type D1DatabaseLike = {
 };
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureIcofrScopeSchema(),
-    ensureIcofrTestingPlanSchema(),
-    ensureIcofrCoverageSchema(),
-    ensureAssuranceSchema(),
-    ensureIcofrWorkpaperReviewSchema()
-  ]);
+  await ensureIcofrScopeSchema();
+  await ensureIcofrTestingPlanSchema();
+  await ensureIcofrCoverageSchema();
+  await ensureAssuranceSchema();
+  await ensureIcofrWorkpaperReviewSchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
