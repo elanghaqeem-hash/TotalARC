@@ -1089,11 +1089,11 @@ export async function updateToeSample(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM TestSample WHERE id = ? LIMIT 1',
-    [input.sampleId]
-  );
+  return {
+    ...sample,
+    result: input.result,
+    failureReason: input.result === 'Fail' ? nullable(input.failureReason) : null
+  };
 }
 
 export async function listRemediationData() {
