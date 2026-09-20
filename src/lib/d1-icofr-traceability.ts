@@ -30,11 +30,9 @@ export const STANDARD_ASSERTIONS = [
 ] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrDomainSchema(),
-    ensureAssuranceSchema()
-  ]);
+  await ensureCoreDomainSchema();
+    await ensureIcofrDomainSchema();
+    await ensureAssuranceSchema();
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
@@ -58,7 +56,14 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  await db.exec(script);
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
 }
 
 function nowIso() {
