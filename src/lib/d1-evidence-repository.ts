@@ -1178,14 +1178,14 @@ async function loadLinkTargets(db: D1DatabaseLike, institutionId: string) {
     hasSampling
       ? all<Record<string, any>>(
           db,
-          'SELECT id,planRef,period,status FROM ICOFRSamplingPlan WHERE institutionId=? ORDER BY updatedAt DESC LIMIT 200',
+          'SELECT id,controlDomainId,period,status FROM ICOFRSamplingPlan WHERE institutionId=? ORDER BY updatedAt DESC LIMIT 200',
           [institutionId]
         )
       : Promise.resolve([]),
     hasPbc
       ? all<Record<string, any>>(
           db,
-          'SELECT id,requestNo,title,period,status FROM ICOFRPBCRequest WHERE institutionId=? ORDER BY updatedAt DESC LIMIT 200',
+          'SELECT id,requestNo,description,period,status FROM ICOFRPBCRequest WHERE institutionId=? ORDER BY updatedAt DESC LIMIT 200',
           [institutionId]
         )
       : Promise.resolve([]),
@@ -1238,12 +1238,23 @@ async function loadLinkTargets(db: D1DatabaseLike, institutionId: string) {
     ...sampling.map(item => ({
       entityType: 'SAMPLING_PLAN',
       entityId: item.id,
-      label: String(item.planRef || item.id) + ' · ' + String(item.period) + ' · ' + String(item.status)
+      label:
+        'Sampling · ' +
+        String(item.controlDomainId || item.id) +
+        ' · ' +
+        String(item.period) +
+        ' · ' +
+        String(item.status)
     })),
     ...pbc.map(item => ({
       entityType: 'PBC_REQUEST',
       entityId: item.id,
-      label: String(item.requestNo || item.id) + ' · ' + String(item.title) + ' · ' + String(item.status)
+      label:
+        String(item.requestNo || item.id) +
+        ' · ' +
+        String(item.description || 'PBC request') +
+        ' · ' +
+        String(item.status)
     })),
     ...subCerts.map(item => ({
       entityType: 'SUB_CERTIFICATION',
