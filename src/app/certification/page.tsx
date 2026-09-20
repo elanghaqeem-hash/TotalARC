@@ -17,22 +17,43 @@ import {
 
 const emptySubCert = {
   id: '',
+  certificationRef: '',
   scopeId: '',
   testingCycleId: '',
   period: '',
+  certificationType: 'Year-End',
+  certificationDate: new Date().toISOString().slice(0, 10),
   subjectType: 'Organization Unit',
   subjectId: '',
   certifierName: '',
   certifierRole: '',
+  certifierEmail: '',
   declarationText: '',
+  scopeComplete: false,
   controlsPerformed: false,
+  evidenceComplete: false,
   changesDisclosed: false,
   deficienciesDisclosed: false,
   fraudDisclosed: false,
   remediationAccurate: false,
+  judgmentsDisclosed: false,
+  subsequentEventsDisclosed: false,
+  managementOverrideDisclosed: false,
+  materialChangeDetails: '',
+  deficiencyDetails: '',
+  fraudDetails: '',
+  remediationDetails: '',
+  judgmentDetails: '',
+  subsequentEventDetails: '',
+  managementOverrideDetails: '',
+  evidenceReference: '',
+  exceptionRationale: '',
+  additionalComments: '',
   conclusion: 'Not Concluded',
   status: 'Draft',
   reviewerName: '',
+  reviewerRole: '',
+  reviewerEmail: '',
   reviewerDecision: '',
   reviewerComments: ''
 };
@@ -111,12 +132,24 @@ export default function CertificationPage() {
       const subjectType = payload.organizationUnits?.length ? 'Organization Unit' : 'Legal Entity';
       const attestationId = payload.attestations?.[0]?.id || '';
 
+      const defaultSubject =
+        subjectType === 'Organization Unit'
+          ? payload.organizationUnits?.find((item: any) => item.id === subjectId)
+          : payload.legalEntities?.find((item: any) => item.id === subjectId);
+
       setSubCertForm(current => ({
         ...current,
         scopeId: current.scopeId || scopeId,
         testingCycleId: current.testingCycleId || cycleId,
         subjectType: current.subjectId ? current.subjectType : subjectType,
-        subjectId: current.subjectId || subjectId
+        subjectId: current.subjectId || subjectId,
+        certificationDate: current.certificationDate || new Date().toISOString().slice(0, 10),
+        certifierName:
+          current.certifierName ||
+          (defaultSubject?.headName ? String(defaultSubject.headName) : ''),
+        certifierEmail:
+          current.certifierEmail ||
+          (defaultSubject?.headEmail ? String(defaultSubject.headEmail) : '')
       }));
 
       setAttestationForm(current => ({
@@ -154,6 +187,47 @@ export default function CertificationPage() {
     if (subCertForm.subjectType === 'Legal Entity') return data?.legalEntities || [];
     return data?.organizationUnits || [];
   }, [data, subCertForm.subjectType]);
+
+  const selectedSubject = useMemo(
+    () => subjects.find((item: any) => item.id === subCertForm.subjectId) || null,
+    [subjects, subCertForm.subjectId]
+  );
+
+  const selectedScope = useMemo(
+    () => data?.scopes?.find((item: any) => item.id === subCertForm.scopeId) || null,
+    [data, subCertForm.scopeId]
+  );
+
+  const selectedCycle = useMemo(
+    () => data?.cycles?.find((item: any) => item.id === subCertForm.testingCycleId) || null,
+    [data, subCertForm.testingCycleId]
+  );
+
+  const subjectContext = useMemo(
+    () =>
+      data?.subjectContext?.[
+        `${subCertForm.subjectType}:${subCertForm.subjectId}`
+      ] || null,
+    [data, subCertForm.subjectType, subCertForm.subjectId]
+  );
+
+  const selectSubject = (type: string, subjectId: string) => {
+    const list =
+      type === 'Legal Entity'
+        ? data?.legalEntities || []
+        : data?.organizationUnits || [];
+    const subject = list.find((item: any) => item.id === subjectId) || null;
+
+    setSubCertForm(current => ({
+      ...current,
+      subjectType: type,
+      subjectId,
+      certifierName: subject?.headName ? String(subject.headName) : '',
+      certifierEmail: subject?.headEmail ? String(subject.headEmail) : '',
+      certifierRole: ''
+    }));
+  };
+
 
   const subCertCycles = useMemo(
     () => (data?.cycles || []).filter((item: any) => !subCertForm.scopeId || item.scopeId === subCertForm.scopeId),
@@ -276,22 +350,43 @@ export default function CertificationPage() {
   const editSubCert = (item: any) => {
     setSubCertForm({
       id: item.id || '',
+      certificationRef: item.certificationRef || '',
       scopeId: item.scopeId || '',
       testingCycleId: item.testingCycleId || '',
       period: item.period || '',
+      certificationType: item.certificationType || 'Year-End',
+      certificationDate: item.certificationDate || new Date().toISOString().slice(0, 10),
       subjectType: item.subjectType || 'Organization Unit',
       subjectId: item.subjectId || '',
       certifierName: item.certifierName || '',
       certifierRole: item.certifierRole || '',
+      certifierEmail: item.certifierEmail || '',
       declarationText: item.declarationText || '',
+      scopeComplete: Boolean(item.scopeComplete),
       controlsPerformed: Boolean(item.controlsPerformed),
+      evidenceComplete: Boolean(item.evidenceComplete),
       changesDisclosed: Boolean(item.changesDisclosed),
       deficienciesDisclosed: Boolean(item.deficienciesDisclosed),
       fraudDisclosed: Boolean(item.fraudDisclosed),
       remediationAccurate: Boolean(item.remediationAccurate),
+      judgmentsDisclosed: Boolean(item.judgmentsDisclosed),
+      subsequentEventsDisclosed: Boolean(item.subsequentEventsDisclosed),
+      managementOverrideDisclosed: Boolean(item.managementOverrideDisclosed),
+      materialChangeDetails: item.materialChangeDetails || '',
+      deficiencyDetails: item.deficiencyDetails || '',
+      fraudDetails: item.fraudDetails || '',
+      remediationDetails: item.remediationDetails || '',
+      judgmentDetails: item.judgmentDetails || '',
+      subsequentEventDetails: item.subsequentEventDetails || '',
+      managementOverrideDetails: item.managementOverrideDetails || '',
+      evidenceReference: item.evidenceReference || '',
+      exceptionRationale: item.exceptionRationale || '',
+      additionalComments: item.additionalComments || '',
       conclusion: item.conclusion || 'Not Concluded',
       status: item.status || 'Draft',
       reviewerName: item.reviewerName || '',
+      reviewerRole: item.reviewerRole || '',
+      reviewerEmail: item.reviewerEmail || '',
       reviewerDecision: item.reviewerDecision || '',
       reviewerComments: item.reviewerComments || ''
     });
