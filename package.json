@@ -12,6 +12,7 @@
     "prisma:seed-reference": "node prisma/seed.js",
     "verify:no-dummy": "node scripts/verify-no-dummy-data.js",
     "verify:modules": "node scripts/verify-sidebar-modules.js",
+    "verify:auth-security": "node scripts/verify-auth-security.js",
     "build:cloudflare": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
