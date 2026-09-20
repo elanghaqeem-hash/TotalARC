@@ -5,6 +5,9 @@ import {
   createUser,
   getRoleCatalog,
   listUsers,
+  resetUserCredential,
+  forceUserPasswordChange,
+  unlockUserCredential,
   sessionUser,
   updateUserAdministration
 } from '@/lib/d1-auth';
@@ -90,6 +93,60 @@ export async function POST(request: Request) {
       return NextResponse.json(record, { status: 201 });
     }
 
+    if (actionType === 'RESET_CREDENTIAL') {
+      const userId = typeof body.userId === 'string' ? body.userId : '';
+      if (!userId) {
+        return NextResponse.json({ error: 'User is required.' }, { status: 400 });
+      }
+      const result = await resetUserCredential(
+        {
+          userId,
+          institutionId:
+            typeof body.institutionId === 'string' && body.institutionId
+              ? body.institutionId
+              : current.institution.id
+        },
+        current
+      );
+      return NextResponse.json(result);
+    }
+
+    if (actionType === 'FORCE_PASSWORD_CHANGE') {
+      const userId = typeof body.userId === 'string' ? body.userId : '';
+      if (!userId) {
+        return NextResponse.json({ error: 'User is required.' }, { status: 400 });
+      }
+      const result = await forceUserPasswordChange(
+        {
+          userId,
+          institutionId:
+            typeof body.institutionId === 'string' && body.institutionId
+              ? body.institutionId
+              : current.institution.id
+        },
+        current
+      );
+      return NextResponse.json(result);
+    }
+
+    if (actionType === 'UNLOCK_USER') {
+      const userId = typeof body.userId === 'string' ? body.userId : '';
+      if (!userId) {
+        return NextResponse.json({ error: 'User is required.' }, { status: 400 });
+      }
+      const result = await unlockUserCredential(
+        {
+          userId,
+          institutionId:
+            typeof body.institutionId === 'string' && body.institutionId
+              ? body.institutionId
+              : current.institution.id
+        },
+        current
+      );
+      return NextResponse.json(result);
+    }
+
     if (actionType === 'UPDATE_ACCESS') {
       const result = await updateUserAdministration(
         {
@@ -132,7 +189,9 @@ export async function POST(request: Request) {
       PRIVILEGED_ROLE_RESTRICTED: ['Platform super administrator role can only be assigned by a platform super administrator.', 403],
       SOD_CONFLICT: ['Role assignment violates segregation of duty.', 409],
       USER_IDENTITY_CONFLICT: ['Username, employee ID or email is already registered.', 409],
-      USER_NOT_FOUND: ['User not found.', 404]
+      USER_NOT_FOUND: ['User not found.', 404],
+      SELF_CREDENTIAL_ADMIN_NOT_ALLOWED: ['Use My Profile to manage your own password. Administrative credential reset cannot target the signed-in administrator.', 409],
+      PRIVILEGED_CREDENTIAL_RESET_REQUIRES_APPROVER: ['Credential administration for a privileged user requires an access approver or platform super administrator.', 403]
     };
     const known = map[code];
     return NextResponse.json(
