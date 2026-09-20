@@ -191,13 +191,18 @@ export default function RemediationPage() {
     setSaving(true);
     setError('');
     try {
-      await postAction({
+      const updatedMap = await postAction({
         actionType: 'REQUEST_EXTENSION',
         mapId: extensionMap.id,
         ...extensionForm
       });
+      setData((current: any) => ({
+        ...current,
+        maps: current.maps.map((map: any) =>
+          map.id === updatedMap.id ? { ...map, ...updatedMap } : map
+        )
+      }));
       setExtensionMap(null);
-      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update Management Action Plan.');
     } finally {
@@ -213,39 +218,67 @@ export default function RemediationPage() {
     setError('');
     try {
       if (workflow.type === 'DEFICIENCY') {
-        await postAction({
+        const created = await postAction({
           actionType: 'CREATE_DEFICIENCY',
           exceptionId: workflow.record.id,
           ...deficiencyForm
         });
+        setData((current: any) => ({
+          ...current,
+          deficiencies: [created, ...current.deficiencies]
+        }));
       } else if (workflow.type === 'ISSUE') {
-        await postAction({
+        const created = await postAction({
           actionType: 'CREATE_ISSUE',
           deficiencyId: workflow.record.id,
           ...issueForm
         });
+        setData((current: any) => ({
+          ...current,
+          issues: [created, ...current.issues]
+        }));
       } else if (workflow.type === 'MAP') {
-        await postAction({
+        const created = await postAction({
           actionType: 'CREATE_MAP',
           issueId: workflow.record.id,
           ...mapForm
         });
+        setData((current: any) => ({
+          ...current,
+          maps: [{ ...created, milestones: [], retests: [] }, ...current.maps]
+        }));
       } else if (workflow.type === 'MILESTONE') {
-        await postAction({
+        const created = await postAction({
           actionType: 'CREATE_MILESTONE',
           mapId: workflow.record.id,
           ...milestoneForm
         });
+        setData((current: any) => ({
+          ...current,
+          maps: current.maps.map((map: any) =>
+            map.id === workflow.record.id
+              ? { ...map, milestones: [...(map.milestones || []), created] }
+              : map
+          )
+        }));
       } else if (workflow.type === 'RETEST') {
-        await postAction({
+        const created = await postAction({
           actionType: 'CREATE_RETEST',
           mapId: workflow.record.id,
           ...retestForm
         });
+        setData((current: any) => ({
+          ...current,
+          retests: [created, ...current.retests],
+          maps: current.maps.map((map: any) =>
+            map.id === workflow.record.id
+              ? { ...map, retests: [created, ...(map.retests || [])] }
+              : map
+          )
+        }));
       }
 
       setWorkflow(null);
-      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to persist remediation action.');
     } finally {

@@ -70,10 +70,15 @@ function nullable(value: unknown) {
   return value === undefined || value === '' ? null : value;
 }
 
-export async function ensureAssuranceSchema() {
-  const db = await getDb();
+let assuranceSchemaReady: Promise<D1DatabaseLike> | null = null;
 
-  await executeSchemaScript(db, `
+export async function ensureAssuranceSchema() {
+  if (assuranceSchemaReady) return assuranceSchemaReady;
+
+  assuranceSchemaReady = (async () => {
+    const db = await getDb();
+
+    await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS ToETest (
       id TEXT PRIMARY KEY NOT NULL,
       testId TEXT NOT NULL,
@@ -268,9 +273,15 @@ export async function ensureAssuranceSchema() {
       detectedAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ccm_exception_run ON CCMException(runId);
-  `);
+    `);
 
-  return db;
+    return db;
+  })().catch(error => {
+    assuranceSchemaReady = null;
+    throw error;
+  });
+
+  return assuranceSchemaReady;
 }
 
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
@@ -470,11 +481,27 @@ export async function createToeTest(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ToETest WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    testId: enterpriseId,
+    controlId: control.id,
+    processId: control.processId,
+    riskId: null,
+    testerName: input.testerName,
+    reviewerName: nullable(input.reviewerName),
+    period: input.period,
+    populationSize: input.populationSize,
+    populationSource: input.populationSource,
+    samplingMethod: input.samplingMethod,
+    sampleSize: 0,
+    passCount: 0,
+    failCount: 0,
+    testerConclusion: 'Not Assessed',
+    finalConclusion: 'Not Assessed',
+    status: 'Planned',
+    notes: nullable(input.notes),
+    testedAt
+  };
 }
 
 export async function addToeSample(input: {
@@ -525,11 +552,18 @@ export async function addToeSample(input: {
     [sampleNumber, input.toeTestId]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM TestSample WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    toeTestId: input.toeTestId,
+    sampleNumber,
+    transactionRef: input.transactionRef,
+    transactionDate: input.transactionDate,
+    amount: input.amount === null || input.amount === undefined ? null : input.amount,
+    attributesTested: nullable(input.attributesTested),
+    result: 'Not Tested',
+    failureReason: null,
+    evidenceRef: nullable(input.evidenceRef)
+  };
 }
 
 export async function createTestingExceptionFromSample(input: {
@@ -589,11 +623,16 @@ export async function createTestingExceptionFromSample(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM TestingException WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    toeTestId: input.toeTestId,
+    exceptionNumber,
+    sampleRef: sample.transactionRef,
+    description,
+    severity,
+    status: 'Confirmed Exception',
+    createdAt: nowIso()
+  };
 }
 
 export async function createControlDeficiency(input: {
@@ -657,11 +696,23 @@ export async function createControlDeficiency(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ControlDeficiency WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    exceptionId: input.exceptionId,
+    deficiencyId,
+    title: input.title,
+    description: input.description,
+    classification,
+    financialImpact:
+      input.financialImpact === null || input.financialImpact === undefined
+        ? null
+        : input.financialImpact,
+    regulatoryImpact: nullable(input.regulatoryImpact),
+    compensatingControls: nullable(input.compensatingControls),
+    humanApproved: 1,
+    approvedBy: input.approvedBy,
+    createdAt: nowIso()
+  };
 }
 
 export async function createIssueFromDeficiency(input: {
@@ -736,11 +787,24 @@ export async function createIssueFromDeficiency(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM Issue WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    institutionId: process.institutionId,
+    issueId,
+    source: 'TOE',
+    processId: test.processId,
+    riskId: test.riskId || null,
+    controlId: test.controlId,
+    deficiencyId: deficiency.id,
+    title: input.title,
+    description: input.description,
+    severity,
+    ownerName: input.ownerName,
+    targetDate: input.targetDate,
+    status: 'Open',
+    createdAt: now,
+    updatedAt: now
+  };
 }
 
 export async function createManagementActionPlan(input: {
@@ -784,11 +848,24 @@ export async function createManagementActionPlan(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    mapId,
+    issueId: issue.id,
+    agreedAction: input.agreedAction,
+    recommendation: nullable(input.recommendation),
+    actionOwner: input.actionOwner,
+    approverName: input.approverName,
+    originalDueDate: input.originalDueDate,
+    revisedDueDate: null,
+    extensionCount: 0,
+    extensionReason: null,
+    progressPercent: 0,
+    status: 'Draft',
+    completedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
 }
 
 export async function createMapMilestone(input: {
@@ -814,11 +891,17 @@ export async function createMapMilestone(input: {
     [id, map.id, input.title, input.owner, input.dueDate, nowIso()]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM MAPMilestone WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    mapId: map.id,
+    title: input.title,
+    owner: input.owner,
+    dueDate: input.dueDate,
+    status: 'Pending',
+    progressPercent: 0,
+    evidenceDoc: null,
+    createdAt: nowIso()
+  };
 }
 
 export async function createRetestRecord(input: {
@@ -878,11 +961,19 @@ export async function createRetestRecord(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM RetestRecord WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    mapId: map.id,
+    retestId,
+    sampleCount: input.sampleCount,
+    passedCount: input.passedCount,
+    failedCount: input.failedCount,
+    testerName: input.testerName,
+    reviewerName: input.reviewerName,
+    result,
+    conclusionNotes: nullable(input.conclusionNotes),
+    retestedAt: nowIso()
+  };
 }
 
 export async function listToeTests() {
@@ -998,11 +1089,11 @@ export async function updateToeSample(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM TestSample WHERE id = ? LIMIT 1',
-    [input.sampleId]
-  );
+  return {
+    ...sample,
+    result: input.result,
+    failureReason: input.result === 'Fail' ? nullable(input.failureReason) : null
+  };
 }
 
 export async function listRemediationData() {
@@ -1117,11 +1208,14 @@ export async function requestMapExtension(input: {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ManagementActionPlan WHERE id = ? LIMIT 1',
-    [input.mapId]
-  );
+  return {
+    ...existing,
+    revisedDueDate: input.newDueDate,
+    extensionCount,
+    extensionReason: input.extensionReason,
+    approverName: input.approverName,
+    updatedAt: nowIso()
+  };
 }
 
 export async function listMonitoringRules() {
@@ -1223,11 +1317,21 @@ export async function createMonitoringRule(input: Record<string, unknown>) {
     ]
   );
 
-  return first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM MonitoringRule WHERE id = ? LIMIT 1',
-    [id]
-  );
+  return {
+    id,
+    ruleId: enterpriseId,
+    controlId: control.id,
+    name: input.name,
+    description: input.description,
+    dataSource: input.dataSource,
+    queryLogic: input.queryLogic,
+    frequency: input.frequency || 'Real Time',
+    threshold: input.threshold || '0 Transactions',
+    status: 'Active',
+    lastRunDate: null,
+    lastStatus: 'Not Run',
+    createdAt
+  };
 }
 
 export async function ingestMonitoringRun(input: {

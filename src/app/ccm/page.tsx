@@ -80,12 +80,20 @@ export default function CCMPage() {
         throw new Error(payload.error || 'Unable to create monitoring rule.');
       }
 
+      const control = controls.find((item: any) => item.id === payload.controlId) || null;
+      setRules(current => [
+        {
+          ...payload,
+          control,
+          runs: []
+        },
+        ...current
+      ]);
       setCreateOpen(false);
       setForm({
         ...EMPTY_FORM,
         controlId: controls[0]?.id || ''
       });
-      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create monitoring rule.');
     } finally {

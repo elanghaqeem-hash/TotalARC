@@ -28,6 +28,8 @@ export default function ProcessesPage() {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [newProcessModal, setNewProcessModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // New process form state
   const [formData, setFormData] = useState({
@@ -71,18 +73,37 @@ export default function ProcessesPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
+    setSaveError('');
+
     try {
       const res = await fetch('/api/processes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.ok) {
-        setNewProcessModal(false);
-        loadProcesses();
-      }
-    } catch (e) {
-      console.error(e);
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Unable to save process.');
+
+      setProcesses(current =>
+        [...current, payload].sort((a, b) => String(a.processId).localeCompare(String(b.processId)))
+      );
+      setSelectedProcess(payload);
+      setFormData({
+        processId: '',
+        name: '',
+        categoryId: categories[0]?.id || '',
+        ownerName: '',
+        criticality: 'Critical',
+        classification: 'Core',
+        isIcofrRelevant: true,
+        description: ''
+      });
+      setNewProcessModal(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Unable to save process.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -394,6 +415,11 @@ export default function ProcessesPage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-3 text-xs">
+              {saveError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
+                  {saveError}
+                </div>
+              )}
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Process Name *</label>
                 <input
@@ -483,9 +509,10 @@ export default function ProcessesPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm"
+                  disabled={saving}
+                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save Process Master
+                  {saving ? 'Saving…' : 'Save Process Master'}
                 </button>
               </div>
             </form>

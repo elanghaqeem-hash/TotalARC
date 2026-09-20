@@ -108,10 +108,15 @@ function riskRating(score: number) {
   return 'Low';
 }
 
-export async function ensureCoreDomainSchema() {
-  const db = await getDb();
+let coreDomainSchemaReady: Promise<D1DatabaseLike> | null = null;
 
-  await executeSchemaScript(db, `
+export async function ensureCoreDomainSchema() {
+  if (coreDomainSchemaReady) return coreDomainSchemaReady;
+
+  coreDomainSchemaReady = (async () => {
+    const db = await getDb();
+
+    await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS Institution (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -322,18 +327,24 @@ export async function ensureCoreDomainSchema() {
     CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON AuditLog(timestamp);
   `);
 
-  const createdAt = nowIso();
-  for (const category of PROCESS_CATEGORIES) {
-    await run(
-      db,
-      `INSERT OR IGNORE INTO ProcessCategory
-        (id, code, name, description, orderIndex, createdAt)
-       VALUES (?, ?, ?, NULL, ?, ?)`,
-      [category.id, category.code, category.name, category.orderIndex, createdAt]
-    );
-  }
+    const createdAt = nowIso();
+    for (const category of PROCESS_CATEGORIES) {
+      await run(
+        db,
+        `INSERT OR IGNORE INTO ProcessCategory
+          (id, code, name, description, orderIndex, createdAt)
+         VALUES (?, ?, ?, NULL, ?, ?)`,
+        [category.id, category.code, category.name, category.orderIndex, createdAt]
+      );
+    }
 
-  return db;
+    return db;
+  })().catch(error => {
+    coreDomainSchemaReady = null;
+    throw error;
+  });
+
+  return coreDomainSchemaReady;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
@@ -565,12 +576,31 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
     ]
   );
 
-  const created = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [id]
-  );
-  if (!created) throw new Error('PROCESS_CREATE_FAILED');
+  const created: Record<string, unknown> = {
+    id,
+    institutionId: institution.id,
+    legalEntityId: null,
+    orgUnitId: null,
+    categoryId: category.id,
+    processId: enterpriseId,
+    name: input.name,
+    level: 2,
+    parentProcessId: null,
+    description: nullable(input.description),
+    ownerName: input.ownerName,
+    ownerEmail: null,
+    managerName: null,
+    criticality: input.criticality,
+    classification: input.classification,
+    isIcofrRelevant: input.isIcofrRelevant ? 1 : 0,
+    status: 'Draft',
+    version: '1.0',
+    effectiveDate: now,
+    reviewDate: null,
+    tags: null,
+    createdAt: now,
+    updatedAt: now
+  };
 
   await writeAudit(db, {
     institutionId: String(institution.id),
@@ -581,7 +611,25 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
     reason: 'Business process registered in Cloudflare D1.'
   });
 
-  return hydrateProcess(db, created);
+  return {
+    ...processRow(created),
+    id,
+    institutionId: String(institution.id),
+    categoryId: String(category.id),
+    processId: enterpriseId,
+    name: String(input.name),
+    description: typeof created.description === 'string' ? created.description : null,
+    criticality: String(input.criticality || ''),
+    classification: String(input.classification || ''),
+    status: 'Draft',
+    category,
+    orgUnit: null,
+    objectives: [],
+    sipoc: null,
+    activities: [],
+    risks: [],
+    controls: []
+  } as D1BusinessProcess;
 }
 
 export async function listRisks() {
@@ -716,12 +764,33 @@ export async function createRisk(input: Record<string, unknown>) {
     ]
   );
 
-  const created = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM RiskMaster WHERE id = ? LIMIT 1',
-    [id]
-  );
-  if (!created) throw new Error('RISK_CREATE_FAILED');
+  const created: Record<string, unknown> = {
+    id,
+    institutionId: process.institutionId,
+    processId: process.id,
+    activityId: null,
+    riskId: enterpriseId,
+    name: input.name,
+    description,
+    cause: input.cause,
+    event: input.event,
+    impact: input.impact,
+    category: input.category,
+    ownerName: input.ownerName,
+    inherentLikelihood: likelihood,
+    inherentImpact: impactValue,
+    inherentScore: score,
+    inherentRating: rating,
+    residualLikelihood: likelihood,
+    residualImpact: impactValue,
+    residualScore: score,
+    residualRating: rating,
+    riskTreatment: 'Not Assessed',
+    status: 'Active',
+    version: '1.0',
+    createdAt: now,
+    updatedAt: now
+  };
 
   await writeAudit(db, {
     institutionId: String(process.institutionId),
@@ -884,12 +953,39 @@ export async function createControl(input: Record<string, unknown>) {
     );
   }
 
-  const created = await first<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
-    [id]
-  );
-  if (!created) throw new Error('CONTROL_CREATE_FAILED');
+  const created: Record<string, unknown> = {
+    id,
+    institutionId: process.institutionId,
+    processId: process.id,
+    activityId: null,
+    controlId: enterpriseId,
+    name: input.name,
+    description: input.description,
+    objective: input.objective,
+    controlOwner: input.controlOwner,
+    performer: null,
+    reviewer: null,
+    type: input.type,
+    nature: input.nature,
+    method: 'Approval',
+    frequency: input.frequency,
+    isKeyControl: input.isKeyControl ? 1 : 0,
+    keyControlRationale: null,
+    isIcofrKey: input.isIcofrKey ? 1 : 0,
+    isItgc: 0,
+    evidenceRequirement: null,
+    systemDependency: null,
+    frameworkMapping: null,
+    regulationMapping: null,
+    designAssessment: 'Not Assessed',
+    operatingStatus: 'Not Assessed',
+    overallHealth: 'Not Assessed',
+    healthRationale: null,
+    version: '1.0',
+    status: 'Active',
+    createdAt: now,
+    updatedAt: now
+  };
 
   await writeAudit(db, {
     institutionId: String(process.institutionId),

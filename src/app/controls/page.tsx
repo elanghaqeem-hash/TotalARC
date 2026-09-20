@@ -27,6 +27,8 @@ export default function ControlsPage() {
   const [selectedControl, setSelectedControl] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [newControlModal, setNewControlModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -97,18 +99,41 @@ export default function ControlsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
+    setSaveError('');
+
     try {
       const res = await fetch('/api/controls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.ok) {
-        setNewControlModal(false);
-        loadControls();
-      }
-    } catch (e) {
-      console.error(e);
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Unable to save control.');
+
+      setControls(current =>
+        [...current, payload].sort((a, b) => String(a.controlId).localeCompare(String(b.controlId)))
+      );
+      setSelectedControl(payload);
+      setFormData({
+        controlId: '',
+        name: '',
+        description: '',
+        objective: '',
+        processId: formData.processId || processes[0]?.id || '',
+        riskId: '',
+        controlOwner: '',
+        type: 'Preventive',
+        nature: 'IT Dependent Manual',
+        frequency: 'Per Transaction',
+        isKeyControl: false,
+        isIcofrKey: false
+      });
+      setNewControlModal(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Unable to save control.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -347,6 +372,11 @@ export default function ControlsPage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-3 text-xs">
+              {saveError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
+                  {saveError}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Control ID</label>
@@ -526,10 +556,10 @@ export default function ControlsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={processes.length === 0}
+                  disabled={saving || processes.length === 0}
                   className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save Control Master
+                  {saving ? 'Saving…' : 'Save Control Master'}
                 </button>
               </div>
             </form>
