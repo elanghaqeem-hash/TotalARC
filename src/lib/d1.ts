@@ -57,14 +57,7 @@ async function getD1(): Promise<D1DatabaseLike> {
 }
 
 async function executeSchemaScript(db: D1DatabaseLike, script: string) {
-  const statements = script
-    .split(';')
-    .map(statement => statement.trim())
-    .filter(Boolean);
-
-  for (const statement of statements) {
-    await db.prepare(statement).run();
-  }
+  await db.exec(script);
 }
 
 let institutionSchemaReady: Promise<void> | null = null;
