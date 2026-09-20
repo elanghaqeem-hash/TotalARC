@@ -251,6 +251,13 @@ jobs:
             (.reportPacks | type) == "array"
           '
 
+          check_json "icofr-roll-forward" "/api/icofr/roll-forward" '
+            .storage == "cloudflare-d1" and
+            (.sourceCloses | type) == "array" and
+            (.rollForwards | type) == "array" and
+            (.metrics | type) == "object"
+          '
+
           check_json "database-final" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and
