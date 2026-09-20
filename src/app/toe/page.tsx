@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, FlaskConical, Plus, Save, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 
 const EMPTY_TEST_FORM = {
   testId: '',
@@ -45,17 +46,9 @@ export default function ToEPage() {
   const loadData = async () => {
     setError('');
     try {
-      const [testResponse, controlResponse] = await Promise.all([
-        fetch('/api/assure/toe'),
-        fetch('/api/controls')
-      ]);
-
-      if (!testResponse.ok) throw new Error('ToE data unavailable');
-      if (!controlResponse.ok) throw new Error('Control library unavailable');
-
       const [testData, controlData] = await Promise.all([
-        testResponse.json(),
-        controlResponse.json()
+        jsonRead<any>('/api/assure/toe', { dedupe: false }),
+        jsonRead<any>('/api/controls', { dedupe: false })
       ]);
       const nextTests = Array.isArray(testData.tests) ? testData.tests : [];
       const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
