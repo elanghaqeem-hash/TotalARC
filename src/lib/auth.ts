@@ -2,6 +2,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { recordMutationAudit } from '@/lib/d1-core';
 import { mutationActorFromRequest } from '@/lib/mutation-security';
+import { PERFORMANCE_STANDARDS } from '@/lib/performance';
 
 export const USER_ROLES = [
   'Admin',
@@ -155,7 +156,9 @@ async function ensureAuthColumn(
   }
 }
 
-async function ensureAuthSchema(db: D1DatabaseLike) {
+let authSchemaPromise: Promise<void> | null = null;
+
+async function initializeAuthSchema(db: D1DatabaseLike) {
   const statements = [
     `CREATE TABLE IF NOT EXISTS AccessUser (
       id TEXT PRIMARY KEY NOT NULL,
@@ -182,6 +185,17 @@ async function ensureAuthSchema(db: D1DatabaseLike) {
   await ensureAuthColumn(db, 'orgUnitId', 'TEXT');
   await ensureAuthColumn(db, 'orgAccessScope', "TEXT NOT NULL DEFAULT 'ALL'");
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_access_user_org_unit ON AccessUser(orgUnitId)').run();
+}
+
+
+async function ensureAuthSchema(db: D1DatabaseLike) {
+  if (!authSchemaPromise) {
+    authSchemaPromise = initializeAuthSchema(db).catch(error => {
+      authSchemaPromise = null;
+      throw error;
+    });
+  }
+  return authSchemaPromise;
 }
 
 async function first<T = Record<string, unknown>>(
@@ -328,17 +342,26 @@ export async function authenticateRequest(request: Request): Promise<Authenticat
     );
   }
 
-  const now = new Date().toISOString();
-  await run(
-    db,
-    'UPDATE AccessUser SET lastAuthenticatedAt = ? WHERE id = ?',
-    [now, row.id]
-  );
+  const nowMs = Date.now();
+  const previousAuthMs = row.lastAuthenticatedAt
+    ? Date.parse(row.lastAuthenticatedAt)
+    : 0;
+  const shouldRefreshAuthActivity =
+    !previousAuthMs
+    || Number.isNaN(previousAuthMs)
+    || nowMs - previousAuthMs >= PERFORMANCE_STANDARDS.authActivityWriteIntervalMs;
 
-  return mapUser({
-    ...row,
-    lastAuthenticatedAt: now
-  });
+  if (shouldRefreshAuthActivity) {
+    const now = new Date(nowMs).toISOString();
+    await run(
+      db,
+      'UPDATE AccessUser SET lastAuthenticatedAt = ? WHERE id = ?',
+      [now, row.id]
+    );
+    row = { ...row, lastAuthenticatedAt: now };
+  }
+
+  return mapUser(row);
 }
 
 export async function bindBootstrapAdminToInstitution(
