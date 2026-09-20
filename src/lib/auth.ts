@@ -51,7 +51,6 @@ type AuthUserRow = {
   failedLoginCount: number;
   lockedUntil: string | null;
   lastLoginAt: string | null;
-  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -554,6 +553,7 @@ export type ManagedUserSummary = {
   failedLoginCount: number;
   lockedUntil: string | null;
   lastLoginAt: string | null;
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 };
