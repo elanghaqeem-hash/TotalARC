@@ -109,6 +109,12 @@ jobs:
             .readOnlyProbe == true
           '
 
+          check_json "organization" "/api/organization" '
+            .storage == "cloudflare-d1" and
+            (.legalEntities | type) == "array" and
+            (.organizationUnits | type) == "array"
+          '
+
           check_json "processes" "/api/processes" '
             .storage == "cloudflare-d1" and
             (.processes | type) == "array" and
