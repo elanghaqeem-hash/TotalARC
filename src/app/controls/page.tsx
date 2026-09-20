@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { getHealthBadgeClasses } from '@/lib/utils';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 
 export default function ControlsPage() {
   const [controls, setControls] = useState<any[]>([]);
@@ -49,18 +50,9 @@ export default function ControlsPage() {
 
   const loadControls = () => {
     Promise.all([
-      fetch('/api/controls').then(res => {
-        if (!res.ok) throw new Error('Unable to load controls.');
-        return res.json();
-      }),
-      fetch('/api/processes').then(res => {
-        if (!res.ok) throw new Error('Unable to load processes.');
-        return res.json();
-      }),
-      fetch('/api/risks').then(res => {
-        if (!res.ok) throw new Error('Unable to load risks.');
-        return res.json();
-      })
+      jsonRead<any>('/api/controls', { dedupe: false }),
+      jsonRead<any>('/api/processes', { dedupe: false }),
+      jsonRead<any>('/api/risks', { dedupe: false })
     ])
       .then(([controlData, processData, riskData]) => {
         const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
