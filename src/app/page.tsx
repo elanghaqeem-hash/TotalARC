@@ -235,23 +235,6 @@ export default function DashboardPage() {
               Pantau proses, risiko, kontrol, pengujian, remediation, dan continuous monitoring dari satu dashboard yang menggunakan data persisten pada sistem.
             </p>
 
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/rcm"
-                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-brand-700"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                Open Dynamic RCM
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-              <Link
-                href="/toe"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-4 py-2.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-brand-200 hover:text-brand-700"
-              >
-                <Cpu className="h-4 w-4 text-brand-600" />
-                ToE Workpaper
-              </Link>
-            </div>
           </div>
 
           <div className="self-stretch rounded-2xl border border-white/80 bg-slate-950/[0.93] p-5 text-white shadow-2xl shadow-sky-900/10 backdrop-blur">
