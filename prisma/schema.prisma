@@ -802,6 +802,75 @@ model Task {
   user            User?    @relation("TaskAssignee", fields: [userId], references: [id])
 }
 
+// -------------------------------------------------------------
+// 11. REGULATORY REPORTING & OJK ANALYSIS
+// -------------------------------------------------------------
+model RegulatoryReport {
+  id               String   @id @default(uuid())
+  institutionId    String
+  legalEntityId    String?
+  orgUnitId        String?
+  templateCode     String
+  title            String
+  period           String
+  reportingDate    DateTime
+  language         String   @default("Bahasa Indonesia")
+  reportOwner      String
+  reviewerName     String?
+  status           String   @default("Draft")
+  overallRating    String?
+  executiveSummary String?
+  conclusion       String?
+  aiAnalysis       String?
+  aiProvider       String?
+  aiModel          String?
+  aiGeneratedAt    DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sections         RegulatoryReportSection[]
+  sourceSnapshots  RegulatoryReportSourceSnapshot[]
+}
+
+model RegulatoryReportSection {
+  id                 String   @id @default(uuid())
+  reportId           String
+  sectionKey         String
+  orderIndex         Int
+  title              String
+  guidance           String
+  regulatoryReference String
+  content            String?
+  analysisSummary    String?
+  keyFindings        String?
+  rootCause          String?
+  impactAnalysis     String?
+  recommendation     String?
+  managementResponse String?
+  actionPlan         String?
+  ownerName          String?
+  targetDate         DateTime?
+  rating             String?
+  evidenceReference  String?
+  aiDraft            String?
+  reviewStatus       String   @default("Draft")
+  updatedAt          DateTime @updatedAt
+
+  report             RegulatoryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, sectionKey])
+}
+
+model RegulatoryReportSourceSnapshot {
+  id            String   @id @default(uuid())
+  reportId      String
+  snapshotJson  String
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  report        RegulatoryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+}
+
 model AuditLog {
   id            String   @id @default(uuid())
   institutionId String?
