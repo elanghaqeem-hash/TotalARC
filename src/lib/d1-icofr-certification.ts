@@ -1121,6 +1121,167 @@ export async function signManagementAttestation(
   return result;
 }
 
+async function getSubCertificationContext(
+  db: D1DatabaseLike,
+  institutionId: string
+) {
+  const [processRows, controlRows, todRows, toeRows, issueRows, mapRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT legalEntityId, orgUnitId, COUNT(*) AS processCount
+         FROM BusinessProcess
+        WHERE institutionId=?
+        GROUP BY legalEntityId, orgUnitId`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT p.legalEntityId, p.orgUnitId,
+              COUNT(c.id) AS controlCount,
+              SUM(CASE WHEN c.isKeyControl=1 THEN 1 ELSE 0 END) AS keyControlCount,
+              SUM(CASE WHEN c.isIcofrKey=1 THEN 1 ELSE 0 END) AS icofrKeyControlCount
+         FROM ControlMaster c
+         JOIN BusinessProcess p ON p.id=c.processId
+        WHERE c.institutionId=? AND p.institutionId=?
+        GROUP BY p.legalEntityId, p.orgUnitId`,
+      [institutionId, institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT p.legalEntityId, p.orgUnitId,
+              COUNT(t.id) AS todCount,
+              SUM(CASE
+                    WHEN t.status IN ('Approved','Completed')
+                     AND t.conclusion<>'Not Assessed'
+                    THEN 1 ELSE 0
+                  END) AS todCompleted
+         FROM ToDTest t
+         JOIN BusinessProcess p ON p.id=t.processId
+        WHERE p.institutionId=?
+        GROUP BY p.legalEntityId, p.orgUnitId`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT p.legalEntityId, p.orgUnitId,
+              COUNT(t.id) AS toeCount,
+              SUM(CASE
+                    WHEN t.status IN ('Completed','Closed','Approved')
+                     AND t.finalConclusion<>'Not Assessed'
+                    THEN 1 ELSE 0
+                  END) AS toeCompleted,
+              SUM(CASE WHEN t.failCount>0 THEN 1 ELSE 0 END) AS toeWithFailures
+         FROM ToETest t
+         JOIN BusinessProcess p ON p.id=t.processId
+        WHERE p.institutionId=?
+        GROUP BY p.legalEntityId, p.orgUnitId`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT p.legalEntityId, p.orgUnitId,
+              COUNT(i.id) AS issueCount,
+              SUM(CASE WHEN i.status NOT IN ('Closed','Completed') THEN 1 ELSE 0 END) AS openIssues,
+              SUM(CASE
+                    WHEN i.status NOT IN ('Closed','Completed')
+                     AND i.severity IN ('Critical','High')
+                    THEN 1 ELSE 0
+                  END) AS openHighCriticalIssues
+         FROM Issue i
+         JOIN BusinessProcess p ON p.id=i.processId
+        WHERE i.institutionId=? AND p.institutionId=?
+        GROUP BY p.legalEntityId, p.orgUnitId`,
+      [institutionId, institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT p.legalEntityId, p.orgUnitId,
+              COUNT(m.id) AS actionPlanCount,
+              SUM(CASE
+                    WHEN m.status NOT IN ('Completed','Closed')
+                     AND COALESCE(m.revisedDueDate,m.originalDueDate) < ?
+                    THEN 1 ELSE 0
+                  END) AS overdueActionPlans
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id=m.issueId
+         JOIN BusinessProcess p ON p.id=i.processId
+        WHERE i.institutionId=? AND p.institutionId=?
+        GROUP BY p.legalEntityId, p.orgUnitId`,
+      [nowIso().slice(0, 10), institutionId, institutionId]
+    )
+  ]);
+
+  type Context = {
+    processCount: number;
+    controlCount: number;
+    keyControlCount: number;
+    icofrKeyControlCount: number;
+    todCount: number;
+    todCompleted: number;
+    toeCount: number;
+    toeCompleted: number;
+    toeWithFailures: number;
+    issueCount: number;
+    openIssues: number;
+    openHighCriticalIssues: number;
+    actionPlanCount: number;
+    overdueActionPlans: number;
+  };
+
+  const contexts: Record<string, Context> = {};
+
+  const ensureContext = (key: string) => {
+    if (!contexts[key]) {
+      contexts[key] = {
+        processCount: 0,
+        controlCount: 0,
+        keyControlCount: 0,
+        icofrKeyControlCount: 0,
+        todCount: 0,
+        todCompleted: 0,
+        toeCount: 0,
+        toeCompleted: 0,
+        toeWithFailures: 0,
+        issueCount: 0,
+        openIssues: 0,
+        openHighCriticalIssues: 0,
+        actionPlanCount: 0,
+        overdueActionPlans: 0
+      };
+    }
+    return contexts[key];
+  };
+
+  const add = (
+    row: Record<string, unknown>,
+    fields: Array<keyof Context>
+  ) => {
+    const keys: string[] = [];
+    if (row.orgUnitId) keys.push('Organization Unit:' + String(row.orgUnitId));
+    if (row.legalEntityId) keys.push('Legal Entity:' + String(row.legalEntityId));
+
+    for (const key of keys) {
+      const target = ensureContext(key);
+      for (const field of fields) {
+        target[field] += Number(row[field] || 0);
+      }
+    }
+  };
+
+  for (const row of processRows) add(row, ['processCount']);
+  for (const row of controlRows) {
+    add(row, ['controlCount', 'keyControlCount', 'icofrKeyControlCount']);
+  }
+  for (const row of todRows) add(row, ['todCount', 'todCompleted']);
+  for (const row of toeRows) add(row, ['toeCount', 'toeCompleted', 'toeWithFailures']);
+  for (const row of issueRows) {
+    add(row, ['issueCount', 'openIssues', 'openHighCriticalIssues']);
+  }
+  for (const row of mapRows) add(row, ['actionPlanCount', 'overdueActionPlans']);
+
+  return contexts;
+}
+
 export async function getCertificationData() {
   const db = await ensureIcofrCertificationSchema();
   const institution = await primaryInstitution(db);
@@ -1139,7 +1300,7 @@ export async function getCertificationData() {
   }
 
   const organization = await getOrganizationStructure();
-  const [scopes, cycles, subCertifications, attestations, evidencePacks] = await Promise.all([
+  const [scopes, cycles, subCertifications, attestations, evidencePacks, subjectContext] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM ICOFRScope WHERE institutionId=? ORDER BY fiscalYear DESC, updatedAt DESC',
@@ -1164,7 +1325,8 @@ export async function getCertificationData() {
       db,
       'SELECT * FROM ICOFREvidencePack WHERE institutionId=? ORDER BY period DESC, updatedAt DESC',
       [institution.id]
-    )
+    ),
+    getSubCertificationContext(db, String(institution.id))
   ]);
 
   const subjectById = new Map<string, Record<string, unknown>>();
@@ -1193,12 +1355,19 @@ export async function getCertificationData() {
 
   const enrichedSubCertifications = subCertifications.map(item => ({
     ...item,
+    scopeComplete: bool(item.scopeComplete),
     controlsPerformed: bool(item.controlsPerformed),
+    evidenceComplete: bool(item.evidenceComplete),
     changesDisclosed: bool(item.changesDisclosed),
     deficienciesDisclosed: bool(item.deficienciesDisclosed),
     fraudDisclosed: bool(item.fraudDisclosed),
     remediationAccurate: bool(item.remediationAccurate),
-    subject: subjectById.get(String(item.subjectType) + ':' + String(item.subjectId)) || null
+    judgmentsDisclosed: bool(item.judgmentsDisclosed),
+    subsequentEventsDisclosed: bool(item.subsequentEventsDisclosed),
+    managementOverrideDisclosed: bool(item.managementOverrideDisclosed),
+    subject: subjectById.get(String(item.subjectType) + ':' + String(item.subjectId)) || null,
+    assuranceContext:
+      subjectContext[String(item.subjectType) + ':' + String(item.subjectId)] || null
   }));
 
   const enrichedAttestations = attestations.map(item => ({
@@ -1221,6 +1390,7 @@ export async function getCertificationData() {
     subCertifications: enrichedSubCertifications,
     attestations: enrichedAttestations,
     evidencePacks,
-    readiness
+    readiness,
+    subjectContext
   };
 }
