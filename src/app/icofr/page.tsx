@@ -34,7 +34,8 @@ const modules = [
   { href: '/remediation', title: 'Remediation & MAP', detail: 'Management action plans, ownership, due dates and retesting follow-up.', icon: BadgeCheck },
   { href: '/certification', title: 'Certification & Year-End Close', detail: 'Entity/unit sub-certification, readiness gates, management representation, evidence pack and CFO/CEO sign-off.', icon: BadgeCheck, countKey: 'attestations' },
   { href: '/icofr/reporting', title: 'Executive Reporting & Audit Reliance', detail: 'Board/Audit Committee reporting, deficiency aging, external-auditor reliance and PBC/evidence request tracking.', icon: BarChart3, countKey: 'pbcRequests' },
-  { href: '/icofr/period-close', title: 'Period Close, Lock & Archive', detail: 'Freeze signed ICOFR periods, create immutable versioned snapshots, govern controlled reopening and export Board/auditor evidence packs.', icon: FileCheck }
+  { href: '/icofr/period-close', title: 'Period Close, Lock & Archive', detail: 'Freeze signed ICOFR periods, create immutable versioned snapshots, govern controlled reopening and export Board/auditor evidence packs.', icon: FileCheck },
+  { href: '/icofr/roll-forward', title: 'Roll-Forward & New Period Setup', detail: 'Start the next period from a closed snapshot, compare year-over-year changes, revalidate scope/materiality and carry open deficiency follow-up without rebuilding the program.', icon: CalendarDays }
 ];
 
 export default function ICOFRPage() {
