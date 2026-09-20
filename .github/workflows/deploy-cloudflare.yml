@@ -127,13 +127,18 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
-      - name: Sync AI runtime secrets
+      - name: Sync runtime secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TOTAL_ARC_AUTH_SECRET: ${{ secrets.TOTAL_ARC_AUTH_SECRET }}
+          TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL }}
+          TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD }}
+          TOTAL_ARC_BOOTSTRAP_ADMIN_NAME: ${{ secrets.TOTAL_ARC_BOOTSTRAP_ADMIN_NAME }}
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -154,6 +159,16 @@ jobs:
           put_secret GEMINI_API_KEY "$GEMINI_API_KEY"
           put_secret GROQ_API_KEY "$GROQ_API_KEY"
           put_secret OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
+          put_secret TOTAL_ARC_AUTH_SECRET "$TOTAL_ARC_AUTH_SECRET"
+          put_secret TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL "$TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL"
+          put_secret TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD "$TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD"
+          put_secret TOTAL_ARC_BOOTSTRAP_ADMIN_NAME "$TOTAL_ARC_BOOTSTRAP_ADMIN_NAME"
+          put_secret TOTAL_ARC_HEALTHCHECK_TOKEN "$TOTAL_ARC_HEALTHCHECK_TOKEN"
+
+          if [ -z "$TOTAL_ARC_AUTH_SECRET" ] || [ -z "$TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL" ] || [ -z "$TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD" ]; then
+            echo "::warning::Total ARC authentication secrets are incomplete. The deployed application will require authentication configuration before users can sign in."
+          fi
+
           # Write the short-lived probe token last so the final secret-only
           # deployment is the one the verification step waits for.
           put_secret AI_PROBE_TOKEN "$AI_PROBE_TOKEN"
