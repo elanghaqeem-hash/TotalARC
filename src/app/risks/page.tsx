@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { getRiskBadgeClasses } from '@/lib/utils';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
@@ -45,14 +46,8 @@ export default function RisksPage() {
 
   const loadRisks = () => {
     Promise.all([
-      fetch('/api/risks').then(res => {
-        if (!res.ok) throw new Error('Unable to load risks.');
-        return res.json();
-      }),
-      fetch('/api/processes').then(res => {
-        if (!res.ok) throw new Error('Unable to load processes.');
-        return res.json();
-      })
+      jsonRead<any>('/api/risks', { dedupe: false }),
+      jsonRead<any>('/api/processes', { dedupe: false })
     ])
       .then(([riskData, processData]) => {
         const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
