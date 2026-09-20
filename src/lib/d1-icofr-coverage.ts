@@ -463,11 +463,23 @@ export async function getIcofrCoverageData() {
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM ToETest ORDER BY testedAt DESC'
+      `SELECT t.*
+         FROM ToETest t
+         JOIN ControlMaster c ON c.id = t.controlId
+        WHERE c.institutionId = ?
+        ORDER BY t.testedAt DESC`,
+      [institution.id]
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM ControlDeficiency ORDER BY createdAt DESC'
+      `SELECT d.*
+         FROM ControlDeficiency d
+         JOIN TestingException e ON e.id = d.exceptionId
+         JOIN ToETest t ON t.id = e.toeTestId
+         JOIN ControlMaster c ON c.id = t.controlId
+        WHERE c.institutionId = ?
+        ORDER BY d.createdAt DESC`,
+      [institution.id]
     ),
     all<Record<string, unknown>>(
       db,
