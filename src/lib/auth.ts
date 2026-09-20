@@ -282,7 +282,9 @@ async function findPrimaryInstitution(db: D1DatabaseLike) {
   }
 }
 
-export async function provisionBootstrapAdministrator() {
+export async function provisionBootstrapAdministrator(
+  options: { reconcilePendingAdmin?: boolean } = { reconcilePendingAdmin: true }
+) {
   const db = await ensureAuthSchema();
   const env = await runtimeEnv();
   const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
@@ -342,13 +344,24 @@ export async function provisionBootstrapAdministrator() {
     return { status: 'created' as const, userId: id };
   }
 
-  const candidate = await first<AuthUserRow>(
+  let candidate = await first<AuthUserRow>(
     db,
     `SELECT * FROM AuthUser
-     WHERE role = 'Admin' AND lastLoginAt IS NULL
+     WHERE role = 'Admin' AND lastLoginAt IS NULL AND emailNormalized = ?
      ORDER BY createdAt ASC
-     LIMIT 1`
+     LIMIT 1`,
+    [bootstrapEmail]
   );
+
+  if (!candidate && options.reconcilePendingAdmin) {
+    candidate = await first<AuthUserRow>(
+      db,
+      `SELECT * FROM AuthUser
+       WHERE role = 'Admin' AND lastLoginAt IS NULL
+       ORDER BY createdAt ASC
+       LIMIT 1`
+    );
+  }
 
   if (candidate) {
     const emailConflict = await first<{ id: string }>(
@@ -420,20 +433,25 @@ async function ensureBootstrapAdministratorForLogin(db: D1DatabaseLike) {
   );
 
   if (Number(count?.count || 0) === 0) {
-    await provisionBootstrapAdministrator();
+    await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
     return;
   }
+
+  const env = await runtimeEnv();
+  const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
+  if (!bootstrapEmail) return;
 
   const pendingAdmin = await first<{ id: string }>(
     db,
     `SELECT id FROM AuthUser
-     WHERE role = 'Admin' AND lastLoginAt IS NULL
+     WHERE role = 'Admin' AND lastLoginAt IS NULL AND emailNormalized = ?
      ORDER BY createdAt ASC
-     LIMIT 1`
+     LIMIT 1`,
+    [bootstrapEmail]
   );
 
   if (pendingAdmin) {
-    await provisionBootstrapAdministrator();
+    await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
   }
 }
 
