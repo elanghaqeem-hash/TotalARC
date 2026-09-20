@@ -715,8 +715,10 @@ export async function getAuthenticatedSession(token: string): Promise<Authentica
 
   const user = await first<Record<string, any>>(
     db,
-    `SELECT u.*,ou.code AS primaryOrgUnitCode,ou.name AS primaryOrgUnitName
+    `SELECT u.*,ou.code AS primaryOrgUnitCode,ou.name AS primaryOrgUnitName,
+              i.name AS institutionName,i.legalName AS institutionLegalName,i.shortName AS institutionShortName
        FROM AuthUser u
+       JOIN Institution i ON i.id=u.institutionId
        LEFT JOIN OrganizationUnit ou
          ON ou.id=u.primaryOrgUnitId AND ou.institutionId=u.institutionId
       WHERE u.id=? AND u.institutionId=? AND u.status='Active'
