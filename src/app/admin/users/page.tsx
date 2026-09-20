@@ -4,8 +4,10 @@ import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   KeyRound,
+  LockKeyhole,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
   UserCog,
   Users
@@ -26,6 +28,8 @@ type ManagedUser = {
   lockedUntil: string | null;
   lastLoginAt: string | null;
   mustChangePassword: boolean;
+  credentialResetAt: string | null;
+  temporaryCredentialExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -82,8 +86,8 @@ export default function UserManagementPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [resetUserId, setResetUserId] = useState('');
-  const [resetPassword, setResetPassword] = useState('');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [credentialBusyUserId, setCredentialBusyUserId] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -170,17 +174,47 @@ export default function UserManagementPage() {
     }
   };
 
-  const resetUserPassword = async (userId: string) => {
-    if (resetPassword.length < 12) {
-      setError('Password baru minimum 12 karakter.');
-      return;
-    }
+  const credentialAction = async (
+    user: ManagedUser,
+    actionType: 'RESET_CREDENTIAL' | 'FORCE_PASSWORD_CHANGE' | 'UNLOCK_USER'
+  ) => {
+    const confirmation =
+      actionType === 'RESET_CREDENTIAL'
+        ? `Reset credential untuk ${user.name}? Semua sesi aktif akan dicabut, temporary password baru hanya ditampilkan sekali, berlaku 24 jam, dan wajib diganti saat login.`
+        : actionType === 'FORCE_PASSWORD_CHANGE'
+          ? `Paksa ${user.name} mengganti password pada login berikutnya? Semua sesi aktif akan dicabut.`
+          : `Buka lock akun ${user.name} dan hapus failed-login counter?`;
 
-    const ok = await updateUser(userId, { password: resetPassword });
-    if (ok) {
-      setResetUserId('');
-      setResetPassword('');
-      setSuccess('Password user berhasil di-reset. Semua sesi aktif dicabut dan user wajib mengganti password pada login berikutnya.');
+    if (!window.confirm(confirmation)) return;
+
+    setCredentialBusyUserId(user.id);
+    setError('');
+    setSuccess('');
+    setTemporaryPassword('');
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actionType, userId: user.id })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Credential action gagal.');
+
+      if (actionType === 'RESET_CREDENTIAL') {
+        setTemporaryPassword(String(payload.temporaryPassword || ''));
+        setSuccess(
+          `Credential ${user.name} berhasil di-reset. Temporary password hanya ditampilkan sekali dan kedaluwarsa dalam 24 jam.`
+        );
+      } else if (actionType === 'FORCE_PASSWORD_CHANGE') {
+        setSuccess(`${user.name} wajib mengganti password pada login berikutnya. Semua sesi aktif telah dicabut.`);
+      } else {
+        setSuccess(`Lock akun ${user.name} berhasil dibuka.`);
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Credential action gagal.');
+    } finally {
+      setCredentialBusyUserId('');
     }
   };
 
@@ -219,6 +253,17 @@ export default function UserManagementPage() {
         <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           {success}
+        </div>
+      )}
+      {temporaryPassword && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-800">One-time temporary password</div>
+          <div className="mt-2 select-all break-all rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-sm font-black text-slate-900">
+            {temporaryPassword}
+          </div>
+          <p className="mt-2 text-[10px] leading-4 text-amber-800">
+            Salin dan kirim melalui kanal aman. Password ini tidak dapat dilihat kembali, berlaku 24 jam, dan wajib diganti saat login pertama.
+          </p>
         </div>
       )}
 
@@ -381,6 +426,9 @@ export default function UserManagementPage() {
                         <div className="mt-1 text-[10px] text-slate-400">
                           {unit?.name || user.department || 'No unit assigned'}
                           {user.lastLoginAt ? ' · Last login ' + new Date(user.lastLoginAt).toLocaleString('id-ID') : ' · Never logged in'}
+                          {user.mustChangePassword && user.temporaryCredentialExpiresAt
+                            ? ' · Temporary credential expires ' + new Date(user.temporaryCredentialExpiresAt).toLocaleString('id-ID')
+                            : ''}
                         </div>
                       </div>
 
@@ -409,50 +457,38 @@ export default function UserManagementPage() {
                           {user.active ? 'Deactivate' : 'Activate'}
                         </button>
 
+                        {locked && (
+                          <button
+                            type="button"
+                            disabled={isSelf || credentialBusyUserId === user.id}
+                            onClick={() => void credentialAction(user, 'UNLOCK_USER')}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[10px] font-black text-rose-700 disabled:opacity-40"
+                          >
+                            <LockKeyhole className="h-3.5 w-3.5" />
+                            Unlock
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => {
-                            setResetUserId(user.id);
-                            setResetPassword(generatePassword());
-                          }}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 hover:bg-slate-50"
+                          disabled={isSelf || credentialBusyUserId === user.id}
+                          onClick={() => void credentialAction(user, 'FORCE_PASSWORD_CHANGE')}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[10px] font-black text-amber-800 disabled:opacity-40"
                         >
                           <KeyRound className="h-3.5 w-3.5" />
-                          Reset password
+                          Force change
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSelf || credentialBusyUserId === user.id}
+                          onClick={() => void credentialAction(user, 'RESET_CREDENTIAL')}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[10px] font-black text-sky-800 disabled:opacity-40"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          Reset credential
                         </button>
                       </div>
                     </div>
 
-                    {resetUserId === user.id && (
-                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                        <div className="text-[10px] font-black uppercase tracking-[0.1em] text-amber-800">New password</div>
-                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                          <input
-                            value={resetPassword}
-                            minLength={12}
-                            onChange={event => setResetPassword(event.target.value)}
-                            className="h-10 min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 font-mono text-xs outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void resetUserPassword(user.id)}
-                            className="h-10 rounded-lg bg-amber-700 px-4 text-[10px] font-black text-white"
-                          >
-                            Confirm reset
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setResetUserId('');
-                              setResetPassword('');
-                            }}
-                            className="h-10 rounded-lg border border-amber-200 bg-white px-4 text-[10px] font-black text-amber-800"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })
