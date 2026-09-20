@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useRole, USERS, type UserRole } from '@/context/RoleContext';
@@ -44,6 +44,8 @@ interface NavGroup {
   subtitle: string;
   items: NavItem[];
 }
+
+const warmedRoutes = new Set<string>();
 
 const navGroups: NavGroup[] = [
   {
@@ -106,9 +108,50 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const prefetchRoute = (href: string) => {
+  const prefetchRoute = useCallback((href: string) => {
+    if (!href || warmedRoutes.has(href)) return;
+    warmedRoutes.add(href);
     router.prefetch(href);
-  };
+  }, [router]);
+
+  useEffect(() => {
+    const connection = (
+      navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string };
+      }
+    ).connection;
+
+    if (connection?.saveData || connection?.effectiveType === 'slow-2g' || connection?.effectiveType === '2g') {
+      return;
+    }
+
+    const allItems = navGroups.flatMap(group => group.items);
+    const currentIndex = allItems.findIndex(item => item.href === pathname);
+    if (currentIndex < 0) return;
+
+    const candidates = [
+      allItems[currentIndex + 1]?.href,
+      allItems[currentIndex + 2]?.href,
+      allItems[currentIndex - 1]?.href
+    ].filter((href): href is string => Boolean(href && href !== pathname));
+
+    const warmNeighbors = () => {
+      for (const href of candidates) prefetchRoute(href);
+    };
+
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    if (idleWindow.requestIdleCallback) {
+      const id = idleWindow.requestIdleCallback(warmNeighbors, { timeout: 1200 });
+      return () => idleWindow.cancelIdleCallback?.(id);
+    }
+
+    const timer = window.setTimeout(warmNeighbors, 650);
+    return () => window.clearTimeout(timer);
+  }, [pathname, prefetchRoute]);
   const { currentUser, setRole } = useRole();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
