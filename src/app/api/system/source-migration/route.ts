@@ -53,6 +53,7 @@ type MigrationPayload = {
   module?: string | null;
   metadata?: Record<string, unknown> | null;
   downloadUrl?: string | null;
+  rawBase64?: string | null;
   extractedText?: string | null;
 };
 
@@ -313,7 +314,14 @@ export async function POST(request: Request) {
     }
 
     const institution = await resolveSourceInstitution('Bank Kalbar');
-    const rawBytes = payload.downloadUrl ? await downloadSource(payload.downloadUrl) : null;
+    const rawBytes = payload.rawBase64
+      ? base64ToBytes(payload.rawBase64)
+      : payload.downloadUrl
+        ? await downloadSource(payload.downloadUrl)
+        : null;
+    if (rawBytes && rawBytes.byteLength > MAX_SOURCE_BYTES) {
+      throw new Error('SOURCE_LIBRARY_FILE_TOO_LARGE');
+    }
     const result = await upsertSourceDocument(institution.id, {
       provider: payload.provider || 'GOOGLE_DRIVE',
       externalId: payload.externalId,
