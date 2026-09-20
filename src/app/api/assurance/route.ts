@@ -6,6 +6,8 @@ import { listToeTests, listRemediationData, listMonitoringRules } from '@/lib/d1
 import { getCertificationData } from '@/lib/d1-icofr-certification';
 import { listFinancialItems, listInformationRegister } from '@/lib/d1-icofr-domains';
 import { getTestingPlanData } from '@/lib/d1-icofr-testing-plan';
+import { getCurrentSecurityContext } from '@/lib/tenant-context';
+import type { PermissionKey } from '@/lib/security-model';
 import {
   addAssessmentScope,
   createAssessmentCampaign,
@@ -19,6 +21,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const security = await getCurrentSecurityContext();
+    const can = (permission: PermissionKey) => security.permissions.includes(permission);
     const [
       organization,
       todTests,
@@ -165,9 +169,9 @@ export async function GET() {
 
     const combinedTasks = [
       ...(rcsa.tasks || []),
-      ...pbcTasks,
-      ...remediationTasks,
-      ...testingTasks
+      ...(can('report.view') ? pbcTasks : []),
+      ...(can('remediation.view') ? remediationTasks : []),
+      ...(can('icofr.view') ? testingTasks : [])
     ];
 
     const walkthroughs = todTests
@@ -188,7 +192,7 @@ export async function GET() {
             ...institution,
             legalEntities: organization.legalEntities,
             organizationUnits: organization.organizationUnits,
-            users: organization.users
+            users: can('user.view') ? organization.users : []
           }
         : null,
       campaigns: rcsa.campaigns,
@@ -196,22 +200,22 @@ export async function GET() {
       risks: rcsa.risks,
       controls: enrichedControls,
       tasks: combinedTasks,
-      todTests,
-      walkthroughs,
-      financialAccounts: financialItems.records || [],
-      ipeRegisters: informationRegister.records || [],
-      certifications: certification.subCertifications || [],
-      attestations: certification.attestations || [],
-      evidencePacks: certification.evidencePacks || [],
-      toeTests,
-      actionPlans: remediation.maps || [],
-      issues: remediation.issues || [],
-      deficiencies: remediation.deficiencies || [],
-      retests: remediation.retests || [],
-      monitoringRules,
-      testingCycles: testingPlan.cycles || [],
-      testingPlanItems: testingPlan.planItems || [],
-      testingPlanMetrics: testingPlan.metrics || {},
+      todTests: can('icofr.view') ? todTests : [],
+      walkthroughs: can('icofr.view') ? walkthroughs : [],
+      financialAccounts: can('icofr.view') ? financialItems.records || [] : [],
+      ipeRegisters: can('icofr.view') ? informationRegister.records || [] : [],
+      certifications: can('certification.view') ? certification.subCertifications || [] : [],
+      attestations: can('certification.view') ? certification.attestations || [] : [],
+      evidencePacks: can('certification.view') ? certification.evidencePacks || [] : [],
+      toeTests: can('icofr.view') ? toeTests : [],
+      actionPlans: can('remediation.view') ? remediation.maps || [] : [],
+      issues: can('remediation.view') ? remediation.issues || [] : [],
+      deficiencies: can('remediation.view') ? remediation.deficiencies || [] : [],
+      retests: can('remediation.view') ? remediation.retests || [] : [],
+      monitoringRules: can('ccm.view') ? monitoringRules : [],
+      testingCycles: can('icofr.view') ? testingPlan.cycles || [] : [],
+      testingPlanItems: can('icofr.view') ? testingPlan.planItems || [] : [],
+      testingPlanMetrics: can('icofr.view') ? testingPlan.metrics || {} : {},
       storage: 'cloudflare-d1'
     }, {
       headers: {
@@ -233,10 +237,15 @@ function textValue(body: Record<string, unknown>, key: string) {
 
 export async function POST(request: Request) {
   try {
+    const security = await getCurrentSecurityContext();
+    const requirePermission = (permission: PermissionKey) => {
+      if (!security.permissions.includes(permission)) throw new Error('ACCESS_DENIED');
+    };
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = textValue(body, 'actionType');
 
     if (actionType === 'CREATE_CAMPAIGN') {
+      requirePermission('rcsa.review');
       const name = textValue(body, 'name');
       const type = textValue(body, 'type');
       const period = textValue(body, 'period');
@@ -281,7 +290,7 @@ export async function POST(request: Request) {
         startDate,
         dueDate,
         ownerName,
-        reviewerName,
+        reviewerName: security.displayName,
         approverName,
         methodology: methodology || 'COSO / ISO 31000 aligned',
         ratingScale: ratingScale || '5x5',
@@ -294,7 +303,7 @@ export async function POST(request: Request) {
                 processId,
                 riskId: textValue(body, 'riskId') || null,
                 controlId: textValue(body, 'controlId') || null,
-                assessorName,
+                assessorName: security.displayName,
                 dueDate: textValue(body, 'scopeDueDate') || dueDate
               }
             : null
@@ -303,6 +312,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'ADD_SCOPE') {
+      requirePermission('rcsa.review');
       const campaignId = textValue(body, 'campaignId');
       const processId = textValue(body, 'processId');
       const assessorName = textValue(body, 'assessorName');
@@ -326,6 +336,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'SUBMIT_ASSESSMENT') {
+      requirePermission('rcsa.assess');
       const scopeId = textValue(body, 'scopeId');
       const assessorName = textValue(body, 'assessorName');
       const designEffectiveness = textValue(body, 'designEffectiveness');
@@ -378,6 +389,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'REVIEW_ASSESSMENT') {
+      requirePermission('rcsa.review');
       const responseId = textValue(body, 'responseId');
       const reviewerName = textValue(body, 'reviewerName');
       const reviewStatus = textValue(body, 'reviewStatus');
@@ -399,6 +411,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'UPDATE_CAMPAIGN_STATUS') {
+      requirePermission('rcsa.approve');
       const campaignId = textValue(body, 'campaignId');
       const status = textValue(body, 'status');
       if (!campaignId || !status) {
@@ -415,6 +428,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unsupported assurance action.' }, { status: 400 });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    if (code === 'ACCESS_DENIED') {
+      return NextResponse.json({ error: 'Your role is not authorized for this assurance action.' }, { status: 403 });
+    }
+    if (code === 'UNIT_SCOPE_ACCESS_DENIED') {
+      return NextResponse.json({ error: 'The selected record is outside your assigned organizational-unit scope.' }, { status: 403 });
+    }
     const notFound: Record<string, string> = {
       CAMPAIGN_NOT_FOUND: 'Assessment campaign not found.',
       ASSESSMENT_SCOPE_NOT_FOUND: 'Assessment scope not found.',
