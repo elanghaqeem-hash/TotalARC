@@ -41,7 +41,8 @@ const schemaFiles = [
   ['src/lib/d1-core.ts', /coreSchemaPromise/],
   ['src/lib/d1-assurance.ts', /assuranceSchemaPromise/],
   ['src/lib/d1-organization.ts', /organizationSchemaPromise/],
-  ['src/lib/auth.ts', /authSchemaPromise/]
+  ['src/lib/auth.ts', /authSchemaPromise/],
+  ['src/lib/d1-reporting.ts', /reportingSchemaPromise/]
 ];
 
 for (const [path, pattern] of schemaFiles) {
@@ -155,6 +156,7 @@ const standardizedReadPages = [
   'src/app/toe/page.tsx',
   'src/app/remediation/page.tsx',
   'src/app/ccm/page.tsx',
+  'src/app/reports/page.tsx',
   'src/context/RoleContext.tsx'
 ];
 
@@ -262,12 +264,29 @@ for (const path of pagedPages) {
   requirePattern(path, content, /RegisterPager/, 'large register UI must keep rendered rows bounded with server paging');
 }
 
+const reportingDomain = read('src/lib/d1-reporting.ts');
+for (const pattern of [
+  /getReportingSourceCounts/,
+  /COUNT\(\*\)/,
+  /authorizedOrgUnitIds/,
+  /Promise\.all/
+]) {
+  requirePattern(
+    'src/lib/d1-reporting.ts',
+    reportingDomain,
+    pattern,
+    'report source center must use lightweight scoped aggregate queries'
+  );
+}
+
 const transactionHelper = read('src/lib/client-transaction.ts');
 for (const pattern of [
   /clientHardTimeoutMs/,
   /mutationBudgetMs/,
   /AbortController/,
-  /totalarc\.client-transaction/
+  /totalarc\.client-transaction/,
+  /aiJsonTransaction/,
+  /45000/
 ]) {
   requirePattern('src/lib/client-transaction.ts', transactionHelper, pattern, 'transaction deadline/telemetry control is missing');
 }
@@ -285,7 +304,8 @@ const mutationPages = [
   'src/app/tasks/page.tsx',
   'src/app/toe/page.tsx',
   'src/app/remediation/page.tsx',
-  'src/app/ccm/page.tsx'
+  'src/app/ccm/page.tsx',
+  'src/app/reports/page.tsx'
 ];
 
 for (const path of mutationPages) {
