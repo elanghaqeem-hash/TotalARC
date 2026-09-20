@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const pagination = parsePaginationRequest(request);
     const orgUnitId = (url.searchParams.get('orgUnitId') || '').trim() || null;
+    const filterType = (url.searchParams.get('filterType') || 'ALL').trim();
 
     const [organization, authorizedOrgUnitIds] = await Promise.all([
       getOrganizationData(auth.user.institutionId),
@@ -26,7 +27,8 @@ export async function GET(request: Request) {
       {
         ...pagination,
         authorizedOrgUnitIds,
-        orgUnitId
+        orgUnitId,
+        filterType
       }
     );
 
