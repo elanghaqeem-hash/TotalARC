@@ -162,6 +162,95 @@ jobs:
             (.rules | type) == "array"
           '
 
+          check_json "assurance-integration" "/api/assurance" '
+            .storage == "cloudflare-d1" and
+            (.campaigns | type) == "array" and
+            (.controls | type) == "array" and
+            (.tasks | type) == "array" and
+            (.todTests | type) == "array" and
+            (.toeTests | type) == "array" and
+            (.actionPlans | type) == "array"
+          '
+
+          check_json "icofr-hub" "/api/icofr/hub" '
+            .storage == "cloudflare-d1" and
+            (.counts | type) == "object" and
+            (.traceabilityMetrics | type) == "object" and
+            (.testingMetrics | type) == "object"
+          '
+
+          check_json "icofr-scoping" "/api/icofr/scoping" '
+            .storage == "cloudflare-d1" and
+            (.scopes | type) == "array"
+          '
+
+          check_json "icofr-financial-items" "/api/icofr/financial-items" '
+            .storage == "cloudflare-d1" and
+            (.records | type) == "array"
+          '
+
+          check_json "icofr-traceability" "/api/icofr/traceability" '
+            .storage == "cloudflare-d1" and
+            (.chains | type) == "array"
+          '
+
+          check_json "icofr-coverage" "/api/icofr/coverage" '
+            .storage == "cloudflare-d1" and
+            (.metrics | type) == "object"
+          '
+
+          check_json "icofr-elc" "/api/icofr/controls?category=ELC" '
+            .storage == "cloudflare-d1" and
+            .category == "ELC" and
+            (.records | type) == "array"
+          '
+
+          check_json "icofr-plc" "/api/icofr/controls?category=PLC" '
+            .storage == "cloudflare-d1" and
+            .category == "PLC" and
+            (.records | type) == "array"
+          '
+
+          check_json "icofr-itgc" "/api/icofr/controls?category=ITGC" '
+            .storage == "cloudflare-d1" and
+            .category == "ITGC" and
+            (.records | type) == "array"
+          '
+
+          check_json "icofr-itac" "/api/icofr/controls?category=ITAC" '
+            .storage == "cloudflare-d1" and
+            .category == "ITAC" and
+            (.records | type) == "array"
+          '
+
+          check_json "icofr-information" "/api/icofr/information" '
+            .storage == "cloudflare-d1" and
+            (.records | type) == "array"
+          '
+
+          check_json "icofr-testing-plan" "/api/icofr/testing-plan" '
+            .storage == "cloudflare-d1" and
+            (.planItems | type) == "array" and
+            (.cycles | type) == "array"
+          '
+
+          check_json "icofr-deficiencies" "/api/icofr/deficiencies" '
+            .storage == "cloudflare-d1" and
+            (.records | type) == "array"
+          '
+
+          check_json "icofr-certification" "/api/icofr/certification" '
+            .storage == "cloudflare-d1" and
+            (.attestations | type) == "array" and
+            (.subCertifications | type) == "array"
+          '
+
+          check_json "icofr-reporting" "/api/icofr/reporting" '
+            .storage == "cloudflare-d1" and
+            (.pbcRequests | type) == "array" and
+            (.reportPacks | type) == "array"
+          '
+
           check_json "database-final" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Pencil, Plus, Save, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { AlertCircle, CheckCircle2, Link2, Pencil, Plus, Save, ShieldCheck } from 'lucide-react';
 
 type RecordItem = {
   id: string;
@@ -21,6 +22,7 @@ type RecordItem = {
   financialStatementArea?: string | null;
   assertions?: string | null;
   frameworkReference?: string | null;
+  sourceControlId?: string | null;
   keyControl: boolean;
   status: string;
 };
@@ -52,6 +54,7 @@ const blank = {
   financialStatementArea: '',
   assertions: '',
   frameworkReference: '',
+  sourceControlId: '',
   keyControl: false,
   status: 'Draft'
 };
@@ -59,6 +62,8 @@ const blank = {
 export function ControlDomainWorkspace(props: Props) {
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [institution, setInstitution] = useState<any>(null);
+  const [processes, setProcesses] = useState<any[]>([]);
+  const [sourceControls, setSourceControls] = useState<any[]>([]);
   const [form, setForm] = useState(blank);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,6 +83,8 @@ export function ControlDomainWorkspace(props: Props) {
         if (!active) return;
         setRecords(body.records || []);
         setInstitution(body.institution || null);
+        setProcesses(body.processes || []);
+        setSourceControls(body.sourceControls || []);
         setError('');
       })
       .catch(err => active && setError(err instanceof Error ? err.message : 'Register unavailable.'))
@@ -86,6 +93,38 @@ export function ControlDomainWorkspace(props: Props) {
   }, [props.category]);
 
   const keyCount = useMemo(() => records.filter(item => item.keyControl).length, [records]);
+
+  const selectSourceControl = (sourceControlId: string) => {
+    if (!sourceControlId) {
+      setForm(current => ({ ...current, sourceControlId: '' }));
+      return;
+    }
+
+    const source = sourceControls.find(control => String(control.id) === String(sourceControlId));
+    if (!source) {
+      setForm(current => ({ ...current, sourceControlId }));
+      return;
+    }
+
+    setForm(current => ({
+      ...current,
+      sourceControlId,
+      name: current.name || source.name || '',
+      objective: current.objective || source.objective || '',
+      owner: current.owner || source.controlOwner || '',
+      frequency: current.frequency || source.frequency || '',
+      nature: current.nature || source.nature || '',
+      controlType: current.controlType || source.type || '',
+      processName: current.processName || source.process?.name || '',
+      keyControl: current.keyControl || Boolean(source.isKeyControl)
+    }));
+  };
+
+  const sourceControlLabel = (sourceControlId?: string | null) => {
+    if (!sourceControlId) return '';
+    const source = sourceControls.find(control => String(control.id) === String(sourceControlId));
+    return source ? `${source.controlId} · ${source.name}` : 'Linked Control Master record';
+  };
 
   const edit = (item: RecordItem) => {
     setForm({
@@ -105,6 +144,7 @@ export function ControlDomainWorkspace(props: Props) {
       financialStatementArea: item.financialStatementArea || '',
       assertions: item.assertions || '',
       frameworkReference: item.frameworkReference || '',
+      sourceControlId: item.sourceControlId || '',
       keyControl: Boolean(item.keyControl),
       status: item.status || 'Draft'
     });
@@ -158,9 +198,15 @@ export function ControlDomainWorkspace(props: Props) {
             <h1 className="mt-1 text-2xl font-black text-slate-900">{props.title}</h1>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">{props.subtitle}</p>
           </div>
-          <div className="flex gap-2 text-[10px] font-bold">
+          <div className="flex items-center gap-2 text-[10px] font-bold flex-wrap">
             <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{records.length} controls</span>
             <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-700">{keyCount} key</span>
+            <Link href="/controls" className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-slate-600 hover:text-brand-700">
+              <Link2 className="h-3 w-3" /> Control Master
+            </Link>
+            <Link href="/processes" className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-slate-600 hover:text-brand-700">
+              <Link2 className="h-3 w-3" /> Process
+            </Link>
           </div>
         </div>
       </div>
@@ -223,8 +269,25 @@ export function ControlDomainWorkspace(props: Props) {
             <label className="text-xs font-bold text-slate-700">System / application {props.systemRequired ? '*' : ''}
               <input required={props.systemRequired} value={form.systemName} onChange={e=>setForm({...form,systemName:e.target.value})} placeholder={props.systemRequired ? 'Required for this domain' : 'Optional'} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
             </label>
+            <label className="text-xs font-bold text-slate-700">Link to Single Control Library
+              <select value={form.sourceControlId} onChange={e=>selectSourceControl(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
+                <option value="">No Control Master link</option>
+                {sourceControls.map(control => (
+                  <option key={control.id} value={control.id}>
+                    {control.controlId} · {control.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="text-xs font-bold text-slate-700">Business process
-              <input value={form.processName} onChange={e=>setForm({...form,processName:e.target.value})} placeholder={props.processRelevant ? 'Relevant process / cycle' : 'Optional'} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
+              <select value={form.processName} onChange={e=>setForm({...form,processName:e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
+                <option value="">No process selected</option>
+                {processes.map(process => (
+                  <option key={process.id} value={process.name}>
+                    {process.processId} · {process.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="text-xs font-bold text-slate-700">FS area / account
               <input value={form.financialStatementArea} onChange={e=>setForm({...form,financialStatementArea:e.target.value})} placeholder="e.g. Revenue, Cash, Loans" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
@@ -263,6 +326,11 @@ export function ControlDomainWorkspace(props: Props) {
                     <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[10px] font-black text-brand-700">{item.controlCode}</span>{item.keyControl&&<span className="rounded-full bg-sky-50 px-2 py-0.5 text-[9px] font-bold text-sky-700">Key</span>}<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-500">{item.status}</span></div>
                     <div className="mt-1 text-sm font-bold text-slate-900">{item.name}</div>
                     <div className="mt-1 text-[10px] text-slate-500">{[item.subcategory,item.systemName,item.processName].filter(Boolean).join(' · ') || 'No additional classification'}</div>
+                    {item.sourceControlId && (
+                      <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-brand-700">
+                        <Link2 className="h-3 w-3" /> {sourceControlLabel(item.sourceControlId)}
+                      </div>
+                    )}
                   </div>
                   <button type="button" onClick={()=>edit(item)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:text-brand-700"><Pencil className="h-3.5 w-3.5" /></button>
                 </div>
