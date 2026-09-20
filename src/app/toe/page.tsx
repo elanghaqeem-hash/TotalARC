@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, FlaskConical, Plus, Save, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 import { jsonTransaction } from '@/lib/client-transaction';
@@ -43,6 +43,10 @@ export default function ToEPage() {
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
   const [pageLoading, setPageLoading] = useState(false);
+  const [testDetail, setTestDetail] = useState<any | null>(null);
+  const [samplePage, setSamplePage] = useState(1);
+  const [samplePagination, setSamplePagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [sampleDrafts, setSampleDrafts] = useState<
     Record<string, { result: string; failureReason: string }>
   >({});
@@ -86,16 +90,7 @@ export default function ToEPage() {
           : nextTests[0]?.id || ''
       );
 
-      const drafts: Record<string, { result: string; failureReason: string }> = {};
-      for (const test of nextTests) {
-        for (const sample of test.samples || []) {
-          drafts[sample.id] = {
-            result: sample.result || 'Not Tested',
-            failureReason: sample.failureReason || ''
-          };
-        }
-      }
-      setSampleDrafts(drafts);
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ToE data unavailable');
     } finally {
@@ -103,17 +98,73 @@ export default function ToEPage() {
     }
   };
 
+  const loadDetail = async (
+    testId: string,
+    targetSamplePage = samplePage,
+    targetFilter: 'ALL' | 'PASS' | 'FAIL' = filter
+  ) => {
+    if (!testId) {
+      setTestDetail(null);
+      setSamplePagination(EMPTY_PAGINATION);
+      setSampleDrafts({});
+      return;
+    }
+
+    setDetailLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({
+        mode: 'detail',
+        testId,
+        samplePage: String(targetSamplePage),
+        samplePageSize: '50',
+        sampleFilter: targetFilter
+      });
+      const data = await jsonRead<any>(
+        '/api/assure/toe?' + params.toString(),
+        { dedupe: false }
+      );
+      const nextDetail = data.test || null;
+      setTestDetail(nextDetail);
+      setSamplePagination(nextDetail?.samplePagination || EMPTY_PAGINATION);
+      setSamplePage(nextDetail?.samplePagination?.page || targetSamplePage);
+
+      const drafts: Record<string, { result: string; failureReason: string }> = {};
+      for (const sample of nextDetail?.samples || []) {
+        drafts[sample.id] = {
+          result: sample.result || 'Not Tested',
+          failureReason: sample.failureReason || ''
+        };
+      }
+      setSampleDrafts(drafts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ToE workpaper detail unavailable');
+      setTestDetail(null);
+      setSamplePagination(EMPTY_PAGINATION);
+      setSampleDrafts({});
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   useEffect(() => {
     void Promise.all([loadData(1), loadControls()]);
   }, []);
 
-  const test = tests.find(item => item.id === selectedId) || null;
-  const samples = useMemo(() => {
-    const rows = test?.samples || [];
-    if (filter === 'PASS') return rows.filter((row: any) => row.result === 'Pass');
-    if (filter === 'FAIL') return rows.filter((row: any) => row.result === 'Fail');
-    return rows;
-  }, [test, filter]);
+  useEffect(() => {
+    if (!selectedId) {
+      setTestDetail(null);
+      setSamplePagination(EMPTY_PAGINATION);
+      setSampleDrafts({});
+      return;
+    }
+    setFilter('ALL');
+    void loadDetail(selectedId, 1, 'ALL');
+  }, [selectedId]);
+
+  const selectedSummary = tests.find(item => item.id === selectedId) || null;
+  const test = testDetail || selectedSummary;
+  const samples = Array.isArray(testDetail?.samples) ? testDetail.samples : [];
 
   const createTest = async (event: React.FormEvent) => {
     event.preventDefault();
