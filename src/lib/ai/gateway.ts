@@ -19,11 +19,13 @@ type ProviderConfig = {
 
 class ProviderError extends Error {
   retryable: boolean;
+  status?: number;
 
-  constructor(message: string, retryable = false) {
+  constructor(message: string, retryable = false, status?: number) {
     super(message);
     this.name = 'ProviderError';
     this.retryable = retryable;
+    this.status = status;
   }
 }
 
@@ -54,7 +56,14 @@ const EXTERNAL_SENSITIVE_FALLBACK =
 const REDACT_EXTERNAL = process.env.AI_REDACT_EXTERNAL !== 'false';
 const MAX_INPUT_CHARS = numberFromEnv('AI_MAX_INPUT_CHARS', 60000, 1000, 250000);
 const DEFAULT_TIMEOUT_MS = numberFromEnv('AI_TIMEOUT_MS', 25000, 3000, 60000);
+const PROVIDER_RATE_LIMIT_COOLDOWN_MS = numberFromEnv(
+  'AI_PROVIDER_RATE_LIMIT_COOLDOWN_MS',
+  60000,
+  5000,
+  300000
+);
 const MAX_OUTPUT_TOKENS = numberFromEnv('AI_MAX_OUTPUT_TOKENS', 4096, 256, 16384);
+const providerCooldownUntil = new Map<AiProvider, number>();
 
 function numberFromEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = Number(process.env[name]);
@@ -85,6 +94,23 @@ function configured(provider: AiProvider): boolean {
   if (provider === 'groq') return Boolean(process.env.GROQ_API_KEY);
   if (provider === 'openrouter') return Boolean(process.env.OPENROUTER_API_KEY);
   return false;
+}
+
+function providerCooldownRemainingMs(provider: AiProvider): number {
+  const until = providerCooldownUntil.get(provider) || 0;
+  const remaining = until - Date.now();
+
+  if (remaining <= 0) {
+    providerCooldownUntil.delete(provider);
+    return 0;
+  }
+
+  return remaining;
+}
+
+function applyProviderCooldown(provider: AiProvider, error: unknown) {
+  if (!(error instanceof ProviderError) || error.status !== 429) return;
+  providerCooldownUntil.set(provider, Date.now() + PROVIDER_RATE_LIMIT_COOLDOWN_MS);
 }
 
 function providerOrder(task: AiTask, sensitivity: AiSensitivity): AiProvider[] {
@@ -159,7 +185,8 @@ async function fetchJson(
       const retryable = response.status === 429 || response.status >= 500;
       throw new ProviderError(
         'Provider request failed with HTTP ' + response.status + ': ' + raw.slice(0, 300),
-        retryable
+        retryable,
+        response.status
       );
     }
 
@@ -190,7 +217,10 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
       return await fn();
     } catch (error) {
       lastError = error;
-      const retryable = error instanceof ProviderError && error.retryable;
+      const retryable =
+        error instanceof ProviderError &&
+        error.retryable &&
+        error.status !== 429;
       if (!retryable || attempt === 1) break;
       await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
     }
@@ -450,20 +480,34 @@ async function callProvider(
   maxOutputTokens: number,
   requireJson: boolean
 ): Promise<string> {
-  if (provider === 'cloudflare') {
-    return callCloudflare(systemPrompt, prompt, temperature, maxOutputTokens);
+  const cooldownRemaining = providerCooldownRemainingMs(provider);
+  if (cooldownRemaining > 0) {
+    throw new ProviderError(
+      provider + ' is temporarily cooling down after a rate-limit response.',
+      true,
+      429
+    );
   }
-  if (provider === 'gemini') {
-    return callGemini(systemPrompt, prompt, temperature, maxOutputTokens, requireJson);
+
+  try {
+    if (provider === 'cloudflare') {
+      return await callCloudflare(systemPrompt, prompt, temperature, maxOutputTokens);
+    }
+    if (provider === 'gemini') {
+      return await callGemini(systemPrompt, prompt, temperature, maxOutputTokens, requireJson);
+    }
+    return await callOpenAiCompatible(
+      provider,
+      systemPrompt,
+      prompt,
+      temperature,
+      maxOutputTokens,
+      requireJson
+    );
+  } catch (error) {
+    applyProviderCooldown(provider, error);
+    throw error;
   }
-  return callOpenAiCompatible(
-    provider,
-    systemPrompt,
-    prompt,
-    temperature,
-    maxOutputTokens,
-    requireJson
-  );
 }
 
 export type AiProviderProbe = {
