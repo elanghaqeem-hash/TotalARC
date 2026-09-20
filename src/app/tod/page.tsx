@@ -5,6 +5,7 @@ import { Plus, Save, Workflow, X } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100';
@@ -76,13 +77,7 @@ export default function ToDPage() {
     setSaving(true);
     setMessage('');
     try {
-      const response = await fetch('/api/assure/tod', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to save ToD record.');
+      await jsonTransaction('/api/assure/tod', form);
       await reload();
       setMode(null);
       setMessage(mode === 'test' ? 'Test of Design saved.' : 'Walkthrough saved.');
