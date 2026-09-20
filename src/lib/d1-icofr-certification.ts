@@ -1203,15 +1203,23 @@ async function getSubCertificationContext(
     all<Record<string, unknown>>(
       db,
       `SELECT p.legalEntityId, p.orgUnitId,
-              COUNT(t.id) AS todCount,
+              COUNT(d.id) AS todCount,
               SUM(CASE
-                    WHEN t.status IN ('Approved','Completed')
-                     AND t.conclusion<>'Not Assessed'
+                    WHEN d.status IN ('Approved','Completed')
+                     AND d.conclusion<>'Not Assessed'
                     THEN 1 ELSE 0
                   END) AS todCompleted
-         FROM ToDTest t
-         JOIN BusinessProcess p ON p.id=t.processId
-        WHERE p.institutionId=?
+         FROM ICOFRDesignAssessment d
+         JOIN ICOFRControlDomain cd
+           ON cd.id=d.controlDomainId
+          AND cd.institutionId=d.institutionId
+         JOIN ControlMaster c
+           ON c.id=cd.sourceControlId
+          AND c.institutionId=d.institutionId
+         JOIN BusinessProcess p
+           ON p.id=c.processId
+          AND p.institutionId=d.institutionId
+        WHERE d.institutionId=?
         GROUP BY p.legalEntityId, p.orgUnitId`,
       [institutionId]
     ),
