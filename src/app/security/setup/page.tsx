@@ -92,7 +92,7 @@ export default function SecuritySetupPage() {
               </div>
               <h1 className="mt-2 text-3xl font-black text-slate-900">Secure first-admin bootstrap</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                Configure secrets outside the application, create the first institution administrator once, test sign-in, then turn enforcement on.
+                Configure secrets outside the application, create the first platform SuperAdmin once, test sign-in, then turn enforcement on.
                 Total ARC does not ship with a default username or password.
               </p>
             </div>
@@ -164,7 +164,7 @@ export default function SecuritySetupPage() {
             <div className="flex items-center gap-2">
               <KeyRound className="h-4 w-4 text-brand-600" />
               <div>
-                <h2 className="text-sm font-black text-slate-900">Create First Institution Administrator</h2>
+                <h2 className="text-sm font-black text-slate-900">Create first platform SuperAdmin</h2>
                 <p className="text-[10px] text-slate-500">Available only while the user table is empty.</p>
               </div>
             </div>
@@ -190,11 +190,11 @@ export default function SecuritySetupPage() {
                   </select>
                 </label>
                 <label className="text-xs font-bold text-slate-700">
-                  Administrator name *
+                  SuperAdmin name *
                   <input required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
                 <label className="text-xs font-bold text-slate-700">
-                  Administrator email *
+                  SuperAdmin email *
                   <input type="email" required value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
@@ -202,7 +202,7 @@ export default function SecuritySetupPage() {
                   <input type="password" autoComplete="off" required value={form.bootstrapToken} onChange={event => setForm({ ...form, bootstrapToken: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Initial administrator password *
+                  Initial SuperAdmin password *
                   <div className="mt-1 flex gap-2">
                     <input
                       type={showPassword ? 'text' : 'password'}
@@ -223,7 +223,7 @@ export default function SecuritySetupPage() {
                     disabled={saving || !status?.bootstrapAllowed}
                     className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40"
                   >
-                    {saving ? 'Creating…' : 'Create First Administrator'}
+                    {saving ? 'Creating…' : 'Create First SuperAdmin'}
                   </button>
                 </div>
               </div>
