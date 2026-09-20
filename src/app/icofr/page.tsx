@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { AlertTriangle, BadgeCheck, BarChart3, Cpu, FileCheck, FileSpreadsheet, Link2, Shield, Target, Workflow } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, BarChart3, CalendarDays, Cpu, FileCheck, FileSpreadsheet, Link2, Shield, Target, Workflow } from 'lucide-react';
 
 const modules = [
   { href: '/icofr/scoping', title: 'Scoping & Materiality', detail: 'Reporting perimeter, OM, PM, clearly-trivial/SAD and component materiality.', icon: Target },
@@ -11,6 +11,7 @@ const modules = [
   { href: '/icofr/itgc', title: 'IT General Controls (ITGC)', detail: 'Logical access, change management, operations, backup, SDLC and other IT general controls.', icon: Cpu },
   { href: '/icofr/itac', title: 'IT Application Controls (ITAC)', detail: 'Automated validations, calculations, configurations, interfaces and system-enforced controls.', icon: Workflow },
   { href: '/icofr/information', title: 'IPE & EUC Register', detail: 'Information Produced by the Entity and End-User Computing reliability controls.', icon: FileSpreadsheet },
+  { href: '/icofr/testing-plan', title: 'Testing Plan & Annual Cycle', detail: 'Create period-specific testing cycles, assign controls/testers, plan interim or roll-forward work and launch ToD/ToE workpapers.', icon: CalendarDays },
   { href: '/tod', title: 'Walkthrough & Test of Design', detail: 'Confirm process understanding and assess whether control design addresses the identified risk.', icon: Workflow },
   { href: '/toe', title: 'Test of Operating Effectiveness', detail: 'Evidence-based operating effectiveness testing and sample evaluation.', icon: Cpu },
   { href: '/icofr/deficiencies', title: 'Deficiency Evaluation', detail: 'Evaluate control deficiencies, significant deficiencies and material weaknesses.', icon: AlertTriangle },
