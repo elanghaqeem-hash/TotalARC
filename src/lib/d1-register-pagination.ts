@@ -21,6 +21,7 @@ type RegisterScope = {
 
 type RegisterFilters = PaginationInput & RegisterScope & {
   categoryId?: string | null;
+  filterType?: string | null;
 };
 
 async function getDb(coreOnly = true): Promise<D1DatabaseLike> {
@@ -683,23 +684,60 @@ export async function listRcmRegisterPage(
     values.push(term, term, term, term, term, term, term);
   }
 
+  const countWhereSql = where.join(' AND ');
+  const countValues = [...values];
+
+  const filterType = filters.filterType || 'ALL';
+  if (filterType === 'KEY_ONLY') {
+    where.push('c.isKeyControl = 1');
+  } else if (filterType === 'ICOFR_ONLY') {
+    where.push('c.isIcofrKey = 1');
+  } else if (filterType === 'ISSUES_ONLY') {
+    where.push(`EXISTS (
+      SELECT 1 FROM Issue issueFilter
+      WHERE issueFilter.controlId = c.id
+        AND issueFilter.institutionId = ?
+    )`);
+    values.push(institutionId);
+  }
+
   const whereSql = where.join(' AND ');
   const offset = (filters.page - 1) * filters.pageSize;
 
-  const baseSql = `
+  const baseJoinSql = `
     FROM ControlRiskMapping m
     JOIN RiskMaster r ON r.id = m.riskId
     JOIN BusinessProcess p ON p.id = r.processId
     LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
     JOIN ControlMaster c ON c.id = m.controlId
-    WHERE ${whereSql}
   `;
+  const baseSql = `${baseJoinSql} WHERE ${whereSql}`;
 
-  const [countRow, rows] = await Promise.all([
+  const [countRow, filterCountRow, rows] = await Promise.all([
     first<{ count?: number }>(
       db,
       `SELECT COUNT(*) AS count ${baseSql}`,
       values
+    ),
+    first<{
+      total?: number;
+      keyControls?: number;
+      icofr?: number;
+      issues?: number;
+    }>(
+      db,
+      `SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN c.isKeyControl = 1 THEN 1 ELSE 0 END) AS keyControls,
+          SUM(CASE WHEN c.isIcofrKey = 1 THEN 1 ELSE 0 END) AS icofr,
+          SUM(CASE WHEN EXISTS (
+            SELECT 1 FROM Issue issueCount
+            WHERE issueCount.controlId = c.id
+              AND issueCount.institutionId = ?
+          ) THEN 1 ELSE 0 END) AS issues
+        ${baseJoinSql}
+        WHERE ${countWhereSql}`,
+      [institutionId, ...countValues]
     ),
     all<Record<string, unknown>>(
       db,
@@ -747,6 +785,12 @@ export async function listRcmRegisterPage(
   if (rows.length === 0) {
     return {
       rcm: [],
+      filterCounts: {
+        all: Number(filterCountRow?.total || 0),
+        keyControls: Number(filterCountRow?.keyControls || 0),
+        icofr: Number(filterCountRow?.icofr || 0),
+        issues: Number(filterCountRow?.issues || 0)
+      },
       pagination: paginationMeta(filters.page, filters.pageSize, total)
     };
   }
@@ -902,6 +946,12 @@ export async function listRcmRegisterPage(
 
   return {
     rcm,
+    filterCounts: {
+      all: Number(filterCountRow?.total || 0),
+      keyControls: Number(filterCountRow?.keyControls || 0),
+      icofr: Number(filterCountRow?.icofr || 0),
+      issues: Number(filterCountRow?.issues || 0)
+    },
     pagination: paginationMeta(filters.page, filters.pageSize, total)
   };
 }
