@@ -116,6 +116,9 @@ jobs:
       - name: Verify sidebar module integrity
         run: npm run verify:modules
 
+      - name: Verify D1 schema initialization stability
+        run: npm run verify:d1-schema-stability
+
       - name: Build OpenNext Worker
         run: npm run build
 
