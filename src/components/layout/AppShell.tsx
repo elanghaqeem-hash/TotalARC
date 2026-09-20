@@ -24,6 +24,7 @@ import {
   Menu,
   Shield,
   Sparkles,
+  Target,
   Workflow,
   X
 } from 'lucide-react';
@@ -61,6 +62,7 @@ const navGroups: NavGroup[] = [
     subtitle: 'Assess & validate',
     items: [
       { name: 'RCSA & CSA Workspace', href: '/rcsa', icon: ClipboardCheck },
+      { name: 'ICOFR Scoping & Materiality', href: '/icofr/scoping', icon: Target, badge: 'OM · PM' },
       { name: 'ICOFR & Assertions', href: '/icofr', icon: FileCheck },
       { name: 'Walkthrough & ToD', href: '/tod', icon: Workflow },
       { name: 'ToE Testing & Samples', href: '/toe', icon: Cpu },
