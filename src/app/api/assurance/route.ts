@@ -1,19 +1,20 @@
 import { NextResponse } from 'next/server';
-import { getPrimaryInstitution } from '@/lib/d1';
+import { getOrganizationStructure } from '@/lib/d1-organization';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const institution = await getPrimaryInstitution();
+    const organization = await getOrganizationStructure();
+    const institution = organization.institution;
 
     return NextResponse.json({
       institution: institution
         ? {
             ...institution,
-            legalEntities: [],
-            organizationUnits: [],
-            users: []
+            legalEntities: organization.legalEntities,
+            organizationUnits: organization.organizationUnits,
+            users: organization.users
           }
         : null,
       campaigns: [],

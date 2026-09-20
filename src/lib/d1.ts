@@ -298,6 +298,8 @@ export async function getD1Health() {
   const requiredTables = [
     'Institution',
     'AuditLog',
+    'LegalEntity',
+    'OrganizationUnit',
     'ProcessCategory',
     'BusinessProcess',
     'ProcessObjective',
