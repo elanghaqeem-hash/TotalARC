@@ -12,6 +12,7 @@ const moduleChecks = {
   '/risks': { page: 'src/app/risks/page.tsx', markers: ['/api/risks'] },
   '/controls': { page: 'src/app/controls/page.tsx', markers: ['/api/controls'] },
   '/rcm': { page: 'src/app/rcm/page.tsx', markers: ['/api/rcm'] },
+  '/evidence': { page: 'src/app/evidence/page.tsx', markers: ['/api/evidence'] },
   '/rcsa': { page: 'src/app/rcsa/page.tsx', markers: ['/api/assurance'] },
   '/icofr': { page: 'src/app/icofr/page.tsx', markers: ['/api/icofr/hub'] },
   '/icofr/scoping': { page: 'src/app/icofr/scoping/page.tsx', markers: ['/api/icofr/scoping'] },
@@ -27,6 +28,7 @@ const moduleChecks = {
   '/icofr/smart-testing': { page: 'src/app/icofr/smart-testing/page.tsx', markers: ['/api/icofr/smart-testing'] },
   '/icofr/sampling-evidence': { page: 'src/app/icofr/sampling-evidence/page.tsx', markers: ['/api/icofr/sampling-evidence'] },
   '/icofr/workpaper-review': { page: 'src/app/icofr/workpaper-review/page.tsx', markers: ['/api/icofr/workpaper-review'] },
+  '/icofr/period-close': { page: 'src/app/icofr/period-close/page.tsx', markers: ['/api/icofr/period-close'] },
   '/icofr/roll-forward': { page: 'src/app/icofr/roll-forward/page.tsx', markers: ['/api/icofr/roll-forward'] },
   '/tod': { page: 'src/app/tod/page.tsx', markers: ['useAssuranceData'] },
   '/toe': { page: 'src/app/toe/page.tsx', markers: ['/api/assure/toe'] },
@@ -37,7 +39,10 @@ const moduleChecks = {
   '/certification': { page: 'src/app/certification/page.tsx', markers: ['/api/icofr/certification'] },
   '/calendar': { page: 'src/app/calendar/page.tsx', markers: ['useAssuranceData'] },
   '/tasks': { page: 'src/app/tasks/page.tsx', markers: ['useAssuranceData'] },
-  '/reports': { page: 'src/app/reports/page.tsx', markers: ['useAssuranceData'] }
+  '/reports': { page: 'src/app/reports/page.tsx', markers: ['useAssuranceData'] },
+  '/admin/users': { page: 'src/app/admin/users/page.tsx', markers: ['/api/admin/users'] },
+  '/admin/institutions': { page: 'src/app/admin/institutions/page.tsx', markers: ['/api/admin/institutions'] },
+  '/admin/security': { page: 'src/app/admin/security/page.tsx', markers: ['/api/admin/security'] }
 };
 
 function fail(message) {
@@ -53,7 +58,7 @@ if (!fs.existsSync(appShellPath)) {
 const appShell = fs.readFileSync(appShellPath, 'utf8');
 const sidebarHrefs = [...appShell.matchAll(/href:\s*['"]([^'"]+)['"]/g)]
   .map(match => match[1])
-  .filter(href => Object.prototype.hasOwnProperty.call(moduleChecks, href));
+  .filter(href => href.startsWith('/') && href !== '/profile');
 
 const uniqueSidebarHrefs = [...new Set(sidebarHrefs)];
 
@@ -88,6 +93,9 @@ const apiFiles = [
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
   'src/app/api/rcm/route.ts',
+  'src/app/api/evidence/route.ts',
+  'src/app/api/evidence/upload/route.ts',
+  'src/app/api/evidence/download/route.ts',
   'src/app/api/assurance/route.ts',
   'src/app/api/icofr/hub/route.ts',
   'src/app/api/icofr/scoping/route.ts',
@@ -100,12 +108,22 @@ const apiFiles = [
   'src/app/api/icofr/smart-testing/route.ts',
   'src/app/api/icofr/sampling-evidence/route.ts',
   'src/app/api/icofr/workpaper-review/route.ts',
+  'src/app/api/icofr/period-close/route.ts',
   'src/app/api/icofr/roll-forward/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/icofr/deficiencies/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
-  'src/app/api/icofr/certification/route.ts'
+  'src/app/api/icofr/certification/route.ts',
+  'src/app/api/auth/login/route.ts',
+  'src/app/api/auth/logout/route.ts',
+  'src/app/api/auth/me/route.ts',
+  'src/app/api/auth/switch-institution/route.ts',
+  'src/app/api/profile/route.ts',
+  'src/app/api/admin/users/route.ts',
+  'src/app/api/admin/institutions/route.ts',
+  'src/app/api/admin/security/route.ts',
+  'src/middleware.ts'
 ];
 
 for (const apiFile of apiFiles) {
