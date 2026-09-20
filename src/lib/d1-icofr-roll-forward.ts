@@ -1213,7 +1213,7 @@ export async function getIcofrRollForwardData() {
     };
   });
 
-  const enriched = [];
+  const enriched: Array<Record<string, any>> = [];
   for (const rollForward of rollForwards) {
     const [items, targetScope, targetCycle] = await Promise.all([
       all<Record<string, unknown>>(
