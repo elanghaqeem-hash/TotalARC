@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { FileCheck } from 'lucide-react';
+import Link from 'next/link';
+import { FileCheck, Target } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function ICOFRPage() {
@@ -11,7 +12,7 @@ export default function ICOFRPage() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm"><div className="flex items-center gap-2 text-xs font-bold text-sky-600 uppercase"><FileCheck className="w-4 h-4" />ICOFR</div><h1 className="text-2xl font-black text-slate-900 mt-1">Financial Reporting Scope & Assertions</h1><p className="text-xs text-slate-500 mt-1">Significant accounts, assertions, and IPE validation status are database-derived.</p></div>
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-xs font-bold text-sky-600 uppercase"><FileCheck className="w-4 h-4" />ICOFR</div><h1 className="text-2xl font-black text-slate-900 mt-1">Assertions & IPE Workspace</h1><p className="text-xs text-slate-500 mt-1">Significant accounts, assertions, and IPE validation status are database-derived.</p></div><Link href="/icofr/scoping" className="inline-flex items-center gap-2 self-start rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700 hover:bg-sky-100"><Target className="h-3.5 w-3.5" />Open ICOFR Scoping</Link></div></div>
       {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
       {loading ? <div className="text-xs text-slate-500">Loading…</div> : accounts.length === 0 && ipe.length === 0 ? (<div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl"><div className="font-bold text-slate-700">No records available</div><p className="text-xs text-slate-500 mt-1">This module will populate only from persisted database records.</p></div>) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
