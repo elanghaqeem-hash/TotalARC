@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createControl } from '@/lib/d1-core';
-import { listControlOptions, listControlRegisterPage, listProcessOptions } from '@/lib/d1-register-pagination';
+import { getProcessScopeById, listControlOptions, listControlRegisterPage } from '@/lib/d1-register-pagination';
 import { parsePaginationRequest } from '@/lib/pagination';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
@@ -70,13 +70,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
-    const processes = await listProcessOptions(
-      auth.user.institutionId,
-      { authorizedOrgUnitIds },
-      ''
-    );
-    const selectedProcess = processes.find(process => process.id === processId);
+    const [authorizedOrgUnitIds, selectedProcess] = await Promise.all([
+      resolveAuthorizedOrgUnitIds(auth.user),
+      getProcessScopeById(auth.user.institutionId, processId)
+    ]);
     if (
       !selectedProcess
       || !isOrgUnitAuthorized(
