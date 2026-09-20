@@ -278,6 +278,61 @@ export async function ensureAssuranceSchema() {
   return schemaPromise;
 }
 
+const ASSURANCE_INSTITUTION_WIDE_ROLES = new Set([
+  'PLATFORM_SUPER_ADMIN',
+  'INSTITUTION_ADMIN',
+  'GRC_ADMIN',
+  'ERM_MANAGER',
+  'OPERATIONAL_RISK',
+  'ICOFR_MANAGER',
+  'ICOFR_PREPARER',
+  'ICOFR_TESTER',
+  'ICOFR_REVIEWER',
+  'INTERNAL_AUDIT',
+  'COMPLIANCE',
+  'CYBER_GRC',
+  'REGULATORY_COMPLIANCE',
+  'COMBINED_ASSURANCE',
+  'EXECUTIVE',
+  'AUDIT_COMMITTEE',
+  'READ_ONLY_AUDITOR'
+]);
+
+async function assuranceScope(db: D1DatabaseLike) {
+  const context = await getTenantContext();
+  const unrestricted = context.roles.some(role => ASSURANCE_INSTITUTION_WIDE_ROLES.has(role));
+  if (unrestricted) return { unrestricted: true, processIds: new Set<string>() };
+
+  if (context.unitIds.length === 0) {
+    return { unrestricted: false, processIds: new Set<string>() };
+  }
+
+  const placeholders = context.unitIds.map(() => '?').join(',');
+  const rows = await all<{ id?: string }>(
+    db,
+    `SELECT id FROM BusinessProcess WHERE orgUnitId IN (${placeholders})`,
+    context.unitIds
+  );
+  return {
+    unrestricted: false,
+    processIds: new Set(rows.map(row => String(row.id || '')).filter(Boolean))
+  };
+}
+
+function assuranceProcessAllowed(
+  processId: unknown,
+  scope: { unrestricted: boolean; processIds: Set<string> }
+) {
+  return scope.unrestricted || scope.processIds.has(String(processId || ''));
+}
+
+function assertAssuranceProcessAllowed(
+  processId: unknown,
+  scope: { unrestricted: boolean; processIds: Set<string> }
+) {
+  if (!assuranceProcessAllowed(processId, scope)) throw new Error('UNIT_SCOPE_ACCESS_DENIED');
+}
+
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
   const [issue, milestones, retests] = await Promise.all([
     first<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE id = ? LIMIT 1', [row.issueId]),
@@ -436,6 +491,7 @@ export async function createToeTest(input: {
     [input.controlId]
   );
   if (!control) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceProcessAllowed(control.processId, await assuranceScope(db));
 
   await assertIcofrPeriodWritable({
     institutionId: String(control.institutionId),
@@ -1020,10 +1076,12 @@ export async function createRetestRecord(input: {
 
 export async function listToeTests() {
   const db = await ensureAssuranceSchema();
-  const tests = await all<Record<string, unknown>>(
+  const accessScope = await assuranceScope(db);
+  const allTests = await all<Record<string, unknown>>(
     db,
     'SELECT * FROM ToETest ORDER BY testedAt DESC, testId ASC'
   );
+  const tests = allTests.filter(test => assuranceProcessAllowed(test.processId, accessScope));
 
   return Promise.all(
     tests.map(async test => {
@@ -1159,6 +1217,7 @@ export async function updateToeSample(input: {
 
 export async function listRemediationData() {
   const db = await ensureAssuranceSchema();
+  const accessScope = await assuranceScope(db);
   const [exceptionRows, deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM TestingException ORDER BY createdAt DESC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM ControlDeficiency ORDER BY createdAt DESC'),
@@ -1235,7 +1294,36 @@ export async function listRemediationData() {
     )
   ]);
 
-  return { exceptions, deficiencies, issues, maps, retests };
+  const scopedExceptions = exceptions.filter(item =>
+    assuranceProcessAllowed(item.test?.processId, accessScope)
+  );
+  const scopedIssues = issues.filter(item =>
+    assuranceProcessAllowed(item.processId, accessScope)
+  );
+  const scopedIssueIds = new Set(scopedIssues.map(item => String(item.id)));
+  const scopedMaps = maps.filter(item =>
+    item.issue && scopedIssueIds.has(String(item.issue.id))
+  );
+  const scopedMapIds = new Set(scopedMaps.map(item => String(item.id)));
+  const scopedRetests = retests.filter(item =>
+    item.map && scopedMapIds.has(String(item.map.id))
+  );
+  const scopedDeficiencyIds = new Set(
+    scopedIssues.map(item => String(item.deficiencyId || '')).filter(Boolean)
+  );
+  const scopedExceptionIds = new Set(scopedExceptions.map(item => String(item.id)));
+  const scopedDeficiencies = deficiencies.filter(item =>
+    scopedDeficiencyIds.has(String(item.id)) ||
+    scopedExceptionIds.has(String(item.exceptionId || ''))
+  );
+
+  return {
+    exceptions: scopedExceptions,
+    deficiencies: scopedDeficiencies,
+    issues: scopedIssues,
+    maps: scopedMaps,
+    retests: scopedRetests
+  };
 }
 
 export async function requestMapExtension(input: {
@@ -1281,12 +1369,13 @@ export async function requestMapExtension(input: {
 
 export async function listMonitoringRules() {
   const db = await ensureAssuranceSchema();
+  const accessScope = await assuranceScope(db);
   const rules = await all<Record<string, unknown>>(
     db,
     'SELECT * FROM MonitoringRule ORDER BY createdAt DESC, ruleId ASC'
   );
 
-  return Promise.all(
+  const enriched = await Promise.all(
     rules.map(async rule => {
       const control = await first<Record<string, unknown>>(
         db,
@@ -1332,6 +1421,9 @@ export async function listMonitoringRules() {
       return { ...rule, control: controlWithProcess, runs };
     })
   );
+  return enriched.filter(rule =>
+    rule.control ? assuranceProcessAllowed(rule.control.processId, accessScope) : false
+  );
 }
 
 export async function createMonitoringRule(input: Record<string, unknown>) {
@@ -1342,6 +1434,7 @@ export async function createMonitoringRule(input: Record<string, unknown>) {
     [input.controlId]
   );
   if (!control) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceProcessAllowed(control.processId, await assuranceScope(db));
 
   const enterpriseId =
     typeof input.ruleId === 'string' && input.ruleId.trim()
@@ -1460,6 +1553,13 @@ async function count(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 
 export async function getAssuranceDashboardMetrics() {
   const db = await ensureAssuranceSchema();
+  const accessScope = await assuranceScope(db);
+  const processClause = accessScope.unrestricted
+    ? ''
+    : accessScope.processIds.size > 0
+      ? ' AND p.id IN (' + Array.from(accessScope.processIds).map(() => '?').join(',') + ')'
+      : ' AND 1=0';
+  const processArgs = accessScope.unrestricted ? [] : Array.from(accessScope.processIds);
 
   const [
     failedToEs,
@@ -1474,25 +1574,82 @@ export async function getAssuranceDashboardMetrics() {
   ] = await Promise.all([
     count(
       db,
-      `SELECT COUNT(*) AS count FROM ToETest
-        WHERE failCount > 0 OR finalConclusion IN ('Partially Effective', 'Ineffective')`
+      `SELECT COUNT(*) AS count
+         FROM ToETest t
+         JOIN BusinessProcess p ON p.id=t.processId
+        WHERE (t.failCount > 0 OR t.finalConclusion IN ('Partially Effective', 'Ineffective'))${processClause}`,
+      processArgs
     ),
-    count(db, 'SELECT COUNT(*) AS count FROM TestingException'),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status <> 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status = 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status = 'Overdue'"),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status IN ('Completed by Owner', 'Closed')"
+      `SELECT COUNT(*) AS count
+         FROM TestingException e
+         JOIN ToETest t ON t.id=e.toeTestId
+         JOIN BusinessProcess p ON p.id=t.processId
+        WHERE 1=1${processClause}`,
+      processArgs
     ),
-    count(db, "SELECT COUNT(*) AS count FROM MonitoringRule WHERE lastStatus = 'Healthy'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RetestRecord'),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM Issue i
+         JOIN BusinessProcess p ON p.id=i.processId
+        WHERE i.status <> 'Closed'${processClause}`,
+      processArgs
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM Issue i
+         JOIN BusinessProcess p ON p.id=i.processId
+        WHERE i.status = 'Closed'${processClause}`,
+      processArgs
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id=m.issueId
+         JOIN BusinessProcess p ON p.id=i.processId
+        WHERE m.status = 'Overdue'${processClause}`,
+      processArgs
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id=m.issueId
+         JOIN BusinessProcess p ON p.id=i.processId
+        WHERE m.status IN ('Completed by Owner', 'Closed')${processClause}`,
+      processArgs
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM MonitoringRule mr
+         JOIN ControlMaster c ON c.id=mr.controlId
+         JOIN BusinessProcess p ON p.id=c.processId
+        WHERE mr.lastStatus = 'Healthy'${processClause}`,
+      processArgs
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM RetestRecord rr
+         JOIN ManagementActionPlan m ON m.id=rr.mapId
+         JOIN Issue i ON i.id=m.issueId
+         JOIN BusinessProcess p ON p.id=i.processId
+        WHERE 1=1${processClause}`,
+      processArgs
+    ),
     count(
       db,
       `SELECT COUNT(DISTINCT t.controlId) AS count
          FROM ToETest t
-         JOIN ControlMaster c ON c.id = t.controlId
-        WHERE c.isKeyControl = 1`
+         JOIN ControlMaster c ON c.id=t.controlId
+         JOIN BusinessProcess p ON p.id=c.processId
+        WHERE c.isKeyControl = 1${processClause}`,
+      processArgs
     )
   ]);
 
