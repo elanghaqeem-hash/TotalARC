@@ -149,8 +149,7 @@ export async function PATCH(request: Request) {
       userId: String(body.userId),
       role: body.role,
       department: body.department === undefined ? undefined : String(body.department || ''),
-      active: body.active === undefined ? undefined : Boolean(body.active),
-      password: typeof body.password === 'string' && body.password ? body.password : undefined
+      active: body.active === undefined ? undefined : Boolean(body.active)
     });
 
     return NextResponse.json(
