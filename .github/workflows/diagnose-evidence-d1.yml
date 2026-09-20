@@ -1,0 +1,58 @@
+name: Diagnose Evidence D1 schema
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-evidence-d1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-evidence-d1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Inspect evidence table schemas
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 list --json > /tmp/d1-list.json
+          echo "Available D1 databases:"
+          jq -r '.[] | "- " + .name' /tmp/d1-list.json
+
+          DB_NAME="$(jq -r '
+            (map(select((.name|ascii_downcase|contains("totalarc")) or (.name|ascii_downcase|contains("total-arc")))) | .[0].name) //
+            (if length == 1 then .[0].name else empty end)
+          ' /tmp/d1-list.json)"
+
+          if [ -z "$DB_NAME" ]; then
+            echo "::error::Could not unambiguously identify the Total ARC D1 database."
+            exit 1
+          fi
+          echo "Inspecting schema only for D1 database: $DB_NAME"
+
+          for table in EvidenceDocument EvidenceVersion EvidenceBinaryChunk EvidenceLink EvidenceAccessLog ICOFRWorkpaperReview ICOFRDesignAssessment ToETest ICOFRSamplingPlan ICOFRPBCRequest ICOFRSubCertification ICOFRManagementAttestation ControlMaster; do
+            echo "=== TABLE $table ==="
+            npx wrangler d1 execute "$DB_NAME" --remote --command "PRAGMA table_info($table);" --json || true
+          done
+
+          echo "=== EVIDENCE TABLE DEFINITIONS ==="
+          npx wrangler d1 execute "$DB_NAME" --remote --command "SELECT name, sql FROM sqlite_master WHERE type='table' AND name LIKE 'Evidence%';" --json || true
