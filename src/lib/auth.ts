@@ -387,32 +387,28 @@ export async function provisionBootstrapAdministrator() {
   return { status: 'existing' as const, userId: null };
 }
 
-async function maybeBootstrapAdministrator(
-  db: D1DatabaseLike,
-  attemptedEmail: string,
-  attemptedPassword: string
-) {
+async function ensureBootstrapAdministratorForLogin(db: D1DatabaseLike) {
   const count = await first<{ count: number }>(
     db,
     'SELECT COUNT(*) AS count FROM AuthUser'
   );
-  if (Number(count?.count || 0) > 0) return;
 
-  const env = await runtimeEnv();
-  const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
-  const bootstrapPassword = envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD');
-
-  if (!bootstrapEmail || !bootstrapPassword) throw new Error('AUTH_BOOTSTRAP_REQUIRED');
-  if (bootstrapPassword.length < 12) throw new Error('AUTH_BOOTSTRAP_WEAK_PASSWORD');
-
-  if (
-    normalizeEmail(attemptedEmail) !== bootstrapEmail ||
-    attemptedPassword !== bootstrapPassword
-  ) {
+  if (Number(count?.count || 0) === 0) {
+    await provisionBootstrapAdministrator();
     return;
   }
 
-  await provisionBootstrapAdministrator();
+  const pendingAdmin = await first<{ id: string }>(
+    db,
+    `SELECT id FROM AuthUser
+     WHERE role = 'Admin' AND lastLoginAt IS NULL
+     ORDER BY createdAt ASC
+     LIMIT 1`
+  );
+
+  if (pendingAdmin) {
+    await provisionBootstrapAdministrator();
+  }
 }
 
 async function institutionNameFor(db: D1DatabaseLike, institutionId: string | null) {
@@ -455,7 +451,7 @@ export async function authenticateUser(input: {
   if (!emailNormalized || !input.password) throw new Error('INVALID_CREDENTIALS');
 
   const db = await ensureAuthSchema();
-  await maybeBootstrapAdministrator(db, emailNormalized, input.password);
+  await ensureBootstrapAdministratorForLogin(db);
 
   let row = await first<AuthUserRow>(
     db,
