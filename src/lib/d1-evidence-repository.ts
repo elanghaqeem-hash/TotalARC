@@ -1,4 +1,4 @@
-import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureIcofrWorkpaperReviewSchema, saveWorkpaperEvidence } from '@/lib/d1-icofr-workpaper-review';
 
@@ -86,10 +86,7 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureCoreDomainSchema(),
     ensureIcofrWorkpaperReviewSchema()
   ]);
-  const { env } = await getCloudflareContext({ async: true });
-  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
-  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
-  return db;
+  return getTenantDb();
 }
 
 async function all<T = Record<string, unknown>>(
@@ -183,12 +180,14 @@ function retentionDate(retentionClass: string, customDate?: string | null) {
   return date.toISOString().slice(0, 10);
 }
 
-let schemaReady: Promise<D1DatabaseLike> | null = null;
+const schemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureEvidenceRepositorySchema() {
-  if (schemaReady) return schemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = schemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  schemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
     await db.exec(`
       CREATE TABLE IF NOT EXISTS EvidenceDocument (
@@ -277,11 +276,12 @@ export async function ensureEvidenceRepositorySchema() {
     `);
     return db;
   })().catch(error => {
-    schemaReady = null;
+    schemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return schemaReady;
+  schemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
@@ -1094,6 +1094,8 @@ export async function verifyEvidenceVersion(
 export async function recordEvidenceDownload(
   documentId: string,
   versionId: string,
+  actorName: string,
+  actorRole: string,
   reason?: string | null
 ) {
   const db = await ensureEvidenceRepositorySchema();
@@ -1106,9 +1108,9 @@ export async function recordEvidenceDownload(
     documentId,
     versionId,
     'DOWNLOAD',
-    'Unverified client',
-    'Unauthenticated',
-    reason || 'Evidence file downloaded before identity-backed authentication is implemented.'
+    actorName,
+    actorRole,
+    reason || 'Evidence file downloaded after authenticated access and SHA-256 verification.'
   );
 }
 
@@ -1344,9 +1346,9 @@ export async function getEvidenceRepositoryData() {
       allowedExtensions: Array.from(ALLOWED_EXTENSIONS)
     },
     security: {
-      authenticatedIdentityAvailable: false,
+      authenticatedIdentityAvailable: true,
       note:
-        'Repository metadata, integrity, versioning and institution scoping are active. Identity-backed RBAC is not yet available in the current application; role-switch UI is not treated as authentication.'
+        'Repository access is enforced by authenticated role permissions, active institution, and tenant-database isolation.'
     }
   };
 }

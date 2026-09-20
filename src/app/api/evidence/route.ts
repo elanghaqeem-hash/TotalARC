@@ -7,6 +7,7 @@ import {
   updateEvidenceGovernance,
   verifyEvidenceVersion
 } from '@/lib/d1-evidence-repository';
+import { getCurrentSecurityContext } from '@/lib/tenant-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,15 +67,10 @@ export async function POST(request: Request) {
     }
 
     if (actionType === 'VERIFY') {
+      const security = await getCurrentSecurityContext();
       const versionId = typeof body.versionId === 'string' ? body.versionId.trim() : '';
-      const actorName =
-        typeof body.actorName === 'string' && body.actorName.trim()
-          ? body.actorName.trim()
-          : 'Unverified client';
-      const actorRole =
-        typeof body.actorRole === 'string' && body.actorRole.trim()
-          ? body.actorRole.trim()
-          : 'Unauthenticated';
+      const actorName = security.displayName;
+      const actorRole = security.roles.join(',');
       if (!versionId) {
         return NextResponse.json({ error: 'Evidence version is required.' }, { status: 400 });
       }

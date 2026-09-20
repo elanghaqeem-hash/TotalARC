@@ -1,4 +1,4 @@
-import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 
 type D1DatabaseLike = {
@@ -17,10 +17,7 @@ type D1DatabaseLike = {
 
 async function getDb(): Promise<D1DatabaseLike> {
   await ensureCoreDomainSchema();
-  const { env } = await getCloudflareContext({ async: true });
-  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
-  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
-  return db;
+  return getTenantDb();
 }
 
 async function all<T = Record<string, unknown>>(
@@ -82,12 +79,14 @@ function normalizeEffectiveness(value: string) {
     : 'Not Assessed';
 }
 
-let rcsaSchemaReady: Promise<D1DatabaseLike> | null = null;
+const rcsaSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureRcsaSchema() {
-  if (rcsaSchemaReady) return rcsaSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = rcsaSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  rcsaSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchemaScript(db, `
@@ -204,11 +203,12 @@ export async function ensureRcsaSchema() {
 
     return db;
   })().catch(error => {
-    rcsaSchemaReady = null;
+    rcsaSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return rcsaSchemaReady;
+  rcsaSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
@@ -216,6 +216,43 @@ async function primaryInstitution(db: D1DatabaseLike) {
     db,
     'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1'
   );
+}
+
+const RCSA_INSTITUTION_WIDE_ROLES = new Set([
+  'PLATFORM_SUPER_ADMIN',
+  'INSTITUTION_ADMIN',
+  'GRC_ADMIN',
+  'ERM_MANAGER',
+  'OPERATIONAL_RISK',
+  'INTERNAL_AUDIT',
+  'COMBINED_ASSURANCE',
+  'EXECUTIVE',
+  'AUDIT_COMMITTEE',
+  'READ_ONLY_AUDITOR'
+]);
+
+async function currentRcsaScope() {
+  const context = await getTenantContext();
+  return {
+    unrestricted: context.roles.some(role => RCSA_INSTITUTION_WIDE_ROLES.has(role)),
+    unitIds: Array.from(new Set(context.unitIds.map(String).filter(Boolean)))
+  };
+}
+
+function rcsaProcessAllowed(
+  process: Record<string, unknown>,
+  scope: { unrestricted: boolean; unitIds: string[] }
+) {
+  if (scope.unrestricted) return true;
+  if (scope.unitIds.length === 0) return false;
+  return Boolean(process.orgUnitId) && scope.unitIds.includes(String(process.orgUnitId));
+}
+
+function assertRcsaProcessAllowed(
+  process: Record<string, unknown>,
+  scope: { unrestricted: boolean; unitIds: string[] }
+) {
+  if (!rcsaProcessAllowed(process, scope)) throw new Error('UNIT_SCOPE_ACCESS_DENIED');
 }
 
 async function writeAudit(
@@ -382,12 +419,28 @@ async function loadScope(db: D1DatabaseLike, row: Record<string, unknown>) {
   };
 }
 
-async function loadCampaign(db: D1DatabaseLike, row: Record<string, unknown>) {
-  const scopeRows = await all<Record<string, unknown>>(
+async function loadCampaign(
+  db: D1DatabaseLike,
+  row: Record<string, unknown>,
+  accessScope?: { unrestricted: boolean; unitIds: string[] }
+) {
+  const allScopeRows = await all<Record<string, unknown>>(
     db,
     'SELECT * FROM AssessmentScope WHERE campaignId = ? ORDER BY dueDate ASC, createdAt ASC',
     [row.id]
   );
+  const scopeRows = accessScope && !accessScope.unrestricted
+    ? (await Promise.all(
+        allScopeRows.map(async item => {
+          const process = await first<Record<string, unknown>>(
+            db,
+            'SELECT id,orgUnitId FROM BusinessProcess WHERE id=? LIMIT 1',
+            [item.processId]
+          );
+          return process && rcsaProcessAllowed(process, accessScope) ? item : null;
+        })
+      )).filter((item): item is Record<string, unknown> => Boolean(item))
+    : allScopeRows;
   const scopes: any[] = await Promise.all(scopeRows.map(scope => loadScope(db, scope)));
   const total = scopes.length;
   const submitted = scopes.filter(scope =>
@@ -412,6 +465,7 @@ async function loadCampaign(db: D1DatabaseLike, row: Record<string, unknown>) {
 
 export async function getRcsaWorkspaceData() {
   const db = await ensureRcsaSchema();
+  const accessScope = await currentRcsaScope();
   const institution = await primaryInstitution(db);
   if (!institution) {
     return {
@@ -432,7 +486,7 @@ export async function getRcsaWorkspaceData() {
     ),
     all<Record<string, unknown>>(
       db,
-      `SELECT id, processId, name, ownerName, criticality, classification, status
+      `SELECT id, processId, orgUnitId, name, ownerName, criticality, classification, status
          FROM BusinessProcess
         WHERE institutionId = ?
         ORDER BY processId ASC`,
@@ -465,6 +519,37 @@ export async function getRcsaWorkspaceData() {
     )
   ]);
 
+  const scopedProcesses = processes.filter(process => rcsaProcessAllowed(process, accessScope));
+  const allowedProcessIds = new Set(scopedProcesses.map(process => String(process.id)));
+  const scopedRisks = risks.filter(risk => allowedProcessIds.has(String(risk.processId)));
+  const scopedControls = controls.filter(control => allowedProcessIds.has(String(control.processId)));
+  const allowedScopeRows = accessScope.unrestricted
+    ? null
+    : await all<Record<string, unknown>>(
+        db,
+        `SELECT s.id
+           FROM AssessmentScope s
+           JOIN BusinessProcess p ON p.id=s.processId
+          WHERE p.institutionId=? ${
+            accessScope.unitIds.length > 0
+              ? 'AND p.orgUnitId IN (' + accessScope.unitIds.map(() => '?').join(',') + ')'
+              : 'AND 1=0'
+          }`,
+        [institution.id, ...(accessScope.unitIds.length > 0 ? accessScope.unitIds : [])]
+      );
+  const allowedScopeIds = allowedScopeRows
+    ? new Set(allowedScopeRows.map(item => String(item.id)))
+    : null;
+  const scopedTasks = accessScope.unrestricted
+    ? taskRows
+    : taskRows.filter(task => {
+        const sourceType = String(task.sourceType || '');
+        const sourceId = String(task.sourceId || '');
+        if (sourceType === 'RCSA_SCOPE') return allowedScopeIds?.has(sourceId) || false;
+        if (sourceType === 'RCSA_REVIEW') return true;
+        return false;
+      });
+
   const riskIdsByControl = new Map<string, string[]>();
   for (const mapping of mappings) {
     const controlId = String(mapping.controlId);
@@ -473,13 +558,14 @@ export async function getRcsaWorkspaceData() {
     riskIdsByControl.set(controlId, list);
   }
 
-  const campaigns = await Promise.all(campaignRows.map(row => loadCampaign(db, row)));
+  const campaigns = (await Promise.all(campaignRows.map(row => loadCampaign(db, row, accessScope))))
+    .filter(campaign => accessScope.unrestricted || campaign.scopes.length > 0);
 
   return {
     institution,
     campaigns,
-    processes,
-    risks: risks.map(risk => ({
+    processes: scopedProcesses,
+    risks: scopedRisks.map(risk => ({
       ...risk,
       inherentLikelihood: Number(risk.inherentLikelihood || 0),
       inherentImpact: Number(risk.inherentImpact || 0),
@@ -488,13 +574,13 @@ export async function getRcsaWorkspaceData() {
       residualImpact: Number(risk.residualImpact || 0),
       residualScore: Number(risk.residualScore || 0)
     })),
-    controls: controls.map(control => ({
+    controls: scopedControls.map(control => ({
       ...control,
       isKeyControl: bool(control.isKeyControl),
       isIcofrKey: bool(control.isIcofrKey),
       riskIds: riskIdsByControl.get(String(control.id)) || []
     })),
-    tasks: taskRows.map(task => ({
+    tasks: scopedTasks.map(task => ({
       ...task,
       user: { name: task.assigneeName }
     }))
@@ -519,6 +605,8 @@ async function insertScope(
     [input.processId, institutionId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
+  const accessScope = await currentRcsaScope();
+  assertRcsaProcessAllowed(process, accessScope);
 
   let risk: Record<string, unknown> | null = null;
   if (input.riskId) {
@@ -790,6 +878,13 @@ export async function submitAssessmentResponse(input: {
     [input.scopeId]
   );
   if (!scope) throw new Error('ASSESSMENT_SCOPE_NOT_FOUND');
+  const scopedProcess = await first<Record<string, unknown>>(
+    db,
+    'SELECT id,orgUnitId FROM BusinessProcess WHERE id=? LIMIT 1',
+    [scope.processId]
+  );
+  if (!scopedProcess) throw new Error('PROCESS_NOT_FOUND');
+  assertRcsaProcessAllowed(scopedProcess, await currentRcsaScope());
 
   const campaign = await first<Record<string, unknown>>(
     db,
@@ -1013,6 +1108,13 @@ export async function reviewAssessmentResponse(input: {
     [input.responseId]
   );
   if (!response) throw new Error('ASSESSMENT_RESPONSE_NOT_FOUND');
+  const reviewProcess = await first<Record<string, unknown>>(
+    db,
+    'SELECT id,orgUnitId FROM BusinessProcess WHERE id=? LIMIT 1',
+    [response.processId]
+  );
+  if (!reviewProcess) throw new Error('PROCESS_NOT_FOUND');
+  assertRcsaProcessAllowed(reviewProcess, await currentRcsaScope());
 
   const campaign = await first<Record<string, unknown>>(
     db,

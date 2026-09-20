@@ -3,6 +3,7 @@ import {
   loadEvidenceVersionBytes,
   recordEvidenceDownload
 } from '@/lib/d1-evidence-repository';
+import { getCurrentSecurityContext } from '@/lib/tenant-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ function safeHeaderFileName(name: string) {
 
 export async function GET(request: Request) {
   try {
+    const security = await getCurrentSecurityContext();
     const params = new URL(request.url).searchParams;
     const versionId = (params.get('versionId') || '').trim();
     if (!versionId) {
@@ -44,7 +46,9 @@ export async function GET(request: Request) {
     await recordEvidenceDownload(
       String(loaded.version.documentId),
       versionId,
-      'Download served only after SHA-256 integrity verification.'
+      security.displayName,
+      security.roles.join(','),
+      'Download served only after authenticated access and SHA-256 integrity verification.'
     );
 
     return new NextResponse(loaded.bytes, {

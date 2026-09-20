@@ -5,10 +5,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const { processes, categories } = await listBusinessProcesses();
+    const { processes, categories, organizationUnits } = await listBusinessProcesses();
     return NextResponse.json({
       processes,
       categories,
+      organizationUnits,
       storage: 'cloudflare-d1'
     });
   } catch (error) {
@@ -54,6 +55,12 @@ export async function POST(request: Request) {
     if (code === 'PROCESS_ID_CONFLICT') {
       return NextResponse.json({ error: 'Process ID already exists for this institution.' }, { status: 409 });
     }
+    if (code === 'ORG_UNIT_NOT_FOUND') {
+      return NextResponse.json({ error: 'Selected organizational unit does not exist in the active institution.' }, { status: 400 });
+    }
+    if (code === 'UNIT_SCOPE_ACCESS_DENIED') {
+      return NextResponse.json({ error: 'You can only maintain processes within your assigned organizational-unit scope.' }, { status: 403 });
+    }
 
     console.error('Failed to create D1 process:', error);
     return NextResponse.json({ error: 'Failed to create process in persistent database.' }, { status: 500 });
@@ -98,6 +105,12 @@ export async function PATCH(request: Request) {
     if (code === 'PROCESS_ID_CONFLICT') {
       return NextResponse.json({ error: 'Process ID already exists for this institution.' }, { status: 409 });
     }
+    if (code === 'ORG_UNIT_NOT_FOUND') {
+      return NextResponse.json({ error: 'Selected organizational unit does not exist in the active institution.' }, { status: 400 });
+    }
+    if (code === 'UNIT_SCOPE_ACCESS_DENIED') {
+      return NextResponse.json({ error: 'You can only maintain processes within your assigned organizational-unit scope.' }, { status: 403 });
+    }
 
     console.error('Failed to update D1 process:', error);
     return NextResponse.json({ error: 'Failed to update process in persistent database.' }, { status: 500 });
@@ -117,6 +130,9 @@ export async function DELETE(request: Request) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
       return NextResponse.json({ error: 'Business process was not found.' }, { status: 404 });
+    }
+    if (code === 'UNIT_SCOPE_ACCESS_DENIED') {
+      return NextResponse.json({ error: 'You cannot delete a process outside your assigned organizational-unit scope.' }, { status: 403 });
     }
     if (code === 'PROCESS_HAS_DEPENDENCIES') {
       return NextResponse.json(

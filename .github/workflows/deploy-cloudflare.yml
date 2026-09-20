@@ -64,6 +64,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          AUTH_SESSION_SECRET: ${{ secrets.AUTH_SESSION_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
@@ -127,7 +128,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
-      - name: Sync AI runtime secrets
+      - name: Sync security and AI runtime secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -151,6 +152,15 @@ jobs:
           echo "::add-mask::$AI_PROBE_TOKEN"
           echo "AI_PROBE_TOKEN=$AI_PROBE_TOKEN" >> "$GITHUB_ENV"
 
+          SESSION_SECRET="$AUTH_SESSION_SECRET"
+          if [ -z "$SESSION_SECRET" ]; then
+            SESSION_SECRET="$(node -e "process.stdout.write(require('crypto').randomBytes(48).toString('hex'))")"
+            echo "::warning::AUTH_SESSION_SECRET repository secret is not configured. A secure deployment-specific session secret was generated; existing sessions will be invalidated on the next deployment."
+            echo "Add AUTH_SESSION_SECRET as a repository secret to keep sessions stable across deployments." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "::add-mask::$SESSION_SECRET"
+
+          put_secret AUTH_SESSION_SECRET "$SESSION_SECRET"
           put_secret GEMINI_API_KEY "$GEMINI_API_KEY"
           put_secret GROQ_API_KEY "$GROQ_API_KEY"
           put_secret OPENROUTER_API_KEY "$OPENROUTER_API_KEY"

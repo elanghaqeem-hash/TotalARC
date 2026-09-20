@@ -1,4 +1,4 @@
-import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 
 type D1DatabaseLike = {
@@ -19,10 +19,7 @@ export const ICOFR_CONTROL_CATEGORIES = ['ELC', 'ITGC', 'ITAC', 'PLC'] as const;
 export type IcofrControlCategory = (typeof ICOFR_CONTROL_CATEGORIES)[number];
 
 async function getDb(): Promise<D1DatabaseLike> {
-  const { env } = await getCloudflareContext({ async: true });
-  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
-  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
-  return db;
+  return getTenantDb();
 }
 
 async function all<T = Record<string, unknown>>(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
@@ -59,12 +56,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-let schemaReady: Promise<D1DatabaseLike> | null = null;
+const schemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrDomainSchema() {
-  if (schemaReady) return schemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = schemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  schemaReady = (async () => {
+  const schemaPromise = (async () => {
     await ensureCoreDomainSchema();
     const db = await getDb();
 
@@ -178,11 +177,12 @@ export async function ensureIcofrDomainSchema() {
 
     return db;
   })().catch(error => {
-    schemaReady = null;
+    schemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return schemaReady;
+  schemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {

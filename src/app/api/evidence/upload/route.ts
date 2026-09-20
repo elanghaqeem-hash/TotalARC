@@ -3,6 +3,7 @@ import {
   linkEvidence,
   uploadEvidenceVersion
 } from '@/lib/d1-evidence-repository';
+import { getCurrentSecurityContext } from '@/lib/tenant-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,7 @@ function textField(form: FormData, key: string) {
 
 export async function POST(request: Request) {
   try {
+    const security = await getCurrentSecurityContext();
     const form = await request.formData();
     const file = form.get('file');
 
@@ -25,11 +27,11 @@ export async function POST(request: Request) {
     const sensitivity = textField(form, 'sensitivity');
     const retentionClass = textField(form, 'retentionClass');
     const ownerName = textField(form, 'ownerName');
-    const uploadedBy = textField(form, 'uploadedBy');
+    const uploadedBy = security.displayName;
 
-    if (!title || !category || !sensitivity || !retentionClass || !ownerName || !uploadedBy) {
+    if (!title || !category || !sensitivity || !retentionClass || !ownerName) {
       return NextResponse.json(
-        { error: 'Title, category, sensitivity, retention class, owner, uploader and file are required.' },
+        { error: 'Title, category, sensitivity, retention class, owner and file are required.' },
         { status: 400 }
       );
     }

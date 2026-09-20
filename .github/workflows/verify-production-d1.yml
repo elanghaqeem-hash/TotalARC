@@ -109,187 +109,48 @@ jobs:
             .readOnlyProbe == true
           '
 
-          check_json "organization" "/api/organization" '
-            .storage == "cloudflare-d1" and
-            (.legalEntities | type) == "array" and
-            (.organizationUnits | type) == "array"
+          check_json "auth-ready" "/api/auth/login" '
+            .ready == true and
+            .credentialMode == "LOCAL" and
+            (.passwordPolicy | type) == "object"
           '
 
-          check_json "processes" "/api/processes" '
-            .storage == "cloudflare-d1" and
-            (.processes | type) == "array" and
-            (.categories | type) == "array"
-          '
+          check_status() {
+            local name="$1"
+            local path="$2"
+            local expected="$3"
+            local output="/tmp/totalarc-status-\${name}.json"
+            local http_code
 
-          check_json "risks" "/api/risks" '
-            .storage == "cloudflare-d1" and
-            (.risks | type) == "array"
-          '
+            http_code="$(curl --silent --show-error --location --max-time 25 \
+              --output "$output" \
+              --write-out "%{http_code}" \
+              "$BASE_URL$path" || true)"
 
-          check_json "controls" "/api/controls" '
-            .storage == "cloudflare-d1" and
-            (.controls | type) == "array"
-          '
+            if [ "$http_code" != "$expected" ]; then
+              echo "::error::$name expected HTTP $expected but received \${http_code:-unknown}."
+              cat "$output" 2>/dev/null || true
+              return 1
+            fi
+            echo "$name: protected as expected (HTTP $expected)"
+          }
 
-          check_json "rcm" "/api/rcm" '
-            .storage == "cloudflare-d1" and
-            (.rcm | type) == "array" and
-            (.total | type) == "number"
-          '
-
-          check_json "dashboard" "/api/dashboard" '
-            .storage == "cloudflare-d1" and
-            (.metrics | type) == "object" and
-            (.executiveQandA | type) == "array"
-          '
-
-          check_json "toe" "/api/assure/toe" '
-            .storage == "cloudflare-d1" and
-            (.tests | type) == "array"
-          '
-
-          check_json "remediation" "/api/assure/remediation" '
-            .storage == "cloudflare-d1" and
-            (.exceptions | type) == "array" and
-            (.deficiencies | type) == "array" and
-            (.issues | type) == "array" and
-            (.maps | type) == "array" and
-            (.retests | type) == "array"
-          '
-
-          check_json "ccm" "/api/monitor/ccm" '
-            .storage == "cloudflare-d1" and
-            (.rules | type) == "array"
-          '
-
-          check_json "assurance-integration" "/api/assurance?sections=integration" '
-            .storage == "cloudflare-d1" and
-            .dataStatus == "complete" and
-            (.degradedModules | length) == 0 and
-            (.campaigns | type) == "array" and
-            (.controls | type) == "array" and
-            (.tasks | type) == "array" and
-            (.todTests | type) == "array" and
-            (.toeTests | type) == "array" and
-            (.actionPlans | type) == "array"
-          '
-
-          check_json "icofr-hub" "/api/icofr/hub" '
-            .storage == "cloudflare-d1" and
-            (.counts | type) == "object" and
-            (.traceabilityMetrics | type) == "object" and
-            (.testingMetrics | type) == "object"
-          '
-
-          check_json "icofr-scoping" "/api/icofr/scoping" '
-            .storage == "cloudflare-d1" and
-            (.scopes | type) == "array"
-          '
-
-          check_json "icofr-financial-items" "/api/icofr/financial-items" '
-            .storage == "cloudflare-d1" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-traceability" "/api/icofr/traceability" '
-            .storage == "cloudflare-d1" and
-            (.chains | type) == "array"
-          '
-
-          check_json "icofr-coverage" "/api/icofr/coverage" '
-            .storage == "cloudflare-d1" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "icofr-elc" "/api/icofr/controls?category=ELC" '
-            .storage == "cloudflare-d1" and
-            .category == "ELC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-plc" "/api/icofr/controls?category=PLC" '
-            .storage == "cloudflare-d1" and
-            .category == "PLC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-itgc" "/api/icofr/controls?category=ITGC" '
-            .storage == "cloudflare-d1" and
-            .category == "ITGC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-itac" "/api/icofr/controls?category=ITAC" '
-            .storage == "cloudflare-d1" and
-            .category == "ITAC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-information" "/api/icofr/information" '
-            .storage == "cloudflare-d1" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-testing-plan" "/api/icofr/testing-plan" '
-            .storage == "cloudflare-d1" and
-            (.planItems | type) == "array" and
-            (.cycles | type) == "array"
-          '
-
-          check_json "icofr-deficiencies" "/api/icofr/deficiencies" '
-            .storage == "cloudflare-d1" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-certification" "/api/icofr/certification" '
-            .storage == "cloudflare-d1" and
-            (.attestations | type) == "array" and
-            (.subCertifications | type) == "array"
-          '
-
-          check_json "icofr-reporting" "/api/icofr/reporting" '
-            .storage == "cloudflare-d1" and
-            (.pbcRequests | type) == "array" and
-            (.reportPacks | type) == "array"
-          '
-
-          check_json "icofr-roll-forward" "/api/icofr/roll-forward" '
-            .storage == "cloudflare-d1" and
-            (.sourceCloses | type) == "array" and
-            (.rollForwards | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "icofr-smart-testing" "/api/icofr/smart-testing" '
-            .storage == "cloudflare-d1" and
-            (.cycles | type) == "array" and
-            (.runs | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "icofr-sampling-evidence" "/api/icofr/sampling-evidence" '
-            .storage == "cloudflare-d1" and
-            (.eligiblePlanItems | type) == "array" and
-            (.samplingPlans | type) == "array" and
-            (.evidenceRequests | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "icofr-workpaper-review" "/api/icofr/workpaper-review" '
-            .storage == "cloudflare-d1" and
-            (.workpapers | type) == "array" and
-            (.reviews | type) == "array" and
-            (.openReviewNotes | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "evidence-repository" "/api/evidence" '
-            .storage == "cloudflare-d1" and
-            (.documents | type) == "array" and
-            (.linkTargets | type) == "array" and
-            (.metrics | type) == "object" and
-            .limits.storageMode == "D1_CHUNKED"
-          '
+          check_status "dashboard-protected" "/api/dashboard" "401"
+          check_status "organization-protected" "/api/organization" "401"
+          check_status "processes-protected" "/api/processes" "401"
+          check_status "risks-protected" "/api/risks" "401"
+          check_status "controls-protected" "/api/controls" "401"
+          check_status "rcm-protected" "/api/rcm" "401"
+          check_status "assurance-protected" "/api/assurance?sections=integration" "401"
+          check_status "toe-protected" "/api/assure/toe" "401"
+          check_status "remediation-protected" "/api/assure/remediation" "401"
+          check_status "ccm-protected" "/api/monitor/ccm" "401"
+          check_status "evidence-protected" "/api/evidence" "401"
+          check_status "icofr-hub-protected" "/api/icofr/hub" "401"
+          check_status "icofr-workpaper-review-protected" "/api/icofr/workpaper-review" "401"
+          check_status "user-admin-protected" "/api/admin/users" "401"
+          check_status "tenant-admin-protected" "/api/admin/institutions" "401"
+          check_status "security-admin-protected" "/api/admin/security" "401"
 
           check_json "database-final" "/api/system/database" '
             .ok == true and
@@ -299,4 +160,4 @@ jobs:
             (.health.missingRequiredTables | length) == 0
           '
 
-          echo "All Total ARC production D1 API smoke tests passed."
+          echo "Total ARC production D1 health, authentication readiness, and unauthenticated access controls passed."

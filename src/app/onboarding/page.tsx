@@ -18,7 +18,7 @@ import {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { setInstitutionName } = useRole();
+  const { refreshSession } = useRole();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [industries, setIndustries] = useState<any[]>([]);
@@ -84,7 +84,7 @@ export default function OnboardingPage() {
         body: JSON.stringify(formData)
       });
       if (res.ok) {
-        setInstitutionName(formData.name);
+        await refreshSession();
         router.push('/processes');
       }
     } catch (e) {
