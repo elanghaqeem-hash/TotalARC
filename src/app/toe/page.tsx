@@ -206,7 +206,10 @@ export default function ToEPage() {
 
       setSampleModal(false);
       setSampleForm(EMPTY_SAMPLE_FORM);
-      await loadData(page);
+      await Promise.all([
+        loadData(page),
+        loadDetail(test.id, samplePage, filter)
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to add ToE sample.');
     } finally {
@@ -238,7 +241,10 @@ export default function ToEPage() {
       });
 
       setExceptionSample(null);
-      await loadData(page);
+      await Promise.all([
+        loadData(page),
+        loadDetail(test.id, samplePage, filter)
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to raise testing exception.');
     } finally {
@@ -264,7 +270,10 @@ export default function ToEPage() {
         result: draft.result,
         failureReason: draft.failureReason
       });
-      await loadData(page);
+      await Promise.all([
+        loadData(page),
+        loadDetail(test?.id || selectedId, 1, filter)
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update ToE sample.');
     } finally {
@@ -373,7 +382,7 @@ export default function ToEPage() {
                   ['Sample size', test.sampleSize],
                   ['Passed', test.passCount],
                   ['Failed', test.failCount],
-                  ['Exceptions', test.exceptions?.length || 0]
+                  ['Exceptions', test.exceptionCount || 0]
                 ].map(([label, value]) => (
                   <div key={String(label)} className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <div className="text-[10px] uppercase text-slate-400 font-bold">{label}</div>
@@ -386,23 +395,33 @@ export default function ToEPage() {
                 {(['ALL', 'PASS', 'FAIL'] as const).map(key => (
                   <button
                     key={key}
-                    onClick={() => setFilter(key)}
-                    className={`px-3 py-1.5 rounded-lg border ${
+                    onClick={() => {
+                      setFilter(key);
+                      void loadDetail(selectedId, 1, key);
+                    }}
+                    disabled={detailLoading}
+                    className={`px-3 py-1.5 rounded-lg border disabled:opacity-50 ${
                       filter === key
                         ? 'bg-brand-600 text-white border-brand-600'
                         : 'bg-white border-slate-200'
                     }`}
                   >
                     {key === 'ALL'
-                      ? `All (${test.samples?.length || 0})`
+                      ? `All (${test.sampleSize || 0})`
                       : key === 'PASS'
-                        ? `Passed (${test.samples?.filter((sample: any) => sample.result === 'Pass').length || 0})`
-                        : `Failed (${test.samples?.filter((sample: any) => sample.result === 'Fail').length || 0})`}
+                        ? `Passed (${test.passCount || 0})`
+                        : `Failed (${test.failCount || 0})`}
                   </button>
                 ))}
               </div>
 
-              <div className="overflow-x-auto">
+              <RegisterPager
+                pagination={samplePagination}
+                loading={detailLoading}
+                onPageChange={nextPage => void loadDetail(selectedId, nextPage, filter)}
+              />
+
+                            <div className="overflow-x-auto">
                 <table className="w-full text-xs min-w-[900px]">
                   <thead className="bg-slate-100 text-slate-600">
                     <tr>
