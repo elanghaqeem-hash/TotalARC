@@ -193,10 +193,8 @@ async function sha256Text(value: string) {
 
 function bytesToBase64(bytes: Uint8Array) {
   let result = '';
-  const step = 0x8000;
-  for (let index = 0; index < bytes.length; index += step) {
-    const slice = bytes.subarray(index, Math.min(index + step, bytes.length));
-    result += String.fromCharCode(...slice);
+  for (let index = 0; index < bytes.length; index += 1) {
+    result += String.fromCharCode(bytes[index]);
   }
   return btoa(result);
 }
