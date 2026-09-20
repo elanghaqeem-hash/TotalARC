@@ -51,6 +51,9 @@ const d1CoreRoutes = [
   'src/app/api/dashboard/route.ts',
   'src/app/api/organization/route.ts',
   'src/app/api/ai/analyze/route.ts',
+  'src/app/api/assure/rcsa/route.ts',
+  'src/app/api/assure/tod/route.ts',
+  'src/app/api/assure/icofr/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts'
