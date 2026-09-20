@@ -22,10 +22,14 @@ const domainPath = 'src/lib/d1-assurance.ts';
 const rcsaRoutePath = 'src/app/api/assure/rcsa/route.ts';
 const todRoutePath = 'src/app/api/assure/tod/route.ts';
 const icofrRoutePath = 'src/app/api/assure/icofr/route.ts';
+const certificationRoutePath = 'src/app/api/assure/certification/route.ts';
+const tasksRoutePath = 'src/app/api/assure/tasks/route.ts';
 const aggregateRoutePath = 'src/app/api/assurance/route.ts';
 const rcsaPagePath = 'src/app/rcsa/page.tsx';
 const todPagePath = 'src/app/tod/page.tsx';
 const icofrPagePath = 'src/app/icofr/page.tsx';
+const certificationPagePath = 'src/app/certification/page.tsx';
+const tasksPagePath = 'src/app/tasks/page.tsx';
 const prismaPath = 'prisma/schema.prisma';
 
 const domain = requireFile(domainPath);
@@ -37,6 +41,9 @@ requirePatterns(domainPath, domain, [
   /CREATE TABLE IF NOT EXISTS IPERegister/,
   /CREATE TABLE IF NOT EXISTS Walkthrough/,
   /CREATE TABLE IF NOT EXISTS ToDTest/,
+  /CREATE TABLE IF NOT EXISTS ControlCertification/,
+  /CREATE TABLE IF NOT EXISTS ManagementAttestation/,
+  /CREATE TABLE IF NOT EXISTS Task/,
   /export async function listRcsaData/,
   /export async function createAssessmentCampaign/,
   /export async function upsertCsaResponse/,
@@ -46,7 +53,13 @@ requirePatterns(domainPath, domain, [
   /export async function listIcofrData/,
   /export async function createFinancialAccount/,
   /export async function upsertAccountAssertion/,
-  /export async function createIpeRegister/
+  /export async function createIpeRegister/,
+  /export async function listCertificationData/,
+  /export async function createControlCertification/,
+  /export async function createManagementAttestation/,
+  /export async function listTasksData/,
+  /export async function createTask/,
+  /export async function updateTaskStatus/
 ]);
 
 const rcsaRoute = requireFile(rcsaRoutePath);
@@ -80,15 +93,40 @@ requirePatterns(icofrRoutePath, icofrRoute, [
   /recordMutationAudit/
 ]);
 
+const certificationRoute = requireFile(certificationRoutePath);
+requirePatterns(certificationRoutePath, certificationRoute, [
+  /authorizeTenantApi/,
+  /resolveAuthorizedOrgUnitIds/,
+  /CERTIFICATION_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /CREATE_CERTIFICATION/,
+  /CREATE_ATTESTATION/,
+  /recordMutationAudit/
+]);
+
+const tasksRoute = requireFile(tasksRoutePath);
+requirePatterns(tasksRoutePath, tasksRoute, [
+  /authorizeTenantApi/,
+  /resolveAuthorizedOrgUnitIds/,
+  /TASK_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /CREATE_TASK/,
+  /UPDATE_STATUS/,
+  /recordMutationAudit/
+]);
+
 const aggregateRoute = requireFile(aggregateRoutePath);
 requirePatterns(aggregateRoutePath, aggregateRoute, [
   /listRcsaData/,
   /listTodData/,
   /listIcofrData/,
+  /listCertificationData/,
+  /listTasksData/,
   /campaigns,/,
   /todTests:\s*scopedTodTests/,
   /financialAccounts:\s*scopedFinancialAccounts/,
   /ipeRegisters:\s*scopedIpe/,
+  /certifications:\s*scopedCertifications/,
+  /attestations:\s*scopedAttestations/,
+  /tasks:\s*scopedTasks/,
   /controls:\s*scopedControls/
 ]);
 
@@ -113,12 +151,28 @@ requirePatterns(icofrPagePath, icofrPage, [
   /Register IPE/
 ]);
 
+const certificationPage = requireFile(certificationPagePath);
+requirePatterns(certificationPagePath, certificationPage, [
+  /\/api\/assure\/certification/,
+  /Create Control Certification/,
+  /Create Management Attestation/
+]);
+
+const tasksPage = requireFile(tasksPagePath);
+requirePatterns(tasksPagePath, tasksPage, [
+  /\/api\/assure\/tasks/,
+  /Create Assurance Task/,
+  /UPDATE_STATUS/
+]);
+
 const prisma = requireFile(prismaPath);
 requirePatterns(prismaPath, prisma, [
   /model AssessmentCampaign[\s\S]*orgUnitId\s+String\?/,
   /model FinancialAccount[\s\S]*institutionId\s+String[\s\S]*orgUnitId\s+String\?/,
   /model IPERegister[\s\S]*institutionId\s+String[\s\S]*orgUnitId\s+String\?/,
-  /model ToDTest/
+  /model ToDTest/,
+  /model ManagementAttestation[\s\S]*institutionId\s+String[\s\S]*orgUnitId\s+String\?/,
+  /model Task[\s\S]*institutionId\s+String[\s\S]*orgUnitId\s+String\?/
 ]);
 
 if (findings.length) {
