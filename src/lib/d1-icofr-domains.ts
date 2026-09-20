@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 
 type D1DatabaseLike = {
@@ -56,12 +56,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-let schemaReady: Promise<D1DatabaseLike> | null = null;
+const schemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrDomainSchema() {
-  if (schemaReady) return schemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = schemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  schemaReady = (async () => {
+  const schemaPromise = (async () => {
     await ensureCoreDomainSchema();
     const db = await getDb();
 
@@ -175,11 +177,12 @@ export async function ensureIcofrDomainSchema() {
 
     return db;
   })().catch(error => {
-    schemaReady = null;
+    schemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return schemaReady;
+  schemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
