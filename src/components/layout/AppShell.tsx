@@ -3,7 +3,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useRole, USERS, type UserRole } from '@/context/RoleContext';
+import { useRole } from '@/context/RoleContext';
+import { canAccessPath, roleCanAdministerUsers, type AuthRole } from '@/lib/auth-token';
 import {
   Activity,
   AlertTriangle,
@@ -27,6 +28,10 @@ import {
   Shield,
   Sparkles,
   Target,
+  UserCircle,
+  UserCog,
+  LockKeyhole,
+  LogOut,
   Workflow,
   X
 } from 'lucide-react';
@@ -59,7 +64,9 @@ const navGroups: NavGroup[] = [
       { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
       { name: 'Single Control Library', href: '/controls', icon: Shield },
       { name: 'Relational RCM Workspace', href: '/rcm', icon: FileSpreadsheet },
-      { name: 'Enterprise Evidence Repository', href: '/evidence', icon: FileArchive, badge: 'FILES' }
+      { name: 'Enterprise Evidence Repository', href: '/evidence', icon: FileArchive, badge: 'FILES' },
+      { name: 'User Administration', href: '/admin/users', icon: UserCog, badge: 'RBAC' },
+      { name: 'Security Administration', href: '/admin/security', icon: LockKeyhole, badge: 'AUTH' }
     ]
   },
   {
@@ -152,7 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const timer = window.setTimeout(warmNeighbors, 650);
     return () => window.clearTimeout(timer);
   }, [pathname, prefetchRoute]);
-  const { currentUser, setRole } = useRole();
+  const { currentUser, authenticated, enforcement, loading: authLoading, refreshSession } = useRole();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
@@ -173,65 +180,75 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const Nav = ({ mobile = false, collapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
     <div className={collapsed ? 'space-y-2' : 'space-y-4'}>
-      {navGroups.map((group) => (
-        <section
-          key={group.title}
-          className={`border border-slate-200 bg-white shadow-sm transition-all duration-200 ${
-            collapsed ? 'rounded-xl p-1.5' : 'rounded-2xl p-2.5'
-          }`}
-        >
-          {!collapsed && (
-            <div className="px-2.5 pb-2 pt-1">
-              <div className="text-[11px] font-black tracking-[0.12em] text-slate-800">{group.title}</div>
-              <div className="mt-0.5 text-[10px] text-slate-400">{group.subtitle}</div>
+      {navGroups.map((group) => {
+        const items = group.items.filter((item) => {
+          if (!authenticated || currentUser.role === 'Unauthenticated') {
+            return !item.href.startsWith('/admin');
+          }
+          return canAccessPath(currentUser.role as AuthRole, item.href, 'GET');
+        });
+        if (!items.length) return null;
+
+        return (
+          <section
+            key={group.title}
+            className={`border border-slate-200 bg-white shadow-sm transition-all duration-200 ${
+              collapsed ? 'rounded-xl p-1.5' : 'rounded-2xl p-2.5'
+            }`}
+          >
+            {!collapsed && (
+              <div className="px-2.5 pb-2 pt-1">
+                <div className="text-[11px] font-black tracking-[0.12em] text-slate-800">{group.title}</div>
+                <div className="mt-0.5 text-[10px] text-slate-400">{group.subtitle}</div>
+              </div>
+            )}
+
+            <div className={collapsed ? 'space-y-1.5' : 'space-y-1'}>
+              {items.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={collapsed ? item.name : undefined}
+                    aria-label={collapsed ? item.name : undefined}
+                    prefetch={false}
+                    onMouseEnter={() => prefetchRoute(item.href)}
+                    onFocus={() => prefetchRoute(item.href)}
+                    onTouchStart={() => prefetchRoute(item.href)}
+                    onClick={() => mobile && setMobileMenuOpen(false)}
+                    className={`group flex items-center rounded-xl text-[11px] transition-all ${
+                      collapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-2.5 py-2.5'
+                    } ${
+                      active
+                        ? 'bg-gradient-to-r from-brand-600 to-sky-500 font-bold text-white shadow-md shadow-sky-100'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className={`flex min-w-0 items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
+                      <span
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                          active ? 'bg-white/15' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-brand-700'
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      {!collapsed && <span className="truncate">{item.name}</span>}
+                    </span>
+                    {!collapsed && item.badge && (
+                      <span className={`ml-2 shrink-0 text-[9px] font-bold ${active ? 'text-white/80' : 'text-slate-400'}`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
             </div>
-          )}
-
-          <div className={collapsed ? 'space-y-1.5' : 'space-y-1'}>
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href;
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  title={collapsed ? item.name : undefined}
-                  aria-label={collapsed ? item.name : undefined}
-                  prefetch={false}
-                  onMouseEnter={() => prefetchRoute(item.href)}
-                  onFocus={() => prefetchRoute(item.href)}
-                  onTouchStart={() => prefetchRoute(item.href)}
-                  onClick={() => mobile && setMobileMenuOpen(false)}
-                  className={`group flex items-center rounded-xl text-[11px] transition-all ${
-                    collapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-2.5 py-2.5'
-                  } ${
-                    active
-                      ? 'bg-gradient-to-r from-brand-600 to-sky-500 font-bold text-white shadow-md shadow-sky-100'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className={`flex min-w-0 items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
-                    <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                        active ? 'bg-white/15' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-brand-700'
-                      }`}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                    </span>
-                    {!collapsed && <span className="truncate">{item.name}</span>}
-                  </span>
-                  {!collapsed && item.badge && (
-                    <span className={`ml-2 shrink-0 text-[9px] font-bold ${active ? 'text-white/80' : 'text-slate-400'}`}>
-                      {item.badge}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+          </section>
+        );
+      })}
     </div>
   );
 
@@ -274,43 +291,84 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
 
             <div className="relative">
-              <button
-                onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50"
-              >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-xs font-black text-brand-700 ring-1 ring-brand-100">
-                  {currentUser.role.charAt(0)}
-                </div>
-                <div className="hidden max-w-[150px] text-left sm:block">
-                  <div className="truncate text-[11px] font-black text-slate-800">{currentUser.role}</div>
-                  <div className="truncate text-[9px] text-slate-400">{currentUser.roleTitle}</div>
-                </div>
-                <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
-              </button>
+              {authenticated ? (
+                <>
+                  <button
+                    onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-xs font-black text-brand-700 ring-1 ring-brand-100">
+                      {(currentUser.name || currentUser.role).charAt(0).toUpperCase()}
+                    </div>
+                    <div className="hidden max-w-[190px] text-left sm:block">
+                      <div className="truncate text-[11px] font-black text-slate-800">{currentUser.name}</div>
+                      <div className="truncate text-[9px] text-slate-400">{currentUser.roleTitle}</div>
+                    </div>
+                    <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
+                  </button>
 
-              {roleDropdownOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10">
-                  <div className="px-2.5 pb-2 pt-1">
-                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">View as role</div>
-                    <div className="mt-1 text-[10px] leading-4 text-slate-500">Ubah perspektif tampilan tanpa membuat identitas pengguna palsu.</div>
-                  </div>
+                  {roleDropdownOpen && (
+                    <div className="absolute right-0 z-50 mt-2 w-80 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                      <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                        <div className="text-xs font-black text-slate-900">{currentUser.name}</div>
+                        <div className="mt-0.5 truncate text-[10px] text-slate-500">{currentUser.email}</div>
+                        <div className="mt-1 text-[9px] font-bold text-brand-700">{currentUser.roleTitle}</div>
+                        <div className="mt-1 truncate text-[9px] text-slate-400">
+                          {currentUser.institutionName}{currentUser.department ? ' · ' + currentUser.department : ''}
+                        </div>
+                      </div>
 
-                  {(Object.keys(USERS) as UserRole[]).map((role) => (
-                    <button
-                      key={role}
-                      onClick={() => {
-                        setRole(role);
-                        setRoleDropdownOpen(false);
-                      }}
-                      className={`w-full rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-50 ${
-                        currentUser.role === role ? 'bg-brand-50 text-brand-800' : 'text-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{role}</div>
-                      <div className="mt-0.5 text-[10px] text-slate-500">{USERS[role].roleTitle}</div>
-                    </button>
-                  ))}
-                </div>
+                      <div className="mt-2 space-y-1">
+                        <Link
+                          href="/profile"
+                          onClick={() => setRoleDropdownOpen(false)}
+                          className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                          <UserCircle className="h-4 w-4" /> My Profile
+                        </Link>
+                        {currentUser.role !== 'Unauthenticated' && roleCanAdministerUsers(currentUser.role) && (
+                          <>
+                            <Link
+                              href="/admin/users"
+                              onClick={() => setRoleDropdownOpen(false)}
+                              className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                            >
+                              <UserCog className="h-4 w-4" /> User Administration
+                            </Link>
+                            <Link
+                              href="/admin/security"
+                              onClick={() => setRoleDropdownOpen(false)}
+                              className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                            >
+                              <LockKeyhole className="h-4 w-4" /> Security Administration
+                            </Link>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setRoleDropdownOpen(false);
+                            await fetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
+                            await refreshSession();
+                            router.push('/login');
+                            router.refresh();
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50"
+                        >
+                          <LogOut className="h-4 w-4" /> Sign out
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Link
+                  href="/login"
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 hover:bg-slate-50"
+                >
+                  <UserCircle className="h-4 w-4" />
+                  <span>{authLoading ? 'Checking session…' : enforcement ? 'Sign in' : 'Sign in · staged'}</span>
+                </Link>
               )}
             </div>
           </div>
