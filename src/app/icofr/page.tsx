@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { FileCheck, Plus, Save, X } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 const ASSERTIONS = [
   'Existence / Occurrence',
@@ -80,16 +81,10 @@ export default function ICOFRPage() {
     setMessage('');
     try {
       const selectedUnit = units.find((unit: any) => unit.id === form.orgUnitId);
-      const response = await fetch('/api/assure/icofr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          legalEntityId: selectedUnit?.legalEntityId || null
-        })
+      await jsonTransaction('/api/assure/icofr', {
+        ...form,
+        legalEntityId: selectedUnit?.legalEntityId || null
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to save ICOFR record.');
       await reload();
       setMode(null);
       setMessage(mode === 'account' ? 'Financial account scope saved.' : 'IPE register entry saved.');
