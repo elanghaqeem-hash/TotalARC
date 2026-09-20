@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         user,
-        message: 'First institution administrator created. Sign in with the password you supplied; no plaintext credential is stored.'
+        message: 'First platform SuperAdmin created. Sign in with the password you supplied; no plaintext credential is stored.'
       },
       { status: 201 }
     );
@@ -35,6 +35,6 @@ export async function POST(request: Request) {
     };
     if (known[code]) return NextResponse.json({ error: known[code][0], code }, { status: known[code][1] });
     console.error('First-admin bootstrap failed:', error);
-    return NextResponse.json({ error: 'First administrator could not be created.' }, { status: 500 });
+    return NextResponse.json({ error: 'First platform SuperAdmin could not be created.' }, { status: 500 });
   }
 }
