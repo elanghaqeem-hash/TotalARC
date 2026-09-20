@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getOrganizationStructure } from '@/lib/d1-organization';
+import { listDesignAssessments } from '@/lib/d1-icofr-traceability';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const organization = await getOrganizationStructure();
+    const [organization, todTests] = await Promise.all([
+      getOrganizationStructure(),
+      listDesignAssessments()
+    ]);
     const institution = organization.institution;
 
     return NextResponse.json({
@@ -18,7 +22,7 @@ export async function GET() {
           }
         : null,
       campaigns: [],
-      todTests: [],
+      todTests,
       walkthroughs: [],
       financialAccounts: [],
       ipeRegisters: [],
