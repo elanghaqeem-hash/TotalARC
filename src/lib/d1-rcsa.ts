@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 
 type D1DatabaseLike = {
@@ -79,12 +79,14 @@ function normalizeEffectiveness(value: string) {
     : 'Not Assessed';
 }
 
-let rcsaSchemaReady: Promise<D1DatabaseLike> | null = null;
+const rcsaSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureRcsaSchema() {
-  if (rcsaSchemaReady) return rcsaSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = rcsaSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  rcsaSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchemaScript(db, `
@@ -201,11 +203,12 @@ export async function ensureRcsaSchema() {
 
     return db;
   })().catch(error => {
-    rcsaSchemaReady = null;
+    rcsaSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return rcsaSchemaReady;
+  rcsaSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
