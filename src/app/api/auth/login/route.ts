@@ -90,6 +90,12 @@ export async function POST(request: Request) {
         { status: 503 }
       );
     }
+    if (code === 'TEMPORARY_CREDENTIAL_EXPIRED') {
+      return NextResponse.json(
+        { error: 'Temporary credential has expired. Contact an authorized user administrator for a new credential reset.' },
+        { status: 401 }
+      );
+    }
     if (code === 'NO_ACTIVE_INSTITUTION_ACCESS') {
       return NextResponse.json(
         { error: 'No active institution access is assigned to this user.' },
