@@ -49,6 +49,14 @@ for (const [path, pattern] of schemaFiles) {
   requirePattern(path, content, pattern, 'schema initialization must be memoized per Worker isolate');
 }
 
+const mutationSecurity = read('src/lib/mutation-security.ts');
+requirePattern(
+  'src/lib/mutation-security.ts',
+  mutationSecurity,
+  /performanceStartedAt/,
+  'server-side mutation timing start must be captured'
+);
+
 const auth = read('src/lib/auth.ts');
 requirePattern(
   'src/lib/auth.ts',
@@ -58,6 +66,13 @@ requirePattern(
 );
 
 const core = read('src/lib/d1-core.ts');
+requirePattern(
+  'src/lib/d1-core.ts',
+  core,
+  /MUTATION \${input\.entityType}/,
+  'audited mutations must emit server-side duration telemetry'
+);
+
 for (const pattern of [
   /idx_process_org_unit/,
   /idx_process_legal_entity/,
