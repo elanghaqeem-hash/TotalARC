@@ -463,6 +463,7 @@ export default function CertificationPage() {
           <Link href="/tod" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToD</Link>
           <Link href="/toe" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToE</Link>
           <Link href="/icofr/workpaper-review" className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-700">Workpaper Review</Link>
+          <Link href="/evidence" className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-700">Evidence Repository</Link>
           <Link href="/remediation" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Remediation</Link>
           <Link href="/icofr/coverage" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Coverage & Gaps</Link>
         </div>

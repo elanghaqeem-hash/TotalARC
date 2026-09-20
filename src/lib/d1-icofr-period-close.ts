@@ -9,6 +9,7 @@ import { ensureIcofrCertificationSchema } from '@/lib/d1-icofr-certification';
 import { ensureIcofrExecutiveReportingSchema } from '@/lib/d1-icofr-executive-reporting';
 import { ensureIcofrSamplingEvidenceSchema } from '@/lib/d1-icofr-sampling-evidence';
 import { ensureIcofrWorkpaperReviewSchema } from '@/lib/d1-icofr-workpaper-review';
+import { ensureEvidenceRepositorySchema } from '@/lib/d1-evidence-repository';
 import {
   ensureIcofrPeriodLockSchema,
   getIcofrPeriodLockState
@@ -40,6 +41,7 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureIcofrExecutiveReportingSchema(),
     ensureIcofrSamplingEvidenceSchema(),
     ensureIcofrWorkpaperReviewSchema(),
+    ensureEvidenceRepositorySchema(),
     ensureIcofrPeriodLockSchema()
   ]);
 
@@ -246,7 +248,10 @@ async function captureSnapshotSections(
     evidencePacks,
     reportPacks,
     relianceMappings,
-    pbcRequests
+    pbcRequests,
+    evidenceDocumentsAll,
+    evidenceVersionsAll,
+    evidenceLinksAll
   ] = await Promise.all([
     all(db, 'SELECT * FROM ICOFRScopeItem WHERE scopeId=? ORDER BY itemType,name', [scopeId]),
     all(db, 'SELECT * FROM ICOFRFinancialItem WHERE institutionId=? ORDER BY recordType,itemCode', [institutionId]),
@@ -469,10 +474,52 @@ async function captureSnapshotSections(
     ),
     all(db, 'SELECT * FROM ICOFRExecutiveReportPack WHERE institutionId=? AND period=? ORDER BY updatedAt', [institutionId, period]),
     all(db, 'SELECT * FROM ICOFRExternalAuditReliance WHERE institutionId=? AND period=? ORDER BY updatedAt', [institutionId, period]),
-    all(db, 'SELECT * FROM ICOFRPBCRequest WHERE institutionId=? AND period=? ORDER BY requestNo', [institutionId, period])
+    all(db, 'SELECT * FROM ICOFRPBCRequest WHERE institutionId=? AND period=? ORDER BY requestNo', [institutionId, period]),
+    all(db, 'SELECT * FROM EvidenceDocument WHERE institutionId=? ORDER BY evidenceId', [institutionId]),
+    all(db, 'SELECT * FROM EvidenceVersion WHERE institutionId=? ORDER BY documentId,versionNo', [institutionId]),
+    all(db, 'SELECT * FROM EvidenceLink WHERE institutionId=? ORDER BY createdAt', [institutionId])
   ]);
 
   const attestation = attestations.find(item => String(item.id) === attestationId) || null;
+
+  const snapshotTargetKeys = new Set<string>();
+  const addTargets = (type: string, rows: Array<Record<string, unknown>>, idKey = 'id') => {
+    for (const row of rows) {
+      const id = row[idKey];
+      if (id) snapshotTargetKeys.add(type + ':' + String(id));
+    }
+  };
+
+  addTargets('TESTING_PLAN_ITEM', planItems);
+  addTargets('SAMPLING_PLAN', samplingPlans);
+  addTargets('WORKPAPER_REVIEW', workpaperReviews);
+  addTargets('WORKPAPER_EVIDENCE', workpaperEvidenceIndex);
+  addTargets('TOD', designAssessments);
+  addTargets('TOE', toeTests);
+  addTargets('TOE_SAMPLE', testSamples);
+  addTargets('DEFICIENCY', deficiencies);
+  addTargets('MAP', maps);
+  addTargets('SUB_CERTIFICATION', subCertifications);
+  addTargets('ATTESTATION', attestations);
+  addTargets('EVIDENCE_PACK', evidencePacks);
+  addTargets('PBC_REQUEST', pbcRequests);
+  addTargets('CONTROL', controlMasters);
+  addTargets('RISK', riskMasters);
+  addTargets('PROCESS', []);
+  addTargets('SCOPE', scope ? [scope] : []);
+
+  const evidenceLinks = evidenceLinksAll.filter(link =>
+    snapshotTargetKeys.has(String(link.entityType) + ':' + String(link.entityId))
+  );
+  const evidenceDocumentIds = new Set(evidenceLinks.map(link => String(link.documentId)));
+  const evidenceVersionIds = new Set(evidenceLinks.map(link => String(link.versionId || '')));
+  const evidenceDocuments = evidenceDocumentsAll.filter(item =>
+    evidenceDocumentIds.has(String(item.id))
+  );
+  const evidenceVersions = evidenceVersionsAll.filter(item =>
+    evidenceDocumentIds.has(String(item.documentId)) &&
+    (evidenceVersionIds.size === 0 || evidenceVersionIds.has(String(item.id)))
+  );
 
   return [
     {
@@ -521,6 +568,14 @@ async function captureSnapshotSections(
         managementActionPlans: maps,
         milestones,
         retests
+      }
+    },
+    {
+      snapshotType: 'EVIDENCE_REPOSITORY',
+      content: {
+        documents: evidenceDocuments,
+        versions: evidenceVersions,
+        links: evidenceLinks
       }
     },
     {
@@ -1184,6 +1239,7 @@ export async function buildBoardAuditCommitteePdf(closeId: string, version?: num
   const certificationSection = bundle.sections.CERTIFICATION as Record<string, unknown> | undefined;
   const reportingSection = bundle.sections.REPORTING_AND_AUDIT as Record<string, unknown> | undefined;
   const controlsSection = bundle.sections.RCM_AND_CONTROLS as Record<string, unknown> | undefined;
+  const evidenceRepositorySection = bundle.sections.EVIDENCE_REPOSITORY as Record<string, unknown> | undefined;
 
   const scope = scopeSection?.scope as Record<string, unknown> | undefined;
   const controlDomains = arrayFromSection(controlsSection, 'controlDomains');
@@ -1202,6 +1258,9 @@ export async function buildBoardAuditCommitteePdf(closeId: string, version?: num
   const reliance = arrayFromSection(reportingSection, 'relianceMappings');
   const pbc = arrayFromSection(reportingSection, 'pbcRequests');
   const reportPacks = arrayFromSection(reportingSection, 'reportPacks');
+  const repositoryDocuments = arrayFromSection(evidenceRepositorySection, 'documents');
+  const repositoryVersions = arrayFromSection(evidenceRepositorySection, 'versions');
+  const repositoryLinks = arrayFromSection(evidenceRepositorySection, 'links');
 
   const managementAttestation =
     (certificationSection?.selectedAttestation as Record<string, unknown> | null | undefined) ||
@@ -1243,6 +1302,9 @@ export async function buildBoardAuditCommitteePdf(closeId: string, version?: num
     'Approved workpaper reviews: ' + workpaperReviews.filter(item => String(item.status) === 'Approved').length,
     'Open workpaper review notes: ' + workpaperReviewNotes.filter(item => !['Cleared','Waived'].includes(String(item.status))).length,
     'Workpaper evidence-index records: ' + workpaperEvidenceIndex.length,
+    'Enterprise evidence documents linked to this snapshot: ' + repositoryDocuments.length,
+    'Pinned enterprise evidence versions: ' + repositoryVersions.length,
+    'Enterprise evidence traceability links: ' + repositoryLinks.length,
     'Control deficiencies captured: ' + deficiencies.length,
     'Significant deficiencies / material weaknesses: ' + significant.length,
     'Open MAP at snapshot: ' + openMaps.length,
@@ -1362,6 +1424,7 @@ export async function buildExternalAuditorExcel(closeId: string, version?: numbe
   const testing = sections.TESTING_AND_DEFICIENCIES as Record<string, unknown> | undefined;
   const certification = sections.CERTIFICATION as Record<string, unknown> | undefined;
   const reporting = sections.REPORTING_AND_AUDIT as Record<string, unknown> | undefined;
+  const evidenceRepository = sections.EVIDENCE_REPOSITORY as Record<string, unknown> | undefined;
 
   const sheets = [
     worksheet('Snapshot Index', indexRows),
@@ -1380,6 +1443,9 @@ export async function buildExternalAuditorExcel(closeId: string, version?: numbe
     worksheet('Workpaper Reviews', arrayFromSection(testing, 'workpaperReviews')),
     worksheet('Review Notes', arrayFromSection(testing, 'workpaperReviewNotes')),
     worksheet('Workpaper Evidence', arrayFromSection(testing, 'workpaperEvidenceIndex')),
+    worksheet('Evidence Repository', arrayFromSection(evidenceRepository, 'documents')),
+    worksheet('Evidence Versions', arrayFromSection(evidenceRepository, 'versions')),
+    worksheet('Evidence Links', arrayFromSection(evidenceRepository, 'links')),
     worksheet('ToD', arrayFromSection(testing, 'designAssessments')),
     worksheet('ToE', arrayFromSection(testing, 'toeTests')),
     worksheet('Samples', arrayFromSection(testing, 'testSamples')),
