@@ -4,9 +4,11 @@ import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { getOrganizationData, scopeOrganizationData } from '@/lib/d1-organization';
 import { listControls } from '@/lib/d1-core';
 import {
+  listCertificationData,
   listIcofrData,
   listRcsaData,
   listRemediationData,
+  listTasksData,
   listTodData,
   listToeTests
 } from '@/lib/d1-assurance';
@@ -28,7 +30,9 @@ export async function GET(request: Request) {
       icofr,
       controls,
       toeTests,
-      remediation
+      remediation,
+      certification,
+      tasks
     ] = await Promise.all([
       getInstitutionById(auth.user.institutionId),
       getOrganizationData(auth.user.institutionId),
@@ -38,7 +42,9 @@ export async function GET(request: Request) {
       listIcofrData(auth.user.institutionId),
       listControls(auth.user.institutionId),
       listToeTests(auth.user.institutionId),
-      listRemediationData(auth.user.institutionId)
+      listRemediationData(auth.user.institutionId),
+      listCertificationData(auth.user.institutionId),
+      listTasksData(auth.user.institutionId)
     ]);
 
     const scopedOrganization = scopeOrganizationData(
@@ -117,6 +123,24 @@ export async function GET(request: Request) {
         (retest.process as Record<string, unknown> | null)?.orgUnitId as string | null | undefined
       )
     );
+    const scopedCertifications = certification.certifications.filter(certificationRow =>
+      isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        (((certificationRow.control as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId) as string | null | undefined
+      )
+    );
+    const scopedAttestations = certification.attestations.filter(attestation =>
+      isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        (attestation as Record<string, unknown>).orgUnitId as string | null | undefined
+      )
+    );
+    const scopedTasks = tasks.filter(task =>
+      isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        (task as Record<string, unknown>).orgUnitId as string | null | undefined
+      )
+    );
 
     return NextResponse.json({
       institution: institution
@@ -132,9 +156,9 @@ export async function GET(request: Request) {
       walkthroughs: scopedWalkthroughs,
       financialAccounts: scopedFinancialAccounts,
       ipeRegisters: scopedIpe,
-      certifications: [],
-      attestations: [],
-      tasks: [],
+      certifications: scopedCertifications,
+      attestations: scopedAttestations,
+      tasks: scopedTasks,
       controls: scopedControls,
       toeTests: scopedToe,
       actionPlans: scopedMaps,
