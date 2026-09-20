@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { listRcmRows } from '@/lib/d1-core';
-import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
+import { listRcmRegisterPage } from '@/lib/d1-register-pagination';
+import { parsePaginationRequest } from '@/lib/pagination';
 import { getOrganizationData, scopeOrganizationData } from '@/lib/d1-organization';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
@@ -12,15 +12,24 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const [baseRows, organization, authorizedOrgUnitIds] = await Promise.all([
-      listRcmRows(auth.user.institutionId),
+    const url = new URL(request.url);
+    const pagination = parsePaginationRequest(request);
+    const orgUnitId = (url.searchParams.get('orgUnitId') || '').trim() || null;
+
+    const [organization, authorizedOrgUnitIds] = await Promise.all([
       getOrganizationData(auth.user.institutionId),
       resolveAuthorizedOrgUnitIds(auth.user)
     ]);
-    const scopedRows = baseRows.filter(row =>
-      isOrgUnitAuthorized(authorizedOrgUnitIds, row.orgUnitId as string | null | undefined)
+
+    const page = await listRcmRegisterPage(
+      auth.user.institutionId,
+      {
+        ...pagination,
+        authorizedOrgUnitIds,
+        orgUnitId
+      }
     );
-    const rcm = await enrichRcmWithAssurance(scopedRows, auth.user.institutionId);
+
     const scopedOrganization = scopeOrganizationData(
       organization,
       authorizedOrgUnitIds,
@@ -28,8 +37,8 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json({
-      rcm,
-      total: rcm.length,
+      ...page,
+      total: page.pagination.total,
       organization: {
         legalEntities: scopedOrganization.legalEntities,
         organizationUnits: scopedOrganization.organizationUnits
