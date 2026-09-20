@@ -21,6 +21,7 @@ import {
 import { getHealthBadgeClasses } from '@/lib/utils';
 import { jsonTransaction } from '@/lib/client-transaction';
 import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 export default function ControlsPage() {
   const [controls, setControls] = useState<any[]>([]);
@@ -31,6 +32,9 @@ export default function ControlsPage() {
   const [search, setSearch] = useState('');
   const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
   const [newControlModal, setNewControlModal] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [pageLoading, setPageLoading] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -48,58 +52,90 @@ export default function ControlsPage() {
     isIcofrKey: false
   });
 
-  const loadControls = () => {
-    Promise.all([
-      jsonRead<any>('/api/controls', { dedupe: false }),
-      jsonRead<any>('/api/processes', { dedupe: false }),
-      jsonRead<any>('/api/risks', { dedupe: false })
-    ])
-      .then(([controlData, processData, riskData]) => {
-        const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
-        const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
-        const nextOrganizationUnits = Array.isArray(processData.organization?.organizationUnits)
-          ? processData.organization.organizationUnits
-          : [];
-        const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
+  const loadReferenceData = async () => {
+    try {
+      const [processData, riskData] = await Promise.all([
+        jsonRead<any>('/api/processes?mode=options', { dedupe: false }),
+        jsonRead<any>('/api/risks?mode=options', { dedupe: false })
+      ]);
 
-        setControls(nextControls);
-        setProcesses(nextProcesses);
-        setOrganizationUnits(nextOrganizationUnits);
-        setRisks(nextRisks);
+      const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
+      const nextOrganizationUnits = Array.isArray(processData.organization?.organizationUnits)
+        ? processData.organization.organizationUnits
+        : [];
+      const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
 
-        if (nextControls.length > 0 && !selectedControl) {
-          setSelectedControl(nextControls[0]);
-        }
+      setProcesses(nextProcesses);
+      setOrganizationUnits(nextOrganizationUnits);
+      setRisks(nextRisks);
 
-        setFormData(prev => {
-          const nextProcessId =
-            prev.processId && nextProcesses.some((process: any) => process.id === prev.processId)
-              ? prev.processId
-              : nextProcesses[0]?.id || '';
-          const riskStillValid = nextRisks.some(
-            (risk: any) => risk.id === prev.riskId && risk.processId === nextProcessId
-          );
+      setFormData(prev => {
+        const nextProcessId =
+          prev.processId && nextProcesses.some((process: any) => process.id === prev.processId)
+            ? prev.processId
+            : nextProcesses[0]?.id || '';
+        const riskStillValid = nextRisks.some(
+          (risk: any) => risk.id === prev.riskId && risk.processId === nextProcessId
+        );
 
-          return {
-            ...prev,
-            processId: nextProcessId,
-            riskId: riskStillValid ? prev.riskId : ''
-          };
-        });
-      })
-      .catch(console.error);
+        return {
+          ...prev,
+          processId: nextProcessId,
+          riskId: riskStillValid ? prev.riskId : ''
+        };
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const loadControls = async (targetPage = page) => {
+    setPageLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: '50'
+      });
+      if (search.trim()) params.set('search', search.trim());
+      if (selectedOrgUnit !== 'ALL') params.set('orgUnitId', selectedOrgUnit);
+
+      const controlData = await jsonRead<any>(
+        '/api/controls?' + params.toString(),
+        { dedupe: false }
+      );
+      const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
+      setControls(nextControls);
+      setPagination(controlData.pagination || EMPTY_PAGINATION);
+      setPage(targetPage);
+      setSelectedControl(current =>
+        current && nextControls.some((item: any) => item.id === current.id)
+          ? current
+          : nextControls[0] || null
+      );
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPageLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadControls();
+    void loadReferenceData();
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadControls(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedOrgUnit]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await jsonTransaction('/api/controls', formData);
       setNewControlModal(false);
-      loadControls();
+      await loadControls(page);
     } catch (e) {
       console.error(e);
     }
@@ -108,17 +144,7 @@ export default function ControlsPage() {
   const processById = new Map(processes.map(process => [process.id, process]));
   const selectedControlProcess = selectedControl ? processById.get(selectedControl.processId) : null;
 
-  const filtered = controls.filter(c => {
-    const process = processById.get(c.processId);
-    const matchesOrg = selectedOrgUnit === 'ALL' || process?.orgUnitId === selectedOrgUnit;
-    return matchesOrg && (
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.controlId.toLowerCase().includes(search.toLowerCase()) ||
-      c.type.toLowerCase().includes(search.toLowerCase()) ||
-      String(c.controlOwner || '').toLowerCase().includes(search.toLowerCase()) ||
-      String(process?.orgUnit?.name || '').toLowerCase().includes(search.toLowerCase())
-    );
-  });
+  const filtered = controls;
 
   const availableRisks = risks.filter(risk => risk.processId === formData.processId);
 
@@ -172,9 +198,15 @@ export default function ControlsPage() {
         </select>
 
         <div className="text-xs text-slate-500 font-semibold">
-          Showing {filtered.length} Enterprise Controls
+          Showing {pagination.total} Enterprise Controls
         </div>
       </div>
+
+      <RegisterPager
+        pagination={pagination}
+        loading={pageLoading}
+        onPageChange={nextPage => void loadControls(nextPage)}
+      />
 
       {/* Split View: Left List, Right Control 360 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
