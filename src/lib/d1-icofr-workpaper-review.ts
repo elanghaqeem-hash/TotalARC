@@ -25,12 +25,10 @@ const EVIDENCE_DECISIONS = ['Pending', 'Accepted', 'Rejected'] as const;
 const NOTE_SEVERITIES = ['Critical', 'High', 'Medium', 'Low'] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrTestingPlanSchema(),
-    ensureIcofrTraceabilitySchema(),
-    ensureAssuranceSchema()
-  ]);
+  await ensureCoreDomainSchema();
+    await ensureIcofrTestingPlanSchema();
+    await ensureIcofrTraceabilitySchema();
+    await ensureAssuranceSchema();
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
@@ -75,6 +73,17 @@ function bool(value: unknown) {
   return value === true || value === 1 || value === '1';
 }
 
+async function executeSchemaScript(db: D1DatabaseLike, script: string) {
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
+}
+
 let schemaReady: Promise<D1DatabaseLike> | null = null;
 
 export async function ensureIcofrWorkpaperReviewSchema() {
@@ -82,7 +91,7 @@ export async function ensureIcofrWorkpaperReviewSchema() {
 
   schemaReady = (async () => {
     const db = await getDb();
-    await db.exec(`
+    await executeSchemaScript(db, `
       CREATE TABLE IF NOT EXISTS ICOFRWorkpaperReview (
         id TEXT PRIMARY KEY NOT NULL,
         institutionId TEXT NOT NULL,

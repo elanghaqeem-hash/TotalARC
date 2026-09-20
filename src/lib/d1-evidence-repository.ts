@@ -82,10 +82,8 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrWorkpaperReviewSchema()
-  ]);
+  await ensureCoreDomainSchema();
+    await ensureIcofrWorkpaperReviewSchema();
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
@@ -183,6 +181,17 @@ function retentionDate(retentionClass: string, customDate?: string | null) {
   return date.toISOString().slice(0, 10);
 }
 
+async function executeSchemaScript(db: D1DatabaseLike, script: string) {
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
+}
+
 let schemaReady: Promise<D1DatabaseLike> | null = null;
 
 export async function ensureEvidenceRepositorySchema() {
@@ -190,7 +199,7 @@ export async function ensureEvidenceRepositorySchema() {
 
   schemaReady = (async () => {
     const db = await getDb();
-    await db.exec(`
+    await executeSchemaScript(db, `
       CREATE TABLE IF NOT EXISTS EvidenceDocument (
         id TEXT PRIMARY KEY NOT NULL,
         institutionId TEXT NOT NULL,
