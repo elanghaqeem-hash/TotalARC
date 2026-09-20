@@ -26,6 +26,7 @@ type UserRow = {
   authType: string;
   mustChangePassword: boolean;
   passwordExpiresAt?: string | null;
+  temporaryCredentialExpiresAt?: string | null;
   lockedUntil?: string | null;
   lastLoginAt?: string | null;
   roles: string[];
@@ -453,6 +454,9 @@ export default function UserAdministrationPage() {
                     </div>
                     <div className="mt-2 text-[10px] text-slate-500">
                       Units: {user.units.length ? user.units.map(unit=>unit.orgUnitName).join(', ') : 'Institution / role-defined scope'} · Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('id-ID') : 'Never'}
+                      {user.mustChangePassword && user.temporaryCredentialExpiresAt
+                        ? ` · Temporary credential expires: ${new Date(user.temporaryCredentialExpiresAt).toLocaleString('id-ID')}`
+                        : ''}
                     </div>
                   </div>
                   <div className="flex max-w-full flex-wrap gap-2">
