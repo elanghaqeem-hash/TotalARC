@@ -30,7 +30,14 @@ async function authorizedHealthProbe(request: NextRequest) {
   if (!request.nextUrl.pathname.startsWith('/api/')) return false;
   const bootstrapPost =
     request.nextUrl.pathname === '/api/auth/bootstrap' && request.method === 'POST';
-  if (!bootstrapPost && request.method !== 'GET' && request.method !== 'HEAD') return false;
+  const sourceMigrationPost =
+    request.nextUrl.pathname === '/api/system/source-migration' && request.method === 'POST';
+  if (
+    !bootstrapPost &&
+    !sourceMigrationPost &&
+    request.method !== 'GET' &&
+    request.method !== 'HEAD'
+  ) return false;
 
   const configured = await runtimeValue('TOTAL_ARC_HEALTHCHECK_TOKEN');
   if (!configured || configured.length < 24) return false;
