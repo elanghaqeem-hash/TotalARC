@@ -110,7 +110,9 @@ function riskRating(score: number) {
   return 'Low';
 }
 
-export async function ensureCoreDomainSchema() {
+let coreSchemaPromise: Promise<D1DatabaseLike> | null = null;
+
+async function initializeCoreDomainSchema() {
   const db = await getDb();
 
   await executeSchemaScript(db, `
@@ -336,6 +338,17 @@ export async function ensureCoreDomainSchema() {
   }
 
   return db;
+}
+
+
+export async function ensureCoreDomainSchema() {
+  if (!coreSchemaPromise) {
+    coreSchemaPromise = initializeCoreDomainSchema().catch(error => {
+      coreSchemaPromise = null;
+      throw error;
+    });
+  }
+  return coreSchemaPromise;
 }
 
 async function writeAudit(
