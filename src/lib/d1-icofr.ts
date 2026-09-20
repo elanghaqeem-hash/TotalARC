@@ -1,6 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { getOrganizationStructure } from '@/lib/d1-organization';
+import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 
 type D1DatabaseLike = {
   prepare: (sql: string) => {
@@ -404,6 +405,13 @@ export async function saveIcofrScope(input: IcofrScopeInput) {
     : null;
 
   if (input.id && !existing) throw new Error('SCOPE_NOT_FOUND');
+
+  if (existing) {
+    await assertIcofrPeriodWritable({
+      institutionId: String(institution.id),
+      scopeId: id
+    });
+  }
 
   const record = {
     id,

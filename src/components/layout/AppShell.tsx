@@ -88,6 +88,7 @@ const navGroups: NavGroup[] = [
       { name: 'Continuous Monitoring (CCM)', href: '/ccm', icon: Cpu },
       { name: 'ICOFR Certification & Close', href: '/certification', icon: BadgeCheck, badge: 'SIGN' },
       { name: 'ICOFR Executive Reporting', href: '/icofr/reporting', icon: BarChart3, badge: 'BOARD' },
+      { name: 'ICOFR Period Close & Archive', href: '/icofr/period-close', icon: FileCheck, badge: 'LOCK' },
       { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
       { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
       { name: 'Analytics', href: '/reports', icon: BarChart3 }

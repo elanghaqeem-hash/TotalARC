@@ -133,6 +133,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'ICOFR scope record was not found.' }, { status: 404 });
     }
 
+    if (code === 'PERIOD_CLOSED') {
+      return NextResponse.json(
+        { error: 'This ICOFR period is closed. Use Period Close & Archive to request a controlled reopening before changing the scope.' },
+        { status: 409 }
+      );
+    }
+
     console.error('Failed to save ICOFR scope:', error);
     return NextResponse.json(
       { error: 'Failed to save ICOFR scope to persistent database.' },

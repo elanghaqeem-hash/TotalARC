@@ -91,7 +91,8 @@ export async function POST(request: Request) {
       TOE_ALREADY_LAUNCHED: ['Test of Operating Effectiveness has already been launched for this plan item.', 409],
       CONTROL_MASTER_REQUIRED: ['Link the ICOFR control to Single Control Library before launching ToE.', 409],
       TOE_PLANNING_FIELDS_REQUIRED: ['Population size, population source and sampling method are required before launching ToE.', 400],
-      TOE_TEST_ID_CONFLICT: ['Generated ToE test ID conflicts with an existing test.', 409]
+      TOE_TEST_ID_CONFLICT: ['Generated ToE test ID conflicts with an existing test.', 409],
+      PERIOD_CLOSED: ['This ICOFR period is closed. Request an approved temporary reopening before changing the testing cycle, plan, or launching testing.', 409]
     };
 
     if (known[code]) {

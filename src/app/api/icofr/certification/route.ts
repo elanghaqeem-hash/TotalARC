@@ -85,7 +85,8 @@ export async function POST(request: Request) {
       EVIDENCE_CONFLICT: ['An evidence pack with this name already exists for the selected attestation.', 409],
       SIGNOFF_REQUIRED: ['Signatory name and explicit declaration confirmation are required.', 400],
       CONCLUSION_REQUIRED: ['Record management overall conclusion before executive sign-off.', 400],
-      READINESS_NOT_MET: ['Readiness gates are not fully met. Resolve the gaps or document an approved readiness override before sign-off.', 409]
+      READINESS_NOT_MET: ['Readiness gates are not fully met. Resolve the gaps or document an approved readiness override before sign-off.', 409],
+      PERIOD_CLOSED: ['This ICOFR period is closed. Certification, attestation and evidence-pack records are frozen until an approved temporary reopening is active.', 409]
     };
 
     if (known[code]) {
