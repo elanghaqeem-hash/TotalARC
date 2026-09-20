@@ -62,7 +62,10 @@ export async function POST(request: Request) {
 
     console.error('Bootstrap administrator provisioning failed:', error);
     return NextResponse.json(
-      { error: 'Bootstrap administrator provisioning failed.' },
+      {
+        error: 'Bootstrap administrator provisioning failed.',
+        code: code.slice(0, 160)
+      },
       { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
