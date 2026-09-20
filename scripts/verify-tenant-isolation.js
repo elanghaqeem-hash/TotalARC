@@ -8,6 +8,9 @@ const tenantRoutes = [
   'src/app/api/controls/route.ts',
   'src/app/api/rcm/route.ts',
   'src/app/api/audit/route.ts',
+  'src/app/api/reports/route.ts',
+  'src/app/api/reports/ai/route.ts',
+  'src/app/api/reports/export/route.ts',
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
   'src/app/api/organization/route.ts',
@@ -30,6 +33,9 @@ const routesRequiringExplicitTenantPropagation = new Set([
   'src/app/api/controls/route.ts',
   'src/app/api/rcm/route.ts',
   'src/app/api/audit/route.ts',
+  'src/app/api/reports/route.ts',
+  'src/app/api/reports/ai/route.ts',
+  'src/app/api/reports/export/route.ts',
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
   'src/app/api/organization/route.ts',
@@ -66,8 +72,9 @@ const assurancePath = 'src/lib/d1-assurance.ts';
 const institutionPath = 'src/lib/d1.ts';
 const organizationPath = 'src/lib/d1-organization.ts';
 const registerPaginationPath = 'src/lib/d1-register-pagination.ts';
+const reportingPath = 'src/lib/d1-reporting.ts';
 
-for (const file of [corePath, assurancePath, institutionPath, organizationPath, registerPaginationPath]) {
+for (const file of [corePath, assurancePath, institutionPath, organizationPath, registerPaginationPath, reportingPath]) {
   if (!fs.existsSync(file)) {
     findings.push(`${file}: expected D1 domain file is missing`);
     continue;
@@ -115,6 +122,21 @@ const requiredAssuranceSignatures = [
 
 for (const pattern of requiredAssuranceSignatures) {
   if (!pattern.test(assurance)) findings.push(`${assurancePath}: missing tenant-scoped signature ${pattern}`);
+}
+
+const reporting = fs.existsSync(reportingPath) ? fs.readFileSync(reportingPath, 'utf8') : '';
+for (const pattern of [
+  /listRegulatoryReports\([\s\S]*institutionId:\s*string/,
+  /getReportingSourceCounts\([\s\S]*institutionId:\s*string/,
+  /getRegulatoryReport\([\s\S]*institutionId:\s*string/,
+  /getRegulatoryReportEvidence\([\s\S]*institutionId:\s*string/,
+  /createRegulatoryReport\([\s\S]*institutionId:\s*string/,
+  /updateRegulatoryReport\([\s\S]*institutionId:\s*string/,
+  /updateRegulatoryReportSection\([\s\S]*institutionId:\s*string/
+]) {
+  if (!pattern.test(reporting)) {
+    findings.push(`${reportingPath}: missing tenant-scoped reporting contract ${pattern}`);
+  }
 }
 
 const organization = fs.existsSync(organizationPath) ? fs.readFileSync(organizationPath, 'utf8') : '';
