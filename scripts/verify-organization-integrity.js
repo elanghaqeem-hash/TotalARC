@@ -233,7 +233,9 @@ requirePatterns(toeRoutePath, toeRoute, [
   /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
   /TOE_ORGANIZATION_SCOPE_FORBIDDEN/,
   /isOrgUnitAuthorized/,
-  /listControls\(auth\.user\.institutionId\)/
+  /getControlScopeById/,
+  /getToeTestScopeById/,
+  /getToeSampleScopeById/
 ]);
 
 const remediationRoute = requireFile(remediationRoutePath);
