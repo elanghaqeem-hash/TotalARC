@@ -6,7 +6,7 @@ import { AlertTriangle, CheckSquare, Filter, RefreshCcw } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function TasksPage() {
-  const { data, loading, error, refresh } = useAssuranceData();
+  const { data, loading, error, refresh } = useAssuranceData(['tasks']);
   const tasks = data?.tasks || [];
   const [filter, setFilter] = useState('OPEN');
 
