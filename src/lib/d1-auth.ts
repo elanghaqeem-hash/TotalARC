@@ -920,7 +920,7 @@ export async function createAuthUser(
       id,institutionId,email,name,employeeId,jobTitle,phone,role,primaryOrgUnitId,status,
       passwordHash,passwordSalt,passwordIterations,mustChangePassword,failedLoginCount,lockedUntil,
       lastLoginAt,passwordChangedAt,createdBy,createdAt,updatedAt
-    ) VALUES (?,?,?,?,?,?,?,?,?,'Active',?,?,?,1,0,NULL,NULL,?,?,?,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,'Active',?,?,?,1,0,NULL,NULL,?,?,?,?)`,
     [
       id,
       institutionId,
