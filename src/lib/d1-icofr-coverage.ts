@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureIcofrTraceabilitySchema } from '@/lib/d1-icofr-traceability';
 
 type D1DatabaseLike = {
@@ -59,12 +59,14 @@ function percentage(numerator: number, denominator: number) {
   return Math.round((numerator / denominator) * 1000) / 10;
 }
 
-let coverageSchemaReady: Promise<D1DatabaseLike> | null = null;
+const coverageSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrCoverageSchema() {
-  if (coverageSchemaReady) return coverageSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = coverageSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  coverageSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchema(db, `
@@ -110,11 +112,12 @@ export async function ensureIcofrCoverageSchema() {
 
     return db;
   })().catch(error => {
-    coverageSchemaReady = null;
+    coverageSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return coverageSchemaReady;
+  coverageSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
