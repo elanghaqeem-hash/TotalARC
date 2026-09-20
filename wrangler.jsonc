@@ -52,7 +52,9 @@
     "CLOUDFLARE_AI_MODEL": "@cf/qwen/qwen3-30b-a3b-fp8",
     "GEMINI_MODEL": "gemini-3.8-flash",
     "GROQ_MODEL": "openai/gpt-oss-20b",
-    "OPENROUTER_MODEL": "openrouter/free"
+    "OPENROUTER_MODEL": "openrouter/free",
+    "AUTH_ENFORCE": "false",
+    "AUTH_SESSION_TTL_MINUTES": "60"
   },
   "observability": {
     "enabled": true
