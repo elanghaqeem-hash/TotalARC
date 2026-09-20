@@ -13,6 +13,7 @@ import {
   Link2,
   RefreshCcw,
   Shield,
+  Sparkles,
   Target,
   Workflow
 } from 'lucide-react';
@@ -28,6 +29,7 @@ const modules = [
   { href: '/icofr/itac', title: 'IT Application Controls (ITAC)', detail: 'Automated validations, calculations, configurations, interfaces and system-enforced controls.', icon: Workflow, countKey: 'itac' },
   { href: '/icofr/information', title: 'IPE & EUC Register', detail: 'Information Produced by the Entity and End-User Computing reliability controls.', icon: FileSpreadsheet, countKey: 'informationArtifacts' },
   { href: '/icofr/testing-plan', title: 'Testing Plan & Annual Cycle', detail: 'Create period-specific testing cycles, assign controls/testers, plan interim or roll-forward work and launch ToD/ToE workpapers.', icon: CalendarDays, countKey: 'testingPlanItems' },
+  { href: '/icofr/smart-testing', title: 'Smart Testing Strategy & Reliance', detail: 'Use prior evidence, exceptions, deficiencies, risk significance, roll-forward changes and ITGC dependencies to propose transparent testing strategies for human approval.', icon: Sparkles },
   { href: '/tod', title: 'Walkthrough & Test of Design', detail: 'Confirm process understanding and assess whether control design addresses the identified risk.', icon: Workflow },
   { href: '/toe', title: 'Test of Operating Effectiveness', detail: 'Evidence-based operating effectiveness testing and sample evaluation.', icon: Cpu },
   { href: '/icofr/deficiencies', title: 'Deficiency Evaluation', detail: 'Evaluate control deficiencies, significant deficiencies and material weaknesses.', icon: AlertTriangle, countKey: 'deficiencies' },
