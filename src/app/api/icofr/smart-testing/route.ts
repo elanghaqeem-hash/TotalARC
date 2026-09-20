@@ -12,7 +12,10 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const data = await getSmartTestingStrategyData();
-    return NextResponse.json({ ...data, storage: 'cloudflare-d1' });
+    return NextResponse.json(
+      { ...data, storage: 'cloudflare-d1' },
+      { headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=45' } }
+    );
   } catch (error) {
     console.error('Failed to load ICOFR smart testing strategy:', error);
     return NextResponse.json(
