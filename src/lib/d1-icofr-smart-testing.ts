@@ -39,14 +39,12 @@ const REVIEW_DECISIONS = [
 ] as const;
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrTestingPlanSchema(),
-    ensureIcofrCoverageSchema(),
-    ensureIcofrRollForwardSchema(),
-    ensureAssuranceSchema(),
-    ensureIcofrTraceabilitySchema()
-  ]);
+  await ensureCoreDomainSchema();
+    await ensureIcofrTestingPlanSchema();
+    await ensureIcofrCoverageSchema();
+    await ensureIcofrRollForwardSchema();
+    await ensureAssuranceSchema();
+    await ensureIcofrTraceabilitySchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -55,7 +53,14 @@ async function getDb(): Promise<D1DatabaseLike> {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  await db.exec(script);
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
 }
 
 async function all<T = Record<string, unknown>>(
