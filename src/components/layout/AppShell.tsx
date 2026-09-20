@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useRole, USERS, type UserRole } from '@/context/RoleContext';
 import {
   Activity,
@@ -100,6 +100,11 @@ const navGroups: NavGroup[] = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const prefetchRoute = (href: string) => {
+    router.prefetch(href);
+  };
   const { currentUser, setRole } = useRole();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
@@ -146,6 +151,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href={item.href}
                   title={collapsed ? item.name : undefined}
                   aria-label={collapsed ? item.name : undefined}
+                  prefetch={false}
+                  onMouseEnter={() => prefetchRoute(item.href)}
+                  onFocus={() => prefetchRoute(item.href)}
+                  onTouchStart={() => prefetchRoute(item.href)}
                   onClick={() => mobile && setMobileMenuOpen(false)}
                   className={`group flex items-center rounded-xl text-[11px] transition-all ${
                     collapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-2.5 py-2.5'
@@ -194,6 +203,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/"
+              prefetch={false}
+              onMouseEnter={() => prefetchRoute('/')}
+              onFocus={() => prefetchRoute('/')}
               className="flex min-w-0 items-center"
               aria-label="Total ARC home"
             >
