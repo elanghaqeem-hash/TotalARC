@@ -40,7 +40,14 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  await db.exec(script);
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
 }
 
 function nowIso() {
