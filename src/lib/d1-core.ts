@@ -2,6 +2,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
+  batch?: (statements: unknown[]) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -630,6 +631,229 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
     risks: [],
     controls: []
   } as D1BusinessProcess;
+}
+
+
+export async function updateBusinessProcess(id: string, input: Record<string, unknown>) {
+  const db = await ensureCoreDomainSchema();
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [id]
+  );
+  if (!existing) throw new Error('PROCESS_NOT_FOUND');
+
+  const categoryId =
+    typeof input.categoryId === 'string' && input.categoryId.trim()
+      ? input.categoryId.trim()
+      : String(existing.categoryId);
+
+  const category = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ProcessCategory WHERE id = ? LIMIT 1',
+    [categoryId]
+  );
+  if (!category) throw new Error('CATEGORY_NOT_FOUND');
+
+  const enterpriseId =
+    typeof input.processId === 'string' && input.processId.trim()
+      ? input.processId.trim()
+      : String(existing.processId);
+
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM BusinessProcess WHERE institutionId = ? AND processId = ? AND id <> ? LIMIT 1',
+    [existing.institutionId, enterpriseId, id]
+  );
+  if (duplicate) throw new Error('PROCESS_ID_CONFLICT');
+
+  const name =
+    typeof input.name === 'string' && input.name.trim()
+      ? input.name.trim()
+      : String(existing.name);
+  const ownerName =
+    typeof input.ownerName === 'string' && input.ownerName.trim()
+      ? input.ownerName.trim()
+      : String(existing.ownerName);
+  const criticality =
+    typeof input.criticality === 'string' && input.criticality.trim()
+      ? input.criticality.trim()
+      : String(existing.criticality);
+  const classification =
+    typeof input.classification === 'string' && input.classification.trim()
+      ? input.classification.trim()
+      : String(existing.classification);
+  const description =
+    typeof input.description === 'string'
+      ? (input.description.trim() || null)
+      : (existing.description ?? null);
+  const isIcofrRelevant =
+    input.isIcofrRelevant === undefined
+      ? bool(existing.isIcofrRelevant)
+      : bool(input.isIcofrRelevant);
+  const updatedAt = nowIso();
+
+  await run(
+    db,
+    `UPDATE BusinessProcess
+        SET categoryId = ?,
+            processId = ?,
+            name = ?,
+            description = ?,
+            ownerName = ?,
+            criticality = ?,
+            classification = ?,
+            isIcofrRelevant = ?,
+            updatedAt = ?
+      WHERE id = ?`,
+    [
+      categoryId,
+      enterpriseId,
+      name,
+      description,
+      ownerName,
+      criticality,
+      classification,
+      isIcofrRelevant ? 1 : 0,
+      updatedAt,
+      id
+    ]
+  );
+
+  const updated = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [id]
+  );
+  if (!updated) throw new Error('PROCESS_NOT_FOUND');
+
+  await writeAudit(db, {
+    institutionId: String(existing.institutionId),
+    action: 'UPDATE',
+    entityType: 'Process',
+    recordId: id,
+    oldValue: processRow(existing),
+    newValue: processRow(updated),
+    reason: 'Business process master updated in Cloudflare D1.'
+  });
+
+  return hydrateProcess(db, updated, new Map([[String(category.id), category]]));
+}
+
+export async function deleteBusinessProcess(id: string) {
+  const db = await ensureCoreDomainSchema();
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [id]
+  );
+  if (!existing) throw new Error('PROCESS_NOT_FOUND');
+
+  const [riskCountRow, controlCountRow] = await Promise.all([
+    first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM RiskMaster WHERE processId = ?',
+      [id]
+    ),
+    first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM ControlMaster WHERE processId = ?',
+      [id]
+    )
+  ]);
+
+  let assuranceCount = 0;
+  const assuranceTables = ['ToDTest', 'ToETest', 'Issue'] as const;
+  for (const tableName of assuranceTables) {
+    const table = await first<{ count?: number }>(
+      db,
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name = ?",
+      [tableName]
+    );
+    if (Number(table?.count || 0) > 0) {
+      const dependency = await first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count FROM ${tableName} WHERE processId = ?`,
+        [id]
+      );
+      assuranceCount += Number(dependency?.count || 0);
+    }
+  }
+
+  let icofrScopeCount = 0;
+  const scopeTable = await first<{ count?: number }>(
+    db,
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='ICOFRScopeItem'"
+  );
+  if (Number(scopeTable?.count || 0) > 0) {
+    const scopeDependencies = await first<{ count?: number }>(
+      db,
+      "SELECT COUNT(*) AS count FROM ICOFRScopeItem WHERE sourceId = ? AND lower(itemType) = 'business process'",
+      [id]
+    );
+    icofrScopeCount = Number(scopeDependencies?.count || 0);
+  }
+
+  const dependencyCount =
+    Number(riskCountRow?.count || 0) +
+    Number(controlCountRow?.count || 0) +
+    assuranceCount +
+    icofrScopeCount;
+
+  if (dependencyCount > 0) {
+    throw new Error('PROCESS_HAS_DEPENDENCIES');
+  }
+
+  const snapshot = await hydrateProcess(db, existing);
+  const auditValues = [
+    crypto.randomUUID(),
+    existing.institutionId || null,
+    'System',
+    'System',
+    'DELETE',
+    'Process',
+    id,
+    JSON.stringify(snapshot),
+    null,
+    'Business process deleted from Cloudflare D1 after dependency validation.',
+    null,
+    nowIso()
+  ];
+
+  if (db.batch) {
+    await db.batch([
+      db.prepare('DELETE FROM ProcessObjective WHERE processId = ?').bind(id),
+      db.prepare('DELETE FROM SIPOC WHERE processId = ?').bind(id),
+      db.prepare('DELETE FROM ProcessActivity WHERE processId = ?').bind(id),
+      db.prepare('DELETE FROM BusinessProcess WHERE id = ?').bind(id),
+      db.prepare(
+        `INSERT INTO AuditLog (
+          id, institutionId, userName, userRole, action, entityType, recordId,
+          oldValue, newValue, reason, ipAddress, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(...auditValues)
+    ]);
+  } else {
+    await run(db, 'DELETE FROM ProcessObjective WHERE processId = ?', [id]);
+    await run(db, 'DELETE FROM SIPOC WHERE processId = ?', [id]);
+    await run(db, 'DELETE FROM ProcessActivity WHERE processId = ?', [id]);
+    await run(db, 'DELETE FROM BusinessProcess WHERE id = ?', [id]);
+    await writeAudit(db, {
+      institutionId: String(existing.institutionId),
+      action: 'DELETE',
+      entityType: 'Process',
+      recordId: id,
+      oldValue: snapshot,
+      newValue: null,
+      reason: 'Business process deleted from Cloudflare D1 after dependency validation.'
+    });
+  }
+
+  return {
+    id,
+    processId: String(existing.processId),
+    name: String(existing.name)
+  };
 }
 
 export async function listRisks() {
