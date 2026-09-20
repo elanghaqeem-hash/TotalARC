@@ -80,14 +80,7 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 }
 
 async function executeSchemaScript(db: D1DatabaseLike, script: string) {
-  const statements = script
-    .split(';')
-    .map(statement => statement.trim())
-    .filter(Boolean);
-
-  for (const statement of statements) {
-    await db.prepare(statement).run();
-  }
+  await db.exec(script);
 }
 
 function bool(value: unknown): boolean {
