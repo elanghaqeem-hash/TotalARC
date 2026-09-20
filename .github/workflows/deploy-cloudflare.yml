@@ -178,6 +178,9 @@ jobs:
       - name: Verify performance standards
         run: npm run verify:performance
 
+      - name: Verify OJK regulatory reporting integrity
+        run: npm run verify:reporting-integrity
+
       - name: Build OpenNext Worker
         run: npm run build
 
