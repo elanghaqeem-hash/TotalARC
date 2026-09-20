@@ -184,7 +184,7 @@ function nowIso() {
 
 async function sha256Bytes(bytes: Uint8Array) {
   const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes).buffer);
-  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(digest)).map(value => value.toString(16).padStart(2, '0')).join('');
 }
 
 async function sha256Text(value: string) {
