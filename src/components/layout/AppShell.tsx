@@ -30,6 +30,7 @@ import {
   Sparkles,
   Target,
   UserRound,
+  Users,
   Workflow,
   X
 } from 'lucide-react';
@@ -58,6 +59,7 @@ const navGroups: NavGroup[] = [
       { name: 'Core Dashboard', href: '/', icon: Activity },
       { name: 'Institution Onboarding', href: '/onboarding', icon: Building2 },
       { name: 'Organization Structure', href: '/organization', icon: FolderTree },
+      { name: 'User & Role Management', href: '/admin/users', icon: Users, badge: 'RBAC' },
       { name: 'Process Architecture (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
       { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
       { name: 'Single Control Library', href: '/controls', icon: Shield },
