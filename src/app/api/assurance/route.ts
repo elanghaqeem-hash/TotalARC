@@ -70,7 +70,7 @@ export async function GET(request: Request) {
         authorizedOrgUnitIds === null
         || isOrgUnitAuthorized(
           authorizedOrgUnitIds,
-          campaign.orgUnitId as string | null | undefined
+          (campaign as Record<string, unknown>).orgUnitId as string | null | undefined
         )
         || (campaign.csaResponses as unknown[]).length > 0
       );
