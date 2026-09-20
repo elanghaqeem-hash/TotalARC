@@ -1169,7 +1169,7 @@ export async function getIcofrRollForwardData() {
     };
   }
 
-  const [closes, snapshotRows, rollForwards] = await Promise.all([
+  const [closes, snapshotRows, rollForwards, scopes] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM ICOFRPeriodClose WHERE institutionId=? ORDER BY closedAt DESC',
@@ -1187,8 +1187,15 @@ export async function getIcofrRollForwardData() {
       db,
       'SELECT * FROM ICOFRRollForward WHERE institutionId=? ORDER BY createdAt DESC',
       [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM ICOFRScope WHERE institutionId=? ORDER BY fiscalYear DESC,updatedAt DESC',
+      [institution.id]
     )
   ]);
+
+  const scopeById = new Map(scopes.map(scope => [String(scope.id), scope]));
 
   const sourceCloses = closes.map(close => {
     const versions = Array.from(
@@ -1201,6 +1208,7 @@ export async function getIcofrRollForwardData() {
 
     return {
       ...close,
+      scope: scopeById.get(String(close.scopeId)) || null,
       versions
     };
   });
