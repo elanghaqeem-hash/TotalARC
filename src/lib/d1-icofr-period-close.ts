@@ -30,20 +30,18 @@ type D1DatabaseLike = {
 };
 
 async function getDb(): Promise<D1DatabaseLike> {
-  await Promise.all([
-    ensureCoreDomainSchema(),
-    ensureIcofrScopeSchema(),
-    ensureIcofrDomainSchema(),
-    ensureIcofrTraceabilitySchema(),
-    ensureIcofrTestingPlanSchema(),
-    ensureAssuranceSchema(),
-    ensureIcofrCertificationSchema(),
-    ensureIcofrExecutiveReportingSchema(),
-    ensureIcofrSamplingEvidenceSchema(),
-    ensureIcofrWorkpaperReviewSchema(),
-    ensureEvidenceRepositorySchema(),
-    ensureIcofrPeriodLockSchema()
-  ]);
+  await ensureCoreDomainSchema();
+    await ensureIcofrScopeSchema();
+    await ensureIcofrDomainSchema();
+    await ensureIcofrTraceabilitySchema();
+    await ensureIcofrTestingPlanSchema();
+    await ensureAssuranceSchema();
+    await ensureIcofrCertificationSchema();
+    await ensureIcofrExecutiveReportingSchema();
+    await ensureIcofrSamplingEvidenceSchema();
+    await ensureIcofrWorkpaperReviewSchema();
+    await ensureEvidenceRepositorySchema();
+    await ensureIcofrPeriodLockSchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -76,7 +74,14 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 }
 
 async function executeSchema(db: D1DatabaseLike, script: string) {
-  await db.exec(script);
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
 }
 
 function nowIso() {
