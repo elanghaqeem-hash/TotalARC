@@ -483,12 +483,58 @@ async function hydrateProcess(
 
 export async function listBusinessProcesses() {
   const db = await ensureCoreDomainSchema();
-  const [categories, rows] = await Promise.all([
+  const [categories, rows, objectives, sipocs, activities, risks, controls] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY processId ASC')
+    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY processId ASC'),
+    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessObjective ORDER BY createdAt ASC'),
+    all<Record<string, unknown>>(db, 'SELECT * FROM SIPOC'),
+    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity ORDER BY orderIndex ASC, createdAt ASC'),
+    all<Record<string, unknown>>(db, 'SELECT * FROM RiskMaster ORDER BY riskId ASC'),
+    all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC')
   ]);
+
   const categoryMap = new Map(categories.map(category => [String(category.id), category]));
-  const processes = await Promise.all(rows.map(row => hydrateProcess(db, row, categoryMap)));
+  const sipocMap = new Map(sipocs.map(item => [String(item.processId), item]));
+  const groupByProcess = (items: Array<Record<string, unknown>>) => {
+    const grouped = new Map<string, Array<Record<string, unknown>>>();
+    for (const item of items) {
+      const key = String(item.processId || '');
+      if (!key) continue;
+      const current = grouped.get(key);
+      if (current) current.push(item);
+      else grouped.set(key, [item]);
+    }
+    return grouped;
+  };
+
+  const objectivesByProcess = groupByProcess(objectives);
+  const activitiesByProcess = groupByProcess(activities);
+  const risksByProcess = groupByProcess(risks);
+  const controlsByProcess = groupByProcess(controls);
+
+  const processes = rows.map(row => {
+    const id = String(row.id);
+    return {
+      ...processRow(row),
+      id,
+      institutionId: String(row.institutionId),
+      categoryId: String(row.categoryId),
+      processId: String(row.processId),
+      name: String(row.name),
+      description: typeof row.description === 'string' ? row.description : null,
+      criticality: String(row.criticality || ''),
+      classification: String(row.classification || ''),
+      status: String(row.status || ''),
+      category: categoryMap.get(String(row.categoryId)) || null,
+      orgUnit: null,
+      objectives: objectivesByProcess.get(id) || [],
+      sipoc: sipocMap.get(id) || null,
+      activities: activitiesByProcess.get(id) || [],
+      risks: (risksByProcess.get(id) || []).map(riskRow),
+      controls: (controlsByProcess.get(id) || []).map(controlRow)
+    } as D1BusinessProcess;
+  });
+
   return { processes, categories };
 }
 
@@ -851,71 +897,66 @@ export async function deleteBusinessProcess(id: string) {
 
 export async function listRisks() {
   const db = await ensureCoreDomainSchema();
-  const rows = await all<Record<string, unknown>>(
-    db,
-    'SELECT * FROM RiskMaster ORDER BY riskId ASC'
-  );
+  const [rows, processes, activities, mappings] = await Promise.all([
+    all<Record<string, unknown>>(db, 'SELECT * FROM RiskMaster ORDER BY riskId ASC'),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess'
+    ),
+    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.id, m.controlId, m.riskId, m.createdAt,
+              c.controlId AS enterpriseControlId, c.name AS controlName,
+              c.description AS controlDescription, c.objective AS controlObjective,
+              c.controlOwner, c.type, c.nature, c.frequency,
+              c.isKeyControl, c.isIcofrKey, c.overallHealth
+         FROM ControlRiskMapping m
+         JOIN ControlMaster c ON c.id = m.controlId
+        ORDER BY c.controlId ASC`
+    )
+  ]);
 
-  return Promise.all(
-    rows.map(async row => {
-      const [process, activity, mappings] = await Promise.all([
-        first<Record<string, unknown>>(
-          db,
-          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? LIMIT 1',
-          [row.processId]
-        ),
-        row.activityId
-          ? first<Record<string, unknown>>(
-              db,
-              'SELECT * FROM ProcessActivity WHERE id = ? LIMIT 1',
-              [row.activityId]
-            )
-          : Promise.resolve(null),
-        all<Record<string, unknown>>(
-          db,
-          `SELECT m.id, m.controlId, m.riskId, m.createdAt,
-                  c.controlId AS enterpriseControlId, c.name AS controlName,
-                  c.description AS controlDescription, c.objective AS controlObjective,
-                  c.controlOwner, c.type, c.nature, c.frequency,
-                  c.isKeyControl, c.isIcofrKey, c.overallHealth
-             FROM ControlRiskMapping m
-             JOIN ControlMaster c ON c.id = m.controlId
-            WHERE m.riskId = ?
-            ORDER BY c.controlId ASC`,
-          [row.id]
-        )
-      ]);
+  const processById = new Map(processes.map(item => [String(item.id), item]));
+  const activityById = new Map(activities.map(item => [String(item.id), item]));
+  const mappingsByRisk = new Map<string, Array<Record<string, unknown>>>();
+  for (const mapping of mappings) {
+    const key = String(mapping.riskId);
+    const current = mappingsByRisk.get(key);
+    if (current) current.push(mapping);
+    else mappingsByRisk.set(key, [mapping]);
+  }
 
-      return {
-        ...riskRow(row),
-        process,
-        activity,
-        controls: mappings.map(mapping => ({
-          id: mapping.id,
-          controlId: mapping.controlId,
-          riskId: mapping.riskId,
-          createdAt: mapping.createdAt,
-          control: controlRow({
-            id: mapping.controlId,
-            controlId: mapping.enterpriseControlId,
-            name: mapping.controlName,
-            description: mapping.controlDescription,
-            objective: mapping.controlObjective,
-            controlOwner: mapping.controlOwner,
-            type: mapping.type,
-            nature: mapping.nature,
-            frequency: mapping.frequency,
-            isKeyControl: mapping.isKeyControl,
-            isIcofrKey: mapping.isIcofrKey,
-            overallHealth: mapping.overallHealth
-          })
-        })),
-        issues: []
-      };
-    })
-  );
+  return rows.map(row => {
+    const riskMappings = mappingsByRisk.get(String(row.id)) || [];
+    return {
+      ...riskRow(row),
+      process: processById.get(String(row.processId)) || null,
+      activity: row.activityId ? activityById.get(String(row.activityId)) || null : null,
+      controls: riskMappings.map(mapping => ({
+        id: mapping.id,
+        controlId: mapping.controlId,
+        riskId: mapping.riskId,
+        createdAt: mapping.createdAt,
+        control: controlRow({
+          id: mapping.controlId,
+          controlId: mapping.enterpriseControlId,
+          name: mapping.controlName,
+          description: mapping.controlDescription,
+          objective: mapping.controlObjective,
+          controlOwner: mapping.controlOwner,
+          type: mapping.type,
+          nature: mapping.nature,
+          frequency: mapping.frequency,
+          isKeyControl: mapping.isKeyControl,
+          isIcofrKey: mapping.isIcofrKey,
+          overallHealth: mapping.overallHealth
+        })
+      })),
+      issues: []
+    };
+  });
 }
-
 export async function createRisk(input: Record<string, unknown>) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
@@ -1033,70 +1074,65 @@ export async function createRisk(input: Record<string, unknown>) {
 
 export async function listControls() {
   const db = await ensureCoreDomainSchema();
-  const rows = await all<Record<string, unknown>>(
-    db,
-    'SELECT * FROM ControlMaster ORDER BY controlId ASC'
-  );
+  const [rows, processes, activities, mappings] = await Promise.all([
+    all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC'),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess'
+    ),
+    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.id, m.controlId, m.riskId, m.createdAt,
+              r.riskId AS enterpriseRiskId, r.name AS riskName,
+              r.description AS riskDescription, r.category AS riskCategory,
+              r.inherentScore, r.inherentRating, r.residualScore, r.residualRating
+         FROM ControlRiskMapping m
+         JOIN RiskMaster r ON r.id = m.riskId
+        ORDER BY r.riskId ASC`
+    )
+  ]);
 
-  return Promise.all(
-    rows.map(async row => {
-      const [process, activity, mappings] = await Promise.all([
-        first<Record<string, unknown>>(
-          db,
-          'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? LIMIT 1',
-          [row.processId]
-        ),
-        row.activityId
-          ? first<Record<string, unknown>>(
-              db,
-              'SELECT * FROM ProcessActivity WHERE id = ? LIMIT 1',
-              [row.activityId]
-            )
-          : Promise.resolve(null),
-        all<Record<string, unknown>>(
-          db,
-          `SELECT m.id, m.controlId, m.riskId, m.createdAt,
-                  r.riskId AS enterpriseRiskId, r.name AS riskName,
-                  r.description AS riskDescription, r.category AS riskCategory,
-                  r.inherentScore, r.inherentRating, r.residualScore, r.residualRating
-             FROM ControlRiskMapping m
-             JOIN RiskMaster r ON r.id = m.riskId
-            WHERE m.controlId = ?
-            ORDER BY r.riskId ASC`,
-          [row.id]
-        )
-      ]);
+  const processById = new Map(processes.map(item => [String(item.id), item]));
+  const activityById = new Map(activities.map(item => [String(item.id), item]));
+  const mappingsByControl = new Map<string, Array<Record<string, unknown>>>();
+  for (const mapping of mappings) {
+    const key = String(mapping.controlId);
+    const current = mappingsByControl.get(key);
+    if (current) current.push(mapping);
+    else mappingsByControl.set(key, [mapping]);
+  }
 
-      return {
-        ...controlRow(row),
-        process,
-        activity,
-        risks: mappings.map(mapping => ({
-          id: mapping.id,
-          controlId: mapping.controlId,
-          riskId: mapping.riskId,
-          createdAt: mapping.createdAt,
-          risk: riskRow({
-            id: mapping.riskId,
-            riskId: mapping.enterpriseRiskId,
-            name: mapping.riskName,
-            description: mapping.riskDescription,
-            category: mapping.riskCategory,
-            inherentScore: mapping.inherentScore,
-            inherentRating: mapping.inherentRating,
-            residualScore: mapping.residualScore,
-            residualRating: mapping.residualRating
-          })
-        })),
-        todTests: [],
-        toeTests: [],
-        monitoringRules: [],
-        certifications: []
-      };
-    })
-  );
+  return rows.map(row => {
+    const controlMappings = mappingsByControl.get(String(row.id)) || [];
+    return {
+      ...controlRow(row),
+      process: processById.get(String(row.processId)) || null,
+      activity: row.activityId ? activityById.get(String(row.activityId)) || null : null,
+      risks: controlMappings.map(mapping => ({
+        id: mapping.id,
+        controlId: mapping.controlId,
+        riskId: mapping.riskId,
+        createdAt: mapping.createdAt,
+        risk: riskRow({
+          id: mapping.riskId,
+          riskId: mapping.enterpriseRiskId,
+          name: mapping.riskName,
+          description: mapping.riskDescription,
+          category: mapping.riskCategory,
+          inherentScore: mapping.inherentScore,
+          inherentRating: mapping.inherentRating,
+          residualScore: mapping.residualScore,
+          residualRating: mapping.residualRating
+        })
+      })),
+      todTests: [],
+      toeTests: [],
+      monitoringRules: [],
+      certifications: []
+    };
+  });
 }
-
 export async function createControl(input: Record<string, unknown>) {
   const db = await ensureCoreDomainSchema();
   const process = await first<Record<string, unknown>>(
@@ -1261,6 +1297,15 @@ export async function listRcmRows() {
         r.inherentRating,
         r.residualScore,
         r.residualRating,
+        (SELECT objective
+           FROM ProcessObjective po
+          WHERE po.processId = p.id
+          ORDER BY po.createdAt ASC
+          LIMIT 1) AS processObjective,
+        (SELECT name
+           FROM ProcessActivity pa
+          WHERE pa.id = r.activityId
+          LIMIT 1) AS activityName,
         c.id AS internalControlId,
         c.controlId AS enterpriseControlId,
         c.name AS controlName,
@@ -1282,31 +1327,15 @@ export async function listRcmRows() {
       ORDER BY p.processId ASC, r.riskId ASC, c.controlId ASC`
   );
 
-  const rcm = await Promise.all(
-    rows.map(async (row, index) => {
-      const [objective, activity] = await Promise.all([
-        first<Record<string, unknown>>(
-          db,
-          'SELECT objective FROM ProcessObjective WHERE processId = ? ORDER BY createdAt ASC LIMIT 1',
-          [row.internalProcessId]
-        ),
-        row.activityId
-          ? first<Record<string, unknown>>(
-              db,
-              'SELECT name FROM ProcessActivity WHERE id = ? LIMIT 1',
-              [row.activityId]
-            )
-          : Promise.resolve(null)
-      ]);
-
-      return {
+  const rcm = rows.map((row, index) => {
+    return {
         id: row.mappingId,
         rowNumber: index + 1,
         processId: row.enterpriseProcessId,
         processName: row.processName,
         processCategory: row.processCategory || 'Uncategorized',
-        activityName: activity?.name || 'Process-level risk',
-        processObjective: objective?.objective || 'Not provided',
+        activityName: row.activityName || 'Process-level risk',
+        processObjective: row.processObjective || 'Not provided',
         riskId: row.enterpriseRiskId,
         riskName: row.riskName,
         riskCause: row.riskCause,
@@ -1342,9 +1371,8 @@ export async function listRcmRows() {
         mapStatus: null,
         mapProgress: null,
         retestResult: null
-      };
-    })
-  );
+    };
+  });
 
   return rcm;
 }
