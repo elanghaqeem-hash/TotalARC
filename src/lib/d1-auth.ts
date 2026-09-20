@@ -1091,6 +1091,215 @@ export async function updateUserAdministration(
   return { success: true };
 }
 
+
+function privilegedRole(roleKey: string) {
+  return ['PLATFORM_SUPER_ADMIN', 'INSTITUTION_ADMIN', 'USER_ADMIN_MAKER', 'USER_ADMIN_APPROVER'].includes(roleKey);
+}
+
+async function assertCredentialAdministrationAllowed(
+  db: D1DatabaseLike,
+  targetUserId: string,
+  institutionId: string,
+  actor: SessionPayload
+) {
+  if (!actor.permissions.includes('user.manage')) throw new Error('ACCESS_DENIED');
+  if (targetUserId === actor.sub) throw new Error('SELF_CREDENTIAL_ADMIN_NOT_ALLOWED');
+  if (institutionId !== actor.institution.id && !actor.roles.includes('PLATFORM_SUPER_ADMIN')) {
+    throw new Error('INSTITUTION_ACCESS_DENIED');
+  }
+
+  const access = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM UserInstitutionAccess WHERE userId=? AND institutionId=? AND accessStatus=\'Active\' LIMIT 1',
+    [targetUserId, institutionId]
+  );
+  if (!access) throw new Error('USER_NOT_FOUND');
+
+  const targetRoles = await rolesForUser(db, targetUserId, institutionId);
+  const privilegedTarget = targetRoles.some(privilegedRole);
+  if (
+    privilegedTarget &&
+    !actor.roles.includes('PLATFORM_SUPER_ADMIN') &&
+    !actor.permissions.includes('user.approve')
+  ) {
+    throw new Error('PRIVILEGED_CREDENTIAL_RESET_REQUIRES_APPROVER');
+  }
+
+  if (
+    targetRoles.includes('PLATFORM_SUPER_ADMIN') &&
+    !actor.roles.includes('PLATFORM_SUPER_ADMIN')
+  ) {
+    throw new Error('PRIVILEGED_ROLE_RESTRICTED');
+  }
+
+  const target = await first<UserRow>(db, 'SELECT * FROM AppUser WHERE id=? LIMIT 1', [targetUserId]);
+  if (!target) throw new Error('USER_NOT_FOUND');
+
+  return { target, targetRoles };
+}
+
+export async function resetUserCredential(
+  input: { userId: string; institutionId: string },
+  actor: SessionPayload
+) {
+  const db = await ensureAuthSchema();
+  const { target, targetRoles } = await assertCredentialAdministrationAllowed(
+    db,
+    input.userId,
+    input.institutionId,
+    actor
+  );
+
+  const temporaryPassword = strongTemporaryPassword();
+  const password = await hashPassword(temporaryPassword);
+  const now = new Date();
+
+  await run(
+    db,
+    `UPDATE AppUser
+        SET passwordHash=?,
+            passwordSalt=?,
+            passwordIterations=?,
+            mustChangePassword=1,
+            passwordChangedAt=?,
+            passwordExpiresAt=?,
+            failedAttempts=0,
+            lockedUntil=NULL,
+            updatedAt=?
+      WHERE id=?`,
+    [
+      password.hash,
+      password.salt,
+      password.iterations,
+      now.toISOString(),
+      plusDays(now, 1),
+      now.toISOString(),
+      target.id
+    ]
+  );
+
+  await run(
+    db,
+    `INSERT INTO PasswordHistory (
+      id,userId,passwordHash,passwordSalt,passwordIterations,createdAt
+    ) VALUES (?,?,?,?,?,?)`,
+    [
+      crypto.randomUUID(),
+      target.id,
+      password.hash,
+      password.salt,
+      password.iterations,
+      now.toISOString()
+    ]
+  );
+
+  await run(
+    db,
+    'UPDATE UserSessionAudit SET revokedAt=? WHERE userId=? AND revokedAt IS NULL',
+    [now.toISOString(), target.id]
+  );
+
+  await audit(
+    db,
+    input.institutionId,
+    actor.username,
+    actor.roles.join(','),
+    'RESET',
+    'Credential',
+    target.id,
+    'Administrator reset credential; all active sessions revoked and password change required at next sign-in.',
+    {
+      username: target.username,
+      targetRoles,
+      mustChangePassword: true,
+      temporaryCredentialExpiresAt: plusDays(now, 1)
+    }
+  );
+
+  return {
+    success: true,
+    userId: target.id,
+    username: target.username,
+    displayName: target.displayName,
+    temporaryPassword,
+    mustChangePassword: true,
+    temporaryCredentialExpiresAt: plusDays(now, 1)
+  };
+}
+
+export async function forceUserPasswordChange(
+  input: { userId: string; institutionId: string },
+  actor: SessionPayload
+) {
+  const db = await ensureAuthSchema();
+  const { target, targetRoles } = await assertCredentialAdministrationAllowed(
+    db,
+    input.userId,
+    input.institutionId,
+    actor
+  );
+
+  const now = nowIso();
+  await run(
+    db,
+    'UPDATE AppUser SET mustChangePassword=1, updatedAt=? WHERE id=?',
+    [now, target.id]
+  );
+
+  await run(
+    db,
+    'UPDATE UserSessionAudit SET revokedAt=? WHERE userId=? AND revokedAt IS NULL',
+    [now, target.id]
+  );
+
+  await audit(
+    db,
+    input.institutionId,
+    actor.username,
+    actor.roles.join(','),
+    'UPDATE',
+    'Credential',
+    target.id,
+    'Administrator required password change at next sign-in and revoked active sessions.',
+    { username: target.username, targetRoles, mustChangePassword: true }
+  );
+
+  return { success: true, mustChangePassword: true };
+}
+
+export async function unlockUserCredential(
+  input: { userId: string; institutionId: string },
+  actor: SessionPayload
+) {
+  const db = await ensureAuthSchema();
+  const { target, targetRoles } = await assertCredentialAdministrationAllowed(
+    db,
+    input.userId,
+    input.institutionId,
+    actor
+  );
+
+  await run(
+    db,
+    'UPDATE AppUser SET failedAttempts=0, lockedUntil=NULL, updatedAt=? WHERE id=?',
+    [nowIso(), target.id]
+  );
+
+  await audit(
+    db,
+    input.institutionId,
+    actor.username,
+    actor.roles.join(','),
+    'UNLOCK',
+    'Credential',
+    target.id,
+    'Administrator cleared credential lockout.',
+    { username: target.username, targetRoles }
+  );
+
+  return { success: true };
+}
+
 export async function updateOwnProfile(
   token: string,
   input: { displayName: string; email?: string | null; mobile?: string | null; jobTitle?: string | null }
