@@ -33,6 +33,7 @@ const remediationRoutePath = 'src/app/api/assure/remediation/route.ts';
 const ccmRoutePath = 'src/app/api/monitor/ccm/route.ts';
 const dashboardRoutePath = 'src/app/api/dashboard/route.ts';
 const aiAnalyzeRoutePath = 'src/app/api/ai/analyze/route.ts';
+const registerPaginationPath = 'src/lib/d1-register-pagination.ts';
 
 const domain = requireFile(domainPath);
 requirePatterns(domainPath, domain, [
@@ -104,7 +105,7 @@ requirePatterns(processPagePath, processPage, [
   /Organization Unit/,
   /Legal Entity/,
   /Select process owner/,
-  /p\.orgUnitId === selectedOrgUnit/,
+  /params\.set\('orgUnitId', selectedOrgUnit\)/,
   /selectedProcess\.orgUnit\?\.name/,
   /selectedProcess\.legalEntity\?\.name/
 ]);
@@ -128,7 +129,7 @@ const riskPage = requireFile(riskPagePath);
 requirePatterns(riskPagePath, riskPage, [
   /processData\.organization\?\.organizationUnits/,
   /selectedOrgUnit/,
-  /process\?\.orgUnitId === selectedOrgUnit/,
+  /params\.set\('orgUnitId', selectedOrgUnit\)/,
   /selectedRiskProcess\?\.orgUnit\?\.name/
 ]);
 
@@ -136,7 +137,7 @@ const controlPage = requireFile(controlPagePath);
 requirePatterns(controlPagePath, controlPage, [
   /processData\.organization\?\.organizationUnits/,
   /selectedOrgUnit/,
-  /process\?\.orgUnitId === selectedOrgUnit/,
+  /params\.set\('orgUnitId', selectedOrgUnit\)/,
   /selectedControlProcess\?\.orgUnit\?\.name/
 ]);
 
@@ -144,22 +145,31 @@ const rcmRoute = requireFile(rcmRoutePath);
 requirePatterns(rcmRoutePath, rcmRoute, [
   /getOrganizationData\(auth\.user\.institutionId\)/,
   /resolveAuthorizedOrgUnitIds\(auth\.user\)/,
-  /isOrgUnitAuthorized\(authorizedOrgUnitIds/,
+  /authorizedOrgUnitIds,/,
+  /listRcmRegisterPage/,
+
   /organizationUnits:\s*scopedOrganization\.organizationUnits/
 ]);
 
 const rcmPage = requireFile(rcmPagePath);
 requirePatterns(rcmPagePath, rcmPage, [
   /selectedOrgUnit/,
-  /row\.orgUnitId === selectedOrgUnit/,
+  /params\.set\('orgUnitId', selectedOrgUnit\)/,
   /unitById\.get\(row\.orgUnitId\)\?\.name/
 ]);
 
-requirePatterns(corePath, core, [
+const registerPagination = requireFile(registerPaginationPath);
+requirePatterns(registerPaginationPath, registerPagination, [
   /p\.legalEntityId AS processLegalEntityId/,
   /p\.orgUnitId AS processOrgUnitId/,
   /legalEntityId:\s*row\.processLegalEntityId/,
   /orgUnitId:\s*row\.processOrgUnitId/,
+  /scopeSql\('p', filters, values\)/,
+  /authorizedOrgUnitIds/,
+  /orgUnitId IN \(SELECT value FROM json_each\(\?\)\)/
+]);
+
+requirePatterns(corePath, core, [
   /legalEntityId, orgUnitId, criticality, classification/
 ]);
 
