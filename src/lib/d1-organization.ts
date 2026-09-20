@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -77,12 +77,14 @@ function clean(value: unknown) {
   return next ? next : null;
 }
 
-let organizationSchemaReady: Promise<D1DatabaseLike> | null = null;
+const organizationSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 async function ensureOrganizationSchema() {
-  if (organizationSchemaReady) return organizationSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = organizationSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  organizationSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
 
     await executeSchemaScript(db, `
@@ -142,11 +144,12 @@ async function ensureOrganizationSchema() {
 
     return db;
   })().catch(error => {
-    organizationSchemaReady = null;
+    organizationSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return organizationSchemaReady;
+  organizationSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
