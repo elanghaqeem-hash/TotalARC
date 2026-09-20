@@ -311,7 +311,13 @@ export async function listRegulatoryReports(
 export async function getRegulatoryReport(
   reportId: string,
   institutionId: string
-) {
+): Promise<
+  | (Record<string, unknown> & {
+      aiAnalysis: Record<string, unknown> | null;
+      sections: Record<string, unknown>[];
+    })
+  | null
+> {
   const db = await ensureReportingSchema();
   const report = await first<Record<string, unknown>>(
     db,
