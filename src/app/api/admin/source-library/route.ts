@@ -3,6 +3,8 @@ import { getAuthenticatedProfile } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
 import {
   getSourceLibraryMetrics,
+  getSourcePrecedenceSummary,
+  listEffectiveSourceDocuments,
   listSourceDocuments,
   resolveSourceInstitution,
   upsertSourceDocument
@@ -70,14 +72,20 @@ export async function GET(request: Request) {
     const institution = admin.institutionId
       ? { id: admin.institutionId }
       : await resolveSourceInstitution('Bank Kalbar');
-    const documents = await listSourceDocuments(institution.id);
-    const metrics = await getSourceLibraryMetrics(institution.id);
+    const [documents, effectiveDocuments, metrics, precedence] = await Promise.all([
+      listSourceDocuments(institution.id),
+      listEffectiveSourceDocuments(institution.id),
+      getSourceLibraryMetrics(institution.id),
+      getSourcePrecedenceSummary(institution.id)
+    ]);
 
     return NextResponse.json({
       storage: 'cloudflare-d1',
       sourceLibrary: true,
       institutionId: institution.id,
       metrics,
+      precedence,
+      effectiveDocuments,
       documents
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
