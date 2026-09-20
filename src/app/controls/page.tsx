@@ -148,7 +148,7 @@ export default function ControlsPage() {
   const availableRisks = risks.filter(risk => risk.processId === formData.processId);
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-full space-y-6 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -359,42 +359,46 @@ export default function ControlsPage() {
 
       {/* Register Control Modal */}
       {newControlModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-100">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/45 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[26px] bg-white shadow-2xl animate-in zoom-in-95 duration-100 sm:max-h-[92vh] sm:rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4 py-4 sm:px-6">
               <h3 className="font-bold text-base text-slate-900">Register Control Master</h3>
               <button
                 onClick={() => setNewControlModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
+            <form
+              onSubmit={handleCreate}
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-4 py-4 text-xs sm:px-6 sm:py-5"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
               {saveError && (
                 <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700">
                   {saveError}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Control ID</label>
+                  <label className="block text-slate-700 font-bold mb-1.5">Control ID</label>
                   <input
                     type="text"
                     placeholder="Auto-generated if blank"
                     value={formData.controlId}
                     onChange={e => setFormData({ ...formData, controlId: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Frequency *</label>
+                  <label className="block text-slate-700 font-bold mb-1.5">Frequency *</label>
                   <select
                     required
                     value={formData.frequency}
                     onChange={e => setFormData({ ...formData, frequency: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                   >
                     <option value="Real Time">Real Time</option>
                     <option value="Per Transaction">Per Transaction</option>
@@ -408,14 +412,14 @@ export default function ControlsPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Business Process *</label>
+                <label className="block text-slate-700 font-bold mb-1.5">Business Process *</label>
                 <select
                   required
                   value={formData.processId}
                   onChange={e =>
                     setFormData({ ...formData, processId: e.target.value, riskId: '' })
                   }
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 >
                   {processes.length === 0 ? (
                     <option value="">Register a business process first</option>
@@ -430,11 +434,11 @@ export default function ControlsPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Related Risk</label>
+                <label className="block text-slate-700 font-bold mb-1.5">Related Risk</label>
                 <select
                   value={formData.riskId}
                   onChange={e => setFormData({ ...formData, riskId: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 >
                   <option value="">No risk mapping yet</option>
                   {availableRisks.map(risk => (
@@ -449,60 +453,60 @@ export default function ControlsPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Control Name *</label>
+                <label className="block text-slate-700 font-bold mb-1.5">Control Name *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Daily Bank Statement Reconciliation"
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="min-h-[112px] w-full min-w-0 resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Control Description *</label>
+                <label className="block text-slate-700 font-bold mb-1.5">Control Description *</label>
                 <textarea
                   rows={2}
                   required
                   placeholder="Describe control activities, criteria, and execution mechanism..."
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Control Objective *</label>
+                <label className="block text-slate-700 font-bold mb-1.5">Control Objective *</label>
                 <input
                   type="text"
                   required
                   placeholder="State the specific risk/control objective"
                   value={formData.objective}
                   onChange={e => setFormData({ ...formData, objective: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Control Owner *</label>
+                <label className="block text-slate-700 font-bold mb-1.5">Control Owner *</label>
                 <input
                   type="text"
                   required
                   placeholder="Enter accountable control owner"
                   value={formData.controlOwner}
                   onChange={e => setFormData({ ...formData, controlOwner: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Type</label>
+                  <label className="block text-slate-700 font-bold mb-1.5">Type</label>
                   <select
                     value={formData.type}
                     onChange={e => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                   >
                     <option value="Preventive">Preventive</option>
                     <option value="Detective">Detective</option>
@@ -511,11 +515,11 @@ export default function ControlsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Nature</label>
+                  <label className="block text-slate-700 font-bold mb-1.5">Nature</label>
                   <select
                     value={formData.nature}
                     onChange={e => setFormData({ ...formData, nature: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                   >
                     <option value="Manual">Manual</option>
                     <option value="IT Dependent Manual">IT Dependent Manual</option>
@@ -524,40 +528,40 @@ export default function ControlsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-6 pt-2">
-                <label className="flex items-center space-x-2 text-slate-700 font-medium cursor-pointer">
+              <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-6">
+                <label className="flex min-w-0 cursor-pointer items-center gap-2.5 font-medium text-slate-700">
                   <input
                     type="checkbox"
                     checked={formData.isKeyControl}
                     onChange={e => setFormData({ ...formData, isKeyControl: e.target.checked })}
-                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    className="h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
                   <span>Is Key Control?</span>
                 </label>
 
-                <label className="flex items-center space-x-2 text-slate-700 font-medium cursor-pointer">
+                <label className="flex min-w-0 cursor-pointer items-center gap-2.5 font-medium text-slate-700">
                   <input
                     type="checkbox"
                     checked={formData.isIcofrKey}
                     onChange={e => setFormData({ ...formData, isIcofrKey: e.target.checked })}
-                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    className="h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
                   <span>ICOFR Key Control</span>
                 </label>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+              <div className="sticky bottom-0 -mx-4 mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white/95 px-4 pb-1 pt-3 backdrop-blur sm:-mx-6 sm:flex-row sm:items-center sm:justify-end sm:px-6">
                 <button
                   type="button"
                   onClick={() => setNewControlModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold"
+                  className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 sm:w-auto"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving || processes.length === 0}
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="h-11 w-full rounded-xl bg-brand-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   {saving ? 'Saving…' : 'Save Control Master'}
                 </button>
