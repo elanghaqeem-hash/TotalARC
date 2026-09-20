@@ -90,13 +90,13 @@ export async function GET(request: Request) {
     const scopedFinancialAccounts = icofr.financialAccounts.filter(account =>
       isOrgUnitAuthorized(
         authorizedOrgUnitIds,
-        account.orgUnitId as string | null | undefined
+        (account as Record<string, unknown>).orgUnitId as string | null | undefined
       )
     );
     const scopedIpe = icofr.ipeRegisters.filter(ipe =>
       isOrgUnitAuthorized(
         authorizedOrgUnitIds,
-        ipe.orgUnitId as string | null | undefined
+        (ipe as Record<string, unknown>).orgUnitId as string | null | undefined
       )
     );
     const scopedToe = toeTests.filter(test =>
