@@ -869,7 +869,12 @@ export async function getExecutiveReportingData() {
     if (!mapByIssueId.has(key)) mapByIssueId.set(key, map);
   }
 
-  const enrichedDeficiencies = deficiencies.map(item => {
+  const enrichedDeficiencies: Array<Record<string, unknown> & {
+    ageDays: number | null;
+    issue: Record<string, unknown> | null;
+    map: Record<string, unknown> | null;
+    unresolved: boolean;
+  }> = deficiencies.map(item => {
     const issue = issueByDeficiencyId.get(String(item.id)) || null;
     const map = issue ? mapByIssueId.get(String(issue.id)) || null : null;
     return {
