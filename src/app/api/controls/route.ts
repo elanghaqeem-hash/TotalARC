@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createControl, listBusinessProcesses, listControls } from '@/lib/d1-core';
+import { createControl } from '@/lib/d1-core';
+import { listControlOptions, listControlRegisterPage, listProcessOptions } from '@/lib/d1-register-pagination';
+import { parsePaginationRequest } from '@/lib/pagination';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
@@ -9,18 +11,32 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const auth = await authorizeTenantApi(request, READ_ROLES);
   if (auth.response) return auth.response;
+
   try {
-    const [controls, authorizedOrgUnitIds] = await Promise.all([
-      listControls(auth.user.institutionId),
-      resolveAuthorizedOrgUnitIds(auth.user)
-    ]);
-    const scopedControls = controls.filter(control =>
-      isOrgUnitAuthorized(
+    const url = new URL(request.url);
+    const pagination = parsePaginationRequest(request);
+    const orgUnitId = (url.searchParams.get('orgUnitId') || '').trim() || null;
+    const mode = url.searchParams.get('mode') || 'register';
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
+
+    if (mode === 'options') {
+      const controls = await listControlOptions(
+        auth.user.institutionId,
+        { authorizedOrgUnitIds, orgUnitId },
+        pagination.search
+      );
+      return NextResponse.json({ controls, storage: 'cloudflare-d1' });
+    }
+
+    const page = await listControlRegisterPage(
+      auth.user.institutionId,
+      {
+        ...pagination,
         authorizedOrgUnitIds,
-        (control.process as Record<string, unknown> | null)?.orgUnitId as string | null | undefined
-      )
+        orgUnitId
+      }
     );
-    return NextResponse.json({ controls: scopedControls, storage: 'cloudflare-d1' });
+    return NextResponse.json({ ...page, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 controls:', error);
     return NextResponse.json({ error: 'Failed to fetch controls from persistent database.' }, { status: 503 });
@@ -54,10 +70,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const [{ processes }, authorizedOrgUnitIds] = await Promise.all([
-      listBusinessProcesses(auth.user.institutionId),
-      resolveAuthorizedOrgUnitIds(auth.user)
-    ]);
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
+    const processes = await listProcessOptions(
+      auth.user.institutionId,
+      { authorizedOrgUnitIds },
+      ''
+    );
     const selectedProcess = processes.find(process => process.id === processId);
     if (
       !selectedProcess
