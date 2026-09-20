@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useRole } from '@/context/RoleContext';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 
 type Institution = {
   id: string;
@@ -334,9 +335,7 @@ export default function OrganizationPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/organization', { cache: 'no-store' });
-      const payload = (await response.json()) as OrganizationData & { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'Unable to load organization structure.');
+      const payload = await jsonRead<OrganizationData & { error?: string }>('/api/organization', { dedupe: false });
       setData(payload);
       setExpanded(new Set(payload.organizationUnits.filter(item => !item.parentId).map(item => item.id)));
       setSelectedUnitId(current => current || payload.organizationUnits[0]?.id || null);
