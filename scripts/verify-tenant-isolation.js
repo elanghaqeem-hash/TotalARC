@@ -7,6 +7,7 @@ const tenantRoutes = [
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
   'src/app/api/rcm/route.ts',
+  'src/app/api/audit/route.ts',
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
   'src/app/api/organization/route.ts',
@@ -28,6 +29,7 @@ const routesRequiringExplicitTenantPropagation = new Set([
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
   'src/app/api/rcm/route.ts',
+  'src/app/api/audit/route.ts',
   'src/app/api/dashboard/route.ts',
   'src/app/api/assurance/route.ts',
   'src/app/api/organization/route.ts',
@@ -63,8 +65,9 @@ const corePath = 'src/lib/d1-core.ts';
 const assurancePath = 'src/lib/d1-assurance.ts';
 const institutionPath = 'src/lib/d1.ts';
 const organizationPath = 'src/lib/d1-organization.ts';
+const registerPaginationPath = 'src/lib/d1-register-pagination.ts';
 
-for (const file of [corePath, assurancePath, institutionPath, organizationPath]) {
+for (const file of [corePath, assurancePath, institutionPath, organizationPath, registerPaginationPath]) {
   if (!fs.existsSync(file)) {
     findings.push(`${file}: expected D1 domain file is missing`);
     continue;
@@ -122,6 +125,22 @@ const requiredOrganizationSignatures = [
   /createOrganizationPosition\([\s\S]*institutionId:\s*string/,
   /importOrganizationUnits\([\s\S]*institutionId:\s*string/
 ];
+
+const registerPagination = fs.existsSync(registerPaginationPath)
+  ? fs.readFileSync(registerPaginationPath, 'utf8')
+  : '';
+for (const pattern of [
+  /listProcessRegisterPage\([\s\S]*institutionId:\s*string/,
+  /listRiskRegisterPage\([\s\S]*institutionId:\s*string/,
+  /listControlRegisterPage\([\s\S]*institutionId:\s*string/,
+  /listRcmRegisterPage\([\s\S]*institutionId:\s*string/,
+  /listToeRegisterPage\([\s\S]*institutionId:\s*string/,
+  /listAuditRegisterPage\([\s\S]*institutionId:\s*string/
+]) {
+  if (!pattern.test(registerPagination)) {
+    findings.push(`${registerPaginationPath}: missing tenant-scoped paginated register contract ${pattern}`);
+  }
+}
 
 for (const pattern of requiredOrganizationSignatures) {
   if (!pattern.test(organization)) {
