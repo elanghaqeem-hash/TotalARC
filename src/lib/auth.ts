@@ -48,6 +48,8 @@ type AuthUserRow = {
   department: string | null;
   active: number;
   mustChangePassword: number;
+  credentialResetAt: string | null;
+  temporaryCredentialExpiresAt: string | null;
   failedLoginCount: number;
   lockedUntil: string | null;
   lastLoginAt: string | null;
@@ -118,6 +120,8 @@ export async function ensureAuthSchema() {
         department TEXT,
         active INTEGER NOT NULL DEFAULT 1,
         mustChangePassword INTEGER NOT NULL DEFAULT 0,
+        credentialResetAt TEXT,
+        temporaryCredentialExpiresAt TEXT,
         failedLoginCount INTEGER NOT NULL DEFAULT 0,
         lockedUntil TEXT,
         lastLoginAt TEXT,
@@ -148,6 +152,15 @@ export async function ensureAuthSchema() {
       CREATE INDEX IF NOT EXISTS idx_auth_event_user
         ON AuthEvent(userId);
     `);
+    const columns = await db.prepare('PRAGMA table_info(AuthUser)').all<{ name?: string }>();
+    const names = new Set((columns.results || []).map(column => String(column.name || '')));
+    if (!names.has('credentialResetAt')) {
+      await db.exec('ALTER TABLE AuthUser ADD COLUMN credentialResetAt TEXT;');
+    }
+    if (!names.has('temporaryCredentialExpiresAt')) {
+      await db.exec('ALTER TABLE AuthUser ADD COLUMN temporaryCredentialExpiresAt TEXT;');
+    }
+
     return db;
   })().catch(error => {
     authSchemaReady = null;
@@ -554,6 +567,24 @@ export async function authenticateUser(input: {
     throw new Error(lockedUntil ? 'ACCOUNT_LOCKED' : 'INVALID_CREDENTIALS');
   }
 
+  if (
+    Boolean(row.mustChangePassword) &&
+    row.temporaryCredentialExpiresAt &&
+    new Date(row.temporaryCredentialExpiresAt).getTime() <= Date.now()
+  ) {
+    await writeAuthEvent(db, {
+      userId: row.id,
+      institutionId: row.institutionId,
+      eventType: 'TEMPORARY_CREDENTIAL_EXPIRED',
+      email: row.email,
+      role: row.role,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      detail: 'Temporary administrator-issued credential expired before mandatory password change.'
+    });
+    throw new Error('TEMPORARY_CREDENTIAL_EXPIRED');
+  }
+
   if (!row.institutionId) {
     const institution = await findPrimaryInstitution(db);
     if (institution) {
@@ -665,6 +696,8 @@ export type ManagedUserSummary = {
   lockedUntil: string | null;
   lastLoginAt: string | null;
   mustChangePassword: boolean;
+  credentialResetAt: string | null;
+  temporaryCredentialExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -684,6 +717,8 @@ function managedSummary(row: AuthUserRow): ManagedUserSummary {
     lockedUntil: row.lockedUntil,
     lastLoginAt: row.lastLoginAt,
     mustChangePassword: Boolean(row.mustChangePassword),
+    credentialResetAt: row.credentialResetAt || null,
+    temporaryCredentialExpiresAt: row.temporaryCredentialExpiresAt || null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
@@ -743,9 +778,9 @@ export async function createManagedUser(input: {
     `INSERT INTO AuthUser (
       id, institutionId, orgUnitId, name, email, emailNormalized,
       passwordHash, passwordSalt, passwordIterations, role, department,
-      active, mustChangePassword, failedLoginCount, lockedUntil,
-      lastLoginAt, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, NULL, NULL, ?, ?)`,
+      active, mustChangePassword, credentialResetAt, temporaryCredentialExpiresAt,
+      failedLoginCount, lockedUntil, lastLoginAt, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, 0, NULL, NULL, ?, ?)`,
     [
       id,
       institution?.id || null,
@@ -758,6 +793,8 @@ export async function createManagedUser(input: {
       passwordRecord.iterations,
       input.role,
       input.department?.trim() || null,
+      now,
+      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       now,
       now
     ]
@@ -917,6 +954,157 @@ export async function updateManagedUser(input: {
 }
 
 
+
+function strongTemporaryPassword(length = 20) {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%*_-';
+  const all = upper + lower + digits + symbols;
+  const pick = (set: string) => {
+    const bytes = crypto.getRandomValues(new Uint8Array(1));
+    return set[bytes[0] % set.length];
+  };
+  const chars = [pick(upper), pick(lower), pick(digits), pick(symbols)];
+  while (chars.length < length) chars.push(pick(all));
+  const order = crypto.getRandomValues(new Uint8Array(chars.length));
+  return chars
+    .map((value, index) => ({ value, key: order[index] }))
+    .sort((a, b) => a.key - b.key)
+    .map(item => item.value)
+    .join('');
+}
+
+async function managedUserForCredentialAction(input: {
+  actorUserId: string;
+  actorInstitutionId: string | null;
+  userId: string;
+}) {
+  const db = await ensureAuthSchema();
+  const existing = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [input.userId]
+  );
+  if (!existing) throw new Error('USER_NOT_FOUND');
+  if (
+    input.actorInstitutionId &&
+    existing.institutionId &&
+    existing.institutionId !== input.actorInstitutionId
+  ) {
+    throw new Error('USER_NOT_FOUND');
+  }
+  if (existing.id === input.actorUserId) throw new Error('CANNOT_RESET_SELF_CREDENTIAL');
+  return { db, existing };
+}
+
+export async function resetManagedUserCredential(input: {
+  actorUserId: string;
+  actorInstitutionId: string | null;
+  userId: string;
+}) {
+  const { db, existing } = await managedUserForCredentialAction(input);
+  const temporaryPassword = strongTemporaryPassword();
+  const password = await createPasswordHash(temporaryPassword);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+
+  await run(
+    db,
+    `UPDATE AuthUser SET
+      passwordHash = ?,
+      passwordSalt = ?,
+      passwordIterations = ?,
+      mustChangePassword = 1,
+      credentialResetAt = ?,
+      temporaryCredentialExpiresAt = ?,
+      failedLoginCount = 0,
+      lockedUntil = NULL,
+      updatedAt = ?
+    WHERE id = ?`,
+    [
+      password.hash,
+      password.salt,
+      password.iterations,
+      now.toISOString(),
+      expiresAt,
+      now.toISOString(),
+      existing.id
+    ]
+  );
+
+  await savePasswordHistory(existing.id, password.hash, password.salt, password.iterations);
+  await revokeUserSessions(existing.id, 'Administrator credential reset', input.actorUserId);
+  await writeAuthEvent(db, {
+    userId: existing.id,
+    institutionId: existing.institutionId,
+    eventType: 'USER_CREDENTIAL_RESET',
+    email: existing.email,
+    role: existing.role,
+    detail:
+      'Administrator reset credential; active sessions revoked, mandatory password change enabled, and temporary credential expires after 24 hours.'
+  });
+
+  return {
+    success: true,
+    userId: existing.id,
+    temporaryPassword,
+    mustChangePassword: true,
+    temporaryCredentialExpiresAt: expiresAt
+  };
+}
+
+export async function forceManagedUserPasswordChange(input: {
+  actorUserId: string;
+  actorInstitutionId: string | null;
+  userId: string;
+}) {
+  const { db, existing } = await managedUserForCredentialAction(input);
+  const now = new Date().toISOString();
+
+  await run(
+    db,
+    'UPDATE AuthUser SET mustChangePassword = 1, updatedAt = ? WHERE id = ?',
+    [now, existing.id]
+  );
+  await revokeUserSessions(existing.id, 'Administrator required password change', input.actorUserId);
+  await writeAuthEvent(db, {
+    userId: existing.id,
+    institutionId: existing.institutionId,
+    eventType: 'USER_PASSWORD_CHANGE_FORCED',
+    email: existing.email,
+    role: existing.role,
+    detail: 'Administrator required password change at next sign-in and revoked active sessions.'
+  });
+
+  return { success: true, userId: existing.id, mustChangePassword: true };
+}
+
+export async function unlockManagedUser(input: {
+  actorUserId: string;
+  actorInstitutionId: string | null;
+  userId: string;
+}) {
+  const { db, existing } = await managedUserForCredentialAction(input);
+  const now = new Date().toISOString();
+
+  await run(
+    db,
+    'UPDATE AuthUser SET failedLoginCount = 0, lockedUntil = NULL, updatedAt = ? WHERE id = ?',
+    [now, existing.id]
+  );
+  await writeAuthEvent(db, {
+    userId: existing.id,
+    institutionId: existing.institutionId,
+    eventType: 'USER_UNLOCKED',
+    email: existing.email,
+    role: existing.role,
+    detail: 'Administrator cleared account lockout and failed login counter.'
+  });
+
+  return { success: true, userId: existing.id };
+}
+
 export async function updateOwnProfile(input: {
   userId: string;
   name: string;
@@ -1000,6 +1188,8 @@ export async function changeOwnPassword(input: {
       passwordSalt = ?,
       passwordIterations = ?,
       mustChangePassword = 0,
+      credentialResetAt = NULL,
+      temporaryCredentialExpiresAt = NULL,
       failedLoginCount = 0,
       lockedUntil = NULL,
       updatedAt = ?

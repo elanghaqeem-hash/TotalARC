@@ -47,6 +47,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (code === 'TEMPORARY_CREDENTIAL_EXPIRED') {
+      return NextResponse.json(
+        { error: 'Credential sementara telah kedaluwarsa. Hubungi administrator untuk melakukan reset credential baru.' },
+        { status: 401, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     if (code === 'ACCOUNT_DISABLED') {
       return NextResponse.json(
         { error: 'Akun ini tidak aktif. Hubungi administrator Total ARC.' },
