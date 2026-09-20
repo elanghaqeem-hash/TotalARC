@@ -1,5 +1,6 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
+import { ensureOrganizationSchema } from '@/lib/d1-organization';
 import {
   AUTH_ROLES,
   type AuthRole,
@@ -49,6 +50,7 @@ const PASSWORD_HISTORY_LIMIT = 5;
 
 async function getDb(): Promise<D1DatabaseLike> {
   await ensureCoreDomainSchema();
+  await ensureOrganizationSchema();
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
