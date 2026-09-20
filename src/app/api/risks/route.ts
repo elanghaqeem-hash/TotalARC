@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
-import { createRisk, listRisks } from '@/lib/d1-core';
+import { createRisk, listRiskLookups, listRisks } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const view = new URL(request.url).searchParams.get('view');
+    if (view === 'lookup') {
+      const risks = await listRiskLookups();
+      return NextResponse.json({ risks, storage: 'cloudflare-d1', view: 'lookup' });
+    }
+
     const risks = await listRisks();
     return NextResponse.json({ risks, storage: 'cloudflare-d1' });
   } catch (error) {
