@@ -500,7 +500,7 @@ export async function bootstrapFirstAdmin(input: {
       id,institutionId,email,name,employeeId,jobTitle,phone,role,primaryOrgUnitId,status,
       passwordHash,passwordSalt,passwordIterations,mustChangePassword,failedLoginCount,lockedUntil,
       lastLoginAt,passwordChangedAt,createdBy,createdAt,updatedAt
-    ) VALUES (?,?,?,?,NULL,NULL,NULL,'InstitutionAdmin',NULL,'Active',?,?,?,0,0,NULL,NULL,?,'BOOTSTRAP',?,?)`,
+    ) VALUES (?,?,?,?,NULL,NULL,NULL,'SuperAdmin',NULL,'Active',?,?,?,0,0,NULL,NULL,?,'BOOTSTRAP',?,?)`,
     [
       id,
       institution.id,
@@ -528,12 +528,12 @@ export async function bootstrapFirstAdmin(input: {
     db,
     String(institution.id),
     name,
-    'InstitutionAdmin',
+    'SuperAdmin',
     'CREATE',
     id,
     undefined,
-    { email, name, role: 'InstitutionAdmin', status: 'Active' },
-    'First institution administrator bootstrapped using one-time environment secret.',
+    { email, name, role: 'SuperAdmin', status: 'Active' },
+    'First platform SuperAdmin bootstrapped using one-time environment secret.',
     input.ipAddress
   );
 
@@ -542,7 +542,7 @@ export async function bootstrapFirstAdmin(input: {
     institutionId: String(institution.id),
     email,
     name,
-    role: 'InstitutionAdmin',
+    role: 'SuperAdmin',
     status: 'Active'
   };
 }
