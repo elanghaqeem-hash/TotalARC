@@ -52,6 +52,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+const CLOUDFLARE_PBKDF2_MAX_ITERATIONS = 100000;
+
 let schemaReady: Promise<D1DatabaseLike> | null = null;
 
 export async function ensureAuthSecuritySchema() {
@@ -209,12 +211,14 @@ export async function assertPasswordNotReused(input: {
   currentSalt: string;
   currentIterations: number;
 }) {
-  const currentCandidate = await derivePasswordHash(
-    input.password,
-    decodeBytes(input.currentSalt),
-    input.currentIterations
-  );
-  if (await safeEqual(currentCandidate, input.currentHash)) throw new Error('PASSWORD_REUSE');
+  if (input.currentIterations <= CLOUDFLARE_PBKDF2_MAX_ITERATIONS) {
+    const currentCandidate = await derivePasswordHash(
+      input.password,
+      decodeBytes(input.currentSalt),
+      input.currentIterations
+    );
+    if (await safeEqual(currentCandidate, input.currentHash)) throw new Error('PASSWORD_REUSE');
+  }
 
   const db = await ensureAuthSecuritySchema();
   const history = await all<{
@@ -232,10 +236,12 @@ export async function assertPasswordNotReused(input: {
   );
 
   for (const item of history) {
+    const iterations = Number(item.passwordIterations);
+    if (iterations > CLOUDFLARE_PBKDF2_MAX_ITERATIONS) continue;
     const candidate = await derivePasswordHash(
       input.password,
       decodeBytes(item.passwordSalt),
-      Number(item.passwordIterations)
+      iterations
     );
     if (await safeEqual(candidate, item.passwordHash)) throw new Error('PASSWORD_REUSE');
   }
