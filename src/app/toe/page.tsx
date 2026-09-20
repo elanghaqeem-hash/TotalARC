@@ -5,6 +5,7 @@ import { AlertTriangle, FlaskConical, Plus, Save, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 import { jsonTransaction } from '@/lib/client-transaction';
 import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 const EMPTY_TEST_FORM = {
   testId: '',
@@ -39,27 +40,21 @@ export default function ToEPage() {
   const [saving, setSaving] = useState(false);
   const [testForm, setTestForm] = useState(EMPTY_TEST_FORM);
   const [sampleForm, setSampleForm] = useState(EMPTY_SAMPLE_FORM);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [pageLoading, setPageLoading] = useState(false);
   const [sampleDrafts, setSampleDrafts] = useState<
     Record<string, { result: string; failureReason: string }>
   >({});
 
-  const loadData = async () => {
-    setError('');
+  const loadControls = async () => {
     try {
-      const [testData, controlData] = await Promise.all([
-        jsonRead<any>('/api/assure/toe', { dedupe: false }),
-        jsonRead<any>('/api/controls', { dedupe: false })
-      ]);
-      const nextTests = Array.isArray(testData.tests) ? testData.tests : [];
-      const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
-
-      setTests(nextTests);
-      setControls(nextControls);
-      setSelectedId(current =>
-        current && nextTests.some((item: any) => item.id === current)
-          ? current
-          : nextTests[0]?.id || ''
+      const controlData = await jsonRead<any>(
+        '/api/controls?mode=options',
+        { dedupe: false }
       );
+      const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
+      setControls(nextControls);
       setTestForm(current => ({
         ...current,
         controlId:
@@ -67,6 +62,29 @@ export default function ToEPage() {
             ? current.controlId
             : nextControls[0]?.id || ''
       }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Control library unavailable');
+    }
+  };
+
+  const loadData = async (targetPage = page) => {
+    setError('');
+    setPageLoading(true);
+    try {
+      const testData = await jsonRead<any>(
+        '/api/assure/toe?page=' + targetPage + '&pageSize=50',
+        { dedupe: false }
+      );
+      const nextTests = Array.isArray(testData.tests) ? testData.tests : [];
+
+      setTests(nextTests);
+      setPagination(testData.pagination || EMPTY_PAGINATION);
+      setPage(targetPage);
+      setSelectedId(current =>
+        current && nextTests.some((item: any) => item.id === current)
+          ? current
+          : nextTests[0]?.id || ''
+      );
 
       const drafts: Record<string, { result: string; failureReason: string }> = {};
       for (const test of nextTests) {
@@ -80,11 +98,13 @@ export default function ToEPage() {
       setSampleDrafts(drafts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ToE data unavailable');
+    } finally {
+      setPageLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    void Promise.all([loadData(1), loadControls()]);
   }, []);
 
   const test = tests.find(item => item.id === selectedId) || null;
@@ -111,7 +131,7 @@ export default function ToEPage() {
         ...EMPTY_TEST_FORM,
         controlId: controls[0]?.id || ''
       });
-      await loadData();
+      await loadData(1);
       setSelectedId(payload.id || '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to register ToE test.');
@@ -135,7 +155,7 @@ export default function ToEPage() {
 
       setSampleModal(false);
       setSampleForm(EMPTY_SAMPLE_FORM);
-      await loadData();
+      await loadData(page);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to add ToE sample.');
     } finally {
@@ -167,7 +187,7 @@ export default function ToEPage() {
       });
 
       setExceptionSample(null);
-      await loadData();
+      await loadData(page);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to raise testing exception.');
     } finally {
@@ -193,7 +213,7 @@ export default function ToEPage() {
         result: draft.result,
         failureReason: draft.failureReason
       });
-      await loadData();
+      await loadData(page);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update ToE sample.');
     } finally {
@@ -238,6 +258,12 @@ export default function ToEPage() {
           {error}
         </div>
       )}
+
+      <RegisterPager
+        pagination={pagination}
+        loading={pageLoading}
+        onPageChange={nextPage => void loadData(nextPage)}
+      />
 
       {tests.length === 0 ? (
         <div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl">
