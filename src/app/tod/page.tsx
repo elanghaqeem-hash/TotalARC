@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ArrowRight, CalendarDays, Link2, Workflow } from 'lucide-react';
+import { ArrowRight, CalendarDays, FileCheck, Link2, Workflow } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 
@@ -23,6 +23,7 @@ export default function ToDPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <Link href="/icofr/testing-plan" className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2.5 text-xs font-bold text-white"><CalendarDays className="w-4 h-4" />Testing Plan</Link>
             <Link href="/icofr/traceability" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700"><Link2 className="w-4 h-4" />Traceability</Link>
+            <Link href="/icofr/workpaper-review" className="inline-flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-xs font-bold text-violet-700"><FileCheck className="w-4 h-4" />Workpaper Review</Link>
           </div>
         </div>
       </div>

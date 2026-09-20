@@ -275,6 +275,14 @@ jobs:
             (.metrics | type) == "object"
           '
 
+          check_json "icofr-workpaper-review" "/api/icofr/workpaper-review" '
+            .storage == "cloudflare-d1" and
+            (.workpapers | type) == "array" and
+            (.reviews | type) == "array" and
+            (.openReviewNotes | type) == "array" and
+            (.metrics | type) == "object"
+          '
+
           check_json "database-final" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and
