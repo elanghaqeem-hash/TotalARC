@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, FlaskConical, Plus, Save, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 const EMPTY_TEST_FORM = {
   testId: '',
@@ -107,16 +108,10 @@ export default function ToEPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'CREATE_TEST',
-          ...testForm
-        })
+      const payload = await jsonTransaction<any>('/api/assure/toe', {
+        actionType: 'CREATE_TEST',
+        ...testForm
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to register ToE test.');
 
       setTestModal(false);
       setTestForm({
@@ -139,17 +134,11 @@ export default function ToEPage() {
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'ADD_SAMPLE',
-          toeTestId: test.id,
-          ...sampleForm
-        })
+      await jsonTransaction('/api/assure/toe', {
+        actionType: 'ADD_SAMPLE',
+        toeTestId: test.id,
+        ...sampleForm
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to add ToE sample.');
 
       setSampleModal(false);
       setSampleForm(EMPTY_SAMPLE_FORM);
@@ -177,20 +166,12 @@ export default function ToEPage() {
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'CREATE_EXCEPTION',
-          toeTestId: test.id,
-          sampleId: exceptionSample.id,
-          ...exceptionForm
-        })
+      await jsonTransaction('/api/assure/toe', {
+        actionType: 'CREATE_EXCEPTION',
+        toeTestId: test.id,
+        sampleId: exceptionSample.id,
+        ...exceptionForm
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to raise testing exception.');
-      }
 
       setExceptionSample(null);
       await loadData();
@@ -213,18 +194,12 @@ export default function ToEPage() {
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'UPDATE_SAMPLE',
-          sampleId,
-          result: draft.result,
-          failureReason: draft.failureReason
-        })
+      await jsonTransaction('/api/assure/toe', {
+        actionType: 'UPDATE_SAMPLE',
+        sampleId,
+        result: draft.result,
+        failureReason: draft.failureReason
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to update ToE sample.');
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update ToE sample.');
