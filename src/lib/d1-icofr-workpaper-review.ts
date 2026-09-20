@@ -61,6 +61,18 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
   return values.length ? stmt.bind(...values).run() : stmt.run();
 }
 
+async function executeSchema(db: D1DatabaseLike, script: string) {
+  const statements = script
+    .split(';')
+    .map(statement => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await db.prepare(statement).run();
+  }
+}
+
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -82,7 +94,7 @@ export async function ensureIcofrWorkpaperReviewSchema() {
 
   schemaReady = (async () => {
     const db = await getDb();
-    await db.exec(`
+    await executeSchema(db, `
       CREATE TABLE IF NOT EXISTS ICOFRWorkpaperReview (
         id TEXT PRIMARY KEY NOT NULL,
         institutionId TEXT NOT NULL,
