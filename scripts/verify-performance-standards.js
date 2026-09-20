@@ -121,6 +121,33 @@ for (const path of focusedPages) {
   }
 }
 
+const readHelper = read('src/lib/client-read.ts');
+for (const pattern of [
+  /clientHardTimeoutMs/,
+  /focusedReadBudgetMs/,
+  /AbortController/,
+  /inflightReads/
+]) {
+  requirePattern('src/lib/client-read.ts', readHelper, pattern, 'client read deadline/dedupe control is missing');
+}
+
+const standardizedReadPages = [
+  'src/app/onboarding/page.tsx',
+  'src/app/organization/page.tsx',
+  'src/app/processes/page.tsx',
+  'src/app/risks/page.tsx',
+  'src/app/controls/page.tsx',
+  'src/app/toe/page.tsx',
+  'src/app/remediation/page.tsx',
+  'src/app/ccm/page.tsx',
+  'src/context/RoleContext.tsx'
+];
+
+for (const path of standardizedReadPages) {
+  const content = read(path);
+  requirePattern(path, content, /jsonRead/, 'interactive reads must use the standard request deadline helper');
+}
+
 const transactionHelper = read('src/lib/client-transaction.ts');
 for (const pattern of [
   /clientHardTimeoutMs/,
