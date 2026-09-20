@@ -24,6 +24,9 @@ const todRoutePath = 'src/app/api/assure/tod/route.ts';
 const icofrRoutePath = 'src/app/api/assure/icofr/route.ts';
 const certificationRoutePath = 'src/app/api/assure/certification/route.ts';
 const tasksRoutePath = 'src/app/api/assure/tasks/route.ts';
+const toeRoutePath = 'src/app/api/assure/toe/route.ts';
+const toePagePath = 'src/app/toe/page.tsx';
+const registerPaginationPath = 'src/lib/d1-register-pagination.ts';
 const aggregateRoutePath = 'src/app/api/assurance/route.ts';
 const rcsaPagePath = 'src/app/rcsa/page.tsx';
 const todPagePath = 'src/app/tod/page.tsx';
@@ -41,6 +44,11 @@ requirePatterns(domainPath, domain, [
   /CREATE TABLE IF NOT EXISTS IPERegister/,
   /CREATE TABLE IF NOT EXISTS Walkthrough/,
   /CREATE TABLE IF NOT EXISTS ToDTest/,
+  /CREATE TABLE IF NOT EXISTS ToETest/,
+  /CREATE TABLE IF NOT EXISTS TestSample/,
+  /CREATE TABLE IF NOT EXISTS TestingException/,
+  /idx_sample_toe_result/,
+  /idx_exception_toe_sample_ref/,
   /CREATE TABLE IF NOT EXISTS ControlCertification/,
   /CREATE TABLE IF NOT EXISTS ManagementAttestation/,
   /CREATE TABLE IF NOT EXISTS Task/,
@@ -111,6 +119,37 @@ requirePatterns(tasksRoutePath, tasksRoute, [
   /CREATE_TASK/,
   /UPDATE_STATUS/,
   /recordMutationAudit/
+]);
+
+const toeRoute = requireFile(toeRoutePath);
+requirePatterns(toeRoutePath, toeRoute, [
+  /authorizeTenantApi/,
+  /mode === 'detail'/,
+  /parsePaginationRequest\(request, 'sample'\)/,
+  /getToeTestDetailPage/,
+  /getToeTestScopeById/,
+  /TOE_ORGANIZATION_SCOPE_FORBIDDEN/,
+  /ADD_SAMPLE/,
+  /UPDATE_SAMPLE/,
+  /CREATE_EXCEPTION/
+]);
+
+const registerPagination = requireFile(registerPaginationPath);
+requirePatterns(registerPaginationPath, registerPagination, [
+  /export async function listToeRegisterPage/,
+  /export async function getToeTestDetailPage/,
+  /samplePagination/,
+  /TestSample/,
+  /TestingException/
+]);
+
+const toePage = requireFile(toePagePath);
+requirePatterns(toePagePath, toePage, [
+  /loadDetail/,
+  /samplePageSize:\s*'50'/,
+  /samplePagination/,
+  /Raise Exception/,
+  /saveSampleResult/
 ]);
 
 const aggregateRoute = requireFile(aggregateRoutePath);
