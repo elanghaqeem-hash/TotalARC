@@ -212,12 +212,12 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6 sm:space-y-7">
+    <div className="w-full max-w-full space-y-4 overflow-x-hidden sm:space-y-7">
       <section className="relative overflow-hidden rounded-[28px] border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-blue-100/70 shadow-[0_20px_60px_-30px_rgba(2,132,199,0.45)]">
         <div className="pointer-events-none absolute -right-24 -top-32 h-72 w-72 rounded-full bg-sky-300/25 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 right-1/4 h-64 w-64 rounded-full bg-blue-400/15 blur-3xl" />
 
-        <div className="relative grid gap-6 p-5 sm:p-7 lg:grid-cols-[1.45fr_0.75fr] lg:p-9">
+        <div className="relative grid gap-4 p-4 sm:gap-6 sm:p-7 lg:grid-cols-[1.45fr_0.75fr] lg:p-9">
           <div className="min-w-0">
             <div className="mb-5 flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-slate-600">
@@ -227,7 +227,7 @@ export default function DashboardPage() {
             </div>
 
             <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-brand-600">Total ARC Command Center</p>
-            <h1 className="max-w-3xl text-[28px] font-black leading-[1.08] tracking-tight text-slate-950 sm:text-[32px] lg:text-[38px] xl:text-[40px]">
+            <h1 className="max-w-3xl text-[25px] font-black leading-[1.08] tracking-tight text-slate-950 sm:text-[32px] lg:text-[38px] xl:text-[40px]">
               Assurance, Risk & Control
               <span className="block text-brand-700">dalam satu pandangan yang lebih jelas.</span>
             </h1>
@@ -235,10 +235,10 @@ export default function DashboardPage() {
               Pantau proses, risiko, kontrol, pengujian, remediation, dan continuous monitoring dari satu dashboard yang menggunakan data persisten pada sistem.
             </p>
 
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-5 grid grid-cols-2 gap-2.5 sm:mt-6 sm:flex sm:flex-wrap sm:gap-3">
               <Link
                 href="/rcm"
-                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-brand-700"
+                className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2.5 text-[11px] font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-brand-700 sm:gap-2 sm:px-4 sm:text-xs"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 Open Dynamic RCM
@@ -246,7 +246,7 @@ export default function DashboardPage() {
               </Link>
               <Link
                 href="/toe"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-4 py-2.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-brand-200 hover:text-brand-700"
+                className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/85 px-3 py-2.5 text-[11px] font-bold text-slate-800 shadow-sm transition hover:border-brand-200 hover:text-brand-700 sm:gap-2 sm:px-4 sm:text-xs"
               >
                 <Cpu className="h-4 w-4 text-brand-600" />
                 ToE Workpaper
@@ -309,7 +309,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-5">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
             <h2 className="text-base font-black text-slate-950 sm:text-lg">Quick Access</h2>
@@ -320,14 +320,14 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
           {quickActions.map((item) => {
             const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`group relative overflow-hidden rounded-2xl bg-gradient-to-br ${item.accent} p-4 text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg`}
+                className={`group relative min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br ${item.accent} p-3 text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg sm:p-4`}
               >
                 <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/10" />
                 <div className="relative flex items-start justify-between gap-3">
@@ -336,8 +336,8 @@ export default function DashboardPage() {
                   </div>
                   <ArrowRight className="h-4 w-4 opacity-70 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
                 </div>
-                <div className="relative mt-4 text-sm font-black">{item.title}</div>
-                <p className="relative mt-1 min-h-[34px] text-[11px] leading-4 text-white/80">{item.description}</p>
+                <div className="relative mt-3 text-[12px] font-black leading-4 sm:mt-4 sm:text-sm">{item.title}</div>
+                <p className="relative mt-1 hidden min-h-[34px] text-[11px] leading-4 text-white/80 min-[390px]:block">{item.description}</p>
               </Link>
             );
           })}
@@ -357,7 +357,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
           {keyMetrics.map((item) => {
             const Icon = item.icon;
             const tone = toneClasses[item.tone];
@@ -365,7 +365,7 @@ export default function DashboardPage() {
               <Link
                 key={item.label}
                 href={item.href}
-                className={`group rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${tone.card}`}
+                className={`group min-w-0 rounded-2xl border p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-4 ${tone.card}`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className={`rounded-xl p-2.5 ${tone.icon}`}>
@@ -373,7 +373,7 @@ export default function DashboardPage() {
                   </div>
                   <ChevronRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
                 </div>
-                <div className={`mt-4 text-3xl font-black tracking-tight ${tone.value}`}>
+                <div className={`mt-3 text-2xl font-black tracking-tight sm:mt-4 sm:text-3xl ${tone.value}`}>
                   {loading ? '—' : formatNumber(item.value)}
                 </div>
                 <div className="mt-1 text-xs font-bold text-slate-700">{item.label}</div>
@@ -384,38 +384,43 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
+      <section className="grid min-w-0 gap-4 sm:gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+        <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-5">
+          <div className="mb-3 flex items-start justify-between gap-3 sm:mb-4 sm:gap-4">
+            <div className="min-w-0">
               <h2 className="text-base font-black text-slate-950 sm:text-lg">Core Modules</h2>
               <p className="mt-0.5 text-xs text-slate-500">Seluruh capability utama Total ARC dalam satu area.</p>
             </div>
             <Network className="h-5 w-5 text-brand-600" />
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-            {modules.map((module) => {
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5">
+            {modules.map((module, index) => {
               const Icon = module.icon;
+              const isLastOddMobile = index === modules.length - 1 && modules.length % 2 === 1;
               return (
                 <Link
                   key={module.href}
                   href={module.href}
-                  className="group rounded-xl border border-slate-200 bg-slate-50/60 p-3 transition hover:border-brand-200 hover:bg-brand-50/60"
+                  className={`group flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 transition hover:border-brand-200 hover:bg-brand-50/60 sm:block sm:p-3 ${
+                    isLastOddMobile ? 'col-span-2 sm:col-span-1' : ''
+                  }`}
                 >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-brand-700 shadow-sm ring-1 ring-slate-200 transition group-hover:ring-brand-200">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-brand-700 shadow-sm ring-1 ring-slate-200 transition group-hover:ring-brand-200 sm:h-9 sm:w-9">
                     <Icon className="h-4 w-4" />
                   </div>
-                  <div className="mt-2 text-[11px] font-bold leading-4 text-slate-700 group-hover:text-brand-800">{module.label}</div>
+                  <div className="min-w-0 break-words text-[10.5px] font-bold leading-4 text-slate-700 group-hover:text-brand-800 sm:mt-2 sm:text-[11px]">
+                    {module.label}
+                  </div>
                 </Link>
               );
             })}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
+        <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-5">
+          <div className="mb-3 flex items-start justify-between gap-3 sm:mb-4 sm:gap-4">
+            <div className="min-w-0">
               <h2 className="text-base font-black text-slate-950 sm:text-lg">Recent Activity</h2>
               <p className="mt-0.5 text-xs text-slate-500">Aktivitas terbaru dari audit trail yang tersimpan.</p>
             </div>

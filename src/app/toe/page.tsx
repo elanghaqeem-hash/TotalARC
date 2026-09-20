@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, FlaskConical, Plus, Save, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 const EMPTY_TEST_FORM = {
   testId: '',
@@ -37,35 +40,25 @@ export default function ToEPage() {
   const [saving, setSaving] = useState(false);
   const [testForm, setTestForm] = useState(EMPTY_TEST_FORM);
   const [sampleForm, setSampleForm] = useState(EMPTY_SAMPLE_FORM);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [testDetail, setTestDetail] = useState<any | null>(null);
+  const [samplePage, setSamplePage] = useState(1);
+  const [samplePagination, setSamplePagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [sampleDrafts, setSampleDrafts] = useState<
     Record<string, { result: string; failureReason: string }>
   >({});
 
-  const loadData = async () => {
-    setError('');
+  const loadControls = async () => {
     try {
-      const [testResponse, controlResponse] = await Promise.all([
-        fetch('/api/assure/toe'),
-        fetch('/api/controls')
-      ]);
-
-      if (!testResponse.ok) throw new Error('ToE data unavailable');
-      if (!controlResponse.ok) throw new Error('Control library unavailable');
-
-      const [testData, controlData] = await Promise.all([
-        testResponse.json(),
-        controlResponse.json()
-      ]);
-      const nextTests = Array.isArray(testData.tests) ? testData.tests : [];
-      const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
-
-      setTests(nextTests);
-      setControls(nextControls);
-      setSelectedId(current =>
-        current && nextTests.some((item: any) => item.id === current)
-          ? current
-          : nextTests[0]?.id || ''
+      const controlData = await jsonRead<any>(
+        '/api/controls?mode=options',
+        { dedupe: false }
       );
+      const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
+      setControls(nextControls);
       setTestForm(current => ({
         ...current,
         controlId:
@@ -73,33 +66,105 @@ export default function ToEPage() {
             ? current.controlId
             : nextControls[0]?.id || ''
       }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Control library unavailable');
+    }
+  };
+
+  const loadData = async (targetPage = page) => {
+    setError('');
+    setPageLoading(true);
+    try {
+      const testData = await jsonRead<any>(
+        '/api/assure/toe?page=' + targetPage + '&pageSize=50',
+        { dedupe: false }
+      );
+      const nextTests = Array.isArray(testData.tests) ? testData.tests : [];
+
+      setTests(nextTests);
+      setPagination(testData.pagination || EMPTY_PAGINATION);
+      setPage(targetPage);
+      setSelectedId(current =>
+        current && nextTests.some((item: any) => item.id === current)
+          ? current
+          : nextTests[0]?.id || ''
+      );
+
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ToE data unavailable');
+    } finally {
+      setPageLoading(false);
+    }
+  };
+
+  const loadDetail = async (
+    testId: string,
+    targetSamplePage = samplePage,
+    targetFilter: 'ALL' | 'PASS' | 'FAIL' = filter
+  ) => {
+    if (!testId) {
+      setTestDetail(null);
+      setSamplePagination(EMPTY_PAGINATION);
+      setSampleDrafts({});
+      return;
+    }
+
+    setDetailLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({
+        mode: 'detail',
+        testId,
+        samplePage: String(targetSamplePage),
+        samplePageSize: '50',
+        sampleFilter: targetFilter
+      });
+      const data = await jsonRead<any>(
+        '/api/assure/toe?' + params.toString(),
+        { dedupe: false }
+      );
+      const nextDetail = data.test || null;
+      setTestDetail(nextDetail);
+      setSamplePagination(nextDetail?.samplePagination || EMPTY_PAGINATION);
+      setSamplePage(nextDetail?.samplePagination?.page || targetSamplePage);
 
       const drafts: Record<string, { result: string; failureReason: string }> = {};
-      for (const test of nextTests) {
-        for (const sample of test.samples || []) {
-          drafts[sample.id] = {
-            result: sample.result || 'Not Tested',
-            failureReason: sample.failureReason || ''
-          };
-        }
+      for (const sample of nextDetail?.samples || []) {
+        drafts[sample.id] = {
+          result: sample.result || 'Not Tested',
+          failureReason: sample.failureReason || ''
+        };
       }
       setSampleDrafts(drafts);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'ToE data unavailable');
+      setError(err instanceof Error ? err.message : 'ToE workpaper detail unavailable');
+      setTestDetail(null);
+      setSamplePagination(EMPTY_PAGINATION);
+      setSampleDrafts({});
+    } finally {
+      setDetailLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    void Promise.all([loadData(1), loadControls()]);
   }, []);
 
-  const test = tests.find(item => item.id === selectedId) || null;
-  const samples = useMemo(() => {
-    const rows = test?.samples || [];
-    if (filter === 'PASS') return rows.filter((row: any) => row.result === 'Pass');
-    if (filter === 'FAIL') return rows.filter((row: any) => row.result === 'Fail');
-    return rows;
-  }, [test, filter]);
+  useEffect(() => {
+    if (!selectedId) {
+      setTestDetail(null);
+      setSamplePagination(EMPTY_PAGINATION);
+      setSampleDrafts({});
+      return;
+    }
+    setFilter('ALL');
+    void loadDetail(selectedId, 1, 'ALL');
+  }, [selectedId]);
+
+  const selectedSummary = tests.find(item => item.id === selectedId) || null;
+  const test = testDetail || selectedSummary;
+  const samples = Array.isArray(testDetail?.samples) ? testDetail.samples : [];
 
   const createTest = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -107,23 +172,17 @@ export default function ToEPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'CREATE_TEST',
-          ...testForm
-        })
+      const payload = await jsonTransaction<any>('/api/assure/toe', {
+        actionType: 'CREATE_TEST',
+        ...testForm
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to register ToE test.');
 
       setTestModal(false);
       setTestForm({
         ...EMPTY_TEST_FORM,
         controlId: controls[0]?.id || ''
       });
-      await loadData();
+      await loadData(1);
       setSelectedId(payload.id || '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to register ToE test.');
@@ -139,21 +198,18 @@ export default function ToEPage() {
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'ADD_SAMPLE',
-          toeTestId: test.id,
-          ...sampleForm
-        })
+      await jsonTransaction('/api/assure/toe', {
+        actionType: 'ADD_SAMPLE',
+        toeTestId: test.id,
+        ...sampleForm
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to add ToE sample.');
 
       setSampleModal(false);
       setSampleForm(EMPTY_SAMPLE_FORM);
-      await loadData();
+      await Promise.all([
+        loadData(page),
+        loadDetail(test.id, samplePage, filter)
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to add ToE sample.');
     } finally {
@@ -177,23 +233,18 @@ export default function ToEPage() {
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'CREATE_EXCEPTION',
-          toeTestId: test.id,
-          sampleId: exceptionSample.id,
-          ...exceptionForm
-        })
+      await jsonTransaction('/api/assure/toe', {
+        actionType: 'CREATE_EXCEPTION',
+        toeTestId: test.id,
+        sampleId: exceptionSample.id,
+        ...exceptionForm
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to raise testing exception.');
-      }
 
       setExceptionSample(null);
-      await loadData();
+      await Promise.all([
+        loadData(page),
+        loadDetail(test.id, samplePage, filter)
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to raise testing exception.');
     } finally {
@@ -213,19 +264,16 @@ export default function ToEPage() {
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/api/assure/toe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'UPDATE_SAMPLE',
-          sampleId,
-          result: draft.result,
-          failureReason: draft.failureReason
-        })
+      await jsonTransaction('/api/assure/toe', {
+        actionType: 'UPDATE_SAMPLE',
+        sampleId,
+        result: draft.result,
+        failureReason: draft.failureReason
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to update ToE sample.');
-      await loadData();
+      await Promise.all([
+        loadData(page),
+        loadDetail(test?.id || selectedId, 1, filter)
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update ToE sample.');
     } finally {
@@ -270,6 +318,12 @@ export default function ToEPage() {
           {error}
         </div>
       )}
+
+      <RegisterPager
+        pagination={pagination}
+        loading={pageLoading}
+        onPageChange={nextPage => void loadData(nextPage)}
+      />
 
       {tests.length === 0 ? (
         <div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl">
@@ -328,7 +382,7 @@ export default function ToEPage() {
                   ['Sample size', test.sampleSize],
                   ['Passed', test.passCount],
                   ['Failed', test.failCount],
-                  ['Exceptions', test.exceptions?.length || 0]
+                  ['Exceptions', test.exceptionCount || 0]
                 ].map(([label, value]) => (
                   <div key={String(label)} className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                     <div className="text-[10px] uppercase text-slate-400 font-bold">{label}</div>
@@ -341,23 +395,33 @@ export default function ToEPage() {
                 {(['ALL', 'PASS', 'FAIL'] as const).map(key => (
                   <button
                     key={key}
-                    onClick={() => setFilter(key)}
-                    className={`px-3 py-1.5 rounded-lg border ${
+                    onClick={() => {
+                      setFilter(key);
+                      void loadDetail(selectedId, 1, key);
+                    }}
+                    disabled={detailLoading}
+                    className={`px-3 py-1.5 rounded-lg border disabled:opacity-50 ${
                       filter === key
                         ? 'bg-brand-600 text-white border-brand-600'
                         : 'bg-white border-slate-200'
                     }`}
                   >
                     {key === 'ALL'
-                      ? `All (${test.samples?.length || 0})`
+                      ? `All (${test.sampleSize || 0})`
                       : key === 'PASS'
-                        ? `Passed (${test.samples?.filter((sample: any) => sample.result === 'Pass').length || 0})`
-                        : `Failed (${test.samples?.filter((sample: any) => sample.result === 'Fail').length || 0})`}
+                        ? `Passed (${test.passCount || 0})`
+                        : `Failed (${test.failCount || 0})`}
                   </button>
                 ))}
               </div>
 
-              <div className="overflow-x-auto">
+              <RegisterPager
+                pagination={samplePagination}
+                loading={detailLoading}
+                onPageChange={nextPage => void loadDetail(selectedId, nextPage, filter)}
+              />
+
+                            <div className="overflow-x-auto">
                 <table className="w-full text-xs min-w-[900px]">
                   <thead className="bg-slate-100 text-slate-600">
                     <tr>

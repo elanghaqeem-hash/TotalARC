@@ -5,7 +5,7 @@ import { Calendar as CalendarIcon } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function CalendarPage() {
-  const { data, loading, error } = useAssuranceData();
+  const { data, loading, error } = useAssuranceData(['calendar']);
 
   const events = useMemo(() => {
     if (!data) return [];
@@ -16,6 +16,7 @@ export default function CalendarPage() {
     for (const item of data.retests || []) rows.push({ id: 'retest-'+item.id, date: item.retestedAt, type: 'Retest', title: item.retestId, status: item.result, owner: item.testerName });
     for (const item of data.certifications || []) rows.push({ id: 'cert-'+item.id, date: item.certifiedAt, type: 'Certification', title: item.control?.controlId || 'Control certification', status: item.status, owner: item.certifierName });
     for (const item of data.attestations || []) rows.push({ id: 'att-'+item.id, date: item.attestedAt, type: 'Attestation', title: item.period, status: item.overallOpinion || 'Recorded', owner: [item.cfoName,item.croName].filter(Boolean).join(' / ') || 'Not specified' });
+    for (const item of data.tasks || []) rows.push({ id: 'task-'+item.id, date: item.dueDate, type: 'Task · '+item.type, title: item.title, status: item.status, owner: item.user?.name || 'Unassigned' });
     return rows.sort((a,b) => new Date(a.date).getTime()-new Date(b.date).getTime());
   }, [data]);
 

@@ -19,39 +19,62 @@ import {
   SlidersHorizontal
 } from 'lucide-react';
 import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
+import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 export default function RCMWorkspacePage() {
   const [rcmRows, setRcmRows] = useState<any[]>([]);
+  const [organizationUnits, setOrganizationUnits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('ALL');
+  const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [filterCounts, setFilterCounts] = useState({ all: 0, keyControls: 0, icofr: 0, issues: 0 });
+
+  const loadRcm = async (targetPage = page) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: '50',
+        filterType
+      });
+      if (search.trim()) params.set('search', search.trim());
+      if (selectedOrgUnit !== 'ALL') params.set('orgUnitId', selectedOrgUnit);
+
+      const d = await jsonRead<any>(
+        '/api/rcm?' + params.toString(),
+        { dedupe: false }
+      );
+      setRcmRows(Array.isArray(d.rcm) ? d.rcm : []);
+      setOrganizationUnits(
+        Array.isArray(d.organization?.organizationUnits)
+          ? d.organization.organizationUnits
+          : []
+      );
+      setPagination(d.pagination || EMPTY_PAGINATION);
+      setFilterCounts(d.filterCounts || { all: 0, keyControls: 0, icofr: 0, issues: 0 });
+      setPage(targetPage);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/rcm')
-      .then(res => res.json())
-      .then(d => {
-        setRcmRows(d.rcm || []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  }, []);
+    const timer = window.setTimeout(() => {
+      void loadRcm(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedOrgUnit, filterType]);
 
-  const filtered = rcmRows.filter(row => {
-    const matchSearch =
-      row.processName?.toLowerCase().includes(search.toLowerCase()) ||
-      row.riskName?.toLowerCase().includes(search.toLowerCase()) ||
-      row.controlName?.toLowerCase().includes(search.toLowerCase()) ||
-      row.controlId?.toLowerCase().includes(search.toLowerCase());
+  const unitById = new Map(organizationUnits.map(unit => [unit.id, unit]));
 
-    if (filterType === 'KEY_ONLY') return matchSearch && row.isKeyControl;
-    if (filterType === 'ICOFR_ONLY') return matchSearch && row.isIcofrKey;
-    if (filterType === 'ISSUES_ONLY') return matchSearch && row.issueId;
-    return matchSearch;
-  });
+  const filtered = rcmRows;
 
   // Client CSV Export
   const exportToCSV = () => {
@@ -151,7 +174,7 @@ export default function RCMWorkspacePage() {
             className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm shadow-emerald-500/20 transition-all"
           >
             <Download className="w-4 h-4" />
-            <span>Export RCM (CSV/Excel)</span>
+            <span>Export Current Page (CSV)</span>
           </button>
         </div>
       </div>
@@ -159,15 +182,27 @@ export default function RCMWorkspacePage() {
       {/* Search & Filter Bar */}
       <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
         <div className="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.72fr)] 2xl:items-stretch">
-          <div className="relative min-w-0">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search process, risk, control, or control ID"
-              className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
-            />
+          <div className="grid min-w-0 gap-2">
+            <div className="relative min-w-0">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search process, risk, control, organization unit, or control ID"
+                className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+              />
+            </div>
+            <select
+              value={selectedOrgUnit}
+              onChange={e => setSelectedOrgUnit(e.target.value)}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 outline-none transition focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+            >
+              <option value="ALL">All Organization Units</option>
+              {organizationUnits.filter(unit => unit.status === 'Active').map(unit => (
+                <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="min-w-0">
@@ -181,25 +216,25 @@ export default function RCMWorkspacePage() {
                 {
                   key: 'ALL',
                   label: 'All Mappings',
-                  count: rcmRows.length,
+                  count: filterCounts.all,
                   icon: Layers
                 },
                 {
                   key: 'KEY_ONLY',
                   label: 'Key Controls',
-                  count: rcmRows.filter(row => row.isKeyControl).length,
+                  count: filterCounts.keyControls,
                   icon: Shield
                 },
                 {
                   key: 'ICOFR_ONLY',
                   label: 'ICOFR Scope',
-                  count: rcmRows.filter(row => row.isIcofrKey).length,
+                  count: filterCounts.icofr,
                   icon: FileCheck2
                 },
                 {
                   key: 'ISSUES_ONLY',
                   label: 'Remediation / MAP',
-                  count: rcmRows.filter(row => row.issueId).length,
+                  count: filterCounts.issues,
                   icon: BadgeCheck
                 }
               ].map(option => {
@@ -245,14 +280,15 @@ export default function RCMWorkspacePage() {
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-[10px] text-slate-500">
           <span>
-            Showing <strong className="text-slate-700">{filtered.length}</strong> of <strong className="text-slate-700">{rcmRows.length}</strong> mappings
+            Showing page <strong className="text-slate-700">{pagination.page}</strong> of <strong className="text-slate-700">{pagination.totalPages}</strong> · <strong className="text-slate-700">{pagination.total}</strong> matching mappings
           </span>
-          {(search || filterType !== 'ALL') && (
+          {(search || filterType !== 'ALL' || selectedOrgUnit !== 'ALL') && (
             <button
               type="button"
               onClick={() => {
                 setSearch('');
                 setFilterType('ALL');
+                setSelectedOrgUnit('ALL');
               }}
               className="font-bold text-brand-700 transition hover:text-brand-800"
             >
@@ -261,6 +297,12 @@ export default function RCMWorkspacePage() {
           )}
         </div>
       </section>
+
+      <RegisterPager
+        pagination={pagination}
+        loading={loading}
+        onPageChange={nextPage => void loadRcm(nextPage)}
+      />
 
       {/* SPREADSHEET GRID VIEW (Desktop) */}
       {viewMode === 'table' ? (
@@ -295,6 +337,9 @@ export default function RCMWorkspacePage() {
                       <td className="py-3 px-4 border-r border-slate-200">
                         <div className="font-bold text-slate-900">{row.processName}</div>
                         <div className="text-[10px] font-mono text-brand-600">{row.processId}</div>
+                        <div className="mt-1 text-[10px] text-slate-400">
+                          {unitById.get(row.orgUnitId)?.name || 'Organization unit not assigned'}
+                        </div>
                       </td>
 
                       {/* Objective */}
@@ -408,6 +453,9 @@ export default function RCMWorkspacePage() {
                     {row.processId}
                   </span>
                   <h3 className="font-bold text-sm text-slate-900 mt-1">{row.processName}</h3>
+                  <div className="mt-1 text-[10px] text-slate-400">
+                    {unitById.get(row.orgUnitId)?.name || 'Organization unit not assigned'}
+                  </div>
                 </div>
                 <span className="text-xs font-bold text-slate-400 font-mono">#{row.rowNumber}</span>
               </div>

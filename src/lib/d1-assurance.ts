@@ -165,10 +165,132 @@ async function tenantMonitoringRule(
   );
 }
 
-export async function ensureAssuranceSchema() {
+let assuranceSchemaPromise: Promise<D1DatabaseLike> | null = null;
+
+async function initializeAssuranceSchema() {
   const db = await getDb();
 
   await executeSchemaScript(db, `
+    CREATE TABLE IF NOT EXISTS AssessmentCampaign (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'RCSA',
+      period TEXT NOT NULL,
+      startDate TEXT NOT NULL,
+      dueDate TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Draft',
+      ownerName TEXT NOT NULL,
+      approverName TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_assessment_campaign_institution ON AssessmentCampaign(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_assessment_campaign_org_unit ON AssessmentCampaign(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS CSAResponse (
+      id TEXT PRIMARY KEY NOT NULL,
+      campaignId TEXT NOT NULL,
+      controlId TEXT NOT NULL,
+      wasPerformed INTEGER NOT NULL DEFAULT 0,
+      frequencyMet INTEGER NOT NULL DEFAULT 0,
+      evidenceAttached INTEGER NOT NULL DEFAULT 0,
+      exceptionsFound INTEGER NOT NULL DEFAULT 0,
+      exceptionCount INTEGER NOT NULL DEFAULT 0,
+      processChanged INTEGER NOT NULL DEFAULT 0,
+      controlChanged INTEGER NOT NULL DEFAULT 0,
+      csaConclusion TEXT NOT NULL DEFAULT 'Not Performed',
+      assessorNotes TEXT,
+      assessorName TEXT NOT NULL,
+      assessedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_csa_campaign_control ON CSAResponse(campaignId, controlId);
+    CREATE INDEX IF NOT EXISTS idx_csa_control ON CSAResponse(controlId);
+
+    CREATE TABLE IF NOT EXISTS FinancialAccount (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      accountCode TEXT NOT NULL,
+      accountName TEXT NOT NULL,
+      financialStatement TEXT NOT NULL,
+      balanceAmount REAL NOT NULL DEFAULT 0,
+      isSignificant INTEGER NOT NULL DEFAULT 0,
+      scopingRationale TEXT,
+      fraudExposure TEXT NOT NULL DEFAULT 'Not Assessed',
+      complexity TEXT NOT NULL DEFAULT 'Not Assessed',
+      createdAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_account_code ON FinancialAccount(institutionId, accountCode);
+    CREATE INDEX IF NOT EXISTS idx_financial_account_org_unit ON FinancialAccount(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS AccountAssertionMapping (
+      id TEXT PRIMARY KEY NOT NULL,
+      accountId TEXT NOT NULL,
+      assertion TEXT NOT NULL,
+      isInScope INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_account_assertion ON AccountAssertionMapping(accountId, assertion);
+
+    CREATE TABLE IF NOT EXISTS IPERegister (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      reportName TEXT NOT NULL,
+      systemSource TEXT NOT NULL,
+      reportOwner TEXT NOT NULL,
+      parameters TEXT,
+      logicSummary TEXT,
+      completenessTested INTEGER NOT NULL DEFAULT 0,
+      accuracyTested INTEGER NOT NULL DEFAULT 0,
+      evidenceDoc TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ipe_institution ON IPERegister(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_ipe_org_unit ON IPERegister(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS Walkthrough (
+      id TEXT PRIMARY KEY NOT NULL,
+      controlId TEXT NOT NULL,
+      date TEXT NOT NULL,
+      participants TEXT,
+      transactionRef TEXT,
+      systemsInspected TEXT,
+      observations TEXT,
+      processChanged INTEGER NOT NULL DEFAULT 0,
+      conclusion TEXT NOT NULL DEFAULT 'Not Assessed',
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_walkthrough_control ON Walkthrough(controlId);
+
+    CREATE TABLE IF NOT EXISTS ToDTest (
+      id TEXT PRIMARY KEY NOT NULL,
+      testId TEXT NOT NULL,
+      controlId TEXT NOT NULL,
+      processId TEXT NOT NULL,
+      riskId TEXT,
+      testerName TEXT NOT NULL,
+      reviewerName TEXT,
+      period TEXT NOT NULL,
+      testObjective TEXT NOT NULL,
+      objectiveAlignment INTEGER NOT NULL DEFAULT 0,
+      riskCoverage INTEGER NOT NULL DEFAULT 0,
+      precisionAdequate INTEGER NOT NULL DEFAULT 0,
+      segregationDuties INTEGER NOT NULL DEFAULT 0,
+      evidenceSufficiency INTEGER NOT NULL DEFAULT 0,
+      observations TEXT,
+      conclusion TEXT NOT NULL DEFAULT 'Not Assessed',
+      status TEXT NOT NULL DEFAULT 'Draft',
+      testedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tod_test_id ON ToDTest(testId);
+    CREATE INDEX IF NOT EXISTS idx_tod_control ON ToDTest(controlId);
+    CREATE INDEX IF NOT EXISTS idx_tod_process ON ToDTest(processId);
+
     CREATE TABLE IF NOT EXISTS ToETest (
       id TEXT PRIMARY KEY NOT NULL,
       testId TEXT NOT NULL,
@@ -208,6 +330,7 @@ export async function ensureAssuranceSchema() {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_toe_sample_number ON TestSample(toeTestId, sampleNumber);
     CREATE INDEX IF NOT EXISTS idx_sample_toe ON TestSample(toeTestId);
+    CREATE INDEX IF NOT EXISTS idx_sample_toe_result ON TestSample(toeTestId, result, sampleNumber);
 
     CREATE TABLE IF NOT EXISTS TestingException (
       id TEXT PRIMARY KEY NOT NULL,
@@ -220,6 +343,7 @@ export async function ensureAssuranceSchema() {
       createdAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_exception_toe ON TestingException(toeTestId);
+    CREATE INDEX IF NOT EXISTS idx_exception_toe_sample_ref ON TestingException(toeTestId, sampleRef);
 
     CREATE TABLE IF NOT EXISTS ControlDeficiency (
       id TEXT PRIMARY KEY NOT NULL,
@@ -325,6 +449,54 @@ export async function ensureAssuranceSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_retest_enterprise_id ON RetestRecord(retestId);
     CREATE INDEX IF NOT EXISTS idx_retest_map ON RetestRecord(mapId);
 
+    CREATE TABLE IF NOT EXISTS ControlCertification (
+      id TEXT PRIMARY KEY NOT NULL,
+      controlId TEXT NOT NULL,
+      period TEXT NOT NULL,
+      declarationText TEXT NOT NULL,
+      certifierName TEXT NOT NULL,
+      certifierRole TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      certifiedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_certification_control ON ControlCertification(controlId);
+
+    CREATE TABLE IF NOT EXISTS ManagementAttestation (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      orgUnitId TEXT,
+      period TEXT NOT NULL,
+      scopeSummary TEXT NOT NULL,
+      cfoSignOff INTEGER NOT NULL DEFAULT 0,
+      cfoName TEXT,
+      croSignOff INTEGER NOT NULL DEFAULT 0,
+      croName TEXT,
+      overallOpinion TEXT,
+      attestedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_attestation_institution ON ManagementAttestation(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_attestation_org_unit ON ManagementAttestation(orgUnitId);
+
+    CREATE TABLE IF NOT EXISTS Task (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      userId TEXT,
+      orgUnitId TEXT,
+      title TEXT NOT NULL,
+      type TEXT NOT NULL,
+      dueDate TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'High',
+      status TEXT NOT NULL DEFAULT 'Pending',
+      entityRef TEXT,
+      link TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_institution ON Task(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_task_user ON Task(userId);
+    CREATE INDEX IF NOT EXISTS idx_task_org_unit ON Task(orgUnitId);
+    CREATE INDEX IF NOT EXISTS idx_task_due_date ON Task(dueDate);
+
     CREATE TABLE IF NOT EXISTS MonitoringRule (
       id TEXT PRIMARY KEY NOT NULL,
       ruleId TEXT NOT NULL,
@@ -368,6 +540,1075 @@ export async function ensureAssuranceSchema() {
   return db;
 }
 
+
+
+export async function ensureAssuranceSchema() {
+  if (!assuranceSchemaPromise) {
+    assuranceSchemaPromise = initializeAssuranceSchema().catch(error => {
+      assuranceSchemaPromise = null;
+      throw error;
+    });
+  }
+  return assuranceSchemaPromise;
+}
+
+function storedBoolean(value: unknown) {
+  return value === true || value === 1 || value === '1';
+}
+
+async function loadControlContext(
+  db: D1DatabaseLike,
+  controlId: string,
+  institutionId: string
+) {
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [controlId, institutionId]
+  );
+  if (!control) return null;
+
+  const process = await first<Record<string, unknown>>(
+    db,
+    'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+    [control.processId, institutionId]
+  );
+
+  return {
+    ...control,
+    isKeyControl: storedBoolean(control.isKeyControl),
+    isIcofrKey: storedBoolean(control.isIcofrKey),
+    isItgc: storedBoolean(control.isItgc),
+    process
+  };
+}
+
+export async function listRcsaData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  const [campaignRows, responseRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM AssessmentCampaign WHERE institutionId = ? ORDER BY startDate DESC, createdAt DESC',
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.objective AS controlObjective,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              c.processId AS controlProcessId,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId
+         FROM CSAResponse r
+         JOIN AssessmentCampaign a ON a.id = r.campaignId
+         JOIN ControlMaster c ON c.id = r.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
+        WHERE a.institutionId = ? AND c.institutionId = ?
+        ORDER BY r.assessedAt DESC`,
+      [institutionId, institutionId]
+    )
+  ]);
+
+  const responsesByCampaign = new Map<string, Record<string, unknown>[]>();
+  for (const response of responseRows) {
+    const campaignId = String(response.campaignId);
+    const current = responsesByCampaign.get(campaignId) || [];
+    current.push({
+      ...response,
+      wasPerformed: storedBoolean(response.wasPerformed),
+      frequencyMet: storedBoolean(response.frequencyMet),
+      evidenceAttached: storedBoolean(response.evidenceAttached),
+      exceptionsFound: storedBoolean(response.exceptionsFound),
+      processChanged: storedBoolean(response.processChanged),
+      controlChanged: storedBoolean(response.controlChanged),
+      exceptionCount: Number(response.exceptionCount || 0),
+      control: {
+        id: response.controlId,
+        controlId: response.enterpriseControlId,
+        name: response.controlName,
+        description: response.controlDescription,
+        objective: response.controlObjective,
+        controlOwner: response.controlOwner,
+        isKeyControl: storedBoolean(response.isKeyControl),
+        isIcofrKey: storedBoolean(response.isIcofrKey),
+        isItgc: storedBoolean(response.isItgc),
+        process: {
+          id: response.controlProcessId,
+          processId: response.enterpriseProcessId,
+          name: response.processName,
+          legalEntityId: response.legalEntityId,
+          orgUnitId: response.orgUnitId
+        }
+      }
+    });
+    responsesByCampaign.set(campaignId, current);
+  }
+
+  return {
+    campaigns: campaignRows.map(campaign => ({
+      ...campaign,
+      csaResponses: responsesByCampaign.get(String(campaign.id)) || []
+    }))
+  };
+}
+
+export async function createAssessmentCampaign(input: {
+  name: string;
+  type: string;
+  period: string;
+  startDate: string;
+  dueDate: string;
+  ownerName: string;
+  approverName?: string | null;
+  orgUnitId?: string | null;
+  legalEntityId?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO AssessmentCampaign (
+      id, institutionId, legalEntityId, orgUnitId, name, type, period,
+      startDate, dueDate, status, ownerName, approverName, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.name,
+      input.type,
+      input.period,
+      input.startDate,
+      input.dueDate,
+      input.ownerName,
+      nullable(input.approverName),
+      nowIso()
+    ]
+  );
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AssessmentCampaign WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function upsertCsaResponse(input: {
+  campaignId: string;
+  controlId: string;
+  wasPerformed: boolean;
+  frequencyMet: boolean;
+  evidenceAttached: boolean;
+  exceptionsFound: boolean;
+  exceptionCount: number;
+  processChanged: boolean;
+  controlChanged: boolean;
+  csaConclusion: string;
+  assessorNotes?: string | null;
+  assessorName: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const campaign = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AssessmentCampaign WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.campaignId, institutionId]
+  );
+  if (!campaign) throw new Error('RCSA_CAMPAIGN_NOT_FOUND');
+
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM CSAResponse WHERE campaignId = ? AND controlId = ? LIMIT 1',
+    [input.campaignId, input.controlId]
+  );
+  const assessedAt = nowIso();
+
+  if (existing?.id) {
+    await run(
+      db,
+      `UPDATE CSAResponse
+          SET wasPerformed = ?, frequencyMet = ?, evidenceAttached = ?,
+              exceptionsFound = ?, exceptionCount = ?, processChanged = ?,
+              controlChanged = ?, csaConclusion = ?, assessorNotes = ?,
+              assessorName = ?, assessedAt = ?
+        WHERE id = ?`,
+      [
+        input.wasPerformed ? 1 : 0,
+        input.frequencyMet ? 1 : 0,
+        input.evidenceAttached ? 1 : 0,
+        input.exceptionsFound ? 1 : 0,
+        input.exceptionCount,
+        input.processChanged ? 1 : 0,
+        input.controlChanged ? 1 : 0,
+        input.csaConclusion,
+        nullable(input.assessorNotes),
+        input.assessorName,
+        assessedAt,
+        existing.id
+      ]
+    );
+  } else {
+    await run(
+      db,
+      `INSERT INTO CSAResponse (
+        id, campaignId, controlId, wasPerformed, frequencyMet, evidenceAttached,
+        exceptionsFound, exceptionCount, processChanged, controlChanged,
+        csaConclusion, assessorNotes, assessorName, assessedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        input.campaignId,
+        input.controlId,
+        input.wasPerformed ? 1 : 0,
+        input.frequencyMet ? 1 : 0,
+        input.evidenceAttached ? 1 : 0,
+        input.exceptionsFound ? 1 : 0,
+        input.exceptionCount,
+        input.processChanged ? 1 : 0,
+        input.controlChanged ? 1 : 0,
+        input.csaConclusion,
+        nullable(input.assessorNotes),
+        input.assessorName,
+        assessedAt
+      ]
+    );
+  }
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM CSAResponse WHERE campaignId = ? AND controlId = ? LIMIT 1',
+    [input.campaignId, input.controlId]
+  );
+}
+
+export async function listTodData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  const [testRows, walkthroughRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT t.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId,
+              r.riskId AS enterpriseRiskId,
+              r.name AS riskName
+         FROM ToDTest t
+         JOIN ControlMaster c ON c.id = t.controlId
+         JOIN BusinessProcess p ON p.id = t.processId
+         LEFT JOIN RiskMaster r ON r.id = t.riskId
+        WHERE p.institutionId = ? AND c.institutionId = ?
+        ORDER BY t.testedAt DESC, t.testId ASC`,
+      [institutionId, institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT w.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              p.id AS processRecordId,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId
+         FROM Walkthrough w
+         JOIN ControlMaster c ON c.id = w.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
+        WHERE c.institutionId = ?
+        ORDER BY w.date DESC, w.createdAt DESC`,
+      [institutionId]
+    )
+  ]);
+
+  const todTests = testRows.map(test => ({
+    ...test,
+    objectiveAlignment: storedBoolean(test.objectiveAlignment),
+    riskCoverage: storedBoolean(test.riskCoverage),
+    precisionAdequate: storedBoolean(test.precisionAdequate),
+    segregationDuties: storedBoolean(test.segregationDuties),
+    evidenceSufficiency: storedBoolean(test.evidenceSufficiency),
+    control: {
+      id: test.controlId,
+      controlId: test.enterpriseControlId,
+      name: test.controlName,
+      description: test.controlDescription,
+      controlOwner: test.controlOwner,
+      isKeyControl: storedBoolean(test.isKeyControl),
+      isIcofrKey: storedBoolean(test.isIcofrKey),
+      isItgc: storedBoolean(test.isItgc),
+      process: {
+        id: test.processId,
+        processId: test.enterpriseProcessId,
+        name: test.processName,
+        legalEntityId: test.legalEntityId,
+        orgUnitId: test.orgUnitId
+      }
+    },
+    process: {
+      id: test.processId,
+      processId: test.enterpriseProcessId,
+      name: test.processName,
+      legalEntityId: test.legalEntityId,
+      orgUnitId: test.orgUnitId
+    },
+    risk: test.riskId
+      ? {
+          id: test.riskId,
+          riskId: test.enterpriseRiskId,
+          name: test.riskName
+        }
+      : null
+  }));
+
+  const walkthroughs = walkthroughRows.map(walk => {
+    const process = {
+      id: walk.processRecordId,
+      processId: walk.enterpriseProcessId,
+      name: walk.processName,
+      legalEntityId: walk.legalEntityId,
+      orgUnitId: walk.orgUnitId
+    };
+    return {
+      ...walk,
+      processChanged: storedBoolean(walk.processChanged),
+      control: {
+        id: walk.controlId,
+        controlId: walk.enterpriseControlId,
+        name: walk.controlName,
+        description: walk.controlDescription,
+        controlOwner: walk.controlOwner,
+        isKeyControl: storedBoolean(walk.isKeyControl),
+        isIcofrKey: storedBoolean(walk.isIcofrKey),
+        isItgc: storedBoolean(walk.isItgc),
+        process
+      },
+      process
+    };
+  });
+
+  return { todTests, walkthroughs };
+}
+
+export async function createTodTest(input: {
+  testId?: string;
+  controlId: string;
+  riskId?: string | null;
+  testerName: string;
+  reviewerName?: string | null;
+  period: string;
+  testObjective: string;
+  objectiveAlignment: boolean;
+  riskCoverage: boolean;
+  precisionAdequate: boolean;
+  segregationDuties: boolean;
+  evidenceSufficiency: boolean;
+  observations?: string | null;
+  conclusion: string;
+  status?: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  if (input.riskId) {
+    const risk = await first<Record<string, unknown>>(
+      db,
+      'SELECT id FROM RiskMaster WHERE id = ? AND institutionId = ? AND processId = ? LIMIT 1',
+      [input.riskId, institutionId, control.processId]
+    );
+    if (!risk) throw new Error('RISK_NOT_FOUND');
+  }
+
+  const testId = input.testId?.trim() || 'TOD-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ToDTest WHERE testId = ? LIMIT 1',
+    [testId]
+  );
+  if (duplicate) throw new Error('TOD_TEST_ID_CONFLICT');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO ToDTest (
+      id, testId, controlId, processId, riskId, testerName, reviewerName,
+      period, testObjective, objectiveAlignment, riskCoverage, precisionAdequate,
+      segregationDuties, evidenceSufficiency, observations, conclusion, status, testedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      testId,
+      control.id,
+      control.processId,
+      nullable(input.riskId),
+      input.testerName,
+      nullable(input.reviewerName),
+      input.period,
+      input.testObjective,
+      input.objectiveAlignment ? 1 : 0,
+      input.riskCoverage ? 1 : 0,
+      input.precisionAdequate ? 1 : 0,
+      input.segregationDuties ? 1 : 0,
+      input.evidenceSufficiency ? 1 : 0,
+      nullable(input.observations),
+      input.conclusion,
+      input.status || 'Draft',
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ToDTest WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createWalkthrough(input: {
+  controlId: string;
+  date: string;
+  participants?: string | null;
+  transactionRef?: string | null;
+  systemsInspected?: string | null;
+  observations?: string | null;
+  processChanged: boolean;
+  conclusion: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO Walkthrough (
+      id, controlId, date, participants, transactionRef, systemsInspected,
+      observations, processChanged, conclusion, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.controlId,
+      input.date,
+      nullable(input.participants),
+      nullable(input.transactionRef),
+      nullable(input.systemsInspected),
+      nullable(input.observations),
+      input.processChanged ? 1 : 0,
+      input.conclusion,
+      nowIso()
+    ]
+  );
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Walkthrough WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function listIcofrData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  const [accountRows, assertionRows, ipeRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM FinancialAccount WHERE institutionId = ? ORDER BY accountCode ASC',
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT a.*
+         FROM AccountAssertionMapping a
+         JOIN FinancialAccount f ON f.id = a.accountId
+        WHERE f.institutionId = ?
+        ORDER BY a.assertion ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM IPERegister WHERE institutionId = ? ORDER BY reportName ASC',
+      [institutionId]
+    )
+  ]);
+
+  const assertionsByAccount = new Map<string, Record<string, unknown>[]>();
+  for (const assertion of assertionRows) {
+    const accountId = String(assertion.accountId);
+    const current = assertionsByAccount.get(accountId) || [];
+    current.push({
+      ...assertion,
+      isInScope: storedBoolean(assertion.isInScope)
+    });
+    assertionsByAccount.set(accountId, current);
+  }
+
+  const financialAccounts = accountRows.map(account => ({
+    ...account,
+    balanceAmount: Number(account.balanceAmount || 0),
+    isSignificant: storedBoolean(account.isSignificant),
+    assertions: assertionsByAccount.get(String(account.id)) || []
+  }));
+
+  const ipeRegisters = ipeRows.map(ipe => ({
+    ...ipe,
+    completenessTested: storedBoolean(ipe.completenessTested),
+    accuracyTested: storedBoolean(ipe.accuracyTested)
+  }));
+
+  return { financialAccounts, ipeRegisters };
+}
+
+export async function createFinancialAccount(input: {
+  legalEntityId?: string | null;
+  orgUnitId?: string | null;
+  accountCode: string;
+  accountName: string;
+  financialStatement: string;
+  balanceAmount: number;
+  isSignificant: boolean;
+  scopingRationale?: string | null;
+  fraudExposure: string;
+  complexity: string;
+  assertions?: Array<{ assertion: string; isInScope: boolean }>;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM FinancialAccount WHERE institutionId = ? AND accountCode = ? LIMIT 1',
+    [institutionId, input.accountCode]
+  );
+  if (duplicate) throw new Error('FINANCIAL_ACCOUNT_CODE_CONFLICT');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO FinancialAccount (
+      id, institutionId, legalEntityId, orgUnitId, accountCode, accountName,
+      financialStatement, balanceAmount, isSignificant, scopingRationale,
+      fraudExposure, complexity, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.accountCode,
+      input.accountName,
+      input.financialStatement,
+      input.balanceAmount,
+      input.isSignificant ? 1 : 0,
+      nullable(input.scopingRationale),
+      input.fraudExposure,
+      input.complexity,
+      nowIso()
+    ]
+  );
+
+  for (const assertion of input.assertions || []) {
+    if (!assertion.assertion.trim()) continue;
+    await run(
+      db,
+      `INSERT INTO AccountAssertionMapping (id, accountId, assertion, isInScope, createdAt)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        id,
+        assertion.assertion.trim(),
+        assertion.isInScope ? 1 : 0,
+        nowIso()
+      ]
+    );
+  }
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM FinancialAccount WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function upsertAccountAssertion(input: {
+  accountId: string;
+  assertion: string;
+  isInScope: boolean;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const account = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM FinancialAccount WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.accountId, institutionId]
+  );
+  if (!account) throw new Error('FINANCIAL_ACCOUNT_NOT_FOUND');
+
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM AccountAssertionMapping WHERE accountId = ? AND assertion = ? LIMIT 1',
+    [input.accountId, input.assertion]
+  );
+  if (existing?.id) {
+    await run(
+      db,
+      'UPDATE AccountAssertionMapping SET isInScope = ? WHERE id = ?',
+      [input.isInScope ? 1 : 0, existing.id]
+    );
+  } else {
+    await run(
+      db,
+      `INSERT INTO AccountAssertionMapping (id, accountId, assertion, isInScope, createdAt)
+       VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), input.accountId, input.assertion, input.isInScope ? 1 : 0, nowIso()]
+    );
+  }
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AccountAssertionMapping WHERE accountId = ? AND assertion = ? LIMIT 1',
+    [input.accountId, input.assertion]
+  );
+}
+
+export async function createIpeRegister(input: {
+  legalEntityId?: string | null;
+  orgUnitId?: string | null;
+  reportName: string;
+  systemSource: string;
+  reportOwner: string;
+  parameters?: string | null;
+  logicSummary?: string | null;
+  completenessTested: boolean;
+  accuracyTested: boolean;
+  evidenceDoc?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO IPERegister (
+      id, institutionId, legalEntityId, orgUnitId, reportName, systemSource,
+      reportOwner, parameters, logicSummary, completenessTested, accuracyTested,
+      evidenceDoc, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.reportName,
+      input.systemSource,
+      input.reportOwner,
+      nullable(input.parameters),
+      nullable(input.logicSummary),
+      input.completenessTested ? 1 : 0,
+      input.accuracyTested ? 1 : 0,
+      nullable(input.evidenceDoc),
+      nowIso()
+    ]
+  );
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM IPERegister WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+
+export async function listCertificationData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  const [certRows, attestationRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT cert.*,
+              c.controlId AS enterpriseControlId,
+              c.name AS controlName,
+              c.description AS controlDescription,
+              c.controlOwner,
+              c.isKeyControl,
+              c.isIcofrKey,
+              c.isItgc,
+              p.id AS processRecordId,
+              p.processId AS enterpriseProcessId,
+              p.name AS processName,
+              p.legalEntityId,
+              p.orgUnitId
+         FROM ControlCertification cert
+         JOIN ControlMaster c ON c.id = cert.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
+        WHERE c.institutionId = ?
+        ORDER BY cert.certifiedAt DESC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM ManagementAttestation WHERE institutionId = ? ORDER BY attestedAt DESC',
+      [institutionId]
+    )
+  ]);
+
+  const certifications = certRows.map(cert => ({
+    ...cert,
+    control: {
+      id: cert.controlId,
+      controlId: cert.enterpriseControlId,
+      name: cert.controlName,
+      description: cert.controlDescription,
+      controlOwner: cert.controlOwner,
+      isKeyControl: storedBoolean(cert.isKeyControl),
+      isIcofrKey: storedBoolean(cert.isIcofrKey),
+      isItgc: storedBoolean(cert.isItgc),
+      process: {
+        id: cert.processRecordId,
+        processId: cert.enterpriseProcessId,
+        name: cert.processName,
+        legalEntityId: cert.legalEntityId,
+        orgUnitId: cert.orgUnitId
+      }
+    }
+  }));
+
+  const attestations = attestationRows.map(attestation => ({
+    ...attestation,
+    cfoSignOff: storedBoolean(attestation.cfoSignOff),
+    croSignOff: storedBoolean(attestation.croSignOff)
+  }));
+
+  return { certifications, attestations };
+}
+
+export async function createControlCertification(input: {
+  controlId: string;
+  period: string;
+  declarationText: string;
+  certifierName: string;
+  certifierRole: string;
+  status: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO ControlCertification (
+      id, controlId, period, declarationText, certifierName, certifierRole,
+      status, certifiedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.controlId,
+      input.period,
+      input.declarationText,
+      input.certifierName,
+      input.certifierRole,
+      input.status,
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlCertification WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createManagementAttestation(input: {
+  legalEntityId?: string | null;
+  orgUnitId?: string | null;
+  period: string;
+  scopeSummary: string;
+  cfoSignOff: boolean;
+  cfoName?: string | null;
+  croSignOff: boolean;
+  croName?: string | null;
+  overallOpinion?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO ManagementAttestation (
+      id, institutionId, legalEntityId, orgUnitId, period, scopeSummary,
+      cfoSignOff, cfoName, croSignOff, croName, overallOpinion, attestedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.period,
+      input.scopeSummary,
+      input.cfoSignOff ? 1 : 0,
+      nullable(input.cfoName),
+      input.croSignOff ? 1 : 0,
+      nullable(input.croName),
+      nullable(input.overallOpinion),
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ManagementAttestation WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function listTasksData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  const rows = await all<Record<string, unknown>>(
+    db,
+    `SELECT t.*,
+            u.email AS assigneeEmail,
+            u.name AS assigneeName,
+            u.role AS assigneeRole,
+            u.department AS assigneeDepartment,
+            u.orgUnitId AS assigneeOrgUnitId,
+            u.active AS assigneeActive
+       FROM Task t
+       LEFT JOIN AccessUser u ON u.id = t.userId AND u.institutionId = t.institutionId
+      WHERE t.institutionId = ?
+      ORDER BY t.dueDate ASC, t.createdAt DESC`,
+    [institutionId]
+  );
+
+  return rows.map(task => ({
+    ...task,
+    user: task.userId
+      ? {
+          id: task.userId,
+          email: task.assigneeEmail,
+          name: task.assigneeName,
+          role: task.assigneeRole,
+          department: task.assigneeDepartment,
+          orgUnitId: task.assigneeOrgUnitId,
+          active: Number(task.assigneeActive) === 1
+        }
+      : null
+  }));
+}
+
+export async function createTask(input: {
+  userId?: string | null;
+  orgUnitId?: string | null;
+  title: string;
+  type: string;
+  dueDate: string;
+  priority: string;
+  status?: string;
+  entityRef?: string | null;
+  link?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  if (input.userId) {
+    const user = await first<Record<string, unknown>>(
+      db,
+      'SELECT id FROM AccessUser WHERE id = ? AND institutionId = ? AND active = 1 LIMIT 1',
+      [input.userId, institutionId]
+    );
+    if (!user) throw new Error('TASK_USER_NOT_FOUND');
+  }
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO Task (
+      id, institutionId, userId, orgUnitId, title, type, dueDate, priority,
+      status, entityRef, link, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.userId),
+      nullable(input.orgUnitId),
+      input.title,
+      input.type,
+      input.dueDate,
+      input.priority,
+      input.status || 'Pending',
+      nullable(input.entityRef),
+      nullable(input.link),
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Task WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function updateTaskStatus(input: {
+  taskId: string;
+  status: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM Task WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.taskId, institutionId]
+  );
+  if (!existing) throw new Error('TASK_NOT_FOUND');
+
+  await run(
+    db,
+    'UPDATE Task SET status = ? WHERE id = ? AND institutionId = ?',
+    [input.status, input.taskId, institutionId]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Task WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.taskId, institutionId]
+  );
+}
+
+
+export async function listCalendarData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  const [
+    campaigns,
+    toeTests,
+    actionPlans,
+    retests,
+    certificationRows,
+    attestations,
+    taskRows
+  ] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, name, type, period, dueDate, status, ownerName, orgUnitId
+         FROM AssessmentCampaign
+        WHERE institutionId = ?
+        ORDER BY dueDate ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT t.id, t.testId, t.testedAt, t.status, t.testerName, p.orgUnitId
+         FROM ToETest t
+         JOIN BusinessProcess p ON p.id = t.processId
+        WHERE p.institutionId = ?
+        ORDER BY t.testedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.id, m.mapId, m.originalDueDate, m.revisedDueDate, m.status,
+              m.actionOwner, p.orgUnitId
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+         JOIN BusinessProcess p ON p.id = i.processId
+        WHERE i.institutionId = ?
+        ORDER BY COALESCE(m.revisedDueDate, m.originalDueDate) ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.id, r.retestId, r.retestedAt, r.result, r.testerName, p.orgUnitId
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+         JOIN BusinessProcess p ON p.id = i.processId
+        WHERE i.institutionId = ?
+        ORDER BY r.retestedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT cert.id, cert.certifiedAt, cert.period, cert.status,
+              cert.certifierName, c.controlId AS enterpriseControlId, p.orgUnitId
+         FROM ControlCertification cert
+         JOIN ControlMaster c ON c.id = cert.controlId
+         JOIN BusinessProcess p ON p.id = c.processId
+        WHERE c.institutionId = ?
+        ORDER BY cert.certifiedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, period, overallOpinion, cfoName, croName, attestedAt, orgUnitId
+         FROM ManagementAttestation
+        WHERE institutionId = ?
+        ORDER BY attestedAt ASC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT t.id, t.title, t.type, t.dueDate, t.priority, t.status, t.orgUnitId,
+              t.userId, u.name AS assigneeName
+         FROM Task t
+         LEFT JOIN AccessUser u ON u.id = t.userId AND u.institutionId = t.institutionId
+        WHERE t.institutionId = ?
+        ORDER BY t.dueDate ASC`,
+      [institutionId]
+    )
+  ]);
+
+  return {
+    campaigns,
+    toeTests,
+    actionPlans,
+    retests,
+    certifications: certificationRows.map(row => ({
+      ...row,
+      control: {
+        controlId: row.enterpriseControlId
+      }
+    })),
+    attestations,
+    tasks: taskRows.map(row => ({
+      ...row,
+      user: row.userId
+        ? { id: row.userId, name: row.assigneeName || null }
+        : null
+    }))
+  };
+}
+
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
   const [issue, milestones, retests] = await Promise.all([
     first<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE id = ? AND institutionId = ? LIMIT 1', [row.issueId, institutionId]),
@@ -388,7 +1629,7 @@ async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>, institu
     const [process, control] = await Promise.all([
       first<Record<string, unknown>>(
         db,
-        'SELECT id, processId, name FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+        'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
         [issue.processId, institutionId]
       ),
       issue.controlId
@@ -421,7 +1662,7 @@ async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>, insti
   const [process, risk, control, deficiency, actionPlanRows] = await Promise.all([
     first<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+      'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
       [row.processId, institutionId]
     ),
     row.riskId
@@ -475,7 +1716,7 @@ async function loadIssue(db: D1DatabaseLike, row: Record<string, unknown>, insti
 }
 
 async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
-  const [exception, rootCause, issues] = await Promise.all([
+  const [exception, rootCause, issues, process] = await Promise.all([
     row.exceptionId
       ? tenantException(db, String(row.exceptionId), institutionId)
       : Promise.resolve(null),
@@ -488,7 +1729,19 @@ async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>, 
       db,
       'SELECT * FROM Issue WHERE deficiencyId = ? AND institutionId = ? ORDER BY createdAt DESC',
       [row.id, institutionId]
-    )
+    ),
+    row.exceptionId
+      ? first<Record<string, unknown>>(
+          db,
+          `SELECT p.id, p.processId, p.name, p.legalEntityId, p.orgUnitId
+             FROM TestingException e
+             JOIN ToETest t ON t.id = e.toeTestId
+             JOIN BusinessProcess p ON p.id = t.processId
+            WHERE e.id = ? AND p.institutionId = ?
+            LIMIT 1`,
+          [row.exceptionId, institutionId]
+        )
+      : Promise.resolve(null)
   ]);
 
   return {
@@ -496,7 +1749,8 @@ async function loadDeficiency(db: D1DatabaseLike, row: Record<string, unknown>, 
     humanApproved: row.humanApproved === 1,
     exception,
     rootCause,
-    issues
+    issues,
+    process
   };
 }
 
@@ -1136,7 +2390,7 @@ export async function listRemediationData(institutionId: string) {
             ),
             first<Record<string, unknown>>(
               db,
-              'SELECT id, processId, name FROM BusinessProcess WHERE id = ? LIMIT 1',
+              'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? LIMIT 1',
               [test.processId]
             ),
             all<Record<string, unknown>>(
@@ -1175,14 +2429,22 @@ export async function listRemediationData(institutionId: string) {
             'SELECT * FROM Issue WHERE id = ? LIMIT 1',
             [map.issueId]
           );
-          mapWithIssue = { ...map, issue };
+          const process = issue
+            ? await first<Record<string, unknown>>(
+                db,
+                'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+                [issue.processId, institutionId]
+              )
+            : null;
+          mapWithIssue = { ...map, issue: issue ? { ...issue, process } : null };
         }
         return {
           ...row,
           sampleCount: Number(row.sampleCount || 0),
           passedCount: Number(row.passedCount || 0),
           failedCount: Number(row.failedCount || 0),
-          map: mapWithIssue
+          map: mapWithIssue,
+          process: (mapWithIssue?.issue as Record<string, unknown> | null)?.process || null
         };
       })
     )
@@ -1249,7 +2511,7 @@ export async function listMonitoringRules(institutionId: string) {
       if (control) {
         const process = await first<Record<string, unknown>>(
           db,
-          'SELECT id, processId, name FROM BusinessProcess WHERE id = ? LIMIT 1',
+          'SELECT id, processId, name, legalEntityId, orgUnitId FROM BusinessProcess WHERE id = ? LIMIT 1',
           [control.processId]
         );
         controlWithProcess = {

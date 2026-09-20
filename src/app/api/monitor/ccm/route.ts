@@ -5,6 +5,8 @@ import {
   listMonitoringRules
 } from '@/lib/d1-assurance';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { listControls } from '@/lib/d1-core';
+import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { recordMutationAudit } from '@/lib/d1-core';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
@@ -15,8 +17,17 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const rules = await listMonitoringRules(auth.user.institutionId);
-    return NextResponse.json({ rules, storage: 'cloudflare-d1' });
+    const [rules, authorizedOrgUnitIds] = await Promise.all([
+      listMonitoringRules(auth.user.institutionId),
+      resolveAuthorizedOrgUnitIds(auth.user)
+    ]);
+    const scopedRules = rules.filter(rule =>
+      isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        (((rule.control as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId) as string | null | undefined
+      )
+    );
+    return NextResponse.json({ rules: scopedRules, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 CCM rules:', error);
     return NextResponse.json({ error: 'Failed to fetch CCM rules from persistent database.' }, { status: 503 });
@@ -33,6 +44,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = typeof body.actionType === 'string' ? body.actionType : 'INGEST_RUN';
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
 
     if (actionType === 'CREATE_RULE') {
       const controlId = typeof body.controlId === 'string' ? body.controlId.trim() : '';
@@ -45,6 +57,24 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: 'controlId, name, description, dataSource, and queryLogic are required.' },
           { status: 400 }
+        );
+      }
+
+      const controls = await listControls(auth.user.institutionId);
+      const selectedControl = controls.find(control => (control as Record<string, unknown>).id === controlId);
+      if (
+        selectedControl
+        && !isOrgUnitAuthorized(
+          authorizedOrgUnitIds,
+          (selectedControl.process as Record<string, unknown> | null)?.orgUnitId as string | null | undefined
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error: 'Your account is not authorized for the selected control organization unit.',
+            code: 'CCM_ORGANIZATION_SCOPE_FORBIDDEN'
+          },
+          { status: 403 }
         );
       }
 
@@ -92,6 +122,24 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'exceptionsFound must match submitted exception records.' },
         { status: 400 }
+      );
+    }
+
+    const rules = await listMonitoringRules(auth.user.institutionId);
+    const selectedRule = rules.find(rule => (rule as Record<string, unknown>).id === ruleId);
+    if (
+      selectedRule
+      && !isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        (((selectedRule.control as Record<string, unknown> | null)?.process as Record<string, unknown> | null)?.orgUnitId) as string | null | undefined
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Your account is not authorized for this monitoring rule organization unit.',
+          code: 'CCM_ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
       );
     }
 

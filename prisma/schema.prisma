@@ -41,6 +41,7 @@ model Institution {
 
   legalEntities       LegalEntity[]
   organizationUnits   OrganizationUnit[]
+  organizationPositions OrganizationPosition[]
   users               User[]
   processes           BusinessProcess[]
   risks               RiskMaster[]
@@ -60,36 +61,76 @@ model IndustryClassification {
 }
 
 model LegalEntity {
-  id            String   @id @default(uuid())
-  institutionId String
-  code          String
-  name          String
-  country       String   @default("Indonesia")
-  taxId         String?
-  createdAt     DateTime @default(now())
-  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
-  orgUnits      OrganizationUnit[]
-  processes     BusinessProcess[]
+  id                 String   @id @default(uuid())
+  institutionId      String
+  parentEntityId     String?
+  code               String
+  name               String
+  shortName          String?
+  entityType         String   @default("Legal Entity")
+  country            String   @default("Indonesia")
+  currency           String   @default("IDR")
+  registrationNumber String?
+  taxId              String?
+  status             String   @default("Active")
+  effectiveDate      DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  parent      LegalEntity? @relation("LegalEntityHierarchy", fields: [parentEntityId], references: [id])
+  children    LegalEntity[] @relation("LegalEntityHierarchy")
+  orgUnits    OrganizationUnit[]
+  processes   BusinessProcess[]
+
+  @@unique([institutionId, code])
 }
 
 model OrganizationUnit {
-  id            String   @id @default(uuid())
-  institutionId String
-  legalEntityId String?
-  parentId      String?
-  type          String   // Directorate, Division, Department, Unit, Team
-  code          String
-  name          String
-  headName      String?
-  headEmail     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(uuid())
+  institutionId  String
+  legalEntityId  String?
+  parentId       String?
+  type           String   // Directorate, Division, Department, Section, Unit, Team, Branch, etc.
+  code           String
+  name           String
+  headUserId     String?
+  headName       String?
+  headEmail      String?
+  costCenter     String?
+  location       String?
+  effectiveFrom  DateTime?
+  effectiveUntil DateTime?
+  status         String   @default("Active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  institution   Institution  @relation(fields: [institutionId], references: [id], onDelete: Cascade)
-  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
-  parent        OrganizationUnit? @relation("OrgHierarchy", fields: [parentId], references: [id])
-  children      OrganizationUnit[] @relation("OrgHierarchy")
-  processes     BusinessProcess[]
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  legalEntity LegalEntity? @relation(fields: [legalEntityId], references: [id])
+  parent      OrganizationUnit? @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children    OrganizationUnit[] @relation("OrgHierarchy")
+  processes   BusinessProcess[]
+  positions   OrganizationPosition[]
+
+  @@unique([institutionId, code])
+}
+
+model OrganizationPosition {
+  id             String   @id @default(uuid())
+  institutionId  String
+  orgUnitId      String
+  code           String
+  title          String
+  positionLevel  String?
+  assignedUserId String?
+  status         String   @default("Active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  orgUnit     OrganizationUnit @relation(fields: [orgUnitId], references: [id], onDelete: Cascade)
+
+  @@unique([institutionId, code])
 }
 
 model User {
@@ -355,6 +396,8 @@ model ControlRiskMapping {
 model AssessmentCampaign {
   id            String   @id @default(uuid())
   institutionId String
+  legalEntityId String?
+  orgUnitId     String?
   name          String   // e.g. Annual RCSA 2026 Q3
   type          String   @default("RCSA") // RCSA, CSA, ICOFR
   period        String
@@ -394,6 +437,9 @@ model CSAResponse {
 // -------------------------------------------------------------
 model FinancialAccount {
   id             String   @id @default(uuid())
+  institutionId  String
+  legalEntityId  String?
+  orgUnitId      String?
   accountCode    String
   accountName    String
   financialStatement String // Balance Sheet, Income Statement, Cash Flow
@@ -405,6 +451,8 @@ model FinancialAccount {
   createdAt      DateTime @default(now())
 
   assertions     AccountAssertionMapping[]
+
+  @@unique([institutionId, accountCode])
 }
 
 model AccountAssertionMapping {
@@ -419,6 +467,9 @@ model AccountAssertionMapping {
 
 model IPERegister {
   id            String   @id @default(uuid())
+  institutionId String
+  legalEntityId String?
+  orgUnitId     String?
   reportName    String
   systemSource  String
   reportOwner   String
@@ -709,6 +760,8 @@ model ControlCertification {
 model ManagementAttestation {
   id              String   @id @default(uuid())
   institutionId   String
+  legalEntityId   String?
+  orgUnitId       String?
   period          String
   scopeSummary    String
   cfoSignOff      Boolean  @default(false)
@@ -734,7 +787,9 @@ model RiskAcceptance {
 
 model Task {
   id              String   @id @default(uuid())
+  institutionId   String
   userId          String?
+  orgUnitId       String?
   title           String
   type            String   // CSA, TOD, TOE, Review, MAP, Retest, Certification
   dueDate         DateTime
@@ -745,6 +800,75 @@ model Task {
   createdAt       DateTime @default(now())
 
   user            User?    @relation("TaskAssignee", fields: [userId], references: [id])
+}
+
+// -------------------------------------------------------------
+// 11. REGULATORY REPORTING & OJK ANALYSIS
+// -------------------------------------------------------------
+model RegulatoryReport {
+  id               String   @id @default(uuid())
+  institutionId    String
+  legalEntityId    String?
+  orgUnitId        String?
+  templateCode     String
+  title            String
+  period           String
+  reportingDate    DateTime
+  language         String   @default("Bahasa Indonesia")
+  reportOwner      String
+  reviewerName     String?
+  status           String   @default("Draft")
+  overallRating    String?
+  executiveSummary String?
+  conclusion       String?
+  aiAnalysis       String?
+  aiProvider       String?
+  aiModel          String?
+  aiGeneratedAt    DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sections         RegulatoryReportSection[]
+  sourceSnapshots  RegulatoryReportSourceSnapshot[]
+}
+
+model RegulatoryReportSection {
+  id                 String   @id @default(uuid())
+  reportId           String
+  sectionKey         String
+  orderIndex         Int
+  title              String
+  guidance           String
+  regulatoryReference String
+  content            String?
+  analysisSummary    String?
+  keyFindings        String?
+  rootCause          String?
+  impactAnalysis     String?
+  recommendation     String?
+  managementResponse String?
+  actionPlan         String?
+  ownerName          String?
+  targetDate         DateTime?
+  rating             String?
+  evidenceReference  String?
+  aiDraft            String?
+  reviewStatus       String   @default("Draft")
+  updatedAt          DateTime @updatedAt
+
+  report             RegulatoryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, sectionKey])
+}
+
+model RegulatoryReportSourceSnapshot {
+  id            String   @id @default(uuid())
+  reportId      String
+  snapshotJson  String
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  report        RegulatoryReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {

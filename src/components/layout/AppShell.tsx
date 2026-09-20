@@ -75,7 +75,8 @@ const navGroups: NavGroup[] = [
       { name: 'Certification & Attestation', href: '/certification', icon: BadgeCheck },
       { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
       { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
-      { name: 'Analytics', href: '/reports', icon: BarChart3 }
+      { name: 'Reports & OJK Analysis', href: '/reports', icon: BarChart3 },
+      { name: 'Audit Trail', href: '/audit', icon: ClipboardCheck }
     ]
   }
 ];
@@ -161,7 +162,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen overflow-x-hidden bg-slate-50">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur">
         <div className="mx-auto flex h-[72px] max-w-[1600px] items-center justify-between gap-2.5 px-3 sm:gap-4 sm:px-5 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
@@ -248,7 +249,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </aside>
         </div>
 
-        <main className="min-w-0 flex-1 pb-20 lg:pb-6">{children}</main>
+        <main className="min-w-0 w-full max-w-full flex-1 overflow-x-hidden pb-20 lg:pb-6">{children}</main>
       </div>
 
       {mobileMenuOpen && (

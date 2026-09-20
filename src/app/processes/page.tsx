@@ -19,80 +19,177 @@ import {
   X
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
+import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 export default function ProcessesPage() {
+  const { currentUser } = useRole();
+  const canManageProcesses = currentUser?.role === 'Admin' || currentUser?.role === 'ProcessOwner';
   const [processes, setProcesses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [legalEntities, setLegalEntities] = useState<any[]>([]);
+  const [organizationUnits, setOrganizationUnits] = useState<any[]>([]);
+  const [organizationPositions, setOrganizationPositions] = useState<any[]>([]);
+  const [organizationUsers, setOrganizationUsers] = useState<any[]>([]);
   const [selectedProcess, setSelectedProcess] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [selectedOrgUnit, setSelectedOrgUnit] = useState('ALL');
+  const [formError, setFormError] = useState('');
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [newProcessModal, setNewProcessModal] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [pageLoading, setPageLoading] = useState(false);
 
   // New process form state
   const [formData, setFormData] = useState({
     processId: '',
     name: '',
     categoryId: '',
+    legalEntityId: '',
+    orgUnitId: '',
+    ownerUserId: '',
     ownerName: '',
+    ownerEmail: '',
     criticality: 'Critical',
     classification: 'Core',
     isIcofrRelevant: true,
     description: ''
   });
 
-  const loadProcesses = () => {
-    fetch('/api/processes')
-      .then(res => res.json())
-      .then(data => {
-        const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
-        const nextCategories = Array.isArray(data.categories) ? data.categories : [];
-        setProcesses(nextProcesses);
-        setCategories(nextCategories);
-
-        if (nextProcesses.length > 0 && !selectedProcess) {
-          setSelectedProcess(nextProcesses[0]);
-        }
-
-        setFormData(prev => ({
-          ...prev,
-          categoryId:
-            prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
-              ? prev.categoryId
-              : nextCategories[0]?.id || ''
-        }));
-      })
-      .catch(console.error);
-  };
-
-  useEffect(() => {
-    loadProcesses();
-  }, []);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const loadOrganization = async () => {
     try {
-      const res = await fetch('/api/processes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+      const data = await jsonRead<any>('/api/organization', { dedupe: false });
+      const nextEntities = Array.isArray(data.legalEntities) ? data.legalEntities : [];
+      const nextUnits = Array.isArray(data.organizationUnits) ? data.organizationUnits : [];
+      const nextPositions = Array.isArray(data.positions) ? data.positions : [];
+      const nextUsers = Array.isArray(data.users) ? data.users : [];
+
+      setLegalEntities(nextEntities);
+      setOrganizationUnits(nextUnits);
+      setOrganizationPositions(nextPositions);
+      setOrganizationUsers(nextUsers);
+
+      setFormData(prev => {
+        const currentUnit = nextUnits.find(
+          (unit: any) => unit.id === prev.orgUnitId && unit.status === 'Active'
+        );
+        const defaultUnit =
+          currentUnit || nextUnits.find((unit: any) => unit.status === 'Active') || null;
+
+        return {
+          ...prev,
+          orgUnitId: defaultUnit?.id || '',
+          legalEntityId: defaultUnit?.legalEntityId || prev.legalEntityId || ''
+        };
       });
-      if (res.ok) {
-        setNewProcessModal(false);
-        loadProcesses();
-      }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     }
   };
 
-  const filtered = processes.filter(p => {
-    const matchCat = selectedCategory === 'ALL' || p.categoryId === selectedCategory;
-    const matchSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.processId.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
-  });
+  const loadProcesses = async (targetPage = page) => {
+    setPageLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: '50'
+      });
+      if (search.trim()) params.set('search', search.trim());
+      if (selectedCategory !== 'ALL') params.set('categoryId', selectedCategory);
+      if (selectedOrgUnit !== 'ALL') params.set('orgUnitId', selectedOrgUnit);
+
+      const data = await jsonRead<any>(
+        '/api/processes?' + params.toString(),
+        { dedupe: false }
+      );
+
+      const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
+      const nextCategories = Array.isArray(data.categories) ? data.categories : [];
+
+      setProcesses(nextProcesses);
+      setCategories(nextCategories);
+      setPagination(data.pagination || EMPTY_PAGINATION);
+      setPage(targetPage);
+
+      setSelectedProcess((current: any) =>
+        current && nextProcesses.some((item: any) => item.id === current.id)
+          ? current
+          : nextProcesses[0] || null
+      );
+
+      setFormData(prev => ({
+        ...prev,
+        categoryId:
+          prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
+            ? prev.categoryId
+            : nextCategories[0]?.id || ''
+      }));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPageLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadOrganization();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadProcesses(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedCategory, selectedOrgUnit]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+
+    try {
+      const payload = await jsonTransaction<any>('/api/processes', formData);
+
+      setNewProcessModal(false);
+      setSelectedProcess(payload);
+      setFormData(prev => ({
+        ...prev,
+        processId: '',
+        name: '',
+        ownerUserId: '',
+        ownerName: '',
+        ownerEmail: '',
+        description: ''
+      }));
+      await loadProcesses(page);
+    } catch (createError) {
+      setFormError(createError instanceof Error ? createError.message : 'Unable to register business process.');
+    }
+  };
+
+  const filtered = processes;
+
+  const activeUnits = organizationUnits.filter(unit => unit.status === 'Active');
+  const activeUsers = organizationUsers.filter(user => user.active);
+  const unitsForEntity = formData.legalEntityId
+    ? activeUnits.filter(unit => !unit.legalEntityId || unit.legalEntityId === formData.legalEntityId)
+    : activeUnits;
+  const selectedFormUnit = organizationUnits.find(unit => unit.id === formData.orgUnitId);
+  const ownerUserIdsForUnit = new Set(
+    [
+      selectedFormUnit?.headUserId,
+      ...organizationPositions
+        .filter(position => position.status === 'Active' && position.orgUnitId === formData.orgUnitId)
+        .map(position => position.assignedUserId)
+    ].filter(Boolean)
+  );
+  const unitLinkedOwnerCandidates = activeUsers.filter(user => ownerUserIdsForUnit.has(user.id));
+  const ownerCandidates = formData.orgUnitId && unitLinkedOwnerCandidates.length > 0
+    ? unitLinkedOwnerCandidates
+    : activeUsers;
 
   return (
     <div className="space-y-6">
@@ -120,13 +217,18 @@ export default function ProcessesPage() {
             <span>AI Process Analysis</span>
           </button>
 
-          <button
-            onClick={() => setNewProcessModal(true)}
-            className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Register Process</span>
-          </button>
+          {canManageProcesses && (
+            <button
+              onClick={() => {
+                setFormError('');
+                setNewProcessModal(true);
+              }}
+              className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Register Process</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -143,7 +245,20 @@ export default function ProcessesPage() {
           />
         </div>
 
-        <div className="flex items-center space-x-2 overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedOrgUnit}
+            onChange={e => setSelectedOrgUnit(e.target.value)}
+            className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="ALL">All Organization Units</option>
+            {activeUnits.map(unit => (
+              <option key={unit.id} value={unit.id}>
+                {unit.code} · {unit.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex items-center space-x-2 overflow-x-auto">
           <button
             onClick={() => setSelectedCategory('ALL')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
@@ -152,7 +267,7 @@ export default function ProcessesPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            All Categories ({processes.length})
+            All Categories
           </button>
           {categories.map(cat => (
             <button
@@ -167,8 +282,15 @@ export default function ProcessesPage() {
               {cat.name}
             </button>
           ))}
+          </div>
         </div>
       </div>
+
+      <RegisterPager
+        pagination={pagination}
+        loading={pageLoading}
+        onPageChange={nextPage => void loadProcesses(nextPage)}
+      />
 
       {/* Split View: List on Left, Process 360 on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -221,9 +343,14 @@ export default function ProcessesPage() {
                   {proc.description}
                 </p>
 
-                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>Owner: <strong>{proc.ownerName}</strong></span>
-                  <span className="text-brand-600 font-bold flex items-center space-x-1">
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                  <div className="min-w-0">
+                    <div>Owner: <strong>{proc.ownerName}</strong></div>
+                    <div className="truncate text-[10px] text-slate-400">
+                      {proc.orgUnit?.name || 'Organization unit not assigned'}
+                    </div>
+                  </div>
+                  <span className="text-brand-600 font-bold flex items-center space-x-1 shrink-0">
                     <span>Inspect 360°</span>
                     <ArrowRight className="w-3 h-3" />
                   </span>
@@ -265,6 +392,21 @@ export default function ProcessesPage() {
                 <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                   {selectedProcess.description}
                 </p>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+                    <div className="text-[9px] font-bold uppercase text-slate-400">Legal Entity</div>
+                    <div className="mt-1 text-[11px] font-bold text-slate-700">{selectedProcess.legalEntity?.name || 'Not assigned'}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+                    <div className="text-[9px] font-bold uppercase text-slate-400">Organization Unit</div>
+                    <div className="mt-1 text-[11px] font-bold text-slate-700">{selectedProcess.orgUnit?.name || 'Not assigned'}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+                    <div className="text-[9px] font-bold uppercase text-slate-400">Process Owner</div>
+                    <div className="mt-1 text-[11px] font-bold text-slate-700">{selectedProcess.ownerName}</div>
+                    <div className="text-[9px] text-slate-400">{selectedProcess.ownerEmail || ''}</div>
+                  </div>
+                </div>
               </div>
 
               {/* Objectives & Strategic KPIs (Section 22) */}
@@ -394,6 +536,11 @@ export default function ProcessesPage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-3 text-xs">
+              {formError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+                  {formError}
+                </div>
+              )}
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Process Name *</label>
                 <input
@@ -436,15 +583,90 @@ export default function ProcessesPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Process Owner *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter process owner name"
-                    value={formData.ownerName}
-                    onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
+                  <label className="block text-slate-700 font-bold mb-1">Legal Entity</label>
+                  <select
+                    value={formData.legalEntityId}
+                    onChange={e => {
+                      const legalEntityId = e.target.value;
+                      const currentUnit = organizationUnits.find(unit => unit.id === formData.orgUnitId);
+                      setFormData({
+                        ...formData,
+                        legalEntityId,
+                        orgUnitId: currentUnit && (!legalEntityId || !currentUnit.legalEntityId || currentUnit.legalEntityId === legalEntityId)
+                          ? formData.orgUnitId
+                          : ''
+                      });
+                    }}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                  />
+                  >
+                    <option value="">Not assigned</option>
+                    {legalEntities.filter(entity => entity.status === 'Active').map(entity => (
+                      <option key={entity.id} value={entity.id}>{entity.code} · {entity.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Organization Unit {activeUnits.length > 0 ? '*' : ''}
+                  </label>
+                  <select
+                    required={activeUnits.length > 0}
+                    value={formData.orgUnitId}
+                    onChange={e => {
+                      const unit = organizationUnits.find(item => item.id === e.target.value);
+                      setFormData({
+                        ...formData,
+                        orgUnitId: e.target.value,
+                        legalEntityId: unit?.legalEntityId || formData.legalEntityId,
+                        ownerUserId: '',
+                        ownerName: '',
+                        ownerEmail: ''
+                      });
+                    }}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  >
+                    <option value="">Select organization unit</option>
+                    {unitsForEntity.map(unit => (
+                      <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Process Owner *</label>
+                  {activeUsers.length > 0 ? (
+                    <select
+                      required
+                      value={formData.ownerUserId}
+                      onChange={e => {
+                        const user = organizationUsers.find(item => item.id === e.target.value);
+                        setFormData({
+                          ...formData,
+                          ownerUserId: e.target.value,
+                          ownerName: user?.name || '',
+                          ownerEmail: user?.email || ''
+                        });
+                      }}
+                      className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    >
+                      <option value="">Select process owner</option>
+                      {ownerCandidates.map(user => (
+                        <option key={user.id} value={user.id}>{user.name} · {user.role}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter process owner name"
+                      value={formData.ownerName}
+                      onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
+                      className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                    />
+                  )}
                 </div>
 
                 <div>

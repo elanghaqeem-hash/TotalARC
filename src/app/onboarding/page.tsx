@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 import {
   Building2,
   CheckCircle2,
@@ -50,8 +52,7 @@ export default function OnboardingPage() {
   });
 
   useEffect(() => {
-    fetch('/api/onboarding')
-      .then(res => res.json())
+    jsonRead<any>('/api/onboarding')
       .then(d => {
         setIndustries(d.industries || []);
         setFrameworks(d.frameworks || []);
@@ -78,15 +79,9 @@ export default function OnboardingPage() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      if (res.ok) {
-        setInstitutionName(formData.name);
-        router.push('/processes');
-      }
+      await jsonTransaction('/api/onboarding', formData);
+      setInstitutionName(formData.name);
+      router.push('/processes');
     } catch (e) {
       console.error(e);
     } finally {

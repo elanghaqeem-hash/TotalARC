@@ -5,7 +5,7 @@ import { Activity } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function HealthPage() {
-  const { data, loading, error } = useAssuranceData();
+  const { data, loading, error } = useAssuranceData(['controls']);
   const controls = data?.controls || [];
 
   return (

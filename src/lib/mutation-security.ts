@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { AuthenticatedUser } from '@/lib/auth';
+import { performanceNow } from '@/lib/performance';
 
 export type MutationActor = {
   userId: string;
@@ -8,6 +9,7 @@ export type MutationActor = {
   role: string;
   ipAddress: string | null;
   requestId: string;
+  performanceStartedAt: number;
 };
 
 const MAX_MUTATION_BODY_BYTES = 1024 * 1024;
@@ -29,7 +31,8 @@ export function mutationActorFromRequest(
     requestId:
       request.headers.get('cf-ray')
       || request.headers.get('x-request-id')
-      || crypto.randomUUID()
+      || crypto.randomUUID(),
+    performanceStartedAt: performanceNow()
   };
 }
 

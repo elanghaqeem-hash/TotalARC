@@ -16,6 +16,8 @@ export type AiTask =
   | 'control_classification'
   | 'summarization'
   | 'evidence_summary'
+  | 'regulatory_analysis'
+  | 'report_drafting'
   | 'chat';
 
 export interface AiGatewayRequest {

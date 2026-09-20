@@ -7,6 +7,14 @@ const mutationRoutes = [
   'src/app/api/processes/route.ts',
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
+  'src/app/api/reports/route.ts',
+  'src/app/api/reports/ai/route.ts',
+  'src/app/api/organization/route.ts',
+  'src/app/api/assure/rcsa/route.ts',
+  'src/app/api/assure/tod/route.ts',
+  'src/app/api/assure/icofr/route.ts',
+  'src/app/api/assure/certification/route.ts',
+  'src/app/api/assure/tasks/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
@@ -36,6 +44,14 @@ const actorRoutes = [
   'src/app/api/processes/route.ts',
   'src/app/api/risks/route.ts',
   'src/app/api/controls/route.ts',
+  'src/app/api/reports/route.ts',
+  'src/app/api/reports/ai/route.ts',
+  'src/app/api/organization/route.ts',
+  'src/app/api/assure/rcsa/route.ts',
+  'src/app/api/assure/tod/route.ts',
+  'src/app/api/assure/icofr/route.ts',
+  'src/app/api/assure/certification/route.ts',
+  'src/app/api/assure/tasks/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
@@ -51,6 +67,11 @@ for (const route of actorRoutes) {
 }
 
 const auditedAssuranceRoutes = [
+  'src/app/api/assure/rcsa/route.ts',
+  'src/app/api/assure/tod/route.ts',
+  'src/app/api/assure/icofr/route.ts',
+  'src/app/api/assure/certification/route.ts',
+  'src/app/api/assure/tasks/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
@@ -61,6 +82,41 @@ for (const route of auditedAssuranceRoutes) {
   const content = fs.existsSync(route) ? fs.readFileSync(route, 'utf8') : '';
   if (!/recordMutationAudit\s*\(/.test(content)) {
     findings.push(`${route}: authenticated mutation audit is required`);
+  }
+}
+
+const reportingDomainPath = 'src/lib/d1-reporting.ts';
+if (!fs.existsSync(reportingDomainPath)) {
+  findings.push(`${reportingDomainPath}: regulatory reporting D1 domain is required`);
+} else {
+  const content = fs.readFileSync(reportingDomainPath, 'utf8');
+  for (const required of [
+    /recordMutationAudit\s*\(/,
+    /actor:\s*MutationActor/,
+    /AI Draft — Human Review Required/,
+    /RegulatoryReportSourceSnapshot/
+  ]) {
+    if (!required.test(content)) {
+      findings.push(`${reportingDomainPath}: missing reporting mutation control ${required}`);
+    }
+  }
+}
+
+const organizationDomainPath = 'src/lib/d1-organization.ts';
+if (!fs.existsSync(organizationDomainPath)) {
+  findings.push(`${organizationDomainPath}: organization D1 domain is required`);
+} else {
+  const content = fs.readFileSync(organizationDomainPath, 'utf8');
+  for (const required of [
+    /recordMutationAudit\s*\(/,
+    /actor:\s*MutationActor/,
+    /institutionId:\s*string/,
+    /LEGAL_ENTITY_HIERARCHY_CYCLE/,
+    /ORGANIZATION_UNIT_HIERARCHY_CYCLE/
+  ]) {
+    if (!required.test(content)) {
+      findings.push(`${organizationDomainPath}: missing organization mutation control ${required}`);
+    }
   }
 }
 
@@ -127,7 +183,8 @@ if (fs.existsSync(probePath)) {
 for (const route of [
   'src/app/api/processes/route.ts',
   'src/app/api/risks/route.ts',
-  'src/app/api/controls/route.ts'
+  'src/app/api/controls/route.ts',
+  'src/app/api/organization/route.ts'
 ]) {
   if (!fs.existsSync(route)) continue;
   const content = fs.readFileSync(route, 'utf8');

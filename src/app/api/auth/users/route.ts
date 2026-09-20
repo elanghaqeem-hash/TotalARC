@@ -5,6 +5,8 @@ import {
   listProvisionedUsers,
   provisionUser,
   updateProvisionedUser,
+  ORG_ACCESS_SCOPES,
+  type OrgAccessScope,
   type UserRole
 } from '@/lib/auth';
 import { guardMutationRequest } from '@/lib/mutation-security';
@@ -13,6 +15,10 @@ export const dynamic = 'force-dynamic';
 
 function isRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
+}
+
+function isOrgScope(value: unknown): value is OrgAccessScope {
+  return typeof value === 'string' && (ORG_ACCESS_SCOPES as readonly string[]).includes(value);
 }
 
 export async function GET(request: Request) {
@@ -40,6 +46,8 @@ export async function POST(request: Request) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const role = body.role;
     const department = typeof body.department === 'string' ? body.department.trim() : null;
+    const orgUnitId = typeof body.orgUnitId === 'string' ? body.orgUnitId.trim() || null : null;
+    const orgAccessScope = isOrgScope(body.orgAccessScope) ? body.orgAccessScope : undefined;
 
     if (!email || !name || !isRole(role)) {
       return NextResponse.json(
@@ -52,7 +60,9 @@ export async function POST(request: Request) {
       email,
       name,
       role,
-      department
+      department,
+      orgUnitId,
+      orgAccessScope
     });
 
     return NextResponse.json(user, { status: 201 });
@@ -83,6 +93,18 @@ export async function PATCH(request: Request) {
         : typeof body.department === 'string'
           ? body.department.trim()
           : undefined;
+    const orgUnitId =
+      body.orgUnitId === null
+        ? null
+        : typeof body.orgUnitId === 'string'
+          ? body.orgUnitId.trim()
+          : undefined;
+    const orgAccessScope =
+      body.orgAccessScope === undefined
+        ? undefined
+        : isOrgScope(body.orgAccessScope)
+          ? body.orgAccessScope
+          : null;
 
     if (!id) {
       return NextResponse.json({ error: 'id is required.' }, { status: 400 });
@@ -92,12 +114,18 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Invalid role.' }, { status: 400 });
     }
 
+    if (body.orgAccessScope !== undefined && orgAccessScope === null) {
+      return NextResponse.json({ error: 'Invalid organization access scope.' }, { status: 400 });
+    }
+
     const user = await updateProvisionedUser(request, {
       id,
       role: role as UserRole | undefined,
       active,
       name,
-      department
+      department,
+      orgUnitId,
+      orgAccessScope: orgAccessScope || undefined
     });
 
     return NextResponse.json(user);

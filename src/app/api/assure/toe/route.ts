@@ -3,10 +3,18 @@ import {
   addToeSample,
   createTestingExceptionFromSample,
   createToeTest,
-  listToeTests,
   updateToeSample
 } from '@/lib/d1-assurance';
+import {
+  getControlScopeById,
+  getToeSampleScopeById,
+  getToeTestDetailPage,
+  getToeTestScopeById,
+  listToeRegisterPage
+} from '@/lib/d1-register-pagination';
+import { parsePaginationRequest } from '@/lib/pagination';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
+import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
 import { recordMutationAudit } from '@/lib/d1-core';
 import { guardMutationRequest, mutationActorFromRequest } from '@/lib/mutation-security';
 
@@ -17,8 +25,86 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const tests = await listToeTests(auth.user.institutionId);
-    return NextResponse.json({ tests, storage: 'cloudflare-d1' });
+    const url = new URL(request.url);
+    const mode = url.searchParams.get('mode') || 'register';
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
+
+    if (mode === 'detail') {
+      const toeTestId = (url.searchParams.get('testId') || '').trim();
+      const sampleFilter = (url.searchParams.get('sampleFilter') || 'ALL').trim();
+
+      if (!toeTestId) {
+        return NextResponse.json(
+          { error: 'testId is required for ToE workpaper detail.' },
+          { status: 400 }
+        );
+      }
+      if (!['ALL', 'PASS', 'FAIL'].includes(sampleFilter)) {
+        return NextResponse.json(
+          { error: 'sampleFilter must be ALL, PASS, or FAIL.' },
+          { status: 400 }
+        );
+      }
+
+      const scope = await getToeTestScopeById(
+        auth.user.institutionId,
+        toeTestId
+      );
+      if (!scope) {
+        return NextResponse.json({ error: 'ToE test not found.' }, { status: 404 });
+      }
+      if (
+        !isOrgUnitAuthorized(
+          authorizedOrgUnitIds,
+          typeof scope.orgUnitId === 'string' ? scope.orgUnitId : null
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error: 'Your account is not authorized for this ToE test organization unit.',
+            code: 'TOE_ORGANIZATION_SCOPE_FORBIDDEN'
+          },
+          { status: 403 }
+        );
+      }
+
+      const detail = await getToeTestDetailPage(
+        auth.user.institutionId,
+        toeTestId,
+        parsePaginationRequest(request, 'sample'),
+        sampleFilter as 'ALL' | 'PASS' | 'FAIL'
+      );
+
+      if (!detail) {
+        return NextResponse.json({ error: 'ToE test not found.' }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        test: detail,
+        storage: 'cloudflare-d1'
+      }, {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0'
+        }
+      });
+    }
+
+    const pagination = parsePaginationRequest(request);
+    const orgUnitId = (url.searchParams.get('orgUnitId') || '').trim() || null;
+    const page = await listToeRegisterPage(
+      auth.user.institutionId,
+      {
+        ...pagination,
+        authorizedOrgUnitIds,
+        orgUnitId
+      }
+    );
+
+    return NextResponse.json({ ...page, storage: 'cloudflare-d1' }, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0'
+      }
+    });
   } catch (error) {
     console.error('Failed to fetch D1 ToE tests:', error);
     return NextResponse.json(
@@ -39,6 +125,14 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Record<string, unknown>;
     const actionType =
       typeof body.actionType === 'string' ? body.actionType : 'UPDATE_SAMPLE';
+
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
+
+    const isAuthorizedScope = (orgUnitId: unknown) =>
+      isOrgUnitAuthorized(
+        authorizedOrgUnitIds,
+        typeof orgUnitId === 'string' ? orgUnitId : null
+      );
 
     if (actionType === 'CREATE_TEST') {
       const controlId = typeof body.controlId === 'string' ? body.controlId.trim() : '';
@@ -67,6 +161,20 @@ export async function POST(request: Request) {
               'controlId, testerName, period, populationSource, samplingMethod, and a non-negative populationSize are required.'
           },
           { status: 400 }
+        );
+      }
+
+      const selectedControl = await getControlScopeById(
+        auth.user.institutionId,
+        controlId
+      );
+      if (selectedControl && !isAuthorizedScope(selectedControl.orgUnitId)) {
+        return NextResponse.json(
+          {
+            error: 'Your account is not authorized for the selected control organization unit.',
+            code: 'TOE_ORGANIZATION_SCOPE_FORBIDDEN'
+          },
+          { status: 403 }
         );
       }
 
@@ -108,6 +216,20 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: 'toeTestId and sampleId are required.' },
           { status: 400 }
+        );
+      }
+
+      const scopedTest = await getToeTestScopeById(
+        auth.user.institutionId,
+        toeTestId
+      );
+      if (scopedTest && !isAuthorizedScope(scopedTest.orgUnitId)) {
+        return NextResponse.json(
+          {
+            error: 'Your account is not authorized for this ToE test organization unit.',
+            code: 'TOE_ORGANIZATION_SCOPE_FORBIDDEN'
+          },
+          { status: 403 }
         );
       }
 
@@ -153,6 +275,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'amount must be numeric when provided.' }, { status: 400 });
       }
 
+      const scopedTest = await getToeTestScopeById(
+        auth.user.institutionId,
+        toeTestId
+      );
+      if (scopedTest && !isAuthorizedScope(scopedTest.orgUnitId)) {
+        return NextResponse.json(
+          {
+            error: 'Your account is not authorized for this ToE test organization unit.',
+            code: 'TOE_ORGANIZATION_SCOPE_FORBIDDEN'
+          },
+          { status: 403 }
+        );
+      }
+
       const sample = await addToeSample({
         toeTestId,
         transactionRef,
@@ -189,6 +325,20 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'sampleId and result are required for a persisted ToE sample update.' },
         { status: 400 }
+      );
+    }
+
+    const sampleScope = await getToeSampleScopeById(
+      auth.user.institutionId,
+      sampleId
+    );
+    if (sampleScope && !isAuthorizedScope(sampleScope.orgUnitId)) {
+      return NextResponse.json(
+        {
+          error: 'Your account is not authorized for this ToE sample organization unit.',
+          code: 'TOE_ORGANIZATION_SCOPE_FORBIDDEN'
+        },
+        { status: 403 }
       );
     }
 
