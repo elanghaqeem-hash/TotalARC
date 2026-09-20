@@ -21,6 +21,7 @@ import {
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 import { useRole } from '@/context/RoleContext';
 import { jsonTransaction } from '@/lib/client-transaction';
+import { jsonRead } from '@/lib/client-read';
 
 export default function ProcessesPage() {
   const { currentUser } = useRole();
@@ -56,8 +57,7 @@ export default function ProcessesPage() {
   });
 
   const loadProcesses = () => {
-    fetch('/api/processes')
-      .then(res => res.json())
+    jsonRead<any>('/api/processes', { dedupe: false })
       .then(data => {
         const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
         const nextCategories = Array.isArray(data.categories) ? data.categories : [];
