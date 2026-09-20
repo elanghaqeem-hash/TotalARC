@@ -64,8 +64,8 @@ export async function GET() {
         (issue: any) => String(issue.controlId || issue.control?.id || '') === String(control.id)
       );
 
-      const latestToe = controlToeTests[0] || null;
-      const latestMonitoringRun =
+      const latestToe: any = controlToeTests[0] || null;
+      const latestMonitoringRun: any =
         controlMonitoring.flatMap((rule: any) => rule.runs || [])[0] || null;
       const hasOpenIssue = controlIssues.some(
         (issue: any) => !['Closed', 'Completed', 'Cancelled'].includes(String(issue.status))
