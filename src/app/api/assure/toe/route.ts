@@ -3,9 +3,10 @@ import {
   addToeSample,
   createTestingExceptionFromSample,
   createToeTest,
-  listToeTests,
   updateToeSample
 } from '@/lib/d1-assurance';
+import { listToeRegisterPage } from '@/lib/d1-register-pagination';
+import { parsePaginationRequest } from '@/lib/pagination';
 import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { listControls } from '@/lib/d1-core';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
@@ -19,17 +20,21 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
 
   try {
-    const [tests, authorizedOrgUnitIds] = await Promise.all([
-      listToeTests(auth.user.institutionId),
-      resolveAuthorizedOrgUnitIds(auth.user)
-    ]);
-    const scopedTests = tests.filter(test =>
-      isOrgUnitAuthorized(
+    const url = new URL(request.url);
+    const pagination = parsePaginationRequest(request);
+    const orgUnitId = (url.searchParams.get('orgUnitId') || '').trim() || null;
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
+
+    const page = await listToeRegisterPage(
+      auth.user.institutionId,
+      {
+        ...pagination,
         authorizedOrgUnitIds,
-        (test.process as Record<string, unknown> | null)?.orgUnitId as string | null | undefined
-      )
+        orgUnitId
+      }
     );
-    return NextResponse.json({ tests: scopedTests, storage: 'cloudflare-d1' });
+
+    return NextResponse.json({ ...page, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 ToE tests:', error);
     return NextResponse.json(
