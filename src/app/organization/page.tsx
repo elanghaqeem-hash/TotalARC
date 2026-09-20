@@ -192,10 +192,19 @@ export default function OrganizationPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Legal entity could not be saved.');
 
+      const legalEntity = payload.legalEntity as LegalEntity;
+      setData(current => current
+        ? {
+            ...current,
+            legalEntities: [...current.legalEntities, legalEntity].sort((a, b) =>
+              a.code.localeCompare(b.code) || a.name.localeCompare(b.name)
+            )
+          }
+        : current
+      );
       setEntityForm({ code: '', name: '', country: 'Indonesia', taxId: '' });
       setFormMode(null);
-      setSuccess('Legal entity saved to the organization master.');
-      await loadOrganization();
+      setSuccess('Legal entity saved. The page was updated instantly without reloading.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Legal entity could not be saved.');
     } finally {
@@ -218,6 +227,14 @@ export default function OrganizationPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Organization unit could not be saved.');
 
+      const organizationUnit = payload.organizationUnit as OrganizationUnit;
+      setData(current => current
+        ? {
+            ...current,
+            organizationUnits: [...current.organizationUnits, organizationUnit]
+          }
+        : current
+      );
       setUnitForm({
         code: '',
         name: '',
@@ -228,8 +245,7 @@ export default function OrganizationPage() {
         headEmail: ''
       });
       setFormMode(null);
-      setSuccess('Organization unit added to the hierarchy.');
-      await loadOrganization();
+      setSuccess('Organization unit saved. The hierarchy was updated instantly without reloading.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Organization unit could not be saved.');
     } finally {
@@ -410,7 +426,7 @@ export default function OrganizationPage() {
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50"
                 >
                   {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save Legal Entity
+                  {saving ? 'Saving…' : 'Save Legal Entity'}
                 </button>
               </div>
             </form>
@@ -539,7 +555,7 @@ export default function OrganizationPage() {
                   className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50"
                 >
                   {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Add to Structure
+                  {saving ? 'Saving…' : 'Add to Structure'}
                 </button>
               </div>
             </form>
