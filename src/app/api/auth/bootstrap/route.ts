@@ -61,8 +61,15 @@ export async function POST(request: Request) {
     }
 
     console.error('Bootstrap administrator provisioning failed:', error);
+    const diagnostic =
+      error instanceof Error
+        ? error.message.replace(/[\r\n]+/g, ' ').slice(0, 400)
+        : 'BOOTSTRAP_ERROR';
     return NextResponse.json(
-      { error: 'Bootstrap administrator provisioning failed.' },
+      {
+        error: 'Bootstrap administrator provisioning failed.',
+        code: diagnostic
+      },
       { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
