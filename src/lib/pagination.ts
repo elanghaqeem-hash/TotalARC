@@ -7,10 +7,19 @@ export type PaginationInput = {
   search: string;
 };
 
-export function parsePaginationRequest(request: Request): PaginationInput {
+export function parsePaginationRequest(
+  request: Request,
+  prefix = ''
+): PaginationInput {
   const url = new URL(request.url);
-  const requestedPage = Number(url.searchParams.get('page') || '1');
-  const requestedSize = Number(url.searchParams.get('pageSize') || DEFAULT_REGISTER_PAGE_SIZE);
+  const pageParam = prefix ? prefix + 'Page' : 'page';
+  const sizeParam = prefix ? prefix + 'PageSize' : 'pageSize';
+  const searchParam = prefix ? prefix + 'Search' : 'search';
+
+  const requestedPage = Number(url.searchParams.get(pageParam) || '1');
+  const requestedSize = Number(
+    url.searchParams.get(sizeParam) || DEFAULT_REGISTER_PAGE_SIZE
+  );
 
   const page = Number.isInteger(requestedPage) && requestedPage > 0
     ? requestedPage
@@ -22,7 +31,7 @@ export function parsePaginationRequest(request: Request): PaginationInput {
   return {
     page,
     pageSize,
-    search: (url.searchParams.get('search') || '').trim().slice(0, 120)
+    search: (url.searchParams.get(searchParam) || '').trim().slice(0, 120)
   };
 }
 
