@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useRole } from '@/context/RoleContext';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import { canAccessPage } from '@/lib/access-control';
 
 const emptyMetrics = {
   totalProcesses: 0,
@@ -150,6 +151,16 @@ export default function DashboardPage() {
 
   const metrics = data.metrics;
 
+  const visibleQuickActions = useMemo(
+    () => quickActions.filter(item => canAccessPage(currentUser.role, item.href)),
+    [currentUser.role]
+  );
+
+  const visibleModules = useMemo(
+    () => modules.filter(item => canAccessPage(currentUser.role, item.href)),
+    [currentUser.role]
+  );
+
   const keyMetrics = useMemo(
     () => [
       {
@@ -186,6 +197,11 @@ export default function DashboardPage() {
       }
     ],
     [metrics]
+  );
+
+  const visibleKeyMetrics = useMemo(
+    () => keyMetrics.filter(item => canAccessPage(currentUser.role, item.href)),
+    [currentUser.role, keyMetrics]
   );
 
   const toneClasses: Record<string, { card: string; icon: string; value: string }> = {
@@ -304,7 +320,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {quickActions.map((item) => {
+          {visibleQuickActions.map((item) => {
             const Icon = item.icon;
             return (
               <Link
@@ -341,7 +357,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {keyMetrics.map((item) => {
+          {visibleKeyMetrics.map((item) => {
             const Icon = item.icon;
             const tone = toneClasses[item.tone];
             return (
@@ -378,7 +394,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-            {modules.map((module) => {
+            {visibleModules.map((module) => {
               const Icon = module.icon;
               return (
                 <Link
@@ -457,16 +473,29 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <Link
-            href="/certification"
-            className="group inline-flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 lg:w-auto lg:min-w-[250px]"
-          >
-            <span className="flex items-center gap-2">
-              <BadgeCheck className="h-5 w-5" />
-              View Sign-Off Attestation
-            </span>
-            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-          </Link>
+          {canAccessPage(currentUser.role, '/certification') ? (
+            <Link
+              href="/certification"
+              className="group inline-flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 lg:w-auto lg:min-w-[250px]"
+            >
+              <span className="flex items-center gap-2">
+                <BadgeCheck className="h-5 w-5" />
+                View Sign-Off Attestation
+              </span>
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+            </Link>
+          ) : canAccessPage(currentUser.role, '/reports') ? (
+            <Link
+              href="/reports"
+              className="group inline-flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 lg:w-auto lg:min-w-[250px]"
+            >
+              <span className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                View Assurance Analytics
+              </span>
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+            </Link>
+          ) : null}
         </div>
 
         <div className="border-t border-slate-100 bg-slate-50/50 p-4 sm:p-5">
@@ -475,9 +504,11 @@ export default function DashboardPage() {
               <h3 className="text-sm font-black text-slate-900">Executive Assurance Signals</h3>
               <p className="mt-0.5 text-[11px] text-slate-500">Dihitung dari record aktif pada database.</p>
             </div>
-            <Link href="/reports" className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-700 hover:text-brand-800">
-              Open analytics <ChevronRight className="h-3.5 w-3.5" />
-            </Link>
+            {canAccessPage(currentUser.role, '/reports') && (
+              <Link href="/reports" className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-700 hover:text-brand-800">
+                Open analytics <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            )}
           </div>
 
           {data.executiveQandA.length === 0 ? (
