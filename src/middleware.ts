@@ -156,6 +156,10 @@ export async function middleware(request: NextRequest) {
     }
     const profile = new URL('/profile', request.url);
     profile.searchParams.set('password', 'required');
+    const target = request.nextUrl.pathname + request.nextUrl.search;
+    if (target && target !== '/profile') {
+      profile.searchParams.set('next', target);
+    }
     return NextResponse.redirect(profile);
   }
 
