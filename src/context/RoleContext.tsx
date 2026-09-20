@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { jsonRead } from '@/lib/client-read';
 
 export type UserRole =
   | 'Admin'
@@ -77,14 +78,10 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     setAuthError('');
 
     try {
-      const response = await fetch('/api/auth/me', { cache: 'no-store' });
-      const payload = (await response.json()) as Record<string, unknown>;
-
-      if (!response.ok) {
-        throw new Error(
-          typeof payload.error === 'string' ? payload.error : 'Authentication required'
-        );
-      }
+      const payload = await jsonRead<Record<string, unknown>>(
+        '/api/auth/me',
+        { dedupe: false }
+      );
 
       const profile = toProfile(payload.user);
       if (!profile) throw new Error('Authenticated user profile is invalid.');
@@ -100,10 +97,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshAuth();
 
-    fetch('/api/assurance?modules=institution', { cache: 'no-store' })
-      .then((res) =>
-        res.ok ? res.json() : Promise.reject(new Error('Unable to load institution'))
-      )
+    jsonRead<any>('/api/assurance?modules=institution')
       .then((data) =>
         setInstitutionName(data.institution?.name || 'No institution registered')
       )
