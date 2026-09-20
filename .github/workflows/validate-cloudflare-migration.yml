@@ -37,6 +37,9 @@ jobs:
       - name: Verify authentication security integrity
         run: npm run verify:auth-security
 
+      - name: Verify D1 schema stability
+        run: npm run verify:d1-schema-stability
+
       - name: Build OpenNext Cloudflare artifact
         run: npm run build
 
