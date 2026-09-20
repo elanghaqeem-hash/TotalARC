@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, Database, Plus, X } from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 const EMPTY_FORM = {
   ruleId: '',
@@ -66,19 +67,10 @@ export default function CCMPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/monitor/ccm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'CREATE_RULE',
-          ...form
-        })
+      await jsonTransaction('/api/monitor/ccm', {
+        actionType: 'CREATE_RULE',
+        ...form
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Unable to create monitoring rule.');
-      }
 
       setCreateOpen(false);
       setForm({
