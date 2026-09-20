@@ -22,6 +22,7 @@ import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 import { useRole } from '@/context/RoleContext';
 import { jsonTransaction } from '@/lib/client-transaction';
 import { jsonRead } from '@/lib/client-read';
+import { EMPTY_PAGINATION, RegisterPager, type PaginationMeta } from '@/components/common/RegisterPager';
 
 export default function ProcessesPage() {
   const { currentUser } = useRole();
@@ -39,6 +40,9 @@ export default function ProcessesPage() {
   const [formError, setFormError] = useState('');
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [newProcessModal, setNewProcessModal] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta>(EMPTY_PAGINATION);
+  const [pageLoading, setPageLoading] = useState(false);
 
   // New process form state
   const [formData, setFormData] = useState({
@@ -56,47 +60,70 @@ export default function ProcessesPage() {
     description: ''
   });
 
-  const loadProcesses = () => {
-    jsonRead<any>('/api/processes', { dedupe: false })
-      .then(data => {
-        const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
-        const nextCategories = Array.isArray(data.categories) ? data.categories : [];
-        const nextEntities = Array.isArray(data.organization?.legalEntities) ? data.organization.legalEntities : [];
-        const nextUnits = Array.isArray(data.organization?.organizationUnits) ? data.organization.organizationUnits : [];
-        const nextPositions = Array.isArray(data.organization?.positions) ? data.organization.positions : [];
-        const nextUsers = Array.isArray(data.organization?.users) ? data.organization.users : [];
+  const loadProcesses = async (targetPage = page) => {
+    setPageLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: '50'
+      });
+      if (search.trim()) params.set('search', search.trim());
+      if (selectedCategory !== 'ALL') params.set('categoryId', selectedCategory);
+      if (selectedOrgUnit !== 'ALL') params.set('orgUnitId', selectedOrgUnit);
 
-        setProcesses(nextProcesses);
-        setCategories(nextCategories);
-        setLegalEntities(nextEntities);
-        setOrganizationUnits(nextUnits);
-        setOrganizationPositions(nextPositions);
-        setOrganizationUsers(nextUsers);
+      const data = await jsonRead<any>(
+        '/api/processes?' + params.toString(),
+        { dedupe: false }
+      );
 
-        if (nextProcesses.length > 0 && !selectedProcess) {
-          setSelectedProcess(nextProcesses[0]);
-        }
+      const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
+      const nextCategories = Array.isArray(data.categories) ? data.categories : [];
+      const nextEntities = Array.isArray(data.organization?.legalEntities) ? data.organization.legalEntities : [];
+      const nextUnits = Array.isArray(data.organization?.organizationUnits) ? data.organization.organizationUnits : [];
+      const nextPositions = Array.isArray(data.organization?.positions) ? data.organization.positions : [];
+      const nextUsers = Array.isArray(data.organization?.users) ? data.organization.users : [];
 
-        setFormData(prev => {
-          const currentUnit = nextUnits.find((unit: any) => unit.id === prev.orgUnitId && unit.status === 'Active');
-          const defaultUnit = currentUnit || nextUnits.find((unit: any) => unit.status === 'Active') || null;
-          return {
-            ...prev,
-            categoryId:
-              prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
-                ? prev.categoryId
-                : nextCategories[0]?.id || '',
-            orgUnitId: defaultUnit?.id || '',
-            legalEntityId: defaultUnit?.legalEntityId || prev.legalEntityId || ''
-          };
-        });
-      })
-      .catch(console.error);
+      setProcesses(nextProcesses);
+      setCategories(nextCategories);
+      setLegalEntities(nextEntities);
+      setOrganizationUnits(nextUnits);
+      setOrganizationPositions(nextPositions);
+      setOrganizationUsers(nextUsers);
+      setPagination(data.pagination || EMPTY_PAGINATION);
+      setPage(targetPage);
+
+      setSelectedProcess(current =>
+        current && nextProcesses.some((item: any) => item.id === current.id)
+          ? current
+          : nextProcesses[0] || null
+      );
+
+      setFormData(prev => {
+        const currentUnit = nextUnits.find((unit: any) => unit.id === prev.orgUnitId && unit.status === 'Active');
+        const defaultUnit = currentUnit || nextUnits.find((unit: any) => unit.status === 'Active') || null;
+        return {
+          ...prev,
+          categoryId:
+            prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
+              ? prev.categoryId
+              : nextCategories[0]?.id || '',
+          orgUnitId: defaultUnit?.id || '',
+          legalEntityId: defaultUnit?.legalEntityId || prev.legalEntityId || ''
+        };
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPageLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadProcesses();
-  }, []);
+    const timer = window.setTimeout(() => {
+      void loadProcesses(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedCategory, selectedOrgUnit]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,23 +143,13 @@ export default function ProcessesPage() {
         ownerEmail: '',
         description: ''
       }));
-      loadProcesses();
+      await loadProcesses(page);
     } catch (createError) {
       setFormError(createError instanceof Error ? createError.message : 'Unable to register business process.');
     }
   };
 
-  const filtered = processes.filter(p => {
-    const matchCat = selectedCategory === 'ALL' || p.categoryId === selectedCategory;
-    const matchOrg = selectedOrgUnit === 'ALL' || p.orgUnitId === selectedOrgUnit;
-    const term = search.toLowerCase();
-    const matchSearch =
-      p.name.toLowerCase().includes(term) ||
-      p.processId.toLowerCase().includes(term) ||
-      String(p.ownerName || '').toLowerCase().includes(term) ||
-      String(p.orgUnit?.name || '').toLowerCase().includes(term);
-    return matchCat && matchOrg && matchSearch;
-  });
+  const filtered = processes;
 
   const activeUnits = organizationUnits.filter(unit => unit.status === 'Active');
   const activeUsers = organizationUsers.filter(user => user.active);
@@ -229,7 +246,7 @@ export default function ProcessesPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            All Categories ({processes.length})
+            All Categories ({pagination.total})
           </button>
           {categories.map(cat => (
             <button
@@ -247,6 +264,12 @@ export default function ProcessesPage() {
           </div>
         </div>
       </div>
+
+      <RegisterPager
+        pagination={pagination}
+        loading={pageLoading}
+        onPageChange={nextPage => void loadProcesses(nextPage)}
+      />
 
       {/* Split View: List on Left, Process 360 on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
