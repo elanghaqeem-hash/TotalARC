@@ -760,6 +760,8 @@ model ControlCertification {
 model ManagementAttestation {
   id              String   @id @default(uuid())
   institutionId   String
+  legalEntityId   String?
+  orgUnitId       String?
   period          String
   scopeSummary    String
   cfoSignOff      Boolean  @default(false)
@@ -785,7 +787,9 @@ model RiskAcceptance {
 
 model Task {
   id              String   @id @default(uuid())
+  institutionId   String
   userId          String?
+  orgUnitId       String?
   title           String
   type            String   // CSA, TOD, TOE, Review, MAP, Retest, Certification
   dueDate         DateTime
