@@ -18,7 +18,7 @@ concurrency:
 jobs:
   migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -39,59 +39,90 @@ jobs:
           BASE_URL="${BASE_URL%/}"
           IMPORT_URL="$BASE_URL/api/system/source-migration"
           STATUS_URL="$BASE_URL/api/system/source-migration"
+          INPUT_DIR="/tmp/totalarc-source-migration"
+          mkdir -p "$INPUT_DIR"
+
+          if [ -f secure-migration/source-url.txt ]; then
+            SOURCE_URL="$(tr -d '\r\n' < secure-migration/source-url.txt)"
+            if [ -z "$SOURCE_URL" ]; then
+              echo "::error::Encrypted source bundle URL is empty."
+              exit 1
+            fi
+
+            curl --fail --location --silent --show-error --max-time 120               "$SOURCE_URL" --output /tmp/totalarc-source-migration.zip
+
+            if [ -f secure-migration/source-sha256.txt ]; then
+              EXPECTED_SHA="$(tr -d ' \r\n' < secure-migration/source-sha256.txt)"
+              ACTUAL_SHA="$(sha256sum /tmp/totalarc-source-migration.zip | awk '{print $1}')"
+              if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+                echo "::error::Encrypted source bundle checksum mismatch."
+                exit 1
+              fi
+            fi
+
+            unzip -q /tmp/totalarc-source-migration.zip -d "$INPUT_DIR"
+          else
+            shopt -s nullglob
+            cp secure-migration/*.json "$INPUT_DIR/" 2>/dev/null || true
+          fi
+
+          mapfile -t envelope_files < <(find "$INPUT_DIR" -maxdepth 1 -type f -name '*.json' | sort)
+          if [ "${#envelope_files[@]}" -eq 0 ]; then
+            echo "::error::No encrypted migration envelopes found."
+            exit 1
+          fi
 
           total=0
           ok=0
           failed=0
           : > /tmp/migration-results.ndjson
 
-          shopt -s nullglob
-          files=(secure-migration/*.ndjson)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "::error::No encrypted migration manifests found."
-            exit 1
-          fi
+          for file in "${envelope_files[@]}"; do
+            total=$((total + 1))
+            HTTP_CODE="$(curl --silent --show-error --max-time 120               --output /tmp/migration-response.json               --write-out "%{http_code}"               --request POST               --header "Content-Type: application/json"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               --data-binary "@$file"               "$IMPORT_URL" || true)"
 
-          for file in "${files[@]}"; do
-            while IFS= read -r envelope || [ -n "$envelope" ]; do
-              [ -z "$envelope" ] && continue
-              total=$((total + 1))
-              HTTP_CODE="$(curl --silent --show-error --max-time 90                 --output /tmp/migration-response.json                 --write-out "%{http_code}"                 --request POST                 --header "Content-Type: application/json"                 --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"                 --data-binary "$envelope"                 "$IMPORT_URL" || true)"
-
-              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && jq -e '.ok == true' /tmp/migration-response.json >/dev/null 2>&1; then
-                ok=$((ok + 1))
-              else
-                failed=$((failed + 1))
-                echo "::error::Migration item $total failed (HTTP ${HTTP_CODE:-unknown})."
-                cat /tmp/migration-response.json 2>/dev/null || true
-              fi
-              jq -c --argjson item "$total" '{item:$item,response:.}' /tmp/migration-response.json 2>/dev/null >> /tmp/migration-results.ndjson || true
-            done < "$file"
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && jq -e '.ok == true' /tmp/migration-response.json >/dev/null 2>&1; then
+              ok=$((ok + 1))
+              raw_size="$(jq -r '.rawSizeBytes // 0' /tmp/migration-response.json)"
+              text_len="$(jq -r '.textLength // 0' /tmp/migration-response.json)"
+              echo "Imported $total/${#envelope_files[@]}: $(basename "$file") raw=$raw_size text=$text_len"
+            else
+              failed=$((failed + 1))
+              echo "::error::Migration item $total failed (HTTP ${HTTP_CODE:-unknown})."
+              cat /tmp/migration-response.json 2>/dev/null || true
+            fi
+            jq -c --argjson item "$total" '{item:$item,response:.}' /tmp/migration-response.json 2>/dev/null >> /tmp/migration-results.ndjson || true
           done
 
           echo "Migration envelopes processed: total=$total ok=$ok failed=$failed"
           if [ "$failed" -ne 0 ]; then exit 1; fi
+          if [ "$total" -ne 43 ]; then
+            echo "::error::Expected 43 encrypted source records, received $total."
+            exit 1
+          fi
 
           status_ok=false
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 20); do
             HTTP_CODE="$(curl --silent --show-error --max-time 20               --output /tmp/migration-status.json               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$STATUS_URL" || true)"
             if [ "$HTTP_CODE" = "200" ]; then
               docs="$(jq -r '.metrics.documents // 0' /tmp/migration-status.json)"
               raw="$(jq -r '.metrics.documentsWithRawBytes // 0' /tmp/migration-status.json)"
               members="$(jq -r '.metrics.archiveMembers // 0' /tmp/migration-status.json)"
               indexed="$(jq -r '.metrics.documentsWithIndexedText // 0' /tmp/migration-status.json)"
-              if [ "$docs" -eq 43 ] && [ "$raw" -eq 22 ] && [ "$members" -eq 21 ] && [ "$indexed" -eq 42 ]; then
+              chars="$(jq -r '.metrics.indexedCharacters // 0' /tmp/migration-status.json)"
+              bytes="$(jq -r '.metrics.rawBytes // 0' /tmp/migration-status.json)"
+              if [ "$docs" -eq 43 ] && [ "$raw" -eq 22 ] && [ "$members" -eq 21 ] && [ "$indexed" -eq 42 ] && [ "$chars" -eq 1126461 ] && [ "$bytes" -eq 12081506 ]; then
                 status_ok=true
                 break
               fi
-              echo "Verification pending: documents=$docs raw=$raw archiveMembers=$members indexed=$indexed"
+              echo "Verification pending: documents=$docs raw=$raw archiveMembers=$members indexed=$indexed chars=$chars bytes=$bytes"
             fi
             sleep 3
           done
 
           cat /tmp/migration-status.json || true
           if [ "$status_ok" != "true" ]; then
-            echo "::error::Source migration metrics do not match the expected complete population."
+            echo "::error::Source migration metrics do not match the complete expected population."
             exit 1
           fi
 
