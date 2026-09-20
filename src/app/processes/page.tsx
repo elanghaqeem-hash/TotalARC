@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   Layers,
@@ -36,6 +36,7 @@ export default function ProcessesPage() {
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const process360Ref = useRef<HTMLDivElement | null>(null);
 
   // New process form state
   const [formData, setFormData] = useState({
@@ -151,6 +152,19 @@ export default function ProcessesPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleInspect360 = (process: any) => {
+    setSelectedProcess(process);
+
+    requestAnimationFrame(() => {
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        process360Ref.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
+    });
   };
 
   const handleDelete = async () => {
@@ -343,10 +357,18 @@ export default function ProcessesPage() {
                       <Trash2 className="w-3 h-3" />
                       <span className="hidden sm:inline">Delete</span>
                     </button>
-                    <span className="text-brand-600 font-bold flex items-center space-x-1">
-                      <span className="hidden sm:inline">Inspect 360°</span>
+                    <button
+                      type="button"
+                      onClick={event => {
+                        event.stopPropagation();
+                        handleInspect360(proc);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-1 font-bold text-brand-700 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                      aria-label={`Inspect 360 degrees for ${proc.name}`}
+                    >
+                      <span>Inspect 360°</span>
                       <ArrowRight className="w-3 h-3" />
-                    </span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -355,7 +377,7 @@ export default function ProcessesPage() {
         </div>
 
         {/* Right Detail: Process 360 (7 cols) */}
-        <div className="lg:col-span-7">
+        <div ref={process360Ref} id="process-360-detail" className="lg:col-span-7 scroll-mt-24">
           {selectedProcess ? (
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
               {/* Process Title & Metadata */}
