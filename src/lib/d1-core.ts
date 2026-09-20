@@ -180,6 +180,7 @@ export async function ensureCoreDomainSchema() {
       ON BusinessProcess(institutionId, processId);
     CREATE INDEX IF NOT EXISTS idx_process_institution ON BusinessProcess(institutionId);
     CREATE INDEX IF NOT EXISTS idx_process_category ON BusinessProcess(categoryId);
+    CREATE INDEX IF NOT EXISTS idx_process_enterprise_id ON BusinessProcess(processId);
 
     CREATE TABLE IF NOT EXISTS ProcessObjective (
       id TEXT PRIMARY KEY NOT NULL,
@@ -193,6 +194,8 @@ export async function ensureCoreDomainSchema() {
       createdAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_objective_process ON ProcessObjective(processId);
+    CREATE INDEX IF NOT EXISTS idx_objective_process_created
+      ON ProcessObjective(processId, createdAt);
 
     CREATE TABLE IF NOT EXISTS SIPOC (
       id TEXT PRIMARY KEY NOT NULL,
@@ -223,6 +226,8 @@ export async function ensureCoreDomainSchema() {
       createdAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_activity_process ON ProcessActivity(processId);
+    CREATE INDEX IF NOT EXISTS idx_activity_process_order
+      ON ProcessActivity(processId, orderIndex, createdAt);
 
     CREATE TABLE IF NOT EXISTS RiskMaster (
       id TEXT PRIMARY KEY NOT NULL,
@@ -254,6 +259,8 @@ export async function ensureCoreDomainSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_institution_risk_id
       ON RiskMaster(institutionId, riskId);
     CREATE INDEX IF NOT EXISTS idx_risk_process ON RiskMaster(processId);
+    CREATE INDEX IF NOT EXISTS idx_risk_enterprise_id ON RiskMaster(riskId);
+    CREATE INDEX IF NOT EXISTS idx_risk_inherent_rating ON RiskMaster(inherentRating);
 
     CREATE TABLE IF NOT EXISTS ControlMaster (
       id TEXT PRIMARY KEY NOT NULL,
@@ -291,6 +298,8 @@ export async function ensureCoreDomainSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_control_institution_control_id
       ON ControlMaster(institutionId, controlId);
     CREATE INDEX IF NOT EXISTS idx_control_process ON ControlMaster(processId);
+    CREATE INDEX IF NOT EXISTS idx_control_enterprise_id ON ControlMaster(controlId);
+    CREATE INDEX IF NOT EXISTS idx_control_key_flag ON ControlMaster(isKeyControl);
 
     CREATE TABLE IF NOT EXISTS ControlRiskMapping (
       id TEXT PRIMARY KEY NOT NULL,
@@ -479,6 +488,17 @@ async function hydrateProcess(
     risks: risks.map(riskRow),
     controls: controls.map(controlRow)
   } as D1BusinessProcess;
+}
+
+export async function listProcessLookups() {
+  const db = await ensureCoreDomainSchema();
+  return all<Record<string, unknown>>(
+    db,
+    `SELECT id, institutionId, categoryId, processId, name, criticality,
+            classification, isIcofrRelevant, status
+       FROM BusinessProcess
+      ORDER BY processId ASC`
+  );
 }
 
 export async function listBusinessProcesses() {
@@ -893,6 +913,17 @@ export async function deleteBusinessProcess(id: string) {
     processId: String(existing.processId),
     name: String(existing.name)
   };
+}
+
+export async function listRiskLookups() {
+  const db = await ensureCoreDomainSchema();
+  return all<Record<string, unknown>>(
+    db,
+    `SELECT id, institutionId, processId, riskId, name, category,
+            inherentScore, inherentRating, residualScore, residualRating, status
+       FROM RiskMaster
+      ORDER BY riskId ASC`
+  );
 }
 
 export async function listRisks() {
