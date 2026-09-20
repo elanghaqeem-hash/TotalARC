@@ -272,6 +272,121 @@ async function findPrimaryInstitution(db: D1DatabaseLike) {
   }
 }
 
+export async function provisionBootstrapAdministrator() {
+  const db = await ensureAuthSchema();
+  const env = await runtimeEnv();
+  const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
+  const bootstrapPassword = envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD');
+  const bootstrapName = envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_NAME') || 'Total ARC Administrator';
+
+  if (!bootstrapEmail || !bootstrapPassword) throw new Error('AUTH_BOOTSTRAP_REQUIRED');
+  if (bootstrapPassword.length < 12) throw new Error('AUTH_BOOTSTRAP_WEAK_PASSWORD');
+
+  const institution = await findPrimaryInstitution(db);
+  const count = await first<{ count: number }>(
+    db,
+    'SELECT COUNT(*) AS count FROM AuthUser'
+  );
+
+  const password = await createPasswordHash(bootstrapPassword);
+  const now = new Date().toISOString();
+
+  if (Number(count?.count || 0) === 0) {
+    const id = crypto.randomUUID();
+
+    await run(
+      db,
+      `INSERT INTO AuthUser (
+        id, institutionId, orgUnitId, name, email, emailNormalized,
+        passwordHash, passwordSalt, passwordIterations, role, department,
+        active, mustChangePassword, failedLoginCount, lockedUntil,
+        lastLoginAt, createdAt, updatedAt
+      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'Admin', NULL, 1, 0, 0, NULL, NULL, ?, ?)`,
+      [
+        id,
+        institution?.id || null,
+        bootstrapName,
+        bootstrapEmail,
+        bootstrapEmail,
+        password.hash,
+        password.salt,
+        password.iterations,
+        now,
+        now
+      ]
+    );
+
+    await writeAuthEvent(db, {
+      userId: id,
+      institutionId: institution?.id || null,
+      eventType: 'BOOTSTRAP_ADMIN_CREATED',
+      email: bootstrapEmail,
+      role: 'Admin',
+      detail: 'Initial administrator provisioned from deployment secrets.'
+    });
+
+    return { status: 'created' as const, userId: id };
+  }
+
+  const candidate = await first<AuthUserRow>(
+    db,
+    `SELECT * FROM AuthUser
+     WHERE role = 'Admin' AND lastLoginAt IS NULL
+     ORDER BY createdAt ASC
+     LIMIT 1`
+  );
+
+  if (candidate) {
+    const emailConflict = await first<{ id: string }>(
+      db,
+      'SELECT id FROM AuthUser WHERE emailNormalized = ? AND id <> ? LIMIT 1',
+      [bootstrapEmail, candidate.id]
+    );
+    if (emailConflict) throw new Error('USER_EMAIL_CONFLICT');
+
+    await run(
+      db,
+      `UPDATE AuthUser SET
+        institutionId = COALESCE(institutionId, ?),
+        name = ?,
+        email = ?,
+        emailNormalized = ?,
+        passwordHash = ?,
+        passwordSalt = ?,
+        passwordIterations = ?,
+        active = 1,
+        failedLoginCount = 0,
+        lockedUntil = NULL,
+        updatedAt = ?
+      WHERE id = ?`,
+      [
+        institution?.id || null,
+        bootstrapName,
+        bootstrapEmail,
+        bootstrapEmail,
+        password.hash,
+        password.salt,
+        password.iterations,
+        now,
+        candidate.id
+      ]
+    );
+
+    await writeAuthEvent(db, {
+      userId: candidate.id,
+      institutionId: candidate.institutionId || institution?.id || null,
+      eventType: 'BOOTSTRAP_ADMIN_RECONCILED',
+      email: bootstrapEmail,
+      role: 'Admin',
+      detail: 'Pre-login bootstrap administrator credentials reconciled from deployment secrets.'
+    });
+
+    return { status: 'reconciled' as const, userId: candidate.id };
+  }
+
+  return { status: 'existing' as const, userId: null };
+}
+
 async function maybeBootstrapAdministrator(
   db: D1DatabaseLike,
   attemptedEmail: string,
@@ -286,10 +401,10 @@ async function maybeBootstrapAdministrator(
   const env = await runtimeEnv();
   const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
   const bootstrapPassword = envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_PASSWORD');
-  const bootstrapName = envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_NAME') || 'Total ARC Administrator';
 
   if (!bootstrapEmail || !bootstrapPassword) throw new Error('AUTH_BOOTSTRAP_REQUIRED');
   if (bootstrapPassword.length < 12) throw new Error('AUTH_BOOTSTRAP_WEAK_PASSWORD');
+
   if (
     normalizeEmail(attemptedEmail) !== bootstrapEmail ||
     attemptedPassword !== bootstrapPassword
@@ -297,41 +412,7 @@ async function maybeBootstrapAdministrator(
     return;
   }
 
-  const password = await createPasswordHash(bootstrapPassword);
-  const institution = await findPrimaryInstitution(db);
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-
-  await run(
-    db,
-    `INSERT INTO AuthUser (
-      id, institutionId, orgUnitId, name, email, emailNormalized,
-      passwordHash, passwordSalt, passwordIterations, role, department,
-      active, mustChangePassword, failedLoginCount, lockedUntil,
-      lastLoginAt, createdAt, updatedAt
-    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'Admin', NULL, 1, 0, 0, NULL, NULL, ?, ?)`,
-    [
-      id,
-      institution?.id || null,
-      bootstrapName,
-      bootstrapEmail,
-      bootstrapEmail,
-      password.hash,
-      password.salt,
-      password.iterations,
-      now,
-      now
-    ]
-  );
-
-  await writeAuthEvent(db, {
-    userId: id,
-    institutionId: institution?.id || null,
-    eventType: 'BOOTSTRAP_ADMIN_CREATED',
-    email: bootstrapEmail,
-    role: 'Admin',
-    detail: 'Initial administrator provisioned from deployment secrets.'
-  });
+  await provisionBootstrapAdministrator();
 }
 
 async function institutionNameFor(db: D1DatabaseLike, institutionId: string | null) {
