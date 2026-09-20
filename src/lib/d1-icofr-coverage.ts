@@ -1,4 +1,4 @@
-import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { getTenantDb } from '@/lib/tenant-context';
 import { ensureIcofrTraceabilitySchema } from '@/lib/d1-icofr-traceability';
 
 type D1DatabaseLike = {
@@ -17,10 +17,7 @@ type D1DatabaseLike = {
 
 async function getDb(): Promise<D1DatabaseLike> {
   await ensureIcofrTraceabilitySchema();
-  const { env } = await getCloudflareContext({ async: true });
-  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
-  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
-  return db;
+  return getTenantDb();
 }
 
 async function all<T = Record<string, unknown>>(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
