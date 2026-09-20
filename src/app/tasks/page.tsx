@@ -10,7 +10,7 @@ const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100';
 
 export default function TasksPage() {
-  const { data, loading, error, reload } = useAssuranceData();
+  const { data, loading, error, reload } = useAssuranceData(['tasks', 'organization']);
   const { currentUser } = useRole();
   const tasks = data?.tasks || [];
   const units = data?.institution?.organizationUnits || [];
