@@ -2,6 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRole } from '@/context/RoleContext';
+import { canAccessPage } from '@/lib/access-control';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -46,6 +48,7 @@ const modules = [
 ];
 
 export default function ICOFRPage() {
+  const { currentUser } = useRole();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -79,6 +82,11 @@ export default function ICOFRPage() {
       planItems: counts.testingPlanItems || 0
     };
   }, [data]);
+
+  const visibleModules = useMemo(
+    () => modules.filter(module => canAccessPage(currentUser.role, module.href)),
+    [currentUser.role]
+  );
 
   const moduleValue = (module: any) => {
     if (module.countKey) return data?.counts?.[module.countKey] ?? 0;
@@ -145,7 +153,7 @@ export default function ICOFRPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {modules.map(module => {
+        {visibleModules.map(module => {
           const Icon = module.icon;
           const value = moduleValue(module);
           return (
