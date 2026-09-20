@@ -330,6 +330,7 @@ async function initializeAssuranceSchema() {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_toe_sample_number ON TestSample(toeTestId, sampleNumber);
     CREATE INDEX IF NOT EXISTS idx_sample_toe ON TestSample(toeTestId);
+    CREATE INDEX IF NOT EXISTS idx_sample_toe_result ON TestSample(toeTestId, result, sampleNumber);
 
     CREATE TABLE IF NOT EXISTS TestingException (
       id TEXT PRIMARY KEY NOT NULL,
@@ -342,6 +343,7 @@ async function initializeAssuranceSchema() {
       createdAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_exception_toe ON TestingException(toeTestId);
+    CREATE INDEX IF NOT EXISTS idx_exception_toe_sample_ref ON TestingException(toeTestId, sampleRef);
 
     CREATE TABLE IF NOT EXISTS ControlDeficiency (
       id TEXT PRIMARY KEY NOT NULL,
