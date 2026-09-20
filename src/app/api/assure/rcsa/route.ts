@@ -43,7 +43,7 @@ export async function GET(request: Request) {
         authorizedOrgUnitIds === null
         || isOrgUnitAuthorized(
           authorizedOrgUnitIds,
-          campaign.orgUnitId as string | null | undefined
+          (campaign as Record<string, unknown>).orgUnitId as string | null | undefined
         )
         || (campaign.csaResponses as unknown[]).length > 0
       );
@@ -185,10 +185,10 @@ export async function POST(request: Request) {
         !control
         || !isOrgUnitAuthorized(authorizedOrgUnitIds, controlOrgUnitId)
         || (
-          campaign?.orgUnitId
+          (campaign as Record<string, unknown> | undefined)?.orgUnitId
           && !isOrgUnitAuthorized(
             authorizedOrgUnitIds,
-            campaign.orgUnitId as string | null | undefined
+            (campaign as Record<string, unknown>).orgUnitId as string | null | undefined
           )
         )
       ) {
