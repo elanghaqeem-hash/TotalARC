@@ -59,6 +59,75 @@ export type SourceLibraryRecord = {
   updatedAt: string;
 };
 
+export type SourceLibraryViewRecord = SourceLibraryRecord & {
+  sourceAccount: string | null;
+  sourceRole: string | null;
+  precedencePriority: number;
+  duplicateKey: string;
+};
+
+function sourceMetadata(record: SourceLibraryRecord) {
+  if (!record.metadataJson) return {} as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(record.metadataJson);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function sourcePriority(record: SourceLibraryRecord) {
+  const value = sourceMetadata(record).precedencePriority;
+  const parsed = typeof value === 'number' ? value : Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeSourceTitle(title: string) {
+  return title
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/^salinan\s+/i, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function sourceDuplicateKey(record: SourceLibraryRecord, metadata: Record<string, unknown>) {
+  const explicit = String(metadata.sourceLogicalKey || metadata.canonicalSourceKey || '').trim();
+  if (explicit) return 'EXPLICIT:' + explicit.toLowerCase();
+
+  const normalizedTitle = normalizeSourceTitle(record.title);
+  if (normalizedTitle) {
+    return ['TITLE', record.sourceKind, record.module || '', normalizedTitle].join(':');
+  }
+
+  if (record.textSha256) return ['TEXT', record.sourceKind, record.textSha256].join(':');
+  if (record.rawSha256) return ['RAW', record.sourceKind, record.rawSha256].join(':');
+  return ['ID', record.provider, record.externalId].join(':');
+}
+
+function toSourceView(record: SourceLibraryRecord): SourceLibraryViewRecord {
+  const metadata = sourceMetadata(record);
+  return {
+    ...record,
+    sourceAccount: typeof metadata.sourceAccount === 'string' ? metadata.sourceAccount : null,
+    sourceRole: typeof metadata.sourceRole === 'string' ? metadata.sourceRole : null,
+    precedencePriority: sourcePriority(record),
+    duplicateKey: sourceDuplicateKey(record, metadata)
+  };
+}
+
+function compareSourcePrecedence(left: SourceLibraryViewRecord, right: SourceLibraryViewRecord) {
+  if (left.precedencePriority !== right.precedencePriority) {
+    return right.precedencePriority - left.precedencePriority;
+  }
+  const leftModified = Date.parse(left.sourceModifiedAt || left.updatedAt) || 0;
+  const rightModified = Date.parse(right.sourceModifiedAt || right.updatedAt) || 0;
+  if (leftModified !== rightModified) return rightModified - leftModified;
+  return right.updatedAt.localeCompare(left.updatedAt);
+}
+
 async function getDb(): Promise<D1DatabaseLike> {
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -417,9 +486,45 @@ export async function listSourceDocuments(institutionId: string) {
            metadataJson, importedAt, updatedAt
     FROM SourceDocument
     WHERE institutionId = ?
-    ORDER BY updatedAt DESC, title ASC
   `).bind(institutionId).all<SourceLibraryRecord>();
-  return result.results || [];
+  return (result.results || []).map(toSourceView).sort(compareSourcePrecedence);
+}
+
+export async function listEffectiveSourceDocuments(institutionId: string) {
+  const documents = await listSourceDocuments(institutionId);
+  const effective = new Map<string, SourceLibraryViewRecord>();
+
+  for (const document of documents) {
+    const existing = effective.get(document.duplicateKey);
+    if (!existing || compareSourcePrecedence(document, existing) < 0) {
+      effective.set(document.duplicateKey, document);
+    }
+  }
+
+  return Array.from(effective.values()).sort(compareSourcePrecedence);
+}
+
+export async function getSourcePrecedenceSummary(institutionId: string) {
+  const documents = await listSourceDocuments(institutionId);
+  const effectiveDocuments = await listEffectiveSourceDocuments(institutionId);
+  const byRole = documents.reduce<Record<string, number>>((summary, document) => {
+    const role = document.sourceRole || 'UNSPECIFIED';
+    summary[role] = (summary[role] || 0) + 1;
+    return summary;
+  }, {});
+
+  return {
+    strategy: 'UPDATE_OVER_BASELINE',
+    totalDocuments: documents.length,
+    effectiveDocuments: effectiveDocuments.length,
+    supersededDocuments: documents.length - effectiveDocuments.length,
+    byRole,
+    rules: {
+      higherPrecedencePriorityWins: true,
+      newerSourceModifiedAtBreaksTies: true,
+      fuzzyMatching: false
+    }
+  };
 }
 
 export async function getSourceLibraryMetrics(institutionId: string) {
