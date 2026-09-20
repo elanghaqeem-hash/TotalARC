@@ -592,7 +592,11 @@ export async function listBusinessProcesses() {
     } as D1BusinessProcess;
   });
 
-  return { processes, categories };
+  const organizationUnits = Array.from(unitMap.values()).filter(unit =>
+    scope.unrestricted ? true : scope.unitIds.includes(String(unit.id))
+  );
+
+  return { processes, categories, organizationUnits };
 }
 
 export async function findBusinessProcessForAi(identifier: {
@@ -618,7 +622,10 @@ export async function findBusinessProcessForAi(identifier: {
     );
   }
 
-  return row ? hydrateProcess(db, row) : null;
+  if (!row) return null;
+  const scope = await currentUnitScope();
+  if (!processAllowed(row, scope)) return null;
+  return hydrateProcess(db, row);
 }
 
 export async function createBusinessProcess(input: Record<string, unknown>) {
@@ -1004,7 +1011,7 @@ export async function listRisks() {
     all<Record<string, unknown>>(db, 'SELECT * FROM RiskMaster ORDER BY riskId ASC'),
     all<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess'
+      'SELECT id, processId, name, categoryId, orgUnitId, criticality, classification FROM BusinessProcess'
     ),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity'),
     all<Record<string, unknown>>(
@@ -1187,7 +1194,7 @@ export async function listControls() {
     all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC'),
     all<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess'
+      'SELECT id, processId, name, categoryId, orgUnitId, criticality, classification FROM BusinessProcess'
     ),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity'),
     all<Record<string, unknown>>(
@@ -1509,6 +1516,27 @@ async function count(
 
 export async function getCoreDashboardData() {
   const db = await ensureCoreDomainSchema();
+  const scope = await currentUnitScope();
+  const processWhere = scope.unrestricted
+    ? ''
+    : scope.unitIds.length > 0
+      ? ' WHERE orgUnitId IN (' + scope.unitIds.map(() => '?').join(',') + ')'
+      : ' WHERE 1=0';
+  const processArgs = scope.unrestricted ? [] : scope.unitIds;
+
+  const riskWhere = scope.unrestricted
+    ? ''
+    : scope.unitIds.length > 0
+      ? ' WHERE processId IN (SELECT id FROM BusinessProcess WHERE orgUnitId IN (' + scope.unitIds.map(() => '?').join(',') + '))'
+      : ' WHERE 1=0';
+  const riskArgs = scope.unrestricted ? [] : scope.unitIds;
+
+  const controlWhere = scope.unrestricted
+    ? ''
+    : scope.unitIds.length > 0
+      ? ' WHERE processId IN (SELECT id FROM BusinessProcess WHERE orgUnitId IN (' + scope.unitIds.map(() => '?').join(',') + '))'
+      : ' WHERE 1=0';
+  const controlArgs = scope.unrestricted ? [] : scope.unitIds;
 
   const [
     totalProcesses,
@@ -1522,23 +1550,61 @@ export async function getCoreDashboardData() {
     highCritical,
     recentAuditLogs
   ] = await Promise.all([
-    count(db, 'SELECT COUNT(*) AS count FROM BusinessProcess'),
-    count(db, "SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RiskMaster'),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'"),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'"),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster'),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1'),
+    count(db, 'SELECT COUNT(*) AS count FROM BusinessProcess' + processWhere, processArgs),
+    count(
+      db,
+      "SELECT COUNT(*) AS count FROM BusinessProcess" +
+        (processWhere ? processWhere + (processWhere.includes('1=0') ? '' : " AND criticality = 'Critical'") : " WHERE criticality = 'Critical'"),
+      processArgs
+    ),
+    count(db, 'SELECT COUNT(*) AS count FROM RiskMaster' + riskWhere, riskArgs),
+    count(
+      db,
+      "SELECT COUNT(*) AS count FROM RiskMaster" +
+        (riskWhere ? riskWhere + (riskWhere.includes('1=0') ? '' : " AND inherentRating = 'Critical'") : " WHERE inherentRating = 'Critical'"),
+      riskArgs
+    ),
+    count(
+      db,
+      "SELECT COUNT(*) AS count FROM RiskMaster" +
+        (riskWhere ? riskWhere + (riskWhere.includes('1=0') ? '' : " AND inherentRating = 'High'") : " WHERE inherentRating = 'High'"),
+      riskArgs
+    ),
+    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster' + controlWhere, controlArgs),
+    count(
+      db,
+      'SELECT COUNT(*) AS count FROM ControlMaster' +
+        (controlWhere ? controlWhere + (controlWhere.includes('1=0') ? '' : ' AND isKeyControl = 1') : ' WHERE isKeyControl = 1'),
+      controlArgs
+    ),
     count(
       db,
       `SELECT COUNT(DISTINCT r.id) AS count
          FROM RiskMaster r
          JOIN ControlRiskMapping m ON m.riskId = r.id
-        WHERE r.inherentRating IN ('High', 'Critical')`
+         JOIN BusinessProcess p ON p.id = r.processId
+        ${
+          scope.unrestricted
+            ? "WHERE r.inherentRating IN ('High', 'Critical')"
+            : scope.unitIds.length > 0
+              ? "WHERE p.orgUnitId IN (" + scope.unitIds.map(() => '?').join(',') + ") AND r.inherentRating IN ('High', 'Critical')"
+              : 'WHERE 1=0'
+        }`,
+      scope.unrestricted ? [] : scope.unitIds
     ),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating IN ('High', 'Critical')"
+      `SELECT COUNT(*) AS count
+         FROM RiskMaster r
+         JOIN BusinessProcess p ON p.id = r.processId
+        ${
+          scope.unrestricted
+            ? "WHERE r.inherentRating IN ('High', 'Critical')"
+            : scope.unitIds.length > 0
+              ? "WHERE p.orgUnitId IN (" + scope.unitIds.map(() => '?').join(',') + ") AND r.inherentRating IN ('High', 'Critical')"
+              : 'WHERE 1=0'
+        }`,
+      scope.unrestricted ? [] : scope.unitIds
     ),
     all<Record<string, unknown>>(
       db,
@@ -1575,22 +1641,10 @@ export async function getCoreDashboardData() {
     },
     {
       question: 'Have key controls been tested?',
-      status: keyControls ? 'Testing data migration pending' : 'No key controls',
+      status: keyControls ? 'Testing available in assurance modules' : 'No key controls',
       summary: keyControls
-        ? 'Key controls are persisted. ToD/ToE persistence is the next D1 migration phase; no testing conclusion is inferred.'
+        ? 'Key controls are persisted and linked to the testing and assurance modules.'
         : 'No key controls are currently registered.',
-      badge: 'Cloudflare D1'
-    },
-    {
-      question: 'How many issues remain open?',
-      status: 'Remediation migration pending',
-      summary: 'Issue and remediation counts are not inferred until their D1 migration is complete.',
-      badge: 'Cloudflare D1'
-    },
-    {
-      question: 'Which remediation actions are overdue?',
-      status: 'Remediation migration pending',
-      summary: 'Management Action Plan status is not inferred until remediation records are persisted in D1.',
       badge: 'Cloudflare D1'
     }
   ];
@@ -1600,7 +1654,7 @@ export async function getCoreDashboardData() {
     executiveQandA,
     recentAuditLogs,
     storage: 'cloudflare-d1',
-    persistenceScope: 'core-bpm-risk-control'
+    persistenceScope: scope.unrestricted ? 'institution' : 'assigned-organizational-units'
   };
 }
 
