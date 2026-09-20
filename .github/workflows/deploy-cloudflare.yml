@@ -173,6 +173,53 @@ jobs:
           # deployment is the one the verification step waits for.
           put_secret AI_PROBE_TOKEN "$AI_PROBE_TOKEN"
 
+      - name: Provision bootstrap administrator
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          FALLBACK_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::warning::TOTAL_ARC_HEALTHCHECK_TOKEN is not configured; bootstrap administrator provisioning was skipped."
+            exit 0
+          fi
+
+          BASE_URL="${DEPLOYMENT_URL:-${FALLBACK_URL:-https://totalarc.elang-haqeem.workers.dev}}"
+          BASE_URL="${BASE_URL%/}"
+          URL="$BASE_URL/api/auth/bootstrap"
+
+          success=false
+          for attempt in $(seq 1 12); do
+            HTTP_CODE="$(curl --silent --show-error --max-time 20 \
+              --output /tmp/totalarc-auth-bootstrap.json \
+              --write-out "%{http_code}" \
+              --request POST \
+              --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" \
+              "$URL" || true)"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              success=true
+              break
+            fi
+
+            echo "Bootstrap administrator provisioning not ready yet (HTTP ${HTTP_CODE:-unknown}, attempt $attempt/12)."
+            sleep 5
+          done
+
+          if [ "$success" != "true" ]; then
+            echo "::error::Bootstrap administrator could not be provisioned."
+            cat /tmp/totalarc-auth-bootstrap.json 2>/dev/null || true
+            exit 1
+          fi
+
+          STATUS="$(jq -r '.status // "unknown"' /tmp/totalarc-auth-bootstrap.json 2>/dev/null || echo unknown)"
+          echo "Bootstrap administrator provisioning status: $STATUS"
+          echo "### Authentication bootstrap" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Bootstrap administrator: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify AI runtime and provider connectivity
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
