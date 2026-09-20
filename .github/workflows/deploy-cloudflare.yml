@@ -175,6 +175,9 @@ jobs:
       - name: Verify assurance persistence integrity
         run: npm run verify:assurance-integrity
 
+      - name: Verify performance standards
+        run: npm run verify:performance
+
       - name: Build OpenNext Worker
         run: npm run build
 
