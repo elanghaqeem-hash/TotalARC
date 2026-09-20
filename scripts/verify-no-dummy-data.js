@@ -54,6 +54,8 @@ const d1CoreRoutes = [
   'src/app/api/assure/rcsa/route.ts',
   'src/app/api/assure/tod/route.ts',
   'src/app/api/assure/icofr/route.ts',
+  'src/app/api/assure/certification/route.ts',
+  'src/app/api/assure/tasks/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts'
@@ -79,6 +81,8 @@ const authenticatedOperationalRoutes = [
   'src/app/api/assure/rcsa/route.ts',
   'src/app/api/assure/tod/route.ts',
   'src/app/api/assure/icofr/route.ts',
+  'src/app/api/assure/certification/route.ts',
+  'src/app/api/assure/tasks/route.ts',
   'src/app/api/assure/toe/route.ts',
   'src/app/api/assure/remediation/route.ts',
   'src/app/api/monitor/ccm/route.ts',
