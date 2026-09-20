@@ -1,25 +1,56 @@
-'use client';
-
-import React from 'react';
 import Link from 'next/link';
-import { FileCheck, Target } from 'lucide-react';
-import { useAssuranceData } from '@/hooks/useAssuranceData';
+import { AlertTriangle, BadgeCheck, Cpu, FileCheck, FileSpreadsheet, Shield, Target, Workflow } from 'lucide-react';
+
+const modules = [
+  { href: '/icofr/scoping', title: 'Scoping & Materiality', detail: 'Reporting perimeter, OM, PM, clearly-trivial/SAD and component materiality.', icon: Target },
+  { href: '/icofr/accounts', title: 'Accounts, Disclosures & Assertions', detail: 'Significant accounts/disclosures, relevant assertions, risk factors and process references.', icon: FileSpreadsheet },
+  { href: '/icofr/elc', title: 'Entity-Level Controls (ELC)', detail: 'Governance, control environment, monitoring, fraud risk and period-end reporting controls.', icon: Shield },
+  { href: '/icofr/plc', title: 'Process-Level Controls (PLC)', detail: 'Transaction-cycle and process controls linked to financial reporting risks and assertions.', icon: FileCheck },
+  { href: '/icofr/itgc', title: 'IT General Controls (ITGC)', detail: 'Logical access, change management, operations, backup, SDLC and other IT general controls.', icon: Cpu },
+  { href: '/icofr/itac', title: 'IT Application Controls (ITAC)', detail: 'Automated validations, calculations, configurations, interfaces and system-enforced controls.', icon: Workflow },
+  { href: '/icofr/information', title: 'IPE & EUC Register', detail: 'Information Produced by the Entity and End-User Computing reliability controls.', icon: FileSpreadsheet },
+  { href: '/tod', title: 'Walkthrough & Test of Design', detail: 'Confirm process understanding and assess whether control design addresses the identified risk.', icon: Workflow },
+  { href: '/toe', title: 'Test of Operating Effectiveness', detail: 'Evidence-based operating effectiveness testing and sample evaluation.', icon: Cpu },
+  { href: '/icofr/deficiencies', title: 'Deficiency Evaluation', detail: 'Evaluate control deficiencies, significant deficiencies and material weaknesses.', icon: AlertTriangle },
+  { href: '/remediation', title: 'Remediation & MAP', detail: 'Management action plans, ownership, due dates and retesting follow-up.', icon: BadgeCheck },
+  { href: '/certification', title: 'Certification & Attestation', detail: 'Management certification and control attestation after testing and deficiency evaluation.', icon: BadgeCheck }
+];
 
 export default function ICOFRPage() {
-  const { data, loading, error } = useAssuranceData();
-  const accounts = data?.financialAccounts || [];
-  const ipe = data?.ipeRegisters || [];
-
   return (
-    <div className="space-y-6">
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-xs font-bold text-sky-600 uppercase"><FileCheck className="w-4 h-4" />ICOFR</div><h1 className="text-2xl font-black text-slate-900 mt-1">Assertions & IPE Workspace</h1><p className="text-xs text-slate-500 mt-1">Significant accounts, assertions, and IPE validation status are database-derived.</p></div><Link href="/icofr/scoping" className="inline-flex items-center gap-2 self-start rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700 hover:bg-sky-100"><Target className="h-3.5 w-3.5" />Open ICOFR Scoping</Link></div></div>
-      {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
-      {loading ? <div className="text-xs text-slate-500">Loading…</div> : accounts.length === 0 && ipe.length === 0 ? (<div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl"><div className="font-bold text-slate-700">No records available</div><p className="text-xs text-slate-500 mt-1">This module will populate only from persisted database records.</p></div>) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold text-slate-900 mb-3">Financial accounts ({accounts.length})</h2><div className="space-y-3">{accounts.map((account:any) => <div key={account.id} className="p-3 border border-slate-200 rounded-xl text-xs"><div className="flex justify-between gap-2"><span className="font-bold">{account.accountCode} · {account.accountName}</span><span>{account.isSignificant ? 'Significant':'Not significant'}</span></div><div className="text-[11px] text-slate-500">{account.financialStatement} · Fraud exposure: {account.fraudExposure} · Complexity: {account.complexity}</div><div className="mt-2 flex flex-wrap gap-1">{(account.assertions || []).map((a:any) => <span key={a.id} className="text-[10px] px-2 py-0.5 rounded bg-slate-100">{a.assertion}: {a.isInScope ? 'In scope':'Out of scope'}</span>)}</div></div>)}</div></div>
-          <div className="bg-white border border-slate-200 rounded-2xl p-5"><h2 className="font-bold text-slate-900 mb-3">IPE Register ({ipe.length})</h2><div className="space-y-3">{ipe.map((item:any) => <div key={item.id} className="p-3 border border-slate-200 rounded-xl text-xs"><div className="font-bold">{item.reportName}</div><div className="text-[11px] text-slate-500">{item.systemSource} · Owner: {item.reportOwner}</div><div className="mt-2 text-[10px]">Completeness tested: {item.completenessTested ? 'Yes':'No'} · Accuracy tested: {item.accuracyTested ? 'Yes':'No'}</div></div>)}</div></div>
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-sky-600">
+          <FileCheck className="h-4 w-4" /> ICOFR Program
         </div>
-      )}
+        <h1 className="mt-1 text-2xl font-black text-slate-900">ICOFR Program Hub</h1>
+        <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
+          End-to-end Internal Control over Financial Reporting workspace from scoping and materiality through accounts/assertions, ELC, PLC, ITGC, ITAC, IPE/EUC, testing, deficiency evaluation, remediation and certification.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {modules.map(module => {
+          const Icon = module.icon;
+          return (
+            <Link
+              key={module.href}
+              href={module.href}
+              className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition group-hover:bg-brand-50 group-hover:text-brand-700">
+                <Icon className="h-4 w-4" />
+              </div>
+              <div className="mt-3 text-sm font-black text-slate-900">{module.title}</div>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">{module.detail}</p>
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-[11px] leading-5 text-sky-900">
+        Total ARC keeps the ICOFR domains separate for accountability, while the same enterprise control, process, testing and remediation concepts can still be reused across assurance modules to avoid duplicate control registers.
+      </div>
     </div>
   );
 }
