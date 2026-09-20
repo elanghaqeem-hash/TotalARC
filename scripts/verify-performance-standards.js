@@ -180,11 +180,58 @@ for (const pattern of [
   /listControlRegisterPage/,
   /listRcmRegisterPage/,
   /listToeRegisterPage/,
+  /getToeTestDetailPage/,
   /listAuditRegisterPage/,
   /LIMIT \? OFFSET \?/,
   /json_each/
 ]) {
   requirePattern('src/lib/d1-register-pagination.ts', registerPagination, pattern, 'server-side paginated register query is required');
+}
+
+const toeRegisterStart = registerPagination.indexOf('export async function listToeRegisterPage');
+const toeDetailStart = registerPagination.indexOf('export async function getToeTestDetailPage');
+const toeAuditStart = registerPagination.indexOf('export async function listAuditRegisterPage');
+
+if (toeRegisterStart < 0 || toeDetailStart < 0 || toeAuditStart < 0) {
+  findings.push('src/lib/d1-register-pagination.ts: ToE register/detail pagination boundaries are missing');
+} else {
+  const toeRegisterBlock = registerPagination.slice(toeRegisterStart, toeDetailStart);
+  const toeDetailBlock = registerPagination.slice(toeDetailStart, toeAuditStart);
+
+  if (/FROM TestSample/.test(toeRegisterBlock)) {
+    findings.push('src/lib/d1-register-pagination.ts: ToE register must not hydrate samples before a workpaper is selected');
+  }
+
+  for (const pattern of [
+    /sampleFilter/,
+    /TestSample/,
+    /LIMIT \? OFFSET \?/,
+    /samplePagination/,
+    /TestingException/,
+    /json_each/
+  ]) {
+    requirePattern(
+      'src/lib/d1-register-pagination.ts',
+      toeDetailBlock,
+      pattern,
+      'selected ToE workpaper detail must page samples and hydrate only current-page exception context'
+    );
+  }
+}
+
+const toePage = read('src/app/toe/page.tsx');
+for (const pattern of [
+  /loadDetail/,
+  /samplePageSize:\s*'50'/,
+  /samplePagination/,
+  /RegisterPager/
+]) {
+  requirePattern(
+    'src/app/toe/page.tsx',
+    toePage,
+    pattern,
+    'ToE sample workpaper must use on-demand bounded detail loading'
+  );
 }
 
 const pagedRoutes = [
