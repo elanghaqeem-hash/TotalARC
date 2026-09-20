@@ -7,6 +7,7 @@ import { ensureIcofrTestingPlanSchema } from '@/lib/d1-icofr-testing-plan';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
 import { ensureIcofrCertificationSchema } from '@/lib/d1-icofr-certification';
 import { ensureIcofrExecutiveReportingSchema } from '@/lib/d1-icofr-executive-reporting';
+import { ensureIcofrSamplingEvidenceSchema } from '@/lib/d1-icofr-sampling-evidence';
 import {
   ensureIcofrPeriodLockSchema,
   getIcofrPeriodLockState
@@ -36,6 +37,7 @@ async function getDb(): Promise<D1DatabaseLike> {
     ensureAssuranceSchema(),
     ensureIcofrCertificationSchema(),
     ensureIcofrExecutiveReportingSchema(),
+    ensureIcofrSamplingEvidenceSchema(),
     ensureIcofrPeriodLockSchema()
   ]);
 
@@ -222,6 +224,9 @@ async function captureSnapshotSections(
     controlMasters,
     controlRiskMappings,
     planItems,
+    samplingPlans,
+    samplingCandidates,
+    samplingEvidenceRequests,
     designAssessments,
     toeTests,
     testSamples,
@@ -258,6 +263,55 @@ async function captureSnapshotSections(
     testingCycleId
       ? all(db, 'SELECT * FROM ICOFRTestingPlanItem WHERE cycleId=? ORDER BY dueDate,createdAt', [testingCycleId])
       : Promise.resolve([]),
+    testingCycleId
+      ? all(
+          db,
+          'SELECT * FROM ICOFRSamplingPlan WHERE institutionId=? AND cycleId=? ORDER BY createdAt',
+          [institutionId, testingCycleId]
+        )
+      : all(
+          db,
+          'SELECT * FROM ICOFRSamplingPlan WHERE institutionId=? AND period=? ORDER BY createdAt',
+          [institutionId, testingPeriod]
+        ),
+    testingCycleId
+      ? all(
+          db,
+          `SELECT c.*
+             FROM ICOFRSamplingCandidate c
+             JOIN ICOFRSamplingPlan p ON p.id=c.samplingPlanId
+            WHERE p.institutionId=? AND p.cycleId=?
+            ORDER BY c.samplingPlanId,c.selectionOrder,c.transactionDate,c.transactionRef`,
+          [institutionId, testingCycleId]
+        )
+      : all(
+          db,
+          `SELECT c.*
+             FROM ICOFRSamplingCandidate c
+             JOIN ICOFRSamplingPlan p ON p.id=c.samplingPlanId
+            WHERE p.institutionId=? AND p.period=?
+            ORDER BY c.samplingPlanId,c.selectionOrder,c.transactionDate,c.transactionRef`,
+          [institutionId, testingPeriod]
+        ),
+    testingCycleId
+      ? all(
+          db,
+          `SELECT r.*
+             FROM ICOFREvidenceRequest r
+             JOIN ICOFRSamplingPlan p ON p.id=r.samplingPlanId
+            WHERE p.institutionId=? AND p.cycleId=?
+            ORDER BY r.dueDate,r.createdAt`,
+          [institutionId, testingCycleId]
+        )
+      : all(
+          db,
+          `SELECT r.*
+             FROM ICOFREvidenceRequest r
+             JOIN ICOFRSamplingPlan p ON p.id=r.samplingPlanId
+            WHERE p.institutionId=? AND p.period=?
+            ORDER BY r.dueDate,r.createdAt`,
+          [institutionId, testingPeriod]
+        ),
     all(db, 'SELECT * FROM ICOFRDesignAssessment WHERE institutionId=? AND period=? ORDER BY createdAt', [institutionId, testingPeriod]),
     all(
       db,
@@ -398,6 +452,9 @@ async function captureSnapshotSections(
         testingCycle: cycle,
         testingPeriod,
         planItems,
+        samplingPlans,
+        samplingCandidates,
+        samplingEvidenceRequests,
         designAssessments,
         toeTests,
         testSamples,
@@ -1076,6 +1133,9 @@ export async function buildBoardAuditCommitteePdf(closeId: string, version?: num
   const keyControls = controlDomains.filter(item => bool(item.keyControl));
   const tod = arrayFromSection(testingSection, 'designAssessments');
   const toe = arrayFromSection(testingSection, 'toeTests');
+  const samplingPlans = arrayFromSection(testingSection, 'samplingPlans');
+  const samplingCandidates = arrayFromSection(testingSection, 'samplingCandidates');
+  const samplingEvidenceRequests = arrayFromSection(testingSection, 'samplingEvidenceRequests');
   const deficiencies = arrayFromSection(testingSection, 'deficiencies');
   const maps = arrayFromSection(testingSection, 'managementActionPlans');
   const attestations = arrayFromSection(certificationSection, 'attestations');
@@ -1116,6 +1176,9 @@ export async function buildBoardAuditCommitteePdf(closeId: string, version?: num
     'Key ICOFR controls: ' + keyControls.length,
     'ToD workpapers captured: ' + tod.length,
     'ToE workpapers captured: ' + toe.length,
+    'Sampling plans captured: ' + samplingPlans.length,
+    'Selected sampling candidates: ' + samplingCandidates.filter(item => bool(item.selected)).length,
+    'Sampling evidence requests: ' + samplingEvidenceRequests.length,
     'Control deficiencies captured: ' + deficiencies.length,
     'Significant deficiencies / material weaknesses: ' + significant.length,
     'Open MAP at snapshot: ' + openMaps.length,
@@ -1247,6 +1310,9 @@ export async function buildExternalAuditorExcel(closeId: string, version?: numbe
     worksheet('RCM Mapping', arrayFromSection(controls, 'controlRiskMappings')),
     worksheet('IPE EUC', arrayFromSection(controls, 'informationRegisters')),
     worksheet('Testing Plan', arrayFromSection(testing, 'planItems')),
+    worksheet('Sampling Plans', arrayFromSection(testing, 'samplingPlans')),
+    worksheet('Sampling Population', arrayFromSection(testing, 'samplingCandidates')),
+    worksheet('Evidence Requests', arrayFromSection(testing, 'samplingEvidenceRequests')),
     worksheet('ToD', arrayFromSection(testing, 'designAssessments')),
     worksheet('ToE', arrayFromSection(testing, 'toeTests')),
     worksheet('Samples', arrayFromSection(testing, 'testSamples')),
