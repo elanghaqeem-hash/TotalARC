@@ -113,6 +113,9 @@ jobs:
       - name: Verify no dummy operational data
         run: npm run verify:no-dummy
 
+      - name: Verify sidebar module integrity
+        run: npm run verify:modules
+
       - name: Build OpenNext Worker
         run: npm run build
 
