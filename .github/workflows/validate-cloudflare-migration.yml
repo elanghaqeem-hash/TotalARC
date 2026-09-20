@@ -40,6 +40,9 @@ jobs:
       - name: Verify organization master integrity
         run: npm run verify:organization-integrity
 
+      - name: Verify assurance persistence integrity
+        run: npm run verify:assurance-integrity
+
       - name: Build OpenNext Cloudflare artifact
         run: npm run build
 
