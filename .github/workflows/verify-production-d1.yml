@@ -18,11 +18,17 @@ jobs:
     timeout-minutes: 8
     env:
       TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+      TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
     steps:
       - name: Verify production D1 connectivity
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::Repository secret TOTAL_ARC_HEALTHCHECK_TOKEN is required for authenticated production probes."
+            exit 1
+          fi
 
           BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
           BASE_URL="${BASE_URL%/}"
@@ -34,6 +40,7 @@ jobs:
             HTTP_CODE="$(curl --silent --show-error --location --max-time 20 \
               --output /tmp/totalarc-d1-health.json \
               --write-out "%{http_code}" \
+              --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" \
               "$URL" || true)"
 
             RESPONSE="$(cat /tmp/totalarc-d1-health.json 2>/dev/null || true)"
@@ -85,6 +92,7 @@ jobs:
             http_code="$(curl --silent --show-error --location --max-time 25 \
               --output "$output" \
               --write-out "%{http_code}" \
+              --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" \
               "$BASE_URL$path" || true)"
 
             if [ "$http_code" != "200" ]; then
