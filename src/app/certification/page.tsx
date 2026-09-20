@@ -17,22 +17,43 @@ import {
 
 const emptySubCert = {
   id: '',
+  certificationRef: '',
   scopeId: '',
   testingCycleId: '',
   period: '',
+  certificationType: 'Year-End',
+  certificationDate: new Date().toISOString().slice(0, 10),
   subjectType: 'Organization Unit',
   subjectId: '',
   certifierName: '',
   certifierRole: '',
+  certifierEmail: '',
   declarationText: '',
+  scopeComplete: false,
   controlsPerformed: false,
+  evidenceComplete: false,
   changesDisclosed: false,
   deficienciesDisclosed: false,
   fraudDisclosed: false,
   remediationAccurate: false,
+  judgmentsDisclosed: false,
+  subsequentEventsDisclosed: false,
+  managementOverrideDisclosed: false,
+  materialChangeDetails: '',
+  deficiencyDetails: '',
+  fraudDetails: '',
+  remediationDetails: '',
+  judgmentDetails: '',
+  subsequentEventDetails: '',
+  managementOverrideDetails: '',
+  evidenceReference: '',
+  exceptionRationale: '',
+  additionalComments: '',
   conclusion: 'Not Concluded',
   status: 'Draft',
   reviewerName: '',
+  reviewerRole: '',
+  reviewerEmail: '',
   reviewerDecision: '',
   reviewerComments: ''
 };
@@ -111,12 +132,24 @@ export default function CertificationPage() {
       const subjectType = payload.organizationUnits?.length ? 'Organization Unit' : 'Legal Entity';
       const attestationId = payload.attestations?.[0]?.id || '';
 
+      const defaultSubject =
+        subjectType === 'Organization Unit'
+          ? payload.organizationUnits?.find((item: any) => item.id === subjectId)
+          : payload.legalEntities?.find((item: any) => item.id === subjectId);
+
       setSubCertForm(current => ({
         ...current,
         scopeId: current.scopeId || scopeId,
         testingCycleId: current.testingCycleId || cycleId,
         subjectType: current.subjectId ? current.subjectType : subjectType,
-        subjectId: current.subjectId || subjectId
+        subjectId: current.subjectId || subjectId,
+        certificationDate: current.certificationDate || new Date().toISOString().slice(0, 10),
+        certifierName:
+          current.certifierName ||
+          (defaultSubject?.headName ? String(defaultSubject.headName) : ''),
+        certifierEmail:
+          current.certifierEmail ||
+          (defaultSubject?.headEmail ? String(defaultSubject.headEmail) : '')
       }));
 
       setAttestationForm(current => ({
@@ -154,6 +187,47 @@ export default function CertificationPage() {
     if (subCertForm.subjectType === 'Legal Entity') return data?.legalEntities || [];
     return data?.organizationUnits || [];
   }, [data, subCertForm.subjectType]);
+
+  const selectedSubject = useMemo(
+    () => subjects.find((item: any) => item.id === subCertForm.subjectId) || null,
+    [subjects, subCertForm.subjectId]
+  );
+
+  const selectedScope = useMemo(
+    () => data?.scopes?.find((item: any) => item.id === subCertForm.scopeId) || null,
+    [data, subCertForm.scopeId]
+  );
+
+  const selectedCycle = useMemo(
+    () => data?.cycles?.find((item: any) => item.id === subCertForm.testingCycleId) || null,
+    [data, subCertForm.testingCycleId]
+  );
+
+  const subjectContext = useMemo(
+    () =>
+      data?.subjectContext?.[
+        `${subCertForm.subjectType}:${subCertForm.subjectId}`
+      ] || null,
+    [data, subCertForm.subjectType, subCertForm.subjectId]
+  );
+
+  const selectSubject = (type: string, subjectId: string) => {
+    const list =
+      type === 'Legal Entity'
+        ? data?.legalEntities || []
+        : data?.organizationUnits || [];
+    const subject = list.find((item: any) => item.id === subjectId) || null;
+
+    setSubCertForm(current => ({
+      ...current,
+      subjectType: type,
+      subjectId,
+      certifierName: subject?.headName ? String(subject.headName) : '',
+      certifierEmail: subject?.headEmail ? String(subject.headEmail) : '',
+      certifierRole: ''
+    }));
+  };
+
 
   const subCertCycles = useMemo(
     () => (data?.cycles || []).filter((item: any) => !subCertForm.scopeId || item.scopeId === subCertForm.scopeId),
@@ -276,22 +350,43 @@ export default function CertificationPage() {
   const editSubCert = (item: any) => {
     setSubCertForm({
       id: item.id || '',
+      certificationRef: item.certificationRef || '',
       scopeId: item.scopeId || '',
       testingCycleId: item.testingCycleId || '',
       period: item.period || '',
+      certificationType: item.certificationType || 'Year-End',
+      certificationDate: item.certificationDate || new Date().toISOString().slice(0, 10),
       subjectType: item.subjectType || 'Organization Unit',
       subjectId: item.subjectId || '',
       certifierName: item.certifierName || '',
       certifierRole: item.certifierRole || '',
+      certifierEmail: item.certifierEmail || '',
       declarationText: item.declarationText || '',
+      scopeComplete: Boolean(item.scopeComplete),
       controlsPerformed: Boolean(item.controlsPerformed),
+      evidenceComplete: Boolean(item.evidenceComplete),
       changesDisclosed: Boolean(item.changesDisclosed),
       deficienciesDisclosed: Boolean(item.deficienciesDisclosed),
       fraudDisclosed: Boolean(item.fraudDisclosed),
       remediationAccurate: Boolean(item.remediationAccurate),
+      judgmentsDisclosed: Boolean(item.judgmentsDisclosed),
+      subsequentEventsDisclosed: Boolean(item.subsequentEventsDisclosed),
+      managementOverrideDisclosed: Boolean(item.managementOverrideDisclosed),
+      materialChangeDetails: item.materialChangeDetails || '',
+      deficiencyDetails: item.deficiencyDetails || '',
+      fraudDetails: item.fraudDetails || '',
+      remediationDetails: item.remediationDetails || '',
+      judgmentDetails: item.judgmentDetails || '',
+      subsequentEventDetails: item.subsequentEventDetails || '',
+      managementOverrideDetails: item.managementOverrideDetails || '',
+      evidenceReference: item.evidenceReference || '',
+      exceptionRationale: item.exceptionRationale || '',
+      additionalComments: item.additionalComments || '',
       conclusion: item.conclusion || 'Not Concluded',
       status: item.status || 'Draft',
       reviewerName: item.reviewerName || '',
+      reviewerRole: item.reviewerRole || '',
+      reviewerEmail: item.reviewerEmail || '',
       reviewerDecision: item.reviewerDecision || '',
       reviewerComments: item.reviewerComments || ''
     });
@@ -399,191 +494,462 @@ export default function CertificationPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  ICOFR scope *
-                  <select
-                    required
-                    value={subCertForm.scopeId}
-                    onChange={e => {
-                      const scopeId = e.target.value;
-                      const cycleId = data?.cycles?.find((item: any) => item.scopeId === scopeId)?.id || '';
-                      setSubCertForm({ ...subCertForm, scopeId, testingCycleId: cycleId });
-                    }}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  >
-                    <option value="">Select scope</option>
-                    {(data?.scopes || []).map((item: any) => (
-                      <option key={item.id} value={item.id}>{item.scopeName} · FY{item.fiscalYear} · {item.status}</option>
-                    ))}
-                  </select>
-                </label>
+              <div className="space-y-4">
+                <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                  <div className="mb-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
+                      A. Certification Perimeter
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                      Link the declaration to the approved ICOFR scope, testing cycle, reporting period and accountable entity/unit.
+                    </p>
+                  </div>
 
-                <label className="text-xs font-bold text-slate-700">
-                  Testing cycle
-                  <select
-                    value={subCertForm.testingCycleId}
-                    onChange={e => setSubCertForm({ ...subCertForm, testingCycleId: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  >
-                    <option value="">No cycle linked</option>
-                    {subCertCycles.map((item: any) => <option key={item.id} value={item.id}>{item.cycleName}</option>)}
-                  </select>
-                </label>
-
-                <label className="text-xs font-bold text-slate-700">
-                  Period *
-                  <input
-                    required
-                    value={subCertForm.period}
-                    onChange={e => setSubCertForm({ ...subCertForm, period: e.target.value })}
-                    placeholder="e.g. FY2027"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  />
-                </label>
-
-                <label className="text-xs font-bold text-slate-700">
-                  Certification level *
-                  <select
-                    value={subCertForm.subjectType}
-                    onChange={e => {
-                      const type = e.target.value;
-                      const list = type === 'Legal Entity' ? data?.legalEntities || [] : data?.organizationUnits || [];
-                      setSubCertForm({ ...subCertForm, subjectType: type, subjectId: list[0]?.id || '' });
-                    }}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  >
-                    <option>Legal Entity</option>
-                    <option>Organization Unit</option>
-                  </select>
-                </label>
-
-                <label className="text-xs font-bold text-slate-700">
-                  Entity / unit *
-                  <select
-                    required
-                    value={subCertForm.subjectId}
-                    onChange={e => setSubCertForm({ ...subCertForm, subjectId: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  >
-                    <option value="">Select</option>
-                    {subjects.map((item: any) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
-                  </select>
-                </label>
-
-                <label className="text-xs font-bold text-slate-700">
-                  Certifier *
-                  <input
-                    required
-                    value={subCertForm.certifierName}
-                    onChange={e => setSubCertForm({ ...subCertForm, certifierName: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  />
-                </label>
-
-                <label className="text-xs font-bold text-slate-700">
-                  Certifier role *
-                  <input
-                    required
-                    value={subCertForm.certifierRole}
-                    onChange={e => setSubCertForm({ ...subCertForm, certifierRole: e.target.value })}
-                    placeholder="e.g. Division Head / Entity CFO"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  />
-                </label>
-
-                <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Certification declaration *
-                  <textarea
-                    required
-                    rows={3}
-                    value={subCertForm.declarationText}
-                    onChange={e => setSubCertForm({ ...subCertForm, declarationText: e.target.value })}
-                    placeholder="Enter the actual certification statement approved for this period."
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
-                  />
-                </label>
-
-                <div className="sm:col-span-2 grid grid-cols-1 gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-2">
-                  {[
-                    ['controlsPerformed', 'Key controls performed as represented'],
-                    ['changesDisclosed', 'Material process/system/control changes disclosed'],
-                    ['deficienciesDisclosed', 'Known control deficiencies disclosed'],
-                    ['fraudDisclosed', 'Known fraud or suspected fraud matters disclosed'],
-                    ['remediationAccurate', 'Remediation status reported accurately']
-                  ].map(([key, label]) => (
-                    <label key={key} className="flex items-start gap-2 text-[11px] font-bold text-slate-700">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-bold text-slate-700 sm:col-span-2">
+                      Certification reference
                       <input
-                        type="checkbox"
-                        checked={Boolean((subCertForm as any)[key])}
-                        onChange={e => setSubCertForm({ ...subCertForm, [key]: e.target.checked })}
+                        readOnly
+                        value={subCertForm.certificationRef || 'Generated automatically after first save'}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 font-mono text-[11px] font-normal text-slate-500"
                       />
-                      {label}
                     </label>
-                  ))}
-                </div>
 
-                <label className="text-xs font-bold text-slate-700">
-                  Unit conclusion
-                  <select
-                    value={subCertForm.conclusion}
-                    onChange={e => setSubCertForm({ ...subCertForm, conclusion: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  >
-                    <option>Not Concluded</option>
-                    <option>Effective</option>
-                    <option>Effective with Exceptions</option>
-                    <option>Ineffective</option>
-                  </select>
-                </label>
+                    <label className="text-xs font-bold text-slate-700 sm:col-span-2">
+                      ICOFR scope *
+                      <select
+                        required
+                        value={subCertForm.scopeId}
+                        onChange={e => {
+                          const scopeId = e.target.value;
+                          const scope = data?.scopes?.find((item: any) => item.id === scopeId);
+                          const cycleId = data?.cycles?.find((item: any) => item.scopeId === scopeId)?.id || '';
+                          setSubCertForm({
+                            ...subCertForm,
+                            scopeId,
+                            testingCycleId: cycleId,
+                            period:
+                              subCertForm.period ||
+                              (scope?.fiscalYear ? `FY${scope.fiscalYear}` : '')
+                          });
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      >
+                        <option value="">Select scope</option>
+                        {(data?.scopes || []).map((item: any) => (
+                          <option key={item.id} value={item.id}>
+                            {item.scopeName} · FY{item.fiscalYear} · {item.status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <label className="text-xs font-bold text-slate-700">
-                  Status
-                  <select
-                    value={subCertForm.status}
-                    onChange={e => setSubCertForm({ ...subCertForm, status: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  >
-                    <option>Draft</option>
-                    <option>Submitted</option>
-                    <option>Under Review</option>
-                    <option>Approved</option>
-                    <option>Rejected</option>
-                  </select>
-                </label>
+                    <label className="text-xs font-bold text-slate-700">
+                      Testing cycle
+                      <select
+                        value={subCertForm.testingCycleId}
+                        onChange={e => setSubCertForm({ ...subCertForm, testingCycleId: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      >
+                        <option value="">No cycle linked</option>
+                        {subCertCycles.map((item: any) => (
+                          <option key={item.id} value={item.id}>{item.cycleName}</option>
+                        ))}
+                      </select>
+                    </label>
 
-                <label className="text-xs font-bold text-slate-700">
-                  Reviewer
-                  <input
-                    value={subCertForm.reviewerName}
-                    onChange={e => setSubCertForm({ ...subCertForm, reviewerName: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  />
-                </label>
+                    <label className="text-xs font-bold text-slate-700">
+                      Period *
+                      <input
+                        required
+                        value={subCertForm.period}
+                        onChange={e => setSubCertForm({ ...subCertForm, period: e.target.value })}
+                        placeholder="e.g. FY2027 / 2027 Q4"
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      />
+                    </label>
 
-                <label className="text-xs font-bold text-slate-700">
-                  Reviewer decision
-                  <select
-                    value={subCertForm.reviewerDecision}
-                    onChange={e => setSubCertForm({ ...subCertForm, reviewerDecision: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  >
-                    <option value="">Not reviewed</option>
-                    <option>Approved</option>
-                    <option>Returned for Revision</option>
-                    <option>Rejected</option>
-                  </select>
-                </label>
+                    <label className="text-xs font-bold text-slate-700">
+                      Certification type *
+                      <select
+                        value={subCertForm.certificationType}
+                        onChange={e => setSubCertForm({ ...subCertForm, certificationType: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      >
+                        <option>Quarterly</option>
+                        <option>Semi-Annual</option>
+                        <option>Year-End</option>
+                        <option>Ad Hoc</option>
+                      </select>
+                    </label>
 
-                <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Reviewer comments
-                  <textarea
-                    rows={2}
-                    value={subCertForm.reviewerComments}
-                    onChange={e => setSubCertForm({ ...subCertForm, reviewerComments: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  />
-                </label>
+                    <label className="text-xs font-bold text-slate-700">
+                      Certification date *
+                      <input
+                        type="date"
+                        required
+                        value={subCertForm.certificationDate}
+                        onChange={e => setSubCertForm({ ...subCertForm, certificationDate: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700">
+                      Certification level *
+                      <select
+                        value={subCertForm.subjectType}
+                        onChange={e => {
+                          const type = e.target.value;
+                          const list =
+                            type === 'Legal Entity'
+                              ? data?.legalEntities || []
+                              : data?.organizationUnits || [];
+                          selectSubject(type, list[0]?.id || '');
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      >
+                        <option>Legal Entity</option>
+                        <option>Organization Unit</option>
+                      </select>
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700">
+                      Entity / unit *
+                      <select
+                        required
+                        value={subCertForm.subjectId}
+                        onChange={e => selectSubject(subCertForm.subjectType, e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      >
+                        <option value="">Select entity / unit</option>
+                        {subjects.map((item: any) => (
+                          <option key={item.id} value={item.id}>
+                            {item.code} · {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {selectedSubject && (
+                    <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-wide text-sky-700">
+                            Linked subject context
+                          </div>
+                          <div className="mt-1 text-xs font-black text-slate-900">
+                            {selectedSubject.code} · {selectedSubject.name}
+                          </div>
+                          <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                            {selectedSubject.type || subCertForm.subjectType}
+                            {selectedSubject.headName ? ` · Head: ${selectedSubject.headName}` : ''}
+                            {selectedSubject.headEmail ? ` · ${selectedSubject.headEmail}` : ''}
+                          </div>
+                        </div>
+                        <div className="text-right text-[9px] leading-4 text-slate-400">
+                          {selectedScope ? `Scope: ${selectedScope.status}` : 'Scope not selected'}
+                          <br />
+                          {selectedCycle ? `Cycle: ${selectedCycle.cycleName}` : 'Cycle not linked'}
+                        </div>
+                      </div>
+
+                      {subjectContext && (
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {[
+                            ['Processes', subjectContext.processCount],
+                            ['ICOFR key controls', subjectContext.icofrKeyControlCount],
+                            ['ToD completed', `${subjectContext.todCompleted}/${subjectContext.todCount}`],
+                            ['ToE completed', `${subjectContext.toeCompleted}/${subjectContext.toeCount}`],
+                            ['Open H/C issues', subjectContext.openHighCriticalIssues],
+                            ['Overdue MAP', subjectContext.overdueActionPlans]
+                          ].map(([label, value]) => (
+                            <div key={String(label)} className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</div>
+                              <div className="mt-0.5 text-sm font-black text-slate-800">{String(value ?? 0)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 p-3.5">
+                  <div className="mb-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
+                      B. Certifier & Declaration
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                      Identify the accountable management certifier and record the approved certification statement.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-bold text-slate-700">
+                      Certifier name *
+                      <input
+                        required
+                        value={subCertForm.certifierName}
+                        onChange={e => setSubCertForm({ ...subCertForm, certifierName: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700">
+                      Certifier role / position *
+                      <input
+                        required
+                        value={subCertForm.certifierRole}
+                        onChange={e => setSubCertForm({ ...subCertForm, certifierRole: e.target.value })}
+                        placeholder="e.g. Division Head / Entity CFO"
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700 sm:col-span-2">
+                      Certifier email *
+                      <input
+                        type="email"
+                        required
+                        value={subCertForm.certifierEmail}
+                        onChange={e => setSubCertForm({ ...subCertForm, certifierEmail: e.target.value })}
+                        placeholder="name@company.com"
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700 sm:col-span-2">
+                      Certification declaration *
+                      <textarea
+                        required
+                        rows={4}
+                        value={subCertForm.declarationText}
+                        onChange={e => setSubCertForm({ ...subCertForm, declarationText: e.target.value })}
+                        placeholder="Enter the actual management certification statement approved for this period. Do not use assumed or simulated conclusions."
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700 sm:col-span-2">
+                      Evidence / workpaper reference
+                      <textarea
+                        rows={2}
+                        value={subCertForm.evidenceReference}
+                        onChange={e => setSubCertForm({ ...subCertForm, evidenceReference: e.target.value })}
+                        placeholder="Reference supporting RCM, ToD/ToE workpapers, issue register, evidence pack, reconciliation or document IDs. Required before Submit/Approve."
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 p-3.5">
+                  <div className="mb-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
+                      C. Management Representations
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                      All representations below must be confirmed before the record can be Submitted or Approved.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {[
+                      ['scopeComplete', 'ICOFR scope for this entity/unit is complete and appropriately represented'],
+                      ['controlsPerformed', 'Key controls were performed as represented'],
+                      ['evidenceComplete', 'Supporting evidence is complete, accurate and available for review'],
+                      ['changesDisclosed', 'Material process, system and control changes were disclosed'],
+                      ['deficienciesDisclosed', 'Known control deficiencies and exceptions were disclosed'],
+                      ['fraudDisclosed', 'Known fraud or suspected fraud matters affecting financial reporting were disclosed'],
+                      ['remediationAccurate', 'Remediation and management action status is reported accurately'],
+                      ['judgmentsDisclosed', 'Significant accounting judgments, estimates and manual adjustments were disclosed'],
+                      ['subsequentEventsDisclosed', 'Relevant subsequent events after the reporting cut-off were disclosed'],
+                      ['managementOverrideDisclosed', 'Known management override or control override matters were disclosed']
+                    ].map(([key, label]) => (
+                      <label
+                        key={key}
+                        className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 text-[10px] font-bold leading-4 text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4 shrink-0"
+                          checked={Boolean((subCertForm as any)[key])}
+                          onChange={e =>
+                            setSubCertForm({
+                              ...subCertForm,
+                              [key]: e.target.checked
+                            })
+                          }
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 p-3.5">
+                  <div className="mb-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
+                      D. Disclosures, Exceptions & Supporting Narrative
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                      Use these fields to document the facts behind the representations. State “None identified” only when that is the actual conclusion.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {[
+                      ['materialChangeDetails', 'Material process / system / control changes', 'Describe material changes, effective dates and impact on controls.'],
+                      ['deficiencyDetails', 'Control deficiencies / exceptions', 'List relevant deficiencies, classifications, owners and current status.'],
+                      ['fraudDetails', 'Fraud / suspected fraud disclosure', 'Record actual disclosed fraud matters or state the reviewed result.'],
+                      ['remediationDetails', 'Remediation status', 'Summarize open, overdue or completed actions relevant to this certification.'],
+                      ['judgmentDetails', 'Significant judgments / estimates', 'Record material judgments, estimates, manual adjustments or unusual transactions reviewed.'],
+                      ['subsequentEventDetails', 'Subsequent events', 'Record relevant events after the reporting cut-off through the certification date.'],
+                      ['managementOverrideDetails', 'Management override matters', 'Record identified override matters, compensating controls and escalation where applicable.'],
+                      ['additionalComments', 'Additional comments', 'Add other facts, limitations, dependencies or cross-references.']
+                    ].map(([key, label, placeholder]) => (
+                      <label key={key} className="text-xs font-bold text-slate-700">
+                        {label}
+                        <textarea
+                          rows={3}
+                          value={String((subCertForm as any)[key] || '')}
+                          onChange={e =>
+                            setSubCertForm({
+                              ...subCertForm,
+                              [key]: e.target.value
+                            })
+                          }
+                          placeholder={placeholder}
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 p-3.5">
+                  <div className="mb-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
+                      E. Conclusion & Workflow
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                      The certifier records the conclusion. Total ARC does not infer an effectiveness conclusion.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-bold text-slate-700">
+                      Unit conclusion *
+                      <select
+                        value={subCertForm.conclusion}
+                        onChange={e => setSubCertForm({ ...subCertForm, conclusion: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      >
+                        <option>Not Concluded</option>
+                        <option>Effective</option>
+                        <option>Effective with Exceptions</option>
+                        <option>Ineffective</option>
+                      </select>
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700">
+                      Workflow status
+                      <select
+                        value={subCertForm.status}
+                        onChange={e => setSubCertForm({ ...subCertForm, status: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      >
+                        <option>Draft</option>
+                        <option>Submitted</option>
+                        <option>Under Review</option>
+                        <option>Approved</option>
+                        <option>Rejected</option>
+                      </select>
+                    </label>
+
+                    {['Effective with Exceptions', 'Ineffective'].includes(subCertForm.conclusion) && (
+                      <label className="text-xs font-bold text-slate-700 sm:col-span-2">
+                        Exception / conclusion rationale *
+                        <textarea
+                          required
+                          rows={3}
+                          value={subCertForm.exceptionRationale}
+                          onChange={e => setSubCertForm({ ...subCertForm, exceptionRationale: e.target.value })}
+                          placeholder="Explain the exception, impact, compensating controls, escalation and basis for the selected conclusion."
+                          className="mt-1 w-full rounded-xl border border-amber-200 bg-amber-50/40 px-3 py-2.5 font-normal leading-5"
+                        />
+                      </label>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 p-3.5">
+                  <div className="mb-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
+                      F. Reviewer & Approval
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                      An Approved workflow status requires an identified reviewer, reviewer role and an Approved decision.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-bold text-slate-700">
+                      Reviewer name
+                      <input
+                        value={subCertForm.reviewerName}
+                        onChange={e => setSubCertForm({ ...subCertForm, reviewerName: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700">
+                      Reviewer role / position
+                      <input
+                        value={subCertForm.reviewerRole}
+                        onChange={e => setSubCertForm({ ...subCertForm, reviewerRole: e.target.value })}
+                        placeholder="e.g. Finance Controller / ICOFR Reviewer"
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700">
+                      Reviewer email
+                      <input
+                        type="email"
+                        value={subCertForm.reviewerEmail}
+                        onChange={e => setSubCertForm({ ...subCertForm, reviewerEmail: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700">
+                      Reviewer decision
+                      <select
+                        value={subCertForm.reviewerDecision}
+                        onChange={e => setSubCertForm({ ...subCertForm, reviewerDecision: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      >
+                        <option value="">Not reviewed</option>
+                        <option>Approved</option>
+                        <option>Returned for Revision</option>
+                        <option>Rejected</option>
+                      </select>
+                    </label>
+
+                    <label className="text-xs font-bold text-slate-700 sm:col-span-2">
+                      Reviewer comments
+                      <textarea
+                        rows={3}
+                        value={subCertForm.reviewerComments}
+                        onChange={e => setSubCertForm({ ...subCertForm, reviewerComments: e.target.value })}
+                        placeholder="Document review notes, conditions, required follow-up or approval rationale."
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
+                      />
+                    </label>
+                  </div>
+                </section>
               </div>
 
               <div className="mt-4 flex justify-end">
