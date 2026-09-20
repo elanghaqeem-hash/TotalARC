@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   getTraceabilityData,
+  removeTraceabilityChain,
   saveDesignAssessment,
   saveTraceabilityChain
 } from '@/lib/d1-icofr-traceability';
@@ -60,6 +61,16 @@ export async function POST(request: Request) {
       return NextResponse.json(result, { status: 201 });
     }
 
+    if (actionType === 'REMOVE_CHAIN') {
+      const assertionId = typeof body.assertionId === 'string' ? body.assertionId.trim() : '';
+      const riskId = typeof body.riskId === 'string' ? body.riskId.trim() : '';
+      if (!assertionId || !riskId) {
+        return NextResponse.json({ error: 'Assertion and risk are required to remove a chain.' }, { status: 400 });
+      }
+      const result = await removeTraceabilityChain({ assertionId, riskId });
+      return NextResponse.json(result);
+    }
+
     if (actionType === 'SAVE_TOD') {
       const result = await saveDesignAssessment(body);
       return NextResponse.json(result, { status: body.id ? 200 : 201 });
@@ -77,7 +88,8 @@ export async function POST(request: Request) {
       INFORMATION_ARTIFACT_NOT_FOUND: ['Selected IPE/EUC record was not found.', 400],
       SOURCE_CONTROL_NOT_FOUND: ['Selected enterprise Control Master record was not found.', 400],
       REQUIRED_FIELDS: ['Control, period and tester are required for Test of Design.', 400],
-      TEST_ID_CONFLICT: ['Test of Design ID already exists.', 409]
+      TEST_ID_CONFLICT: ['Test of Design ID already exists.', 409],
+      TRACE_LINK_NOT_FOUND: ['Traceability link was not found.', 404]
     };
 
     if (known[code]) {
