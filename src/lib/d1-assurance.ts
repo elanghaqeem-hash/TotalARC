@@ -1120,6 +1120,233 @@ export async function createIpeRegister(input: {
   );
 }
 
+
+export async function listCertificationData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const [certRows, attestationRows] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT cert.*
+         FROM ControlCertification cert
+         JOIN ControlMaster c ON c.id = cert.controlId
+        WHERE c.institutionId = ?
+        ORDER BY cert.certifiedAt DESC`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM ManagementAttestation WHERE institutionId = ? ORDER BY attestedAt DESC',
+      [institutionId]
+    )
+  ]);
+
+  const certifications = await Promise.all(
+    certRows.map(async cert => ({
+      ...cert,
+      control: await loadControlContext(db, String(cert.controlId || ''), institutionId)
+    }))
+  );
+
+  const attestations = attestationRows.map(attestation => ({
+    ...attestation,
+    cfoSignOff: storedBoolean(attestation.cfoSignOff),
+    croSignOff: storedBoolean(attestation.croSignOff)
+  }));
+
+  return { certifications, attestations };
+}
+
+export async function createControlCertification(input: {
+  controlId: string;
+  period: string;
+  declarationText: string;
+  certifierName: string;
+  certifierRole: string;
+  status: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const control = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM ControlMaster WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.controlId, institutionId]
+  );
+  if (!control) throw new Error('CONTROL_NOT_FOUND');
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO ControlCertification (
+      id, controlId, period, declarationText, certifierName, certifierRole,
+      status, certifiedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.controlId,
+      input.period,
+      input.declarationText,
+      input.certifierName,
+      input.certifierRole,
+      input.status,
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlCertification WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
+export async function createManagementAttestation(input: {
+  legalEntityId?: string | null;
+  orgUnitId?: string | null;
+  period: string;
+  scopeSummary: string;
+  cfoSignOff: boolean;
+  cfoName?: string | null;
+  croSignOff: boolean;
+  croName?: string | null;
+  overallOpinion?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO ManagementAttestation (
+      id, institutionId, legalEntityId, orgUnitId, period, scopeSummary,
+      cfoSignOff, cfoName, croSignOff, croName, overallOpinion, attestedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.legalEntityId),
+      nullable(input.orgUnitId),
+      input.period,
+      input.scopeSummary,
+      input.cfoSignOff ? 1 : 0,
+      nullable(input.cfoName),
+      input.croSignOff ? 1 : 0,
+      nullable(input.croName),
+      nullable(input.overallOpinion),
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ManagementAttestation WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function listTasksData(institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const rows = await all<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Task WHERE institutionId = ? ORDER BY dueDate ASC, createdAt DESC',
+    [institutionId]
+  );
+
+  return Promise.all(
+    rows.map(async task => {
+      const user = task.userId
+        ? await first<Record<string, unknown>>(
+            db,
+            'SELECT id, email, name, role, department, orgUnitId, active FROM AccessUser WHERE id = ? AND institutionId = ? LIMIT 1',
+            [task.userId, institutionId]
+          )
+        : null;
+      return {
+        ...task,
+        user: user
+          ? {
+              ...user,
+              active: Number(user.active) === 1
+            }
+          : null
+      };
+    })
+  );
+}
+
+export async function createTask(input: {
+  userId?: string | null;
+  orgUnitId?: string | null;
+  title: string;
+  type: string;
+  dueDate: string;
+  priority: string;
+  status?: string;
+  entityRef?: string | null;
+  link?: string | null;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+
+  if (input.userId) {
+    const user = await first<Record<string, unknown>>(
+      db,
+      'SELECT id FROM AccessUser WHERE id = ? AND institutionId = ? AND active = 1 LIMIT 1',
+      [input.userId, institutionId]
+    );
+    if (!user) throw new Error('TASK_USER_NOT_FOUND');
+  }
+
+  const id = crypto.randomUUID();
+  await run(
+    db,
+    `INSERT INTO Task (
+      id, institutionId, userId, orgUnitId, title, type, dueDate, priority,
+      status, entityRef, link, createdAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      institutionId,
+      nullable(input.userId),
+      nullable(input.orgUnitId),
+      input.title,
+      input.type,
+      input.dueDate,
+      input.priority,
+      input.status || 'Pending',
+      nullable(input.entityRef),
+      nullable(input.link),
+      nowIso()
+    ]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Task WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institutionId]
+  );
+}
+
+export async function updateTaskStatus(input: {
+  taskId: string;
+  status: string;
+}, institutionId: string) {
+  const db = await ensureAssuranceSchema();
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT id FROM Task WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.taskId, institutionId]
+  );
+  if (!existing) throw new Error('TASK_NOT_FOUND');
+
+  await run(
+    db,
+    'UPDATE Task SET status = ? WHERE id = ? AND institutionId = ?',
+    [input.status, input.taskId, institutionId]
+  );
+
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Task WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.taskId, institutionId]
+  );
+}
+
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>, institutionId: string) {
   const [issue, milestones, retests] = await Promise.all([
     first<Record<string, unknown>>(db, 'SELECT * FROM Issue WHERE id = ? AND institutionId = ? LIMIT 1', [row.issueId, institutionId]),
