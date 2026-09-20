@@ -1,0 +1,127 @@
+name: Execute Aura baseline source migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - migration-input/aura-source-bundle.txt
+      - .github/workflows/execute-aura-baseline-migration.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-aura-baseline-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Import encrypted Aura baseline sources
+        env:
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          POINTER="migration-input/aura-source-bundle.txt"
+          if [ ! -f "$POINTER" ]; then
+            echo "Aura migration pointer is absent; nothing to import."
+            exit 0
+          fi
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is not configured."
+            exit 1
+          fi
+
+          EXPECTED_SHA="$(awk 'NR==1 {print $1}' "$POINTER")"
+          BUNDLE_URL="$(awk 'NR==1 {print $2}' "$POINTER")"
+          if [ -z "$EXPECTED_SHA" ] || [ -z "$BUNDLE_URL" ]; then
+            echo "::error::Aura migration pointer is invalid."
+            exit 1
+          fi
+
+          BASE_URL="${PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          IMPORT_URL="$BASE_URL/api/system/source-migration"
+          STATUS_URL="$BASE_URL/api/system/source-migration?op=status"
+
+          curl --fail --silent --show-error --max-time 180 -L "$BUNDLE_URL" -o /tmp/aura-source-bundle.zip
+          ACTUAL_SHA="$(sha256sum /tmp/aura-source-bundle.zip | awk '{print $1}')"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Aura encrypted bundle checksum mismatch."
+            exit 1
+          fi
+
+          mkdir -p /tmp/aura-source-envelopes
+          unzip -q /tmp/aura-source-bundle.zip -d /tmp/aura-source-envelopes
+          mapfile -t envelope_files < <(find /tmp/aura-source-envelopes -type f -name '*.json' | sort)
+
+          if [ "${#envelope_files[@]}" -ne 22 ]; then
+            echo "::error::Expected 22 canonical Aura source records, received ${#envelope_files[@]}."
+            exit 1
+          fi
+
+          total=0
+          ok=0
+          failed=0
+          for file in "${envelope_files[@]}"; do
+            total=$((total + 1))
+            HTTP_CODE="$(curl --silent --show-error --max-time 180               --output /tmp/aura-migration-response.json               --write-out "%{http_code}"               --request POST               --header "Content-Type: application/json"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               --data-binary "@$file"               "$IMPORT_URL" || true)"
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && jq -e '.ok == true' /tmp/aura-migration-response.json >/dev/null 2>&1; then
+              ok=$((ok + 1))
+              echo "Imported Aura baseline source $total/22."
+            else
+              failed=$((failed + 1))
+              echo "::error::Aura baseline item $total failed (HTTP ${HTTP_CODE:-unknown})."
+              jq -c '{ok,error,code}' /tmp/aura-migration-response.json 2>/dev/null || true
+            fi
+          done
+
+          echo "Aura migration envelopes processed: total=$total ok=$ok failed=$failed"
+          if [ "$failed" -ne 0 ] || [ "$ok" -ne 22 ]; then
+            exit 1
+          fi
+
+          status_ok=false
+          for attempt in $(seq 1 20); do
+            HTTP_CODE="$(curl --silent --show-error --max-time 20               --output /tmp/aura-migration-status.json               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$STATUS_URL" || true)"
+            if [ "$HTTP_CODE" = "200" ]; then
+              docs="$(jq -r '.metrics.documents // 0' /tmp/aura-migration-status.json)"
+              raw="$(jq -r '.metrics.documentsWithRawBytes // 0' /tmp/aura-migration-status.json)"
+              indexed="$(jq -r '.metrics.documentsWithIndexedText // 0' /tmp/aura-migration-status.json)"
+              if [ "$docs" -ge 65 ] && [ "$raw" -ge 39 ] && [ "$indexed" -ge 54 ]; then
+                status_ok=true
+                break
+              fi
+              echo "Verification pending: documents=$docs raw=$raw indexed=$indexed"
+            fi
+            sleep 3
+          done
+
+          if [ "$status_ok" != "true" ]; then
+            echo "::error::Aura source migration did not reach expected minimum source-library population."
+            cat /tmp/aura-migration-status.json 2>/dev/null || true
+            exit 1
+          fi
+
+          cleanup="$(curl --silent --show-error --max-time 20             --request POST             --header "Content-Type: application/json"             --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"             --data '{"op":"cleanup"}'             "$IMPORT_URL")"
+          if ! printf '%s' "$cleanup" | jq -e '.ok == true and .cleaned == true' >/dev/null 2>&1; then
+            echo "::error::Aura migration succeeded but temporary key cleanup failed."
+            exit 1
+          fi
+
+          echo "### Aura baseline source migration" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Canonical Aura source records imported: 22" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Baseline precedence metadata: priority 10" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Existing Seraya update source population preserved" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Temporary migration private key: removed" >> "$GITHUB_STEP_SUMMARY"
