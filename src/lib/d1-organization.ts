@@ -82,7 +82,7 @@ function clean(value: unknown) {
 
 let organizationSchemaReady: Promise<D1DatabaseLike> | null = null;
 
-async function ensureOrganizationSchema() {
+export async function ensureOrganizationSchema() {
   if (organizationSchemaReady) return organizationSchemaReady;
 
   organizationSchemaReady = (async () => {
