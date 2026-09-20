@@ -7,7 +7,7 @@ import { useAssuranceData } from '@/hooks/useAssuranceData';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 
 export default function ToDPage() {
-  const { data, loading, error } = useAssuranceData();
+  const { data, loading, error } = useAssuranceData(['tod']);
   const tests = data?.todTests || [];
   const walkthroughs = data?.walkthroughs || [];
 

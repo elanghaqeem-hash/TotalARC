@@ -16,7 +16,7 @@ function tone(value: string) {
 }
 
 export default function HealthPage() {
-  const { data, loading, error, refresh } = useAssuranceData();
+  const { data, loading, error, refresh } = useAssuranceData(['health']);
   const controls = data?.controls || [];
 
   const summary = useMemo(() => {

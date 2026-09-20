@@ -6,7 +6,7 @@ import { BarChart3, Download, RefreshCcw } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function ReportsPage() {
-  const { data, loading, error, refresh } = useAssuranceData();
+  const { data, loading, error, refresh } = useAssuranceData(['tasks', 'remediation']);
 
   const sources = data ? [
     { title: 'Business processes', count: data.processes?.length || 0, href: '/processes', detail: 'Process Architecture / BPM' },

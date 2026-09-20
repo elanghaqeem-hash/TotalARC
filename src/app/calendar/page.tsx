@@ -6,7 +6,7 @@ import { Calendar as CalendarIcon, RefreshCcw } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 export default function CalendarPage() {
-  const { data, loading, error, refresh } = useAssuranceData();
+  const { data, loading, error, refresh } = useAssuranceData(['calendar']);
   const [typeFilter, setTypeFilter] = useState('ALL');
 
   const events = useMemo(() => {

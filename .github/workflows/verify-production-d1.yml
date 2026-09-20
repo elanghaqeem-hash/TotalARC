@@ -162,8 +162,10 @@ jobs:
             (.rules | type) == "array"
           '
 
-          check_json "assurance-integration" "/api/assurance" '
+          check_json "assurance-integration" "/api/assurance?sections=integration" '
             .storage == "cloudflare-d1" and
+            .dataStatus == "complete" and
+            (.degradedModules | length) == 0 and
             (.campaigns | type) == "array" and
             (.controls | type) == "array" and
             (.tasks | type) == "array" and

@@ -50,7 +50,7 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [institutionName, setInstitutionName] = useState('No institution registered');
 
   useEffect(() => {
-    fetch('/api/assurance')
+    fetch('/api/organization', { cache: 'default' })
       .then((res) => res.ok ? res.json() : Promise.reject(new Error('Unable to load institution')))
       .then((data) => setInstitutionName(data.institution?.name || 'No institution registered'))
       .catch(() => setInstitutionName('No institution registered'));
