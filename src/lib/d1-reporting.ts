@@ -171,7 +171,9 @@ function parseAiAnalysis(value: unknown) {
   }
 }
 
-function mapReport(row: Record<string, unknown>) {
+function mapReport(
+  row: Record<string, unknown>
+): Record<string, unknown> & { aiAnalysis: Record<string, unknown> | null } {
   return {
     ...row,
     aiAnalysis: parseAiAnalysis(row.aiAnalysis)
