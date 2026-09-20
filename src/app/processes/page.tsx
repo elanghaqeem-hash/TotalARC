@@ -421,7 +421,7 @@ export default function ProcessesPage() {
                       onClick={() => openEdit(selectedProcess)}
                       className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-brand-700 hover:border-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-colors"
                     >
-                      <Pencil className="w-4.5 h-4.5" />
+                      <Pencil className="w-5 h-5" />
                     </button>
                     <button
                       type="button"
@@ -433,7 +433,7 @@ export default function ProcessesPage() {
                       }}
                       className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:text-rose-800 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300 transition-colors"
                     >
-                      <Trash2 className="w-4.5 h-4.5" />
+                      <Trash2 className="w-5 h-5" />
                     </button>
                     <Link
                       href="/rcm"
@@ -441,7 +441,7 @@ export default function ProcessesPage() {
                       aria-label="View in RCM"
                       className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-brand-200 bg-brand-50 text-brand-600 hover:text-brand-700 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-colors"
                     >
-                      <FileSpreadsheet className="w-4.5 h-4.5" />
+                      <FileSpreadsheet className="w-5 h-5" />
                     </Link>
                   </div>
                 </div>
