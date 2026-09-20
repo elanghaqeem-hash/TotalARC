@@ -168,7 +168,9 @@ async function ensureColumn(
   }
 }
 
-export async function ensureOrganizationSchema() {
+let organizationSchemaPromise: Promise<D1DatabaseLike> | null = null;
+
+async function initializeOrganizationSchema() {
   const db = await getDb();
 
   for (const statement of [
@@ -256,6 +258,17 @@ export async function ensureOrganizationSchema() {
   }
 
   return db;
+}
+
+
+export async function ensureOrganizationSchema() {
+  if (!organizationSchemaPromise) {
+    organizationSchemaPromise = initializeOrganizationSchema().catch(error => {
+      organizationSchemaPromise = null;
+      throw error;
+    });
+  }
+  return organizationSchemaPromise;
 }
 
 async function assertInstitutionExists(db: D1DatabaseLike, institutionId: string) {
