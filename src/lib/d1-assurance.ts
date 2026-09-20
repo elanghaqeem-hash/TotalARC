@@ -70,10 +70,15 @@ function nullable(value: unknown) {
   return value === undefined || value === '' ? null : value;
 }
 
-export async function ensureAssuranceSchema() {
-  const db = await getDb();
+let assuranceSchemaReady: Promise<D1DatabaseLike> | null = null;
 
-  await executeSchemaScript(db, `
+export async function ensureAssuranceSchema() {
+  if (assuranceSchemaReady) return assuranceSchemaReady;
+
+  assuranceSchemaReady = (async () => {
+    const db = await getDb();
+
+    await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS ToETest (
       id TEXT PRIMARY KEY NOT NULL,
       testId TEXT NOT NULL,
@@ -268,9 +273,15 @@ export async function ensureAssuranceSchema() {
       detectedAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ccm_exception_run ON CCMException(runId);
-  `);
+    `);
 
-  return db;
+    return db;
+  })().catch(error => {
+    assuranceSchemaReady = null;
+    throw error;
+  });
+
+  return assuranceSchemaReady;
 }
 
 async function loadMap(db: D1DatabaseLike, row: Record<string, unknown>) {
