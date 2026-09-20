@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { getOrganizationStructure } from '@/lib/d1-organization';
 import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
@@ -111,12 +111,14 @@ function numeric(value: unknown) {
   return Number.isFinite(next) ? next : null;
 }
 
-let icofrSchemaReady: Promise<D1DatabaseLike> | null = null;
+const icofrSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrScopeSchema() {
-  if (icofrSchemaReady) return icofrSchemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = icofrSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  icofrSchemaReady = (async () => {
+  const schemaPromise = (async () => {
     await ensureCoreDomainSchema();
     await getOrganizationStructure();
     const db = await getDb();
@@ -180,11 +182,12 @@ export async function ensureIcofrScopeSchema() {
 
     return db;
   })().catch(error => {
-    icofrSchemaReady = null;
+    icofrSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return icofrSchemaReady;
+  icofrSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
