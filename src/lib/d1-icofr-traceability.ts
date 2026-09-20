@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
 import { ensureIcofrDomainSchema } from '@/lib/d1-icofr-domains';
@@ -72,11 +72,13 @@ function bool(value: unknown) {
   return value === true || value === 1 || value === '1';
 }
 
-let traceSchemaReady: Promise<D1DatabaseLike> | null = null;
+const traceSchemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrTraceabilitySchema() {
-  if (traceSchemaReady) return traceSchemaReady;
-  traceSchemaReady = (async () => {
+  const { databaseBinding } = await getTenantContext();
+  const cached = traceSchemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
+  const schemaPromise = (async () => {
     const db = await getDb();
     await executeSchema(db, `
       CREATE TABLE IF NOT EXISTS ICOFRAssertion (
@@ -139,10 +141,11 @@ export async function ensureIcofrTraceabilitySchema() {
     `);
     return db;
   })().catch(error => {
-    traceSchemaReady = null;
+    traceSchemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
-  return traceSchemaReady;
+  traceSchemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
