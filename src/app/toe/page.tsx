@@ -118,13 +118,26 @@ export default function ToEPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Unable to register ToE test.');
 
+      const control = controls.find((item: any) => item.id === payload.controlId) || null;
+      const createdTest = {
+        ...payload,
+        populationSize: Number(payload.populationSize || 0),
+        sampleSize: Number(payload.sampleSize || 0),
+        passCount: Number(payload.passCount || 0),
+        failCount: Number(payload.failCount || 0),
+        control,
+        process: control?.process || null,
+        risk: null,
+        samples: [],
+        exceptions: []
+      };
+      setTests(current => [createdTest, ...current]);
+      setSelectedId(payload.id || '');
       setTestModal(false);
       setTestForm({
         ...EMPTY_TEST_FORM,
         controlId: controls[0]?.id || ''
       });
-      await loadData();
-      setSelectedId(payload.id || '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to register ToE test.');
     } finally {
@@ -151,9 +164,26 @@ export default function ToEPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Unable to add ToE sample.');
 
+      setTests(current =>
+        current.map(item => {
+          if (item.id !== test.id) return item;
+          const nextSamples = [...(item.samples || []), payload];
+          return {
+            ...item,
+            samples: nextSamples,
+            sampleSize: nextSamples.length
+          };
+        })
+      );
+      setSampleDrafts(current => ({
+        ...current,
+        [payload.id]: {
+          result: payload.result || 'Not Tested',
+          failureReason: payload.failureReason || ''
+        }
+      }));
       setSampleModal(false);
       setSampleForm(EMPTY_SAMPLE_FORM);
-      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to add ToE sample.');
     } finally {
@@ -192,8 +222,14 @@ export default function ToEPage() {
         throw new Error(payload.error || 'Unable to raise testing exception.');
       }
 
+      setTests(current =>
+        current.map(item =>
+          item.id === test.id
+            ? { ...item, exceptions: [...(item.exceptions || []), payload] }
+            : item
+        )
+      );
       setExceptionSample(null);
-      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to raise testing exception.');
     } finally {
@@ -225,7 +261,24 @@ export default function ToEPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Unable to update ToE sample.');
-      await loadData();
+
+      setTests(current =>
+        current.map(item => {
+          const existingSamples = item.samples || [];
+          if (!existingSamples.some((sample: any) => sample.id === sampleId)) return item;
+
+          const nextSamples = existingSamples.map((sample: any) =>
+            sample.id === sampleId ? { ...sample, ...payload } : sample
+          );
+          return {
+            ...item,
+            samples: nextSamples,
+            sampleSize: nextSamples.length,
+            passCount: nextSamples.filter((sample: any) => sample.result === 'Pass').length,
+            failCount: nextSamples.filter((sample: any) => sample.result === 'Fail').length
+          };
+        })
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update ToE sample.');
     } finally {
