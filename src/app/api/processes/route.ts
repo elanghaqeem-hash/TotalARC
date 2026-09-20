@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
-import { createBusinessProcess, deleteBusinessProcess, listBusinessProcesses, updateBusinessProcess } from '@/lib/d1-core';
+import { createBusinessProcess, deleteBusinessProcess, listBusinessProcesses, listProcessLookups, updateBusinessProcess } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const view = new URL(request.url).searchParams.get('view');
+    if (view === 'lookup') {
+      const processes = await listProcessLookups();
+      return NextResponse.json({
+        processes,
+        storage: 'cloudflare-d1',
+        view: 'lookup'
+      });
+    }
+
     const { processes, categories } = await listBusinessProcesses();
     return NextResponse.json({
       processes,
