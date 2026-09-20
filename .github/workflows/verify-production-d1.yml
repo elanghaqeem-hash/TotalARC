@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 8
     env:
       TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+      TOTALARC_SMOKE_EMAIL: ${{ secrets.TOTALARC_SMOKE_EMAIL }}
+      TOTALARC_SMOKE_PASSWORD: ${{ secrets.TOTALARC_SMOKE_PASSWORD }}
     steps:
       - name: Verify production D1 connectivity
         shell: bash
@@ -73,6 +75,50 @@ jobs:
 
           BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
           BASE_URL="${BASE_URL%/}"
+          COOKIE_ARGS=()
+
+          AUTH_CODE="$(curl --silent --show-error --location --max-time 25 \
+            --output /tmp/totalarc-auth-status.json \
+            --write-out "%{http_code}" \
+            "$BASE_URL/api/auth/status" || true)"
+
+          if [ "$AUTH_CODE" != "200" ]; then
+            echo "::error::Authentication readiness endpoint returned HTTP ${AUTH_CODE:-unknown}."
+            cat /tmp/totalarc-auth-status.json 2>/dev/null || true
+            exit 1
+          fi
+
+          AUTH_ENFORCED="$(jq -r '.enforce // false' /tmp/totalarc-auth-status.json)"
+          echo "Authentication enforcement: $AUTH_ENFORCED"
+
+          if [ "$AUTH_ENFORCED" = "true" ]; then
+            if [ -z "${TOTALARC_SMOKE_EMAIL:-}" ] || [ -z "${TOTALARC_SMOKE_PASSWORD:-}" ]; then
+              echo "::error::Authentication is enforced but TOTALARC_SMOKE_EMAIL / TOTALARC_SMOKE_PASSWORD GitHub secrets are not configured."
+              exit 1
+            fi
+
+            LOGIN_PAYLOAD="$(jq -cn \
+              --arg email "$TOTALARC_SMOKE_EMAIL" \
+              --arg password "$TOTALARC_SMOKE_PASSWORD" \
+              '{email:$email,password:$password}')"
+
+            LOGIN_CODE="$(curl --silent --show-error --location --max-time 25 \
+              --cookie-jar /tmp/totalarc-smoke.cookies \
+              --header "Content-Type: application/json" \
+              --data "$LOGIN_PAYLOAD" \
+              --output /tmp/totalarc-smoke-login.json \
+              --write-out "%{http_code}" \
+              "$BASE_URL/api/auth/login" || true)"
+
+            if [ "$LOGIN_CODE" != "200" ]; then
+              echo "::error::Authenticated production smoke login failed with HTTP ${LOGIN_CODE:-unknown}."
+              cat /tmp/totalarc-smoke-login.json 2>/dev/null | jq '{error,code}' || true
+              exit 1
+            fi
+
+            COOKIE_ARGS=(--cookie /tmp/totalarc-smoke.cookies)
+            echo "Authenticated smoke session established."
+          fi
 
           check_json() {
             local name="$1"
@@ -83,6 +129,7 @@ jobs:
             echo "Checking $name at $path"
             local http_code
             http_code="$(curl --silent --show-error --location --max-time 25 \
+              "${COOKIE_ARGS[@]}" \
               --output "$output" \
               --write-out "%{http_code}" \
               "$BASE_URL$path" || true)"
@@ -101,6 +148,14 @@ jobs:
 
             echo "$name: healthy"
           }
+
+          check_json "auth-status" "/api/auth/status" '
+            .storage == "cloudflare-d1" and
+            (.enforce | type) == "boolean" and
+            (.secretReady | type) == "boolean" and
+            (.userCount | type) == "number" and
+            (.readiness | type) == "object"
+          '
 
           check_json "database" "/api/system/database" '
             .ok == true and
