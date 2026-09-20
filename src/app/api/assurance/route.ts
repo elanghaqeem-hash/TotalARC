@@ -76,13 +76,27 @@ export async function GET(request: Request) {
         );
 
       return NextResponse.json({
-        campaigns: calendar.campaigns.filter(row => allowed(row.orgUnitId)),
-        toeTests: calendar.toeTests.filter(row => allowed(row.orgUnitId)),
-        actionPlans: calendar.actionPlans.filter(row => allowed(row.orgUnitId)),
-        retests: calendar.retests.filter(row => allowed(row.orgUnitId)),
-        certifications: calendar.certifications.filter(row => allowed(row.orgUnitId)),
-        attestations: calendar.attestations.filter(row => allowed(row.orgUnitId)),
-        tasks: calendar.tasks.filter(row => allowed(row.orgUnitId)),
+        campaigns: calendar.campaigns.filter(row =>
+          allowed((row as Record<string, unknown>).orgUnitId)
+        ),
+        toeTests: calendar.toeTests.filter(row =>
+          allowed((row as Record<string, unknown>).orgUnitId)
+        ),
+        actionPlans: calendar.actionPlans.filter(row =>
+          allowed((row as Record<string, unknown>).orgUnitId)
+        ),
+        retests: calendar.retests.filter(row =>
+          allowed((row as Record<string, unknown>).orgUnitId)
+        ),
+        certifications: calendar.certifications.filter(row =>
+          allowed((row as Record<string, unknown>).orgUnitId)
+        ),
+        attestations: calendar.attestations.filter(row =>
+          allowed((row as Record<string, unknown>).orgUnitId)
+        ),
+        tasks: calendar.tasks.filter(row =>
+          allowed((row as Record<string, unknown>).orgUnitId)
+        ),
         loadedModules: ['calendar'],
         storage: 'cloudflare-d1'
       });
