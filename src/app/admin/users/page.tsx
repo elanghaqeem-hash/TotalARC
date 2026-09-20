@@ -47,9 +47,30 @@ const emptyForm = {
 };
 
 function generatePassword() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*_-';
-  const bytes = crypto.getRandomValues(new Uint8Array(18));
-  return Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('');
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%*_-';
+  const all = upper + lower + digits + symbols;
+  const randomChar = (set: string) => {
+    const byte = crypto.getRandomValues(new Uint8Array(1))[0];
+    return set[byte % set.length];
+  };
+
+  const chars = [
+    randomChar(upper),
+    randomChar(lower),
+    randomChar(digits),
+    randomChar(symbols)
+  ];
+  while (chars.length < 18) chars.push(randomChar(all));
+
+  const shuffle = crypto.getRandomValues(new Uint8Array(chars.length));
+  return chars
+    .map((value, index) => ({ value, key: shuffle[index] }))
+    .sort((a, b) => a.key - b.key)
+    .map(item => item.value)
+    .join('');
 }
 
 export default function UserManagementPage() {
