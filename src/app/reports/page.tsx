@@ -20,6 +20,11 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm"><div className="flex items-center gap-2 text-xs font-bold text-emerald-600 uppercase"><Download className="w-4 h-4" />Workpapers & Export</div><h1 className="text-2xl font-black text-slate-900 mt-1">Report Source Center</h1><p className="text-xs text-slate-500 mt-1">Available report sources reflect records currently stored in the database.</p></div>
+      <Link href="/icofr/reporting" className="block rounded-2xl border border-sky-200 bg-sky-50 p-5 hover:border-sky-300">
+        <div className="text-xs font-black uppercase tracking-wide text-sky-600">ICOFR Executive Reporting</div>
+        <div className="mt-1 text-sm font-black text-slate-900">Board / Audit Committee & External Audit Reliance</div>
+        <div className="mt-1 text-[11px] text-slate-600">Open the database-backed reporting pack, reliance mapping, deficiency aging and PBC tracker.</div>
+      </Link>
       {error && <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">{error}</div>}
       {loading ? <div className="text-xs text-slate-500">Loading…</div> : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
