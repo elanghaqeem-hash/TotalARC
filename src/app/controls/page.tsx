@@ -107,7 +107,7 @@ export default function ControlsPage() {
       setControls(nextControls);
       setPagination(controlData.pagination || EMPTY_PAGINATION);
       setPage(targetPage);
-      setSelectedControl(current =>
+      setSelectedControl((current: any) =>
         current && nextControls.some((item: any) => item.id === current.id)
           ? current
           : nextControls[0] || null
