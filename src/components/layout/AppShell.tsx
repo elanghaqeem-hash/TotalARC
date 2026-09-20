@@ -62,10 +62,17 @@ const navGroups: NavGroup[] = [
     subtitle: 'Assess & validate',
     items: [
       { name: 'RCSA & CSA Workspace', href: '/rcsa', icon: ClipboardCheck },
+      { name: 'ICOFR Program Hub', href: '/icofr', icon: FileCheck },
       { name: 'ICOFR Scoping & Materiality', href: '/icofr/scoping', icon: Target, badge: 'OM · PM' },
-      { name: 'ICOFR & Assertions', href: '/icofr', icon: FileCheck },
+      { name: 'Accounts, Disclosures & Assertions', href: '/icofr/accounts', icon: FileSpreadsheet },
+      { name: 'Entity-Level Controls (ELC)', href: '/icofr/elc', icon: Shield },
+      { name: 'Process-Level Controls (PLC)', href: '/icofr/plc', icon: ClipboardCheck },
+      { name: 'IT General Controls (ITGC)', href: '/icofr/itgc', icon: Cpu },
+      { name: 'IT Application Controls (ITAC)', href: '/icofr/itac', icon: Workflow },
+      { name: 'IPE & EUC Register', href: '/icofr/information', icon: FileSpreadsheet },
       { name: 'Walkthrough & ToD', href: '/tod', icon: Workflow },
       { name: 'ToE Testing & Samples', href: '/toe', icon: Cpu },
+      { name: 'ICOFR Deficiency Evaluation', href: '/icofr/deficiencies', icon: AlertTriangle },
       { name: 'Remediation & MAP', href: '/remediation', icon: BadgeCheck }
     ]
   },
