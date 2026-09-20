@@ -101,7 +101,7 @@ async function run(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
   return btoa(binary);
 }
 
