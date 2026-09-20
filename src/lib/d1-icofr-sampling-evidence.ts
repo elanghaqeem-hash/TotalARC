@@ -1,4 +1,4 @@
-import { getTenantDb } from '@/lib/tenant-context';
+import { getTenantDb, getTenantContext } from '@/lib/tenant-context';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureIcofrTestingPlanSchema } from '@/lib/d1-icofr-testing-plan';
 import { ensureIcofrTraceabilitySchema } from '@/lib/d1-icofr-traceability';
@@ -90,12 +90,14 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-let schemaReady: Promise<D1DatabaseLike> | null = null;
+const schemaReadyByBinding = new Map<string, Promise<D1DatabaseLike>>();
 
 export async function ensureIcofrSamplingEvidenceSchema() {
-  if (schemaReady) return schemaReady;
+  const { databaseBinding } = await getTenantContext();
+  const cached = schemaReadyByBinding.get(databaseBinding);
+  if (cached) return cached;
 
-  schemaReady = (async () => {
+  const schemaPromise = (async () => {
     const db = await getDb();
     await executeSchema(db, `
       CREATE TABLE IF NOT EXISTS ICOFRSamplingPlan (
@@ -195,11 +197,12 @@ export async function ensureIcofrSamplingEvidenceSchema() {
     `);
     return db;
   })().catch(error => {
-    schemaReady = null;
+    schemaReadyByBinding.delete(databaseBinding);
     throw error;
   });
 
-  return schemaReady;
+  schemaReadyByBinding.set(databaseBinding, schemaPromise);
+  return schemaPromise;
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
