@@ -69,8 +69,8 @@ export async function POST(request: Request) {
       const controlId = textValue(body, 'controlId');
       const period = textValue(body, 'period');
       const declarationText = textValue(body, 'declarationText');
-      const certifierName = textValue(body, 'certifierName');
-      const certifierRole = textValue(body, 'certifierRole') || auth.user.role;
+      const certifierName = auth.user.name;
+      const certifierRole = auth.user.role;
       const status = textValue(body, 'status') || 'Pending';
 
       if (!controlId || !period || !declarationText || !certifierName) {
@@ -78,6 +78,10 @@ export async function POST(request: Request) {
           { error: 'controlId, period, declarationText, and certifierName are required.' },
           { status: 400 }
         );
+      }
+
+      if (!['Pending', 'Certified', 'Certified with Exception', 'Not Certified'].includes(status)) {
+        return NextResponse.json({ error: 'Invalid certification status.' }, { status: 400 });
       }
 
       const controls = await listControls(auth.user.institutionId);
