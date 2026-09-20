@@ -54,3 +54,35 @@ export async function jsonTransaction<T = Record<string, unknown>>(
     }
   }
 }
+
+
+export async function aiJsonTransaction<T = Record<string, unknown>>(
+  url: string,
+  body: unknown
+): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 45000);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+
+    const payload = (await response.json()) as T & { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error || 'AI analysis could not be completed.');
+    }
+
+    return payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('AI analysis exceeded the 45 second interactive limit. Please retry.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
