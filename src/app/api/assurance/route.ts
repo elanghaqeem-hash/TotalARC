@@ -4,6 +4,7 @@ import { authorizeTenantApi, READ_ROLES } from '@/lib/api-auth';
 import { getOrganizationData, scopeOrganizationData } from '@/lib/d1-organization';
 import { listControls } from '@/lib/d1-core';
 import {
+  listCalendarData,
   listCertificationData,
   listIcofrData,
   listRcsaData,
@@ -13,18 +14,83 @@ import {
   listToeTests
 } from '@/lib/d1-assurance';
 import { isOrgUnitAuthorized, resolveAuthorizedOrgUnitIds } from '@/lib/auth';
+import { performanceNow, recordApiPerformance } from '@/lib/performance';
 
 export const dynamic = 'force-dynamic';
 
+const DEFAULT_MODULES = [
+  'institution',
+  'organization',
+  'controls',
+  'rcsa',
+  'tod',
+  'icofr',
+  'toe',
+  'remediation',
+  'certification',
+  'tasks'
+] as const;
+
+type AssuranceModule =
+  | (typeof DEFAULT_MODULES)[number]
+  | 'calendar';
+
+function requestedModules(request: Request) {
+  const url = new URL(request.url);
+  const raw = url.searchParams.get('modules')?.trim();
+  if (!raw) return { modules: new Set<AssuranceModule>(DEFAULT_MODULES), focused: false };
+
+  const allowed = new Set<AssuranceModule>([...DEFAULT_MODULES, 'calendar']);
+  const modules = new Set<AssuranceModule>();
+  for (const value of raw.split(',')) {
+    const moduleName = value.trim() as AssuranceModule;
+    if (allowed.has(moduleName)) modules.add(moduleName);
+  }
+
+  if (modules.size === 0) {
+    modules.add('institution');
+  }
+
+  return { modules, focused: true };
+}
+
 export async function GET(request: Request) {
-  const auth = await authorizeTenantApi(request, READ_ROLES);
-  if (auth.response) return auth.response;
+  const startedAt = performanceNow();
+  const selection = requestedModules(request);
 
   try {
+    const auth = await authorizeTenantApi(request, READ_ROLES);
+    if (auth.response) return auth.response;
+
+    const wants = (moduleName: AssuranceModule) => selection.modules.has(moduleName);
+    const institutionId = auth.user.institutionId;
+
+    const authorizedOrgUnitIds = await resolveAuthorizedOrgUnitIds(auth.user);
+
+    if (wants('calendar')) {
+      const calendar = await listCalendarData(institutionId);
+      const allowed = (orgUnitId: unknown) =>
+        isOrgUnitAuthorized(
+          authorizedOrgUnitIds,
+          typeof orgUnitId === 'string' ? orgUnitId : null
+        );
+
+      return NextResponse.json({
+        campaigns: calendar.campaigns.filter(row => allowed(row.orgUnitId)),
+        toeTests: calendar.toeTests.filter(row => allowed(row.orgUnitId)),
+        actionPlans: calendar.actionPlans.filter(row => allowed(row.orgUnitId)),
+        retests: calendar.retests.filter(row => allowed(row.orgUnitId)),
+        certifications: calendar.certifications.filter(row => allowed(row.orgUnitId)),
+        attestations: calendar.attestations.filter(row => allowed(row.orgUnitId)),
+        tasks: calendar.tasks.filter(row => allowed(row.orgUnitId)),
+        loadedModules: ['calendar'],
+        storage: 'cloudflare-d1'
+      });
+    }
+
     const [
       institution,
       organization,
-      authorizedOrgUnitIds,
       rcsa,
       tod,
       icofr,
@@ -34,24 +100,41 @@ export async function GET(request: Request) {
       certification,
       tasks
     ] = await Promise.all([
-      getInstitutionById(auth.user.institutionId),
-      getOrganizationData(auth.user.institutionId),
-      resolveAuthorizedOrgUnitIds(auth.user),
-      listRcsaData(auth.user.institutionId),
-      listTodData(auth.user.institutionId),
-      listIcofrData(auth.user.institutionId),
-      listControls(auth.user.institutionId),
-      listToeTests(auth.user.institutionId),
-      listRemediationData(auth.user.institutionId),
-      listCertificationData(auth.user.institutionId),
-      listTasksData(auth.user.institutionId)
+      wants('institution') || wants('organization')
+        ? getInstitutionById(institutionId)
+        : Promise.resolve(null),
+      wants('organization')
+        ? getOrganizationData(institutionId)
+        : Promise.resolve(null),
+      wants('rcsa')
+        ? listRcsaData(institutionId)
+        : Promise.resolve({ campaigns: [] }),
+      wants('tod')
+        ? listTodData(institutionId)
+        : Promise.resolve({ todTests: [], walkthroughs: [] }),
+      wants('icofr')
+        ? listIcofrData(institutionId)
+        : Promise.resolve({ financialAccounts: [], ipeRegisters: [] }),
+      wants('controls')
+        ? listControls(institutionId)
+        : Promise.resolve([]),
+      wants('toe')
+        ? listToeTests(institutionId)
+        : Promise.resolve([]),
+      wants('remediation')
+        ? listRemediationData(institutionId)
+        : Promise.resolve({ issues: [], maps: [], retests: [] }),
+      wants('certification')
+        ? listCertificationData(institutionId)
+        : Promise.resolve({ certifications: [], attestations: [] }),
+      wants('tasks')
+        ? listTasksData(institutionId)
+        : Promise.resolve([])
     ]);
 
-    const scopedOrganization = scopeOrganizationData(
-      organization,
-      authorizedOrgUnitIds,
-      auth.user.id
-    );
+    const scopedOrganization = organization
+      ? scopeOrganizationData(organization, authorizedOrgUnitIds, auth.user.id)
+      : null;
 
     const scopedControls = controls.filter(control =>
       isOrgUnitAuthorized(
@@ -144,12 +227,14 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       institution: institution
-        ? {
-            ...institution,
-            legalEntities: scopedOrganization.legalEntities,
-            organizationUnits: scopedOrganization.organizationUnits,
-            users: scopedOrganization.users
-          }
+        ? scopedOrganization
+          ? {
+              ...institution,
+              legalEntities: scopedOrganization.legalEntities,
+              organizationUnits: scopedOrganization.organizationUnits,
+              users: scopedOrganization.users
+            }
+          : institution
         : null,
       campaigns,
       todTests: scopedTodTests,
@@ -168,9 +253,10 @@ export async function GET(request: Request) {
         orgUnitId: auth.user.orgUnitId,
         authorizedUnitCount:
           authorizedOrgUnitIds === null
-            ? scopedOrganization.organizationUnits.length
+            ? scopedOrganization?.organizationUnits.length || 0
             : authorizedOrgUnitIds.length
       },
+      loadedModules: Array.from(selection.modules),
       storage: 'cloudflare-d1'
     });
   } catch (error) {
@@ -178,6 +264,12 @@ export async function GET(request: Request) {
     return NextResponse.json(
       { error: 'Persistent D1 database is not available yet.' },
       { status: 503 }
+    );
+  } finally {
+    recordApiPerformance(
+      'GET /api/assurance',
+      startedAt,
+      selection.focused ? 'focused-read' : 'aggregate-read'
     );
   }
 }
