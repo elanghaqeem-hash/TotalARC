@@ -52,7 +52,7 @@ export default function ControlsPage() {
         if (!res.ok) throw new Error('Unable to load controls.');
         return res.json();
       }),
-      fetch('/api/processes').then(res => {
+      fetch('/api/processes?view=lookup').then(res => {
         if (!res.ok) throw new Error('Unable to load processes.');
         return res.json();
       }),
