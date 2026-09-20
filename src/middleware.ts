@@ -84,6 +84,22 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (publicPath(pathname)) return NextResponse.next();
 
+  const isMutatingApi =
+    pathname.startsWith('/api/') &&
+    !['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase());
+  if (isMutatingApi) {
+    const origin = request.headers.get('origin');
+    if (origin) {
+      try {
+        if (new URL(origin).host !== request.nextUrl.host) {
+          return NextResponse.json({ error: 'Cross-site request rejected.' }, { status: 403 });
+        }
+      } catch {
+        return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
+      }
+    }
+  }
+
   const secret = process.env.AUTH_SESSION_SECRET || '';
   if (secret.length < 24) {
     if (pathname.startsWith('/api/')) {
@@ -136,6 +152,7 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next();
   response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   response.headers.set(
