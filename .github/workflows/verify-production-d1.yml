@@ -145,6 +145,7 @@ jobs:
           check_status "toe-protected" "/api/assure/toe" "401"
           check_status "remediation-protected" "/api/assure/remediation" "401"
           check_status "ccm-protected" "/api/monitor/ccm" "401"
+          check_status "evidence-protected" "/api/evidence" "401"
           check_status "icofr-hub-protected" "/api/icofr/hub" "401"
           check_status "icofr-workpaper-review-protected" "/api/icofr/workpaper-review" "401"
           check_status "user-admin-protected" "/api/admin/users" "401"
