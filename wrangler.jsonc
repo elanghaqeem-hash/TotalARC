@@ -25,6 +25,30 @@
   "d1_databases": [
     {
       "binding": "DB"
+    },
+    {
+      "binding": "TENANT_DB_01"
+    },
+    {
+      "binding": "TENANT_DB_02"
+    },
+    {
+      "binding": "TENANT_DB_03"
+    },
+    {
+      "binding": "TENANT_DB_04"
+    },
+    {
+      "binding": "TENANT_DB_05"
+    },
+    {
+      "binding": "TENANT_DB_06"
+    },
+    {
+      "binding": "TENANT_DB_07"
+    },
+    {
+      "binding": "TENANT_DB_08"
     }
   ],
   "ratelimits": [
