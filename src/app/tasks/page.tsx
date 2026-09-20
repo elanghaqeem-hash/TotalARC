@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CheckSquare, Plus, Save, X } from 'lucide-react';
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 import { useRole } from '@/context/RoleContext';
+import { jsonTransaction } from '@/lib/client-transaction';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100';
@@ -50,13 +51,7 @@ export default function TasksPage() {
     setSaving(true);
     setMessage('');
     try {
-      const response = await fetch('/api/assure/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to save task.');
+      await jsonTransaction('/api/assure/tasks', form);
       await reload();
       setShowForm(false);
       setMessage('Task saved.');
@@ -70,13 +65,7 @@ export default function TasksPage() {
   const updateStatus = async (taskId: string, status: string) => {
     setMessage('');
     try {
-      const response = await fetch('/api/assure/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actionType: 'UPDATE_STATUS', taskId, status })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to update task.');
+      await jsonTransaction('/api/assure/tasks', { actionType: 'UPDATE_STATUS', taskId, status });
       await reload();
       setMessage('Task status updated.');
     } catch (err) {
