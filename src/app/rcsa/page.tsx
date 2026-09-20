@@ -9,7 +9,7 @@ const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100';
 
 export default function RCSAPage() {
-  const { data, loading, error, reload } = useAssuranceData();
+  const { data, loading, error, reload } = useAssuranceData(['rcsa', 'controls', 'organization']);
   const { currentUser } = useRole();
   const campaigns = data?.campaigns || [];
   const controls = data?.controls || [];
