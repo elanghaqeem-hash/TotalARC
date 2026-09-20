@@ -50,28 +50,42 @@ export default function ProcessesPage() {
     description: ''
   });
 
-  const loadProcesses = () => {
-    fetch('/api/processes')
-      .then(res => res.json())
-      .then(data => {
-        const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
-        const nextCategories = Array.isArray(data.categories) ? data.categories : [];
-        setProcesses(nextProcesses);
-        setCategories(nextCategories);
+  const loadProcesses = async (preferredProcessId?: string, preferredCategoryId?: string) => {
+    try {
+      const res = await fetch('/api/processes', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Unable to load business processes.');
+      const data = await res.json();
 
-        if (nextProcesses.length > 0 && !selectedProcess) {
-          setSelectedProcess(nextProcesses[0]);
-        }
+      const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
+      const nextCategories = Array.isArray(data.categories) ? data.categories : [];
+      setProcesses(nextProcesses);
+      setCategories(nextCategories);
 
-        setFormData(prev => ({
-          ...prev,
-          categoryId:
-            prev.categoryId && nextCategories.some((category: any) => category.id === prev.categoryId)
-              ? prev.categoryId
-              : nextCategories[0]?.id || ''
-        }));
-      })
-      .catch(console.error);
+      const nextSelected =
+        nextProcesses.find((process: any) => process.id === preferredProcessId) ||
+        nextProcesses.find((process: any) => process.id === selectedProcess?.id) ||
+        nextProcesses[0] ||
+        null;
+      setSelectedProcess(nextSelected);
+
+      if (
+        preferredCategoryId &&
+        nextCategories.some((category: any) => String(category.id) === String(preferredCategoryId))
+      ) {
+        setSelectedCategory(String(preferredCategoryId));
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        categoryId:
+          prev.categoryId &&
+          nextCategories.some((category: any) => String(category.id) === String(prev.categoryId))
+            ? prev.categoryId
+            : nextCategories[0]?.id || ''
+      }));
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   useEffect(() => {
@@ -132,19 +146,10 @@ export default function ProcessesPage() {
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error || 'Unable to save process.');
 
-      if (isEditing) {
-        setProcesses(current =>
-          current
-            .map(process => (process.id === payload.id ? payload : process))
-            .sort((a, b) => String(a.processId).localeCompare(String(b.processId)))
-        );
-      } else {
-        setProcesses(current =>
-          [...current, payload].sort((a, b) => String(a.processId).localeCompare(String(b.processId)))
-        );
-      }
-
-      setSelectedProcess(payload);
+      await loadProcesses(
+        String(payload.id || ''),
+        String(payload.categoryId || formData.categoryId || '')
+      );
       setNewProcessModal(false);
       setEditingProcess(null);
     } catch (err) {
@@ -193,12 +198,29 @@ export default function ProcessesPage() {
     }
   };
 
+  const selectedCategoryRecord = categories.find(
+    (category: any) => String(category.id) === String(selectedCategory)
+  );
+
   const filtered = processes.filter(p => {
-    const matchCat = selectedCategory === 'ALL' || p.categoryId === selectedCategory;
+    const processCategoryId = String(p.categoryId || p.category?.id || '');
+    const processCategoryCode = String(p.category?.code || '');
+    const processCategoryName = String(p.category?.name || '');
+    const selectedCategoryCode = String(selectedCategoryRecord?.code || '');
+    const selectedCategoryName = String(selectedCategoryRecord?.name || '');
+
+    const matchCat =
+      selectedCategory === 'ALL' ||
+      processCategoryId === String(selectedCategory) ||
+      (selectedCategoryCode !== '' && processCategoryCode === selectedCategoryCode) ||
+      (selectedCategoryName !== '' && processCategoryName === selectedCategoryName);
+
+    const normalizedSearch = search.trim().toLowerCase();
     const matchSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.processId.toLowerCase().includes(search.toLowerCase()) ||
-      String(p.ownerName || '').toLowerCase().includes(search.toLowerCase());
+      String(p.name || '').toLowerCase().includes(normalizedSearch) ||
+      String(p.processId || '').toLowerCase().includes(normalizedSearch) ||
+      String(p.ownerName || '').toLowerCase().includes(normalizedSearch);
+
     return matchCat && matchSearch;
   });
 
@@ -394,29 +416,32 @@ export default function ProcessesPage() {
                   <div className="flex items-center justify-end gap-2 flex-wrap">
                     <button
                       type="button"
+                      title="Update Business Process"
+                      aria-label="Update Business Process"
                       onClick={() => openEdit(selectedProcess)}
-                      className="text-xs font-bold text-slate-700 hover:text-brand-700 bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:border-brand-200 flex items-center space-x-1"
+                      className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-brand-700 hover:border-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-colors"
                     >
-                      <Pencil className="w-3.5 h-3.5" />
-                      <span>Update BP</span>
+                      <Pencil className="w-4.5 h-4.5" />
                     </button>
                     <button
                       type="button"
+                      title="Delete Business Process"
+                      aria-label="Delete Business Process"
                       onClick={() => {
                         setDeleteError('');
                         setDeleteTarget(selectedProcess);
                       }}
-                      className="text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-100 flex items-center space-x-1"
+                      className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:text-rose-800 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300 transition-colors"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete BP</span>
+                      <Trash2 className="w-4.5 h-4.5" />
                     </button>
                     <Link
                       href="/rcm"
-                      className="text-xs font-bold text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-200 flex items-center space-x-1"
+                      title="View in RCM"
+                      aria-label="View in RCM"
+                      className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-brand-200 bg-brand-50 text-brand-600 hover:text-brand-700 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-colors"
                     >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      <span>View in RCM</span>
+                      <FileSpreadsheet className="w-4.5 h-4.5" />
                     </Link>
                   </div>
                 </div>
