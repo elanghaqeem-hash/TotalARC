@@ -156,15 +156,16 @@ jobs:
           // 1) Audited balance sheet 31 Dec 2024
           {
             const doc = docs.NERACA_2024;
-            const sheet = splitSheet(doc.text, 'NERACA');
-            const lines = sheet.split(/\r?\n/).filter(Boolean);
-            const headerLine = lines.find(line => line.startsWith('NRC01\t'));
+            const sheet = splitSheet(doc.text, 'NERACA') || doc.text;
+            const lines = sheet.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+            const headerLine = lines.find(line => line.includes('NRC01') && line.includes('KONSOL'));
             if (!headerLine) throw new Error('NERACA_HEADER_NOT_FOUND');
-            const headers = headerLine.split('\t').slice(1);
+            const headerParts = headerLine.includes('\t') ? headerLine.split('\t') : headerLine.split(/\s{2,}/);
+            const headers = headerParts.slice(1);
             let count = 0;
             for (const line of lines) {
-              const parts = line.split('\t');
-              if (!/^\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}$/.test(parts[0] || '')) continue;
+              const parts = line.includes('\t') ? line.split('\t') : line.split(/\s{2,}/);
+              if (!/^\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}$/.test(String(parts[0] || '').trim())) continue;
               const accountCode = parts[0];
               const accountName = parts[1] || accountCode;
               const values = {};
@@ -269,8 +270,8 @@ jobs:
           // 5) Only the Bank Kalbar "Walkthrough IT" sheet. Other template sheets are not operationalized.
           {
             const doc = docs.WT_INTEREST_INCOME;
-            const sheet = splitSheet(doc.text, 'Walkthrough IT');
-            if (!/Nama Perusahaan\tPT Bank Kalbar/i.test(sheet)) throw new Error('WALKTHROUGH_BANK_KALBAR_SHEET_NOT_FOUND');
+            const sheet = splitSheet(doc.text, 'Walkthrough IT') || doc.text;
+            if (!/Nama Perusahaan(?:\t|\s{2,})PT Bank Kalbar/i.test(sheet)) throw new Error('WALKTHROUGH_BANK_KALBAR_SHEET_NOT_FOUND');
             const lines = sheet.split(/\r?\n/).filter(Boolean);
             const company = (lines.find(line => line.startsWith('Nama Perusahaan\t')) || '').split('\t')[1] || '';
             const periodText = (lines.find(line => line.startsWith('Periode Buku\t')) || '').split('\t')[1] || '';
