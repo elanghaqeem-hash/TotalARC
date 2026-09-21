@@ -7,6 +7,9 @@ on:
       - '.github/workflows/refresh-source-data-quality.yml'
       - 'src/lib/d1-data-hub.ts'
       - 'src/app/api/admin/data-hub/route.ts'
+  workflow_run:
+    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +21,7 @@ concurrency:
 
 jobs:
   evaluate:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
