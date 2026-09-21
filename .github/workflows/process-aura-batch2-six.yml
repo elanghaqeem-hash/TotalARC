@@ -1,0 +1,769 @@
+name: Process Aura batch 2 six sources
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/process-aura-batch2-six.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-aura-batch2-normalization
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize six Aura baseline sources into D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize_batch2.py <<'PY'
+          import base64, hashlib, json, os, re, subprocess, tempfile, zipfile
+          import xml.etree.ElementTree as ET
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH = "AURA_BATCH2_6_20260921"
+          NS = {
+              "a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+              "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+          }
+
+          def wrangler(args, suppress_err=False):
+              return subprocess.check_output(
+                  ["npx", "wrangler", *args],
+                  text=True,
+                  env=os.environ,
+                  stderr=subprocess.DEVNULL if suppress_err else None,
+              )
+
+          dbs = json.loads(wrangler(["d1", "list", "--json"]))
+          db = next((item for item in dbs if re.search(r"total.?arc", item["name"], re.I)), None)
+          if not db and len(dbs) == 1:
+              db = dbs[0]
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB = db["name"]
+
+          def rows_from(raw):
+              parsed = json.loads(raw)
+              blocks = parsed if isinstance(parsed, list) else [parsed]
+              return [r for block in blocks for r in (block.get("results") or [])]
+
+          def query(sql):
+              return rows_from(wrangler(["d1", "execute", DB, "--remote", "--json", "--command", sql], True))
+
+          def q(value):
+              if value is None:
+                  return "NULL"
+              return "'" + str(value).replace("'", "''") + "'"
+
+          def stable_id(*parts):
+              return hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()[:40]
+
+          def to_num(value):
+              if value is None or value == "":
+                  return None
+              if isinstance(value, (int, float)):
+                  return value
+              s = str(value).strip()
+              try:
+                  n = float(s)
+                  return int(n) if n.is_integer() else n
+              except Exception:
+                  return s
+
+          def col_index(ref):
+              m = re.match(r"([A-Z]+)", ref or "")
+              if not m:
+                  return 0
+              n = 0
+              for ch in m.group(1):
+                  n = n * 26 + (ord(ch) - 64)
+              return n - 1
+
+          def xlsx_sheets(raw_bytes):
+              with tempfile.NamedTemporaryFile(suffix=".xlsx") as tmp:
+                  tmp.write(raw_bytes); tmp.flush()
+                  with zipfile.ZipFile(tmp.name) as z:
+                      shared = []
+                      if "xl/sharedStrings.xml" in z.namelist():
+                          root = ET.fromstring(z.read("xl/sharedStrings.xml"))
+                          for si in root.findall("a:si", NS):
+                              shared.append("".join((t.text or "") for t in si.findall(".//a:t", NS)))
+
+                      wb = ET.fromstring(z.read("xl/workbook.xml"))
+                      rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+                      relmap = {r.attrib["Id"]: r.attrib["Target"] for r in rels}
+                      output = {}
+
+                      for sh in wb.findall("a:sheets/a:sheet", NS):
+                          name = sh.attrib.get("name", "Sheet")
+                          rid = sh.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+                          target = relmap.get(rid, "")
+                          if target.startswith("/"):
+                              target = target.lstrip("/")
+                          elif not target.startswith("xl/"):
+                              target = "xl/" + target.lstrip("/")
+                          if target not in z.namelist():
+                              continue
+
+                          root = ET.fromstring(z.read(target))
+                          sheet_rows = []
+                          for row in root.findall(".//a:sheetData/a:row", NS):
+                              values = {}
+                              max_col = -1
+                              for cell in row.findall("a:c", NS):
+                                  idx = col_index(cell.attrib.get("r", "A1"))
+                                  max_col = max(max_col, idx)
+                                  cell_type = cell.attrib.get("t")
+                                  v = cell.find("a:v", NS)
+                                  inline = cell.find("a:is", NS)
+                                  value = ""
+                                  if cell_type == "s" and v is not None and v.text is not None:
+                                      try:
+                                          value = shared[int(v.text)]
+                                      except Exception:
+                                          value = v.text
+                                  elif cell_type == "inlineStr" and inline is not None:
+                                      value = "".join((t.text or "") for t in inline.findall(".//a:t", NS))
+                                  elif cell_type == "b" and v is not None:
+                                      value = v.text == "1"
+                                  elif v is not None and v.text is not None:
+                                      value = to_num(v.text)
+                                  values[idx] = value
+                              sheet_rows.append([values.get(i, "") for i in range(max_col + 1)] if max_col >= 0 else [])
+                          output[name.strip()] = sheet_rows
+                      return output
+
+          def raw_bytes(document_id):
+              chunks = query(
+                  "SELECT chunkIndex,dataBase64 FROM SourceBinaryChunk "
+                  f"WHERE documentId={q(document_id)} ORDER BY chunkIndex"
+              )
+              return b"".join(base64.b64decode(row["dataBase64"]) for row in chunks)
+
+          catalog = query("""
+            SELECT id,institutionId,title,mimeType,sourceModifiedAt,metadataJson,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='aurakasih6987@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='BASELINE'
+            ORDER BY title
+          """)
+
+          targets = [
+              ("BPM_2025", "Business Proses Mapping (BPM)"),
+              ("SIGNIFICANT_ACCOUNTS", "Daftar Akun Signifikan dan Pemetaan Aplikasi TI"),
+              ("MATERIALITY_WORKBOOK", "Kertas Kerja Penentuan Materialitas ICoFR"),
+              ("SIGNIFICANT_PROCESS_2026", "Proses Bisnis Kalbar 2026"),
+              ("A1GL", "A1GL 30082026"),
+              ("ITGC", "Walkthrough Div IT - Bank Kalbar - ITGC"),
+          ]
+
+          docs = {}
+          for code, token in targets:
+              matches = [r for r in catalog if token.lower() in str(r["title"]).lower()]
+              if len(matches) != 1:
+                  raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              meta = matches[0]
+              raw = raw_bytes(meta["id"])
+              if not raw:
+                  raise RuntimeError("SOURCE_BINARY_MISSING_" + code)
+              md = json.loads(meta.get("metadataJson") or "{}")
+              sheets = xlsx_sheets(raw)
+              docs[code] = {
+                  **meta,
+                  "sourceRole": md.get("sourceRole", "BASELINE"),
+                  "precedencePriority": int(md.get("precedencePriority", 10)),
+                  "sheets": sheets,
+              }
+              print(f"{code} source ready rawSize={meta.get('rawSizeBytes',0)} sheets={len(sheets)}")
+
+          records = []
+          def add(doc, record_type, record_key, title, period, payload):
+              records.append({
+                  "id": stable_id(doc["id"], record_type, record_key),
+                  "institutionId": doc["institutionId"],
+                  "sourceDocumentId": doc["id"],
+                  "recordType": record_type,
+                  "recordKey": record_key,
+                  "recordTitle": title,
+                  "period": period,
+                  "payloadJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                  "sourceRole": doc["sourceRole"],
+                  "precedencePriority": doc["precedencePriority"],
+                  "sourceModifiedAt": doc.get("sourceModifiedAt"),
+              })
+
+          # 1. 2025 BPM baseline
+          doc = docs["BPM_2025"]
+          sheet_name = next((n for n in doc["sheets"] if n.lower().startswith("dokumentasi proses bisnis")), None)
+          if not sheet_name:
+              raise RuntimeError("BPM_SHEET_NOT_FOUND")
+          rows = doc["sheets"][sheet_name]
+          current_process = None
+          current_sub = None
+          process_count = subprocess_count = step_count = 0
+          for row in rows:
+              row = row + [""] * max(0, 7 - len(row))
+              a,b,c,d,e,f,g = row[:7]
+              if isinstance(a, (int,float)) and str(b).strip():
+                  proc_no = str(int(a))
+                  current_process = proc_no
+                  current_sub = None
+                  add(doc, "BUSINESS_PROCESS_BASELINE", f"BPM:2025:{proc_no}", str(b).strip(), "2025", {
+                      "processNumber": proc_no,
+                      "processName": str(b).strip(),
+                      "sourceSheet": sheet_name,
+                      "baselineOnly": True,
+                      "operationalMasterCreated": False,
+                      "reviewRequired": True
+                  })
+                  process_count += 1
+              if isinstance(c, str) and re.fullmatch(r"[a-zA-Z]\.", c.strip()) and str(d).strip() and current_process:
+                  current_sub = c.strip().lower()
+                  add(doc, "BUSINESS_SUBPROCESS_BASELINE",
+                      f"BPM:2025:{current_process}:SUB:{current_sub}",
+                      str(d).strip(), "2025", {
+                          "processNumber": current_process,
+                          "subprocessCode": current_sub,
+                          "subprocessName": str(d).strip(),
+                          "baselineOnly": True,
+                          "operationalMasterCreated": False,
+                          "reviewRequired": True
+                      })
+                  subprocess_count += 1
+              if isinstance(d, (int,float)) and str(e).strip() and current_process:
+                  step_no = str(int(d))
+                  sub_key = current_sub or "UNSPECIFIED"
+                  add(doc, "BUSINESS_PROCESS_STEP_BASELINE",
+                      f"BPM:2025:{current_process}:{sub_key}:STEP:{step_no}",
+                      str(e).strip(), "2025", {
+                          "processNumber": current_process,
+                          "subprocessCode": current_sub,
+                          "stepNumber": step_no,
+                          "stepName": str(e).strip(),
+                          "supportingDetail": str(f).strip() if f not in (None,"") else None,
+                          "baselineOnly": True,
+                          "operationalMasterCreated": False,
+                          "reviewRequired": True
+                      })
+                  step_count += 1
+          if process_count != 12 or subprocess_count < 20 or step_count < 35:
+              raise RuntimeError(f"BPM_COUNTS_UNEXPECTED_{process_count}_{subprocess_count}_{step_count}")
+          print(f"BPM normalized process={process_count} subprocess={subprocess_count} steps={step_count}")
+
+          # 2. Significant financial accounts and application mapping
+          doc = docs["SIGNIFICANT_ACCOUNTS"]
+          sig_count = 0
+          for sheet_name, statement_code, statement_name in [
+              ("Akun Signifikan - Neraca", "BS", "Balance Sheet"),
+              ("Akun Signifikan - Laba Rugi", "IS", "Income Statement / Off-Balance Sheet"),
+          ]:
+              rows = doc["sheets"].get(sheet_name)
+              if not rows:
+                  raise RuntimeError("SIGNIFICANT_ACCOUNT_SHEET_MISSING_" + statement_code)
+              for row in rows:
+                  row = row + [""] * max(0, 16 - len(row))
+                  no = row[1]
+                  account_name = str(row[3]).strip()
+                  if not isinstance(no, (int,float)) or not account_name:
+                      continue
+                  account_no = int(no)
+                  add(doc, "ICOFR_SIGNIFICANT_ACCOUNT",
+                      f"ACCOUNT:{statement_code}:{account_no:02d}",
+                      account_name, "2025", {
+                          "statementCode": statement_code,
+                          "statementName": statement_name,
+                          "number": account_no,
+                          "category": row[2],
+                          "accountName": account_name,
+                          "balance2025": row[4],
+                          "balance2024": row[5],
+                          "changePct": row[6],
+                          "vsPerformanceMateriality": row[7],
+                          "vsToleranceThreshold": row[8],
+                          "quantitativeClassification": row[9],
+                          "qualitativeFactors": row[10],
+                          "qualitativeNotes": row[11],
+                          "finalConclusion": row[12],
+                          "relatedProcesses": row[13],
+                          "processOwners": row[14],
+                          "relatedApplications": row[15],
+                          "baselineOnly": True,
+                          "reviewRequired": True
+                      })
+                  sig_count += 1
+          if sig_count != 52:
+              raise RuntimeError("SIGNIFICANT_ACCOUNT_COUNT_UNEXPECTED_" + str(sig_count))
+          print("SIGNIFICANT_ACCOUNTS normalized records=" + str(sig_count))
+
+          # 3. Materiality workbook
+          doc = docs["MATERIALITY_WORKBOOK"]
+          dashboard = doc["sheets"].get("Dashboard", [])
+          om_sheet = doc["sheets"].get("OM", [])
+          pm_sheet = doc["sheets"].get("PM & Haircut", [])
+          dod_sheet = doc["sheets"].get("DoD", [])
+
+          def find_row(rows, token):
+              for row in rows:
+                  if any(token.lower() in str(v).lower() for v in row if v not in (None,"")):
+                      return row
+              return None
+
+          # Dashboard paired columns
+          hdr = find_row(dashboard, "OVERALL MATERIALITY (OM)")
+          if not hdr:
+              raise RuntimeError("MATERIALITY_DASHBOARD_HEADER_MISSING")
+          hdr_idx = dashboard.index(hdr)
+          vals = next((r for r in dashboard[hdr_idx+1:] if any(v not in (None,"") for v in r)), None)
+          if not vals:
+              raise RuntimeError("MATERIALITY_DASHBOARD_VALUES_MISSING")
+          header_map = {str(v).strip(): i for i,v in enumerate(hdr) if str(v).strip()}
+          mapping = {
+              "OM": "OVERALL MATERIALITY (OM)",
+              "PM": "PERFORMANCE MATERIALITY (PM)",
+              "HAIRCUT": "HAIRCUT AMBANG TOLERANSI",
+              "POST_HAIRCUT_TOLERANCE": "AMBANG TOLERANSI (post-haircut)",
+          }
+          materiality_count = 0
+          for key,label in mapping.items():
+              idx = header_map.get(label)
+              if idx is None or idx >= len(vals):
+                  raise RuntimeError("MATERIALITY_VALUE_MISSING_" + key)
+              value = vals[idx]
+              add(doc, "ICOFR_MATERIALITY_PARAMETER", f"MATERIALITY:2026:{key}", key, "2026", {
+                  "parameter": key,
+                  "normalizedValue": value,
+                  "approvalStatus": "Draft",
+                  "sourceSheet": "Dashboard",
+                  "baselineOnly": True
+              })
+              materiality_count += 1
+
+          # More dashboard metrics
+          hdr2 = find_row(dashboard, "RASIO PM / OM")
+          if hdr2:
+              hi = dashboard.index(hdr2)
+              vals2 = next((r for r in dashboard[hi+1:] if any(v not in (None,"") for v in r)), None)
+              hmap2 = {str(v).strip(): i for i,v in enumerate(hdr2) if str(v).strip()}
+              extra = {
+                  "PM_RATIO": "RASIO PM / OM",
+                  "CLEARLY_TRIVIAL": "CLEARLY TRIVIAL THRESHOLD",
+                  "CV_EBT_5Y": "CV LABA SEBELUM PAJAK (5 th)",
+                  "MATERIAL_WEAKNESS_THRESHOLD": "AMBANG MATERIAL WEAKNESS",
+              }
+              for key,label in extra.items():
+                  idx = hmap2.get(label)
+                  if idx is None or not vals2 or idx >= len(vals2):
+                      raise RuntimeError("MATERIALITY_EXTRA_MISSING_" + key)
+                  add(doc, "ICOFR_MATERIALITY_PARAMETER", f"MATERIALITY:2026:{key}", key, "2026", {
+                      "parameter": key,
+                      "normalizedValue": vals2[idx],
+                      "approvalStatus": "Draft",
+                      "sourceSheet": "Dashboard",
+                      "baselineOnly": True
+                  })
+                  materiality_count += 1
+
+          status_row = find_row(dashboard, "Status Kertas Kerja")
+          version_row = find_row(dashboard, "Versi Berlaku")
+          add(doc, "ICOFR_MATERIALITY_DOCUMENT_STATUS", "MATERIALITY:2026:DOCUMENT_STATUS",
+              "Materiality workpaper status", "2026", {
+                  "status": status_row[2] if status_row and len(status_row)>2 else "DRAFT",
+                  "version": version_row[2] if version_row and len(version_row)>2 else None,
+                  "baselineOnly": True
+              })
+          materiality_count += 1
+
+          benchmark_count = 0
+          for row in om_sheet:
+              row = row + [""] * max(0, 6-len(row))
+              year = str(row[1]).strip()
+              if year in {"2023","2024","2025"} or year.startswith("Rata-rata"):
+                  add(doc, "ICOFR_BENCHMARK_INPUT",
+                      "MATERIALITY:BENCHMARK:" + ("NORMALIZED" if year.startswith("Rata-rata") else year),
+                      year, "2026", {
+                          "year": year,
+                          "profitBeforeTax": row[2],
+                          "operatingIncome": row[3],
+                          "totalAssets": row[4],
+                          "totalExpenses": row[5],
+                          "sourceSheet": "OM",
+                          "baselineOnly": True
+                      })
+                  benchmark_count += 1
+          if benchmark_count != 4:
+              raise RuntimeError("MATERIALITY_BENCHMARK_COUNT_" + str(benchmark_count))
+
+          dod_count = 0
+          for row in dod_sheet:
+              row = row + [""] * max(0,5-len(row))
+              severity = str(row[1]).strip()
+              if severity in {"Deficiency (Minor)","Significant Deficiency","Material Weakness"}:
+                  add(doc, "ICOFR_DEFICIENCY_THRESHOLD",
+                      "DOD:2026:" + severity.upper().replace(" ","_").replace("(","").replace(")",""),
+                      severity, "2026", {
+                          "severity": severity,
+                          "percentageThreshold": row[2],
+                          "amountThresholdRpMillion": row[3],
+                          "minimumFollowUp": row[4],
+                          "sourceSheet": "DoD",
+                          "baselineOnly": True
+                      })
+                  dod_count += 1
+          if dod_count != 3:
+              raise RuntimeError("DOD_THRESHOLD_COUNT_" + str(dod_count))
+
+          matrix_header_index = next((i for i,r in enumerate(dod_sheet) if any("Besaran Dampak" in str(v) for v in r)), -1)
+          matrix_count = 0
+          if matrix_header_index >= 0:
+              for row in dod_sheet[matrix_header_index+1:]:
+                  row = row + [""] * max(0,5-len(row))
+                  magnitude = str(row[1]).strip()
+                  if not magnitude or magnitude.startswith("Matriks ini"):
+                      continue
+                  if magnitude.startswith(("Inconsequential","Moderate","Material")):
+                      for likelihood, idx in [("Remote",2),("Reasonably Possible",3),("Probable",4)]:
+                          add(doc, "ICOFR_DEFICIENCY_MATRIX",
+                              f"DOD:MATRIX:{magnitude.splitlines()[0].upper()}:{likelihood.upper().replace(' ','_')}",
+                              magnitude.splitlines()[0] + " / " + likelihood, "2026", {
+                                  "magnitude": magnitude,
+                                  "likelihood": likelihood,
+                                  "classification": row[idx],
+                                  "sourceSheet": "DoD",
+                                  "baselineOnly": True
+                              })
+                          matrix_count += 1
+          if matrix_count != 9:
+              raise RuntimeError("DOD_MATRIX_COUNT_" + str(matrix_count))
+          print(f"MATERIALITY workbook normalized params={materiality_count} benchmarks={benchmark_count} dod={dod_count} matrix={matrix_count}")
+
+          # 4. Significant business processes 2026
+          doc = docs["SIGNIFICANT_PROCESS_2026"]
+          rows = doc["sheets"].get("03_Proses_Bisnis_Signifikan", [])
+          process_2026_count = 0
+          for i,row in enumerate(rows):
+              row = row + [""] * max(0,9-len(row))
+              code = str(row[0]).strip()
+              if not re.fullmatch(r"P-\d{2}", code):
+                  continue
+              next_row = rows[i+1] + [""] * max(0,9-len(rows[i+1])) if i+1 < len(rows) else [""]*9
+              rl_count = next_row[6] if str(next_row[5]).strip() == "RL" else None
+              rl_exposure = next_row[7] if str(next_row[5]).strip() == "RL" else None
+              add(doc, "ICOFR_SIGNIFICANT_PROCESS", "PROCESS:2026:" + code, str(row[1]).strip(), "2026", {
+                  "processCode": code,
+                  "processName": row[1],
+                  "proposedOwner": row[2],
+                  "scope": row[3],
+                  "relatedSignificantAccounts": row[4],
+                  "nrAccountCount": row[6] if str(row[5]).strip()=="NR" else None,
+                  "nrExposureRpMillion": row[7] if str(row[5]).strip()=="NR" else None,
+                  "rlAccountCount": rl_count,
+                  "rlExposureRpMillion": rl_exposure,
+                  "significanceCriteria": row[8],
+                  "sourceSheet": "03_Proses_Bisnis_Signifikan",
+                  "baselineOnly": True,
+                  "reviewRequired": True,
+                  "operationalMasterCreated": False
+              })
+              process_2026_count += 1
+          if process_2026_count != 16:
+              raise RuntimeError("PROCESS_2026_COUNT_UNEXPECTED_" + str(process_2026_count))
+          print("SIGNIFICANT_PROCESS_2026 normalized records=" + str(process_2026_count))
+
+          # 5. A1GL master reference
+          doc = docs["A1GL"]
+          rows = doc["sheets"].get("A1GL 30082026", [])
+          header = next((r for r in rows if len(r)>=3 and str(r[0]).strip()=="GLSTAT" and str(r[1]).strip()=="GLCODE"), None)
+          if not header:
+              raise RuntimeError("A1GL_HEADER_NOT_FOUND")
+          headers = [str(v).strip() for v in header]
+          start = rows.index(header) + 1
+          gl_count = 0
+          for row in rows[start:]:
+              row = row + [""] * max(0,len(headers)-len(row))
+              code = str(row[1]).strip() if len(row)>1 else ""
+              name = str(row[2]).strip() if len(row)>2 else ""
+              if not code or not name:
+                  continue
+              fields = {headers[idx]: row[idx] if idx < len(row) else None for idx in range(len(headers))}
+              add(doc, "GL_ACCOUNT_MASTER", "GL:" + code, name, None, {
+                  "glCode": code,
+                  "glName": name,
+                  "fields": fields,
+                  "baselineOnly": True,
+                  "referenceMasterOnly": True,
+                  "operationalCoaUpdated": False
+              })
+              gl_count += 1
+          if gl_count < 3600:
+              raise RuntimeError("A1GL_COUNT_TOO_LOW_" + str(gl_count))
+          print("A1GL normalized records=" + str(gl_count))
+
+          # 6. ITGC Bank Kalbar-only controls + Test of One
+          doc = docs["ITGC"]
+          walkthrough = doc["sheets"].get("Walkthrough IT", [])
+          company_row = next((r for r in walkthrough if any(str(v).strip()=="Nama Perusahaan" for v in r)), None)
+          if not company_row or "PT Bank Kalbar" not in [str(v).strip() for v in company_row]:
+              raise RuntimeError("ITGC_BANK_KALBAR_WALKTHROUGH_NOT_FOUND")
+          control_count = 0
+          for row in walkthrough:
+              row = row + [""] * max(0,9-len(row))
+              if not isinstance(row[0], (int,float)):
+                  continue
+              no = int(row[0])
+              if not 1 <= no <= 10 or not str(row[3]).strip():
+                  continue
+              add(doc, "ITGC_CONTROL_CANDIDATE", f"ITGC:CONTROL:{no:02d}", str(row[3]).strip(), "2025-12-31", {
+                  "number": no,
+                  "documentReference": row[1],
+                  "pic": row[2],
+                  "controlActivity": row[3],
+                  "controlType": row[4],
+                  "nature": row[6],
+                  "frequency": row[7],
+                  "supportingSystem": row[8],
+                  "sourceSheet": "Walkthrough IT",
+                  "baselineOnly": True,
+                  "reviewRequired": True,
+                  "operationalMasterCreated": False
+              })
+              control_count += 1
+          if control_count != 10:
+              raise RuntimeError("ITGC_CONTROL_COUNT_UNEXPECTED_" + str(control_count))
+
+          test_rows = doc["sheets"].get("Test of One", [])
+          company_test = next((r for r in test_rows if any(str(v).strip()=="Nama Perusahaan" for v in r)), None)
+          if not company_test or "PT Bank Kalbar" not in [str(v).strip() for v in company_test]:
+              raise RuntimeError("ITGC_TEST_BANK_KALBAR_NOT_FOUND")
+          key_marker = next((i for i,r in enumerate(test_rows) if any("Key Control tobe tested" in str(v) for v in r)), -1)
+          evidence_marker = next((i for i,r in enumerate(test_rows) if any("Dokumen terkait yang akan di test" in str(v) for v in r)), -1)
+          if key_marker < 0 or evidence_marker < 0:
+              raise RuntimeError("ITGC_TEST_MARKERS_NOT_FOUND")
+          control_map = {}
+          for row in test_rows[key_marker+1:evidence_marker]:
+              row = row + [""] * max(0,6-len(row))
+              if isinstance(row[0], (int,float)) and 1 <= int(row[0]) <= 10 and str(row[1]).strip():
+                  control_map[int(row[0])] = str(row[1]).strip()
+          evidence_map = {}
+          for row in test_rows[evidence_marker+1:]:
+              row = row + [""] * max(0,6-len(row))
+              if isinstance(row[0], (int,float)) and 1 <= int(row[0]) <= 10:
+                  no = int(row[0])
+                  evidence_map[no] = {
+                      "evidenceAvailable": "√" in [str(v).strip() for v in row],
+                      "notes": next((str(v).strip() for v in row[3:] if str(v).strip() and str(v).strip()!="√"), None)
+                  }
+          test_count = 0
+          for no in sorted(control_map):
+              ev = evidence_map.get(no, {})
+              add(doc, "ITGC_TEST_OF_ONE_CANDIDATE", f"ITGC:TEST_OF_ONE:{no:02d}",
+                  control_map[no], "2025-12-31", {
+                      "number": no,
+                      "controlActivity": control_map[no],
+                      "evidenceAvailable": ev.get("evidenceAvailable", False),
+                      "notes": ev.get("notes"),
+                      "sourceSheet": "Test of One",
+                      "baselineOnly": True,
+                      "reviewRequired": True,
+                      "operationalTestCreated": False
+                  })
+              test_count += 1
+          if test_count != 10:
+              raise RuntimeError("ITGC_TEST_COUNT_UNEXPECTED_" + str(test_count))
+          print(f"ITGC normalized controls={control_count} testOfOne={test_count}")
+
+          # D1 schema and inserts
+          institution_id = next(iter(docs.values()))["institutionId"]
+          if any(d["institutionId"] != institution_id for d in docs.values()):
+              raise RuntimeError("INSTITUTION_MISMATCH")
+          now = datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+          ddl = """
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,
+            recordKey TEXT NOT NULL,
+            recordTitle TEXT,
+            period TEXT,
+            payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL DEFAULT 0,
+            sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',
+            normalizationBatch TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId, recordType, recordKey);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_precedence
+            ON SourceStructuredRecord(institutionId, recordType, recordKey, precedencePriority);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_batch
+            ON SourceStructuredRecord(institutionId, normalizationBatch);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            batchCode TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,
+            totalDocuments INTEGER NOT NULL,
+            processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            summaryJson TEXT,
+            startedAt TEXT NOT NULL,
+            completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId, batchCode);
+          DROP VIEW IF EXISTS SourceStructuredEffective;
+          CREATE VIEW SourceStructuredEffective AS
+          SELECT * FROM (
+            SELECT r.*,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY institutionId, recordType, recordKey
+                     ORDER BY precedencePriority DESC,
+                              COALESCE(sourceModifiedAt, updatedAt) DESC,
+                              updatedAt DESC
+                   ) AS precedenceRank
+            FROM SourceStructuredRecord r
+            WHERE status='Active'
+          ) WHERE precedenceRank=1;
+          """
+          Path("/tmp/batch2_ddl.sql").write_text(ddl)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/batch2_ddl.sql"],
+              env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          )
+
+          # Supersede only prior normalized rows from these six source documents.
+          source_ids = [d["id"] for d in docs.values()]
+          supersede = "\n".join(
+              f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} "
+              f"WHERE sourceDocumentId={q(doc_id)} AND status='Active';"
+              for doc_id in source_ids
+          )
+          Path("/tmp/batch2_supersede.sql").write_text(supersede)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/batch2_supersede.sql"],
+              env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          )
+
+          # Insert in bounded chunks to keep D1 execution reliable.
+          def insert_sql(r):
+              return f"""
+              INSERT INTO SourceStructuredRecord (
+                id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+                sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt
+              ) VALUES (
+                {q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},
+                {q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+                {q(r['sourceRole'])},{int(r['precedencePriority'])},{q(r['sourceModifiedAt'])},
+                'Active',{q(BATCH)},{q(now)},{q(now)}
+              )
+              ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,
+                sourceRole=excluded.sourceRole,precedencePriority=excluded.precedencePriority,
+                sourceModifiedAt=excluded.sourceModifiedAt,status='Active',
+                normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """
+
+          chunk_size = 250
+          for idx in range(0, len(records), chunk_size):
+              chunk = records[idx:idx+chunk_size]
+              p = f"/tmp/batch2_records_{idx//chunk_size:03d}.sql"
+              Path(p).write_text("\n".join(insert_sql(r) for r in chunk))
+              subprocess.check_call(
+                  ["npx","wrangler","d1","execute",DB,"--remote","--file",p],
+                  env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+              )
+
+          counts = {}
+          for r in records:
+              counts[r["recordType"]] = counts.get(r["recordType"], 0) + 1
+          summary = {
+              "files": [code for code,_ in targets],
+              "recordCounts": counts,
+              "excludedTemplateSheets": [
+                  "ITGC/Penentuan BPM & SPB - PT Bank Sulteng",
+                  "ITGC/Walkthrough Pemerliharaan IT - PT Bank Sulteng"
+              ]
+          }
+          run_id = stable_id(institution_id, BATCH)
+          run_sql = f"""
+          INSERT INTO SourceNormalizationRun (
+            id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,
+            totalRecords,status,summaryJson,startedAt,completedAt
+          ) VALUES (
+            {q(run_id)},{q(institution_id)},{q(BATCH)},'BASELINE',10,6,6,{len(records)},
+            'Completed',{q(json.dumps(summary,separators=(',',':'),ensure_ascii=False))},{q(now)},{q(now)}
+          )
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+            sourceRole='BASELINE',precedencePriority=10,totalDocuments=6,processedDocuments=6,
+            totalRecords={len(records)},status='Completed',
+            summaryJson={q(json.dumps(summary,separators=(',',':'),ensure_ascii=False))},
+            completedAt={q(now)};
+          """
+          Path("/tmp/batch2_run.sql").write_text(run_sql)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/batch2_run.sql"],
+              env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          )
+
+          verify = query(
+              "SELECT recordType,COUNT(*) AS records FROM SourceStructuredRecord "
+              f"WHERE institutionId={q(institution_id)} AND normalizationBatch={q(BATCH)} AND status='Active' "
+              "GROUP BY recordType ORDER BY recordType"
+          )
+          run = query(
+              "SELECT batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status "
+              f"FROM SourceNormalizationRun WHERE institutionId={q(institution_id)} AND batchCode={q(BATCH)} LIMIT 1"
+          )
+          active_total = sum(int(r["records"]) for r in verify)
+          if not run or run[0]["status"] != "Completed" or int(run[0]["processedDocuments"]) != 6:
+              raise RuntimeError("NORMALIZATION_RUN_NOT_VERIFIED")
+          if active_total != len(records):
+              raise RuntimeError(f"NORMALIZATION_COUNT_MISMATCH_{active_total}_{len(records)}")
+
+          source_provenance = query("""
+            SELECT
+              json_extract(metadataJson,'$.sourceRole') AS sourceRole,
+              json_extract(metadataJson,'$.precedencePriority') AS priority,
+              COUNT(*) AS records
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='aurakasih6987@gmail.com'
+            GROUP BY sourceRole,priority
+          """)
+          print("Aura batch 2 verification:")
+          print(json.dumps({
+              "run": run[0],
+              "recordCounts": verify,
+              "activeTotal": active_total,
+              "auraSourceProvenance": source_provenance
+          }, indent=2, ensure_ascii=False))
+          PY
+
+          python /tmp/normalize_batch2.py
+          rm -f /tmp/normalize_batch2.py /tmp/batch2_*.sql
