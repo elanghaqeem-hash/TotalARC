@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/refine-source-mapping-policy.yml'
+  workflow_run:
+    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +15,7 @@ permissions:
 
 jobs:
   refine:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
