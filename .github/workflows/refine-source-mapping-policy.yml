@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/refine_mapping.py <<'PY'
-          import hashlib, json, os, re, subprocess
+          import hashlib, json, os, re, subprocess, time
           from datetime import datetime, timezone
           from pathlib import Path
 
@@ -139,11 +139,22 @@ jobs:
               VALUES({q(lid)},{q(r['institutionId'])},{q(r['sourceRecordId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(target)},{q(r.get('targetHref'))},
               {q(target_entity.get(target))},NULL,{q(status)},{q(basis)},{q(r.get('sourceRole'))},{int(r.get('precedencePriority') or 0)},NULL,{q(now)},{q(now)});
               """)
-          chunk_size=100
+          def execute_file(path):
+              last_error=None
+              for attempt in range(5):
+                  try:
+                      subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",path],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                      return
+                  except subprocess.CalledProcessError as error:
+                      last_error=error
+                      time.sleep(2 + attempt * 2)
+              raise last_error
+
+          chunk_size=75
           for start in range(0,len(statements),chunk_size):
               p=f"/tmp/link_{start//chunk_size:03d}.sql"
               Path(p).write_text("\n".join(statements[start:start+chunk_size]))
-              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+              execute_file(p)
 
           verify=rows("""
             SELECT linkStatus,targetModule,COUNT(*) records
