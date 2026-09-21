@@ -1,4 +1,5 @@
 name: Normalize Seraya next 20 percent ELC ITGC detail
+# Idempotent rerun marker: sequencing hooks active 2026-09-22
 
 on:
   push:
