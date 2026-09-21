@@ -110,6 +110,27 @@ async function ensureDataHubSchema(db: D1DatabaseLike) {
       updatedAt TEXT NOT NULL
     )
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS SourceDataConflict (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      conflictGroup TEXT NOT NULL,
+      parameterKey TEXT NOT NULL,
+      baselineDocumentId TEXT,
+      updateDocumentId TEXT,
+      otherUpdateDocumentId TEXT,
+      baselineValue TEXT,
+      updateValue TEXT,
+      otherUpdateValue TEXT,
+      baselineStatus TEXT,
+      updateStatus TEXT,
+      otherUpdateStatus TEXT,
+      conflictStatus TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )
+  `).run();
 }
 
 function safeJson(value: string | null | undefined) {
@@ -398,11 +419,21 @@ export async function getSourceGovernance(institutionId: string) {
     LIMIT 300
   `).bind(institutionId).all<Record<string, unknown>>();
 
+  const conflicts = await db.prepare(`
+    SELECT id,conflictGroup,parameterKey,baselineDocumentId,updateDocumentId,otherUpdateDocumentId,
+           baselineValue,updateValue,otherUpdateValue,baselineStatus,updateStatus,otherUpdateStatus,
+           conflictStatus,reason,updatedAt
+    FROM SourceDataConflict
+    WHERE institutionId=?
+    ORDER BY conflictStatus DESC,conflictGroup,parameterKey
+  `).bind(institutionId).all<Record<string, unknown>>();
+
   return {
     reconciliationSummary: reconciliationSummary.results || [],
     reconciliation: reconciliation.results || [],
     mappingSummary: mappingSummary.results || [],
     operationalSummary: operationalSummary.results || [],
+    conflicts: conflicts.results || [],
     operationalExceptions: (operationalExceptions.results || []).map(item => ({
       ...item,
       missingFields: safeJson(String(item.missingFieldsJson || '')) || [],
