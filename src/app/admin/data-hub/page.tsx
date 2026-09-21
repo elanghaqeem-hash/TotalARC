@@ -30,6 +30,7 @@ type SummaryResponse = {
     mappingSummary?: Array<Record<string, any>>;
     operationalSummary?: Array<Record<string, any>>;
     conflicts?: Array<Record<string, any>>;
+    sourceIssues?: Array<Record<string, any>>;
     operationalExceptions?: Array<Record<string, any>>;
   };
 };
@@ -127,6 +128,7 @@ export default function DataIntegrationHubPage() {
   const mappingSummary = governance.mappingSummary || [];
   const operationalSummary = governance.operationalSummary || [];
   const conflicts = governance.conflicts || [];
+  const sourceIssues = governance.sourceIssues || [];
   const operationalExceptions = governance.operationalExceptions || [];
   const totalPages = Math.max(1, Math.ceil(number(records.total) / 50));
 
@@ -474,6 +476,39 @@ export default function DataIntegrationHubPage() {
               <div className="mt-2 text-sm font-black text-sky-900">Review / mapping queue</div>
               <div className="mt-1 text-[10px] text-sky-700">{number(totals.actionRequiredRecords)} records require mapping, review, or approval.</div>
             </button>
+          </section>
+
+          <section className="rounded-2xl border border-rose-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-rose-600" />
+              <h2 className="text-sm font-black text-slate-900">Open source data issues</h2>
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">
+              Anomali yang berasal dari dokumen sumber—nilai tidak direkayasa atau dikoreksi otomatis. HIGH ditampilkan lebih dahulu.
+            </p>
+            <div className="mt-4 space-y-2">
+              {sourceIssues.length === 0 ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-700">
+                  <CheckCircle2 className="mr-2 inline h-4 w-4" />No open source-data issues.
+                </div>
+              ) : sourceIssues.map(issue => (
+                <div key={issue.id} className="rounded-xl border border-slate-200 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={'rounded-full border px-2 py-0.5 text-[9px] font-black ' + (String(issue.severity) === 'HIGH' ? 'border-rose-200 bg-rose-50 text-rose-700' : String(issue.severity) === 'MEDIUM' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-50 text-slate-600')}>{issue.severity}</span>
+                    <span className="font-mono text-[9px] font-black text-slate-700">{issue.issueType}</span>
+                    {issue.sourceRecordKey && <span className="text-[9px] text-slate-400">{issue.sourceRecordKey}</span>}
+                  </div>
+                  <div className="mt-1 text-xs font-black text-slate-900">{issue.sourceTitle}</div>
+                  <div className="mt-1 text-[10px] leading-4 text-slate-600">{issue.description}</div>
+                  {(issue.observedValue || issue.expectedContext) && (
+                    <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 text-[10px]">
+                      {issue.observedValue && <div className="rounded-lg bg-rose-50 p-2"><b className="block text-rose-700">Observed</b>{issue.observedValue}</div>}
+                      {issue.expectedContext && <div className="rounded-lg bg-sky-50 p-2"><b className="block text-sky-700">Expected / context</b>{issue.expectedContext}</div>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

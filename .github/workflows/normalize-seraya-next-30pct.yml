@@ -1,0 +1,443 @@
+name: Normalize Seraya next 30 percent batch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-next-30pct.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-seraya-next-30pct
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize ten Seraya sources with issue register
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize_next30.py <<'PY'
+          import hashlib, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="SERAYA_UPDATE_NEXT30_10_20260921"
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+          def hid(*p): return hashlib.sha256("|".join(map(str,p)).encode()).hexdigest()[:40]
+          def compact(row): return [str(v).strip() for v in row if str(v).strip()]
+          def tab_rows(text): return [line.split("\t") for line in text.splitlines() if line.strip()]
+
+          catalog=rows("""
+            SELECT id,institutionId,title,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='serayamg@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='UPDATE'
+            ORDER BY title
+          """)
+          targets=[
+            ("WT_MASTER","Kertas_Kerja_Walkthrough_Bank_Kalbar_Master (IOW)"),
+            ("RISK_MR","Identifikasi_Risiko_dan_Pengendalian_ICOFR_Manajemen Risiko"),
+            ("RISK_EQ","Identifikasi_Risiko_dan_Pengendalian_ICOFR_Ekuitas&Aksi"),
+            ("RISK_COM","Identifikasi_Risiko_dan_Pengendalian_ICOFR_-_Komitmen_Kontijensi"),
+            ("CSA_L2","Kertas_Kerja_Evaluasi_Lini2_atas_CSA_Lini1"),
+            ("DATA_REQ","Dokumen 5. Daftar_Permintaan_Data"),
+            ("PHASE1","Dokumen 6_Rencana_Kerja_Fase1"),
+            ("MEMO_SCOPE","Dokumen 1. Memo Reviu 2025&Scoping_2026"),
+            ("MEMO_METHOD","Dokumen 10 Memo_Kerangka_Metodologi_ICOFR_2026"),
+            ("BPM_RCM_STD","Kertas Kerja BPM dan RCM (Document Standard)")
+          ]
+          docs={}
+          for code,token in targets:
+              matches=[d for d in catalog if token.lower() in str(d["title"]).lower()]
+              if len(matches)!=1: raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              d=matches[0]
+              chunks=rows(f"SELECT chunkIndex,textContent FROM SourceTextChunk WHERE documentId={q(d['id'])} ORDER BY chunkIndex")
+              text="".join(str(x.get("textContent") or "") for x in chunks)
+              if not text.strip(): raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
+              docs[code]={**d,"text":text}
+              print(f"{code} ready textLength={len(text)}")
+
+          institution_id=docs["WT_MASTER"]["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()): raise RuntimeError("INSTITUTION_MISMATCH")
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          records=[]; issues=[]
+
+          def add(doc,rt,key,title,payload,period="2026"):
+              records.append({
+                "id":hid(doc["id"],rt,key),"institutionId":institution_id,"sourceDocumentId":doc["id"],
+                "recordType":rt,"recordKey":key,"recordTitle":title,"period":period,
+                "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":")),
+                "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          def issue(doc,issue_type,severity,description,record_key=None,field=None,observed=None,expected=None):
+              issues.append({
+                "id":hid(doc["id"],issue_type,record_key or "",field or ""),"institutionId":institution_id,
+                "sourceDocumentId":doc["id"],"sourceRecordKey":record_key,"issueType":issue_type,
+                "severity":severity,"fieldName":field,"observedValue":observed,"expectedContext":expected,
+                "description":description
+              })
+
+          # 1. Master walkthrough: template/checklist only, no real operational sessions.
+          doc=docs["WT_MASTER"]; text=doc["text"]; table=tab_rows(text)
+          checklist=[]; in_checklist=False
+          for row in table:
+              line=" ".join(compact(row))
+              if "Pedoman & Checklist Pelaksanaan Inquiry" in line: in_checklist=True; continue
+              if in_checklist and "Referensi — Daftar Dropdown" in line: in_checklist=False
+              if not in_checklist: continue
+              vals=compact(row)
+              if not vals: continue
+              num_idx=next((i for i,v in enumerate(vals) if re.fullmatch(r"\d+",v)),None)
+              if num_idx is None: continue
+              num=int(vals[num_idx])
+              if not (1<=num<=30): continue
+              stage=vals[num_idx+1] if num_idx+1<len(vals) else None
+              activity=vals[num_idx+2] if num_idx+2<len(vals) else None
+              if not activity and len(vals)>num_idx+1:
+                  activity=vals[num_idx+1]
+              checklist.append((num,stage,activity))
+          unique={x[0]:x for x in checklist}
+          if len(unique)!=30: raise RuntimeError(f"WT_MASTER_CHECKLIST_COUNT_{len(unique)}_30")
+          add(doc,"WALKTHROUGH_TEMPLATE_REFERENCE","SERAYA:WT:TEMPLATE:2026","Walkthrough Master Template 2026",{
+            "templateType":"Walkthrough Awal dan Pemutakhiran","bank":"PT Bank Kalbar","year":2026,
+            "checklistItems":30,"referenceMasterOnly":True,"sourceRole":"UPDATE","precedencePriority":20
+          })
+          for num,stage,activity in [unique[k] for k in sorted(unique)]:
+              add(doc,"WALKTHROUGH_CHECKLIST_REFERENCE",f"SERAYA:WT:CHECKLIST:{num:02d}",activity or f"Checklist {num}",{
+                "sequence":num,"stage":stage,"activity":activity,"referenceMasterOnly":True,
+                "sourceRole":"UPDATE","precedencePriority":20
+              })
+          real_rows=0; example_rows=0
+          for row in table:
+              vals=compact(row)
+              if len(vals)>1 and vals[0].lower().startswith("contoh") and vals[1] in {"Awal","Pemutakhiran"}: example_rows+=1
+              elif len(vals)>1 and re.fullmatch(r"\d+",vals[0]) and vals[1] in {"Awal","Pemutakhiran"}: real_rows+=1
+          if real_rows==0 and example_rows>=2:
+              issue(doc,"MASTER_WALKTHROUGH_EXAMPLES_ONLY","MEDIUM",
+                    "Master walkthrough source contains example rows but no real session rows. The template and checklist are retained as reference-only.",
+                    observed=f"{example_rows} example rows; {real_rows} real rows",expected="Real sessions should be recorded in operational walkthrough workpapers.")
+          print("WT_MASTER records=31")
+
+          # 2-4. Three risk identification workbooks; only real Bank Kalbar risk refs R-012..R-026.
+          risk_specs={
+            "RISK_MR":(12,17,6),
+            "RISK_EQ":(18,22,5),
+            "RISK_COM":(23,26,4)
+          }
+          risk_total=0
+          for code,(lo,hi,expected) in risk_specs.items():
+              doc=docs[code]; found={}
+              for row in tab_rows(doc["text"]):
+                  vals=compact(row)
+                  pos=next((i for i,v in enumerate(vals) if re.fullmatch(r"R-\d{3}",v)),None)
+                  if pos is None: continue
+                  ref=vals[pos]
+                  n=int(ref.split("-")[1])
+                  if not (lo<=n<=hi): continue
+                  if ref in found: continue
+                  process=vals[pos-2] if pos>=2 else None
+                  subprocess_name=vals[pos-1] if pos>=1 else None
+                  risk_type=vals[pos+1] if pos+1<len(vals) else None
+                  statement=vals[pos+2] if pos+2<len(vals) else None
+                  assertions=vals[pos+3] if pos+3<len(vals) else None
+                  fraud=vals[pos+4] if pos+4<len(vals) else None
+                  quantitative=vals[pos+5] if pos+5<len(vals) else None
+                  qualitative=vals[pos+6] if pos+6<len(vals) else None
+                  basis=vals[pos+7] if pos+7<len(vals) else None
+                  rating=vals[pos+8] if pos+8<len(vals) else None
+                  note=vals[pos+9] if pos+9<len(vals) else None
+                  add(doc,"ICOFR_RISK_DETAIL_UPDATE_CANDIDATE",f"SERAYA:RISKDETAIL:2026:{ref}",ref,{
+                    "riskReference":ref,"businessProcess":process,"subprocess":subprocess_name,
+                    "riskType":risk_type,"riskStatement":statement,"assertions":assertions,
+                    "fraudRisk":fraud,"quantitativeFactor":quantitative,"qualitativeFactor":qualitative,
+                    "qualitativeBasis":basis,"riskRating":rating,"notes":note,
+                    "sourceRole":"UPDATE","precedencePriority":20,"reviewRequired":True,
+                    "operationalRiskCreated":False
+                  })
+                  found[ref]=True
+              if len(found)!=expected: raise RuntimeError(f"{code}_RISK_COUNT_{len(found)}_{expected}")
+              issue(doc,"RISK_RATING_REQUIRES_OWNER_VALIDATION","MEDIUM",
+                    "The workbook contains real Bank Kalbar risk rows but also illustrative material and draft methodology. Risk ratings remain review-gated until Process Owner/Lini 2 validation.")
+              risk_total+=len(found)
+          if risk_total!=15: raise RuntimeError("RISK_TOTAL_"+str(risk_total))
+          print("Risk detail records=15")
+
+          # 5. Lini 2 CSA evaluation: 4 populated assessments.
+          doc=docs["CSA_L2"]; assessments={}
+          for row in tab_rows(doc["text"]):
+              vals=compact(row)
+              if len(vals)<10 or not re.fullmatch(r"[1-4]",vals[0]): continue
+              no=int(vals[0])
+              # Header/detail rows elsewhere can start 1-4; require score positions and process description.
+              if len(vals)<9 or vals[4] not in {"1","2","3","4"}: continue
+              assessments[no]=vals
+          if len(assessments)!=4: raise RuntimeError(f"CSA_L2_COUNT_{len(assessments)}_4")
+          for no,vals in sorted(assessments.items()):
+              vals=vals+[""]*(16-len(vals))
+              add(doc,"CSA_LINE2_EVALUATION_CANDIDATE",f"SERAYA:CSA:L2:2026:{no:02d}",vals[1],{
+                "sequence":no,"areaOrProcess":vals[1],"riskAssessed":vals[2],"keyControl":vals[3],
+                "line1Score":vals[4],"line1Evidence":vals[5],"line2VerificationMethod":vals[6],
+                "line2Score":vals[7],"gap":vals[8],"indication":vals[9],"finding":vals[10] or None,
+                "rootCause":vals[11] or None,"recommendation":vals[12] or None,"followUpPic":vals[13] or None,
+                "targetDate":vals[14] or None,"followUpStatus":vals[15] or None,
+                "sourceRole":"UPDATE","precedencePriority":20,"reviewRequired":True,
+                "operationalCsaEvaluationCreated":False
+              })
+          if "[isi:" in doc["text"].lower():
+              issue(doc,"CSA_REVIEW_METADATA_PLACEHOLDERS","MEDIUM",
+                    "CSA Lini 2 workpaper still contains unfilled reviewer/unit/period/sign-off metadata placeholders. Assessment rows are staged but not treated as approved.")
+          print("CSA L2 records=4")
+
+          # 6. Data request register: 28 rows.
+          doc=docs["DATA_REQ"]; requests={}
+          for row in tab_rows(doc["text"]):
+              vals=compact(row)
+              if len(vals)<6 or not re.fullmatch(r"\d+",vals[0]): continue
+              no=int(vals[0])
+              if not (1<=no<=28): continue
+              vals=vals+[""]*(10-len(vals))
+              requests[no]=vals
+          if len(requests)!=28: raise RuntimeError(f"DATA_REQ_COUNT_{len(requests)}_28")
+          for no,vals in sorted(requests.items()):
+              add(doc,"ICOFR_DATA_REQUEST_ITEM",f"SERAYA:DATAREQ:2026:{no:02d}",vals[2],{
+                "sequence":no,"group":vals[1],"requestedData":vals[2],"purpose":vals[3],
+                "responsibleUnit":vals[4],"priority":vals[5],"requestDate":vals[6] or None,
+                "receivedDate":vals[7] or None,"requestStatus":vals[8] or None,"notes":vals[9] or None,
+                "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True
+              })
+          print("Data request records=28")
+
+          # 7. Phase 1 workplan: 26 actual task rows; source summary elsewhere says 23.
+          doc=docs["PHASE1"]; tasks={}
+          for row in tab_rows(doc["text"]):
+              vals=compact(row)
+              if len(vals)<6: continue
+              if not re.fullmatch(r"\d+",vals[0]): continue
+              no=int(vals[0])
+              if not (1<=no<=26): continue
+              # distinguish task table by week token in position 3
+              if len(vals)<7 or not re.fullmatch(r"M\d(?:-M\d)?",vals[3]): continue
+              vals=vals+[""]*(7-len(vals))
+              tasks[no]=vals
+          if len(tasks)!=26: raise RuntimeError(f"PHASE1_TASK_COUNT_{len(tasks)}_26")
+          for no,vals in sorted(tasks.items()):
+              add(doc,"ICOFR_PHASE1_TASK",f"SERAYA:PHASE1:2026:{no:02d}",vals[2],{
+                "sequence":no,"activityGroup":vals[1],"activity":vals[2],"week":vals[3],
+                "responsibleParty":vals[4],"deliverable":vals[5],"taskStatus":vals[6],
+                "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True
+              })
+          if re.search(r"23 kegiatan",doc["text"],re.I):
+              issue(doc,"PHASE1_ACTIVITY_COUNT_MISMATCH","MEDIUM",
+                    "The workplan contains 26 numbered task rows while another source statement says 23 activities.",
+                    observed="26 numbered task rows",expected="Source statement: 23 activities")
+          print("Phase1 task records=26")
+
+          # 8-9. Memo references: retain as governance references, source text remains available in Source Library.
+          memo_specs=[
+            ("MEMO_SCOPE","ICOFR_MEMO_REFERENCE","SERAYA:MEMO:SCOPING:2026","Memo Reviu 2025 & Scoping 2026"),
+            ("MEMO_METHOD","ICOFR_MEMO_REFERENCE","SERAYA:MEMO:METHODOLOGY:2026","Memo Kerangka Metodologi ICOFR 2026")
+          ]
+          for code,rt,key,title in memo_specs:
+              doc=docs[code]
+              text=doc["text"]
+              add(doc,rt,key,title,{
+                "documentTitle":doc["title"],"year":2026,
+                "containsMaterialityDiscussion":bool(re.search(r"Overall Materiality|Performance Materiality",text,re.I)),
+                "containsGapDiscussion":bool(re.search(r"gap",text,re.I)),
+                "containsPhase2Preparation":bool(re.search(r"Persiapan menuju Fase 2",text,re.I)),
+                "containsMethodologyIssues":bool(re.search(r"isu metodologis",text,re.I)),
+                "fullTextAvailableInSourceLibrary":True,"sourceRole":"UPDATE","precedencePriority":20,
+                "referenceMasterOnly":True
+              })
+          # Explicit source-level issue found in methodology memo: 31+26+6 = 63 while text states 64.
+          mm=docs["MEMO_METHOD"]
+          if re.search(r"64 gap",mm["text"],re.I) and re.search(r"31 gap.*26.*6",mm["text"],re.I|re.S):
+              issue(mm,"GAP_PRIORITY_TOTAL_MISMATCH","MEDIUM",
+                    "Methodology memo states 64 gaps but the stated distribution 31 high + 26 medium + 6 low totals 63. Preserve both source statements pending confirmation.",
+                    observed="64 total; distribution sums to 63",expected="Priority distribution should reconcile to stated total")
+          print("Memo reference records=2")
+
+          # 10. BPM/RCM document standard: 65 RCM-TLC references, all review-gated.
+          doc=docs["BPM_RCM_STD"]; text=doc["text"]
+          start=text.find("RCM — Transaction Level Control")
+          if start<0: raise RuntimeError("RCM_TLC_SECTION_NOT_FOUND")
+          end=text.find("RCM — ITGC",start)
+          if end<0: end=len(text)
+          segment=text[start:end]
+          controls={}
+          ref_re=re.compile(r"^RCM-TLC-[A-Z0-9-]+$")
+          for row in tab_rows(segment):
+              vals=compact(row)
+              pos=next((i for i,v in enumerate(vals) if ref_re.fullmatch(v)),None)
+              if pos is None: continue
+              ref=vals[pos]
+              if ref in controls: continue
+              vals=vals+[""]*30
+              # Layout after ref follows RCM-TLC columns.
+              process=vals[pos+1] if pos+1<len(vals) else None
+              subprocess_name=vals[pos+2] if pos+2<len(vals) else None
+              company=vals[pos+3] if pos+3<len(vals) else None
+              location=vals[pos+4] if pos+4<len(vals) else None
+              risk=vals[pos+5] if pos+5<len(vals) else None
+              fraud=vals[pos+6] if pos+6<len(vals) else None
+              rating=vals[pos+7] if pos+7<len(vals) else None
+              name=vals[pos+8] if pos+8<len(vals) else ref
+              description=vals[pos+9] if pos+9<len(vals) else None
+              evidence=vals[pos+10] if pos+10<len(vals) else None
+              key_control=vals[pos+11] if pos+11<len(vals) else None
+              ipo=vals[pos+12] if pos+12<len(vals) else None
+              assertions=vals[pos+13] if pos+13<len(vals) else None
+              purpose_type=vals[pos+14] if pos+14<len(vals) else None
+              nature=vals[pos+15] if pos+15<len(vals) else None
+              automatic=vals[pos+16] if pos+16<len(vals) else None
+              frequency=vals[pos+17] if pos+17<len(vals) else None
+              application=vals[pos+18] if pos+18<len(vals) else None
+              function=vals[pos+19] if pos+19<len(vals) else None
+              performer=vals[pos+20] if pos+20<len(vals) else None
+              financial_item=vals[pos+21] if pos+21<len(vals) else None
+              effective=vals[pos+22] if pos+22<len(vals) else None
+              notes=vals[pos+23] if pos+23<len(vals) else None
+              add(doc,"RCM_TLC_UPDATE_CANDIDATE",f"SERAYA:RCM:TLC:{ref}",name,{
+                "controlReference":ref,"businessProcess":process,"subprocess":subprocess_name,
+                "company":company,"location":location,"riskStatement":risk,"fraudRisk":fraud,
+                "riskRating":rating,"controlActivity":name,"controlDescription":description,
+                "evidence":evidence,"keyControl":key_control,"ipo":ipo,"assertions":assertions,
+                "purposeType":purpose_type,"nature":nature,"automaticControlType":automatic,
+                "frequency":frequency,"supportingSystem":application,"pic":function,"performer":performer,
+                "financialStatementItem":financial_item,"effectivePeriod":effective,"notes":notes,
+                "sourceRole":"UPDATE","precedencePriority":20,"reviewRequired":True,
+                "operationalControlCreated":False
+              })
+              controls[ref]=True
+              if effective and "Diasumsikan" in effective:
+                  issue(doc,"RCM_ASSUMED_EFFECTIVE_DATE","MEDIUM",
+                        "RCM control uses an assumed effective date and requires confirmation before operational promotion.",
+                        record_key=f"SERAYA:RCM:TLC:{ref}",field="effectivePeriod",observed=effective,
+                        expected="Confirmed actual implementation/effective date")
+          if len(controls)!=65: raise RuntimeError(f"RCM_TLC_CONTROL_COUNT_{len(controls)}_65")
+          print("RCM TLC candidate records=65")
+
+          expected_total=31+15+4+28+26+2+65
+          if len(records)!=expected_total: raise RuntimeError(f"RECORD_BUILD_COUNT_{len(records)}_{expected_total}")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+            description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_issue_institution ON SourceDataIssue(institutionId,issueStatus,severity,issueType);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/n30_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/n30_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          source_ids=[d["id"] for d in docs.values()]
+          cleanup="\n".join(
+            f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE sourceDocumentId={q(doc_id)} AND normalizationBatch={q(BATCH)} AND status='Active';"
+            for doc_id in source_ids
+          )
+          cleanup+="\n"+"\n".join(f"DELETE FROM SourceDataIssue WHERE sourceDocumentId={q(doc_id)};" for doc_id in source_ids)
+          Path("/tmp/n30_cleanup.sql").write_text(cleanup)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/n30_cleanup.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          def record_sql(r):
+              return f"""
+              INSERT INTO SourceStructuredRecord
+              (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+              VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+              'UPDATE',20,{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+              ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,sourceRole='UPDATE',
+                precedencePriority=20,sourceModifiedAt=excluded.sourceModifiedAt,status='Active',
+                normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """
+          statements=[record_sql(r) for r in records]
+          for x in issues:
+              statements.append(f"""
+              INSERT INTO SourceDataIssue
+              (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+              VALUES({q(x['id'])},{q(x['institutionId'])},{q(x['sourceDocumentId'])},{q(x['sourceRecordKey'])},{q(x['issueType'])},{q(x['severity'])},
+              {q(x['fieldName'])},{q(x['observedValue'])},{q(x['expectedContext'])},{q(x['description'])},'OPEN',{q(now)},{q(now)})
+              ON CONFLICT(id) DO UPDATE SET severity=excluded.severity,fieldName=excluded.fieldName,observedValue=excluded.observedValue,
+              expectedContext=excluded.expectedContext,description=excluded.description,issueStatus='OPEN',updatedAt=excluded.updatedAt;
+              """)
+          for start in range(0,len(statements),80):
+              p=f"/tmp/n30_rows_{start//80:03d}.sql"
+              Path(p).write_text("\n".join(statements[start:start+80]))
+              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          counts={}
+          for r in records: counts[r["recordType"]]=counts.get(r["recordType"],0)+1
+          rid=hid(institution_id,BATCH)
+          summary={"processedSources":[x[0] for x in targets],"recordCounts":counts,"issues":len(issues)}
+          runsql=f"""
+          INSERT INTO SourceNormalizationRun
+          (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status,summaryJson,startedAt,completedAt)
+          VALUES({q(rid)},{q(institution_id)},{q(BATCH)},'UPDATE',20,10,10,{len(records)},'Completed',{q(json.dumps(summary,separators=(',',':')))}, {q(now)},{q(now)})
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET sourceRole='UPDATE',precedencePriority=20,totalDocuments=10,processedDocuments=10,
+          totalRecords={len(records)},status='Completed',summaryJson={q(json.dumps(summary,separators=(',',':')))},completedAt={q(now)};
+          """
+          Path("/tmp/n30_run.sql").write_text(runsql)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/n30_run.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows(f"""
+            SELECT recordType,COUNT(*) records FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)} AND normalizationBatch={q(BATCH)} AND status='Active'
+            GROUP BY recordType ORDER BY recordType
+          """)
+          total=sum(int(x["records"]) for x in verify)
+          issue_verify=rows(f"""
+            SELECT issueType,severity,COUNT(*) records FROM SourceDataIssue
+            WHERE institutionId={q(institution_id)} AND issueStatus='OPEN'
+              AND sourceDocumentId IN ({','.join(q(x) for x in source_ids)})
+            GROUP BY issueType,severity ORDER BY issueType
+          """)
+          if total!=expected_total: raise RuntimeError(f"VERIFY_COUNT_{total}_{expected_total}")
+          print(json.dumps({"processedDocuments":10,"activeRecords":total,"recordCounts":verify,"sourceIssues":issue_verify},indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/normalize_next30.py
+          rm -f /tmp/normalize_next30.py /tmp/n30_*.sql
