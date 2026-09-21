@@ -1,0 +1,299 @@
+name: Reconcile source precedence and mapping queue
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/reconcile-source-mapping.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Build source reconciliation and mapping queue
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/reconcile.py <<'PY'
+          import hashlib, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from difflib import SequenceMatcher
+          from pathlib import Path
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def normalize_title(value):
+              s=str(value or "").lower().strip()
+              s=re.sub(r"\.(xlsx|xlsm|xls|docx|doc|pdf|zip)$","",s)
+              s=re.sub(r"^salinan\s+","",s)
+              s=s.replace("_"," ")
+              # institution naming is not a discriminator within the same institution.
+              s=re.sub(r"\b(pt\.?\s*)?(bpd\s*)?bank\s+kalbar\b"," ",s)
+              s=re.sub(r"\bpt\.?\s*bank\s+pembangunan\s+daerah\s+kalimantan\s+barat\b"," ",s)
+              s=re.sub(r"\b(copy|final|new|update|updated|rev|revisi|versi|version|ver)\b"," ",s)
+              s=re.sub(r"\b20\d{2}\b"," ",s)
+              s=re.sub(r"[^a-z0-9]+"," ",s)
+              return re.sub(r"\s+"," ",s).strip()
+
+          def tokens(value):
+              return {x for x in normalize_title(value).split() if len(x)>1}
+
+          def similarity(a,b):
+              na,nb=normalize_title(a),normalize_title(b)
+              if not na or not nb: return 0.0,0.0
+              seq=SequenceMatcher(None,na,nb).ratio()
+              ta,tb=tokens(a),tokens(b)
+              jac=len(ta&tb)/len(ta|tb) if ta|tb else 0.0
+              return seq,jac
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceReconciliation (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            baselineDocumentId TEXT,
+            updateDocumentId TEXT,
+            baselineTitle TEXT,
+            updateTitle TEXT,
+            module TEXT,
+            matchMethod TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            effectiveDocumentId TEXT,
+            reason TEXT,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_recon_institution ON SourceReconciliation(institutionId,status,module);
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_recon_pair ON SourceReconciliation(institutionId,baselineDocumentId,updateDocumentId);
+
+          CREATE TABLE IF NOT EXISTS SourceMappingQueue (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceRecordId TEXT NOT NULL,
+            sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,
+            targetModule TEXT,
+            targetHref TEXT,
+            proposedAction TEXT NOT NULL,
+            queueStatus TEXT NOT NULL,
+            sourceRole TEXT,
+            precedencePriority INTEGER NOT NULL DEFAULT 0,
+            completenessStatus TEXT,
+            mappingStatus TEXT,
+            reason TEXT,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_mapping_queue_record ON SourceMappingQueue(sourceRecordId);
+          CREATE INDEX IF NOT EXISTS idx_mapping_queue_status ON SourceMappingQueue(institutionId,queueStatus,targetModule);
+          """
+          Path("/tmp/reconcile_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/reconcile_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          docs=rows("""
+            SELECT id,institutionId,title,module,sourceKind,rawSha256,textSha256,textLength,rawSizeBytes,
+                   sourceModifiedAt,updatedAt,metadataJson
+            FROM SourceDocument
+            WHERE status='Active'
+            ORDER BY title
+          """)
+          if not docs: raise RuntimeError("NO_SOURCE_DOCUMENTS")
+
+          for d in docs:
+              try: md=json.loads(d.get("metadataJson") or "{}")
+              except: md={}
+              d["sourceRole"]=md.get("sourceRole") or "UNSPECIFIED"
+              d["priority"]=int(md.get("precedencePriority") or 0)
+
+          institution_ids=sorted({d["institutionId"] for d in docs})
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          reconciliation=[]
+
+          for institution_id in institution_ids:
+              baseline=[d for d in docs if d["institutionId"]==institution_id and d["sourceRole"]=="BASELINE"]
+              updates=[d for d in docs if d["institutionId"]==institution_id and d["sourceRole"]=="UPDATE"]
+              used_baseline=set()
+
+              for u in updates:
+                  exact_hash=[]
+                  for b in baseline:
+                      if u.get("textSha256") and b.get("textSha256") and u["textSha256"]==b["textSha256"]:
+                          exact_hash.append(b)
+                      elif u.get("rawSha256") and b.get("rawSha256") and u["rawSha256"]==b["rawSha256"]:
+                          exact_hash.append(b)
+                  if len(exact_hash)==1:
+                      b=exact_hash[0]; used_baseline.add(b["id"])
+                      reconciliation.append((institution_id,b,u,"HASH_EXACT",1.0,"AUTO_LINKED",u["id"],"Identical source content hash; UPDATE source is effective."))
+                      continue
+
+                  exact_title=[b for b in baseline if normalize_title(b["title"]) and normalize_title(b["title"])==normalize_title(u["title"]) and (not b.get("module") or not u.get("module") or b.get("module")==u.get("module"))]
+                  if len(exact_title)==1:
+                      b=exact_title[0]; used_baseline.add(b["id"])
+                      reconciliation.append((institution_id,b,u,"TITLE_EXACT",0.99,"AUTO_LINKED",u["id"],"Normalized title and module match; UPDATE source is effective."))
+                      continue
+
+                  scored=[]
+                  for b in baseline:
+                      if b.get("module") and u.get("module") and b["module"]!=u["module"]: continue
+                      seq,jac=similarity(b["title"],u["title"])
+                      score=(seq*0.65)+(jac*0.35)
+                      scored.append((score,seq,jac,b))
+                  scored.sort(key=lambda x:x[0],reverse=True)
+                  best=scored[0] if scored else None
+                  second=scored[1] if len(scored)>1 else None
+
+                  if best and best[0]>=0.86 and best[1]>=0.84 and best[2]>=0.55:
+                      b=best[3]
+                      ambiguous=bool(second and best[0]-second[0]<0.04 and second[0]>=0.82)
+                      status="AMBIGUOUS_REVIEW" if ambiguous else "HIGH_CONFIDENCE_REVIEW"
+                      reconciliation.append((institution_id,b,u,"TITLE_SIMILARITY",round(best[0],4),status,None,
+                                             f"Title similarity seq={best[1]:.3f}, token={best[2]:.3f}; manual confirmation required before precedence link."))
+                      if not ambiguous: used_baseline.add(b["id"])
+                  else:
+                      reconciliation.append((institution_id,None,u,"UNMATCHED_UPDATE",0.0,"NEW_UPDATE_SOURCE",u["id"],
+                                             "No conservative baseline match found; treat as new UPDATE source until mapped."))
+
+              for b in baseline:
+                  if b["id"] not in used_baseline and not any(x[1] and x[1]["id"]==b["id"] for x in reconciliation):
+                      reconciliation.append((institution_id,b,None,"UNMATCHED_BASELINE",0.0,"BASELINE_ONLY",b["id"],
+                                             "No UPDATE counterpart identified."))
+
+          sql=[]
+          for institution_id in institution_ids:
+              sql.append(f"DELETE FROM SourceReconciliation WHERE institutionId={q(institution_id)};")
+          for institution_id,b,u,method,confidence,status,effective,reason in reconciliation:
+              rid=hid(institution_id,b["id"] if b else "",u["id"] if u else "",method)
+              sql.append(f"""
+              INSERT INTO SourceReconciliation
+              (id,institutionId,baselineDocumentId,updateDocumentId,baselineTitle,updateTitle,module,matchMethod,confidence,status,effectiveDocumentId,reason,createdAt,updatedAt)
+              VALUES({q(rid)},{q(institution_id)},{q(b['id'] if b else None)},{q(u['id'] if u else None)},{q(b['title'] if b else None)},{q(u['title'] if u else None)},
+              {q((u or b).get('module') if (u or b) else None)},{q(method)},{confidence},{q(status)},{q(effective)},{q(reason)},{q(now)},{q(now)});
+              """)
+          Path("/tmp/reconcile_rows.sql").write_text("\n".join(sql))
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/reconcile_rows.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          quality=rows("""
+            SELECT sr.id,sr.institutionId,sr.sourceDocumentId,sr.recordType,sr.sourceRole,sr.precedencePriority,
+                   q.completenessStatus,q.mappingStatus,q.targetModule,q.targetHref,q.issueCode
+            FROM SourceStructuredRecord sr
+            LEFT JOIN SourceDataQuality q ON q.recordId=sr.id
+            WHERE sr.status='Active'
+            ORDER BY sr.institutionId,sr.recordType,sr.recordKey
+          """)
+
+          mapping=[]
+          for r in quality:
+              completeness=r.get("completenessStatus") or "NOT_EVALUATED"
+              mapping_status=r.get("mappingStatus") or "NOT_EVALUATED"
+              if completeness in ("INCOMPLETE","UNIDENTIFIED_FORMAT","NOT_EVALUATED"):
+                  action="HOLD_EXCEPTION"; queue="BLOCKED"
+                  reason="Record is incomplete, unidentified, or not evaluated."
+              elif mapping_status=="REFERENCE_ONLY":
+                  action="DISPLAY_REFERENCE"; queue="REFERENCE"
+                  reason="Reference master data remains source-backed and is not auto-written to operational masters."
+              elif mapping_status=="NEEDS_APPROVAL":
+                  action="REVIEW_APPROVE"; queue="APPROVAL_REQUIRED"
+                  reason="Source value is staged as draft and requires approval before operational use."
+              elif mapping_status=="NEEDS_REVIEW":
+                  action="REVIEW_MAP"; queue="REVIEW_REQUIRED"
+                  reason="Candidate control/process/test data requires validation before master creation."
+              elif mapping_status=="MAPPED":
+                  action="VERIFY_LINK"; queue="MAPPED"
+                  reason="Operational master link already indicated by source metadata."
+              else:
+                  action="MAP_TO_MODULE"; queue="READY_TO_MAP"
+                  reason="Complete staged record can be mapped to its target module, subject to target-key conflict checks."
+              mapping.append((r,action,queue,reason))
+
+          sql=[]
+          for institution_id in institution_ids:
+              sql.append(f"DELETE FROM SourceMappingQueue WHERE institutionId={q(institution_id)};")
+          for r,action,queue,reason in mapping:
+              mid=hid("MAP",r["id"])
+              sql.append(f"""
+              INSERT INTO SourceMappingQueue
+              (id,institutionId,sourceRecordId,sourceDocumentId,recordType,targetModule,targetHref,proposedAction,queueStatus,sourceRole,precedencePriority,completenessStatus,mappingStatus,reason,createdAt,updatedAt)
+              VALUES({q(mid)},{q(r['institutionId'])},{q(r['id'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(r.get('targetModule'))},{q(r.get('targetHref'))},
+              {q(action)},{q(queue)},{q(r.get('sourceRole'))},{int(r.get('precedencePriority') or 0)},{q(completeness)},{q(mapping_status)},{q(reason)},{q(now)},{q(now)});
+              """)
+          for start in range(0,len(sql),350):
+              p=f"/tmp/mapping_{start//350:03d}.sql"
+              Path(p).write_text("\n".join(sql[start:start+350]))
+              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          recon_summary=rows("""
+            SELECT status,matchMethod,COUNT(*) records
+            FROM SourceReconciliation
+            GROUP BY status,matchMethod
+            ORDER BY status,matchMethod
+          """)
+          mapping_summary=rows("""
+            SELECT queueStatus,targetModule,COUNT(*) records
+            FROM SourceMappingQueue
+            GROUP BY queueStatus,targetModule
+            ORDER BY queueStatus,targetModule
+          """)
+          source_summary=rows("""
+            SELECT sourceRole,COUNT(*) records
+            FROM (
+              SELECT COALESCE(json_extract(metadataJson,'$.sourceRole'),'UNSPECIFIED') sourceRole
+              FROM SourceDocument WHERE status='Active'
+            )
+            GROUP BY sourceRole
+            ORDER BY sourceRole
+          """)
+          notable=rows("""
+            SELECT status,matchMethod,ROUND(confidence,3) confidence,
+                   COALESCE(baselineTitle,'—') baselineTitle,
+                   COALESCE(updateTitle,'—') updateTitle,
+                   COALESCE(module,'—') module
+            FROM SourceReconciliation
+            WHERE status IN ('AUTO_LINKED','HIGH_CONFIDENCE_REVIEW','AMBIGUOUS_REVIEW','NEW_UPDATE_SOURCE')
+            ORDER BY status,confidence DESC,updateTitle
+          """)
+
+          total_map=sum(int(r["records"]) for r in mapping_summary)
+          if total_map!=len(quality): raise RuntimeError(f"MAPPING_QUEUE_COUNT_MISMATCH_{total_map}_{len(quality)}")
+
+          print("=== SOURCE RECONCILIATION SUMMARY ===")
+          print(json.dumps(recon_summary,indent=2,ensure_ascii=False))
+          print("=== SOURCE ORIGIN SUMMARY ===")
+          print(json.dumps(source_summary,indent=2,ensure_ascii=False))
+          print("=== MAPPING QUEUE SUMMARY ===")
+          print(json.dumps(mapping_summary,indent=2,ensure_ascii=False))
+          print("=== RECONCILIATION CANDIDATES ===")
+          print(json.dumps(notable,indent=2,ensure_ascii=False))
+          PY
+          python /tmp/reconcile.py
+          rm -f /tmp/reconcile.py /tmp/reconcile_*.sql /tmp/mapping_*.sql
