@@ -1,0 +1,497 @@
+name: Process Aura batch 1 five sources v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/process-aura-batch1-five-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-aura-batch1-normalization
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize five Aura sources from D1 binary artifacts
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize.py <<'PY'
+          import base64, hashlib, json, os, re, subprocess, tempfile, zipfile
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          BATCH = "AURA_BATCH1_5_20260921"
+          NS = {
+              "a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+              "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+          }
+          WNS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+
+          def wrangler(args):
+              return subprocess.check_output(
+                  ["npx", "wrangler", *args],
+                  text=True,
+                  env=os.environ,
+                  stderr=subprocess.DEVNULL,
+              )
+
+          dbs = json.loads(wrangler(["d1", "list", "--json"]))
+          db = next((item for item in dbs if re.search(r"total.?arc", item["name"], re.I)), None)
+          if not db and len(dbs) == 1:
+              db = dbs[0]
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB = db["name"]
+
+          def query(sql):
+              raw = json.loads(wrangler(["d1", "execute", DB, "--remote", "--json", "--command", sql]))
+              blocks = raw if isinstance(raw, list) else [raw]
+              return [row for block in blocks for row in (block.get("results") or [])]
+
+          def q(value):
+              if value is None:
+                  return "NULL"
+              return "'" + str(value).replace("'", "''") + "'"
+
+          def stable_id(*parts):
+              return hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()[:40]
+
+          def parse_value(value):
+              value = str(value or "").strip()
+              if not value:
+                  return None
+              try:
+                  if re.fullmatch(r"-?\d+(?:\.\d+)?(?:E[+-]?\d+)?", value, re.I):
+                      return float(value) if ("." in value or "E" in value.upper()) else int(value)
+              except Exception:
+                  pass
+              return value
+
+          def xlsx_text(raw_bytes):
+              lines = []
+              with tempfile.NamedTemporaryFile(suffix=".xlsx") as tmp:
+                  tmp.write(raw_bytes); tmp.flush()
+                  with zipfile.ZipFile(tmp.name) as z:
+                      shared = []
+                      if "xl/sharedStrings.xml" in z.namelist():
+                          root = ET.fromstring(z.read("xl/sharedStrings.xml"))
+                          for si in root.findall("a:si", NS):
+                              shared.append("".join((t.text or "") for t in si.findall(".//a:t", NS)))
+                      wb = ET.fromstring(z.read("xl/workbook.xml"))
+                      rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+                      relmap = {r.attrib["Id"]: r.attrib["Target"] for r in rels}
+                      for sh in wb.findall("a:sheets/a:sheet", NS):
+                          name = sh.attrib.get("name", "Sheet")
+                          rid = sh.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+                          target = relmap.get(rid, "")
+                          if not target.startswith("xl/"):
+                              target = "xl/" + target.lstrip("/")
+                          if target not in z.namelist():
+                              continue
+                          root = ET.fromstring(z.read(target))
+                          lines.append("### SHEET: " + name)
+                          for row in root.findall(".//a:sheetData/a:row", NS):
+                              vals = []
+                              for cell in row.findall("a:c", NS):
+                                  cell_type = cell.attrib.get("t")
+                                  v = cell.find("a:v", NS)
+                                  inline = cell.find("a:is", NS)
+                                  value = ""
+                                  if cell_type == "s" and v is not None and v.text is not None:
+                                      try:
+                                          value = shared[int(v.text)]
+                                      except Exception:
+                                          value = v.text
+                                  elif cell_type == "inlineStr" and inline is not None:
+                                      value = "".join((t.text or "") for t in inline.findall(".//a:t", NS))
+                                  elif v is not None and v.text is not None:
+                                      value = v.text
+                                  value = str(value).strip()
+                                  if value:
+                                      vals.append(value)
+                              if vals:
+                                  lines.append("\t".join(vals))
+              return "\n".join(lines)
+
+          def docx_text(raw_bytes):
+              with tempfile.NamedTemporaryFile(suffix=".docx") as tmp:
+                  tmp.write(raw_bytes); tmp.flush()
+                  with zipfile.ZipFile(tmp.name) as z:
+                      root = ET.fromstring(z.read("word/document.xml"))
+                      out = []
+                      for p in root.findall(".//w:p", WNS):
+                          text = "".join((t.text or "") for t in p.findall(".//w:t", WNS)).strip()
+                          if text:
+                              out.append(text)
+                      return "\n".join(out)
+
+          def raw_bytes(document_id):
+              rows = query(
+                  "SELECT chunkIndex,dataBase64 FROM SourceBinaryChunk "
+                  f"WHERE documentId={q(document_id)} ORDER BY chunkIndex"
+              )
+              if not rows:
+                  return b""
+              return b"".join(base64.b64decode(row["dataBase64"]) for row in rows)
+
+          def indexed_text(document_id):
+              rows = query(
+                  "SELECT chunkIndex,textContent FROM SourceTextChunk "
+                  f"WHERE documentId={q(document_id)} ORDER BY chunkIndex"
+              )
+              return "".join(str(row.get("textContent") or "") for row in rows)
+
+          catalog = query("""
+            SELECT id,institutionId,title,mimeType,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='aurakasih6987@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='BASELINE'
+            ORDER BY title
+          """)
+
+          target_defs = [
+              ("NERACA_2024", "NERACA 31 12 2024 AUDITED"),
+              ("LLNTY", "LLNTY_202509031507"),
+              ("LLNTY2", "LLNTY2_202509031510"),
+              ("MATERIALITY", "Analisis_Materialitas_ICoFR_Paparan_TaskForce_Direksi"),
+              ("WT_INTEREST_INCOME", "Otomatisasi Pengakuan Pend Bunga"),
+          ]
+          selected = {}
+          for code, token in target_defs:
+              matches = [row for row in catalog if token.lower() in str(row["title"]).lower()]
+              if len(matches) != 1:
+                  raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              selected[code] = matches[0]
+
+          docs = {}
+          for code, meta in selected.items():
+              raw = raw_bytes(meta["id"])
+              text = ""
+              if raw:
+                  mime = str(meta.get("mimeType") or "").lower()
+                  if "spreadsheet" in mime or str(meta["title"]).lower().endswith(".xlsx"):
+                      text = xlsx_text(raw)
+                  elif "wordprocessing" in mime or str(meta["title"]).lower().endswith(".docx"):
+                      text = docx_text(raw)
+              if not text:
+                  text = indexed_text(meta["id"])
+              if not text.strip():
+                  raise RuntimeError("SOURCE_CONTENT_MISSING_" + code)
+              md = json.loads(meta.get("metadataJson") or "{}")
+              docs[code] = {
+                  **meta,
+                  "text": text,
+                  "sourceRole": md.get("sourceRole", "BASELINE"),
+                  "precedencePriority": int(md.get("precedencePriority", 10)),
+                  "usedRawBinary": bool(raw),
+              }
+              print(f"{code} source ready raw={bool(raw)} rawSize={meta.get('rawSizeBytes',0)} textLength={len(text)}")
+
+          def sheet(text, name):
+              marker = "### SHEET: " + name
+              pos = text.find(marker)
+              if pos < 0:
+                  return ""
+              rest = text[pos + len(marker):]
+              nxt = rest.find("### SHEET: ")
+              return (rest[:nxt] if nxt >= 0 else rest).strip()
+
+          records = []
+          def add(doc, record_type, record_key, title, period, payload):
+              records.append({
+                  "id": stable_id(doc["id"], record_type, record_key),
+                  "institutionId": doc["institutionId"],
+                  "sourceDocumentId": doc["id"],
+                  "recordType": record_type,
+                  "recordKey": record_key,
+                  "recordTitle": title,
+                  "period": period,
+                  "payloadJson": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                  "sourceRole": doc["sourceRole"],
+                  "precedencePriority": doc["precedencePriority"],
+                  "sourceModifiedAt": doc.get("sourceModifiedAt"),
+              })
+
+          # NERACA
+          doc = docs["NERACA_2024"]
+          body = sheet(doc["text"], "NERACA") or doc["text"]
+          lines = [line.strip() for line in body.splitlines() if line.strip()]
+          header_line = next((line for line in lines if "NRC01" in line and "KONSOL" in line), None)
+          if not header_line:
+              raise RuntimeError("NERACA_HEADER_NOT_FOUND")
+          headers = header_line.split("\t")[1:]
+          count_neraca = 0
+          for line in lines:
+              parts = line.split("\t")
+              if not parts or not re.fullmatch(r"\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}", parts[0].strip()):
+                  continue
+              code, name = parts[0].strip(), (parts[1].strip() if len(parts) > 1 else parts[0].strip())
+              values = {h: parse_value(parts[i + 2] if i + 2 < len(parts) else "") for i, h in enumerate(headers)}
+              add(doc, "FINANCIAL_STATEMENT_LINE", "BS:2024:" + code, name, "2024-12-31", {
+                  "statement": "Balance Sheet", "accountCode": code, "accountName": name,
+                  "values": values, "sourceSheet": "NERACA", "baselineOnly": True
+              })
+              count_neraca += 1
+          if count_neraca < 90:
+              raise RuntimeError(f"NERACA_RECORD_COUNT_TOO_LOW_{count_neraca}")
+          print("NERACA_2024 normalized records=" + str(count_neraca))
+
+          # LLNTY
+          doc = docs["LLNTY"]
+          lines = [line for line in doc["text"].splitlines() if line and not line.startswith("### SHEET:")]
+          hi = next((i for i, line in enumerate(lines) if "LYLNTY/LOAN TYPE" in line and "LYTITL/TITLE" in line), -1)
+          if hi < 0:
+              raise RuntimeError("LLNTY_HEADER_NOT_FOUND")
+          headers = lines[hi].split("\t")
+          ci = next(i for i, h in enumerate(headers) if "LYLNTY/LOAN TYPE" in h)
+          ti = next(i for i, h in enumerate(headers) if "LYTITL/TITLE" in h)
+          count_llnty = 0
+          for line in lines[hi + 1:]:
+              parts = line.split("\t")
+              code = parts[ci].strip() if ci < len(parts) else ""
+              if not code:
+                  continue
+              fields = {h: parse_value(parts[i] if i < len(parts) else "") for i, h in enumerate(headers)}
+              title = parts[ti].strip() if ti < len(parts) else code
+              add(doc, "LOAN_TYPE_MASTER", "LOAN_TYPE:" + code, title or code, None, {
+                  "loanType": code, "title": title, "fields": fields, "baselineOnly": True
+              })
+              count_llnty += 1
+          if count_llnty < 250:
+              raise RuntimeError(f"LLNTY_RECORD_COUNT_TOO_LOW_{count_llnty}")
+          print("LLNTY normalized records=" + str(count_llnty))
+
+          # LLNTY2
+          doc = docs["LLNTY2"]
+          lines = [line for line in doc["text"].splitlines() if line and not line.startswith("### SHEET:")]
+          hi = next((i for i, line in enumerate(lines) if line.startswith("LYLNTY/LOAN TYPE\t")), -1)
+          if hi < 0:
+              raise RuntimeError("LLNTY2_HEADER_NOT_FOUND")
+          headers = lines[hi].split("\t")
+          count_llnty2 = 0
+          for line in lines[hi + 1:]:
+              parts = line.split("\t")
+              code = parts[0].strip() if parts else ""
+              if not code:
+                  continue
+              fields = {h: parse_value(parts[i] if i < len(parts) else "") for i, h in enumerate(headers)}
+              add(doc, "LOAN_TYPE_ACCOUNT_EXTENSION", "LOAN_TYPE:" + code, code, None, {
+                  "loanType": code, "fields": fields, "baselineOnly": True
+              })
+              count_llnty2 += 1
+          if count_llnty2 < 280:
+              raise RuntimeError(f"LLNTY2_RECORD_COUNT_TOO_LOW_{count_llnty2}")
+          print("LLNTY2 normalized records=" + str(count_llnty2))
+
+          # Materiality
+          doc = docs["MATERIALITY"]
+          text = doc["text"]
+          draft = bool(re.search(r"status dokumen saat ini adalah DRAFT|bersifat sementara/draft", text, re.I))
+          specs = [
+              ("OM", r"Overall Materiality \(OM\)\s*\nRp\s*([\d.]+,\d+)\s*juta", "Rp juta"),
+              ("PM", r"Performance Materiality \(PM\)\s*\nRp\s*([\d.]+,\d+)\s*juta", "Rp juta"),
+              ("CLEARLY_TRIVIAL", r"Clearly Trivial Threshold\s*\nRp\s*([\d.]+,\d+)\s*juta", "Rp juta"),
+              ("HAIRCUT", r"Haircut Ambang Toleransi\s*\n([\d,]+)%", "percent"),
+              ("POST_HAIRCUT_TOLERANCE", r"Ambang Batas Toleransi \(post-haircut\)\s*\nRp\s*([\d.]+,\d+)\s*juta", "Rp juta"),
+          ]
+          for key, pattern, unit in specs:
+              m = re.search(pattern, text, re.I)
+              if not m:
+                  raise RuntimeError("MATERIALITY_VALUE_NOT_FOUND_" + key)
+              raw_value = m.group(1)
+              normalized = float(raw_value.replace(".", "").replace(",", "."))
+              add(doc, "ICOFR_MATERIALITY_PARAMETER", "MATERIALITY:2026:" + key, key, "2026", {
+                  "parameter": key, "sourceValue": raw_value, "normalizedValue": normalized,
+                  "unit": unit, "approvalStatus": "Draft" if draft else "Unspecified", "baselineOnly": True
+              })
+          print("MATERIALITY normalized records=5")
+
+          # Walkthrough - Bank Kalbar sheet only.
+          doc = docs["WT_INTEREST_INCOME"]
+          body = sheet(doc["text"], "Walkthrough IT") or doc["text"]
+          if not re.search(r"Nama Perusahaan\tPT Bank Kalbar", body, re.I):
+              raise RuntimeError("WALKTHROUGH_BANK_KALBAR_SHEET_NOT_FOUND")
+          lines = [line for line in body.splitlines() if line]
+          company = next((line.split("\t", 1)[1] for line in lines if line.startswith("Nama Perusahaan\t")), "")
+          period_text = next((line.split("\t", 1)[1] for line in lines if line.startswith("Periode Buku\t")), "")
+          subject = next((line.split("\t", 1)[1] for line in lines if line.startswith("Subject\t")), "")
+          hi = next((i for i, line in enumerate(lines) if line.startswith("Nama Dokumen\tPIC\tAktivitas Pengendalian")), -1)
+          if hi < 0:
+              raise RuntimeError("WALKTHROUGH_CONTROL_HEADER_NOT_FOUND")
+          last_seq = ""
+          count_walk = 0
+          for line in lines[hi + 1:]:
+              if line.startswith("↓") or re.match(r"Tolong dicek", line, re.I):
+                  break
+              parts = line.split("\t")
+              if re.fullmatch(r"\d+\.\d+", parts[0] if parts else ""):
+                  seq = parts[0]; last_seq = seq
+                  document_name = parts[1] if len(parts) > 1 else ""
+                  pic = parts[2] if len(parts) > 2 else ""
+                  activity = parts[3] if len(parts) > 3 else ""
+                  control_type = parts[4] if len(parts) > 4 else None
+                  nature = parts[5] if len(parts) > 5 else None
+                  frequency = parts[6] if len(parts) > 6 else None
+                  system = parts[7] if len(parts) > 7 else None
+              elif last_seq and len(parts) >= 4 and re.search(r"Divisi|Alco", parts[1], re.I):
+                  seq = last_seq + "A"
+                  document_name, pic, activity = parts[0], parts[1], parts[2]
+                  control_type = nature = system = None
+                  frequency = parts[3]
+              else:
+                  continue
+              add(doc, "WALKTHROUGH_CONTROL_CANDIDATE", "WT:INTEREST_INCOME:" + seq, activity[:180] or seq, "2025-12-31", {
+                  "sequence": seq, "company": company, "periodText": period_text, "subject": subject,
+                  "documentName": document_name, "pic": pic, "controlActivity": activity,
+                  "controlType": control_type, "nature": nature, "frequency": frequency, "system": system,
+                  "sourceSheet": "Walkthrough IT", "reviewRequired": True,
+                  "operationalMasterCreated": False, "baselineOnly": True
+              })
+              count_walk += 1
+          if count_walk < 5:
+              raise RuntimeError(f"WALKTHROUGH_RECORD_COUNT_TOO_LOW_{count_walk}")
+          print("WALKTHROUGH normalized candidate records=" + str(count_walk))
+
+          now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
+          institution_id = next(iter(selected.values()))["institutionId"]
+          sql = """
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,
+            recordKey TEXT NOT NULL,
+            recordTitle TEXT,
+            period TEXT,
+            payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL DEFAULT 0,
+            sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',
+            normalizationBatch TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId, recordType, recordKey);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_precedence
+            ON SourceStructuredRecord(institutionId, recordType, recordKey, precedencePriority);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_batch
+            ON SourceStructuredRecord(institutionId, normalizationBatch);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            batchCode TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,
+            totalDocuments INTEGER NOT NULL,
+            processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            summaryJson TEXT,
+            startedAt TEXT NOT NULL,
+            completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId, batchCode);
+          DROP VIEW IF EXISTS SourceStructuredEffective;
+          CREATE VIEW SourceStructuredEffective AS
+          SELECT * FROM (
+            SELECT r.*,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY institutionId, recordType, recordKey
+                     ORDER BY precedencePriority DESC, COALESCE(sourceModifiedAt, updatedAt) DESC, updatedAt DESC
+                   ) AS precedenceRank
+            FROM SourceStructuredRecord r
+            WHERE status='Active'
+          ) WHERE precedenceRank=1;
+          """
+
+          for item in selected.values():
+              sql += (
+                  "UPDATE SourceStructuredRecord SET status='Superseded', updatedAt=" + q(now) +
+                  " WHERE sourceDocumentId=" + q(item["id"]) + " AND status='Active';\n"
+              )
+
+          for r in records:
+              sql += f"""
+              INSERT INTO SourceStructuredRecord (
+                id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+                sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt
+              ) VALUES (
+                {q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},
+                {q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+                {q(r['sourceRole'])},{int(r['precedencePriority'])},{q(r['sourceModifiedAt'])},
+                'Active',{q(BATCH)},{q(now)},{q(now)}
+              )
+              ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,
+                sourceRole=excluded.sourceRole,precedencePriority=excluded.precedencePriority,
+                sourceModifiedAt=excluded.sourceModifiedAt,status='Active',
+                normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """
+
+          counts = {}
+          for r in records:
+              counts[r["recordType"]] = counts.get(r["recordType"], 0) + 1
+          summary = {"files": list(selected.keys()), "recordCounts": counts}
+          run_id = stable_id(institution_id, BATCH)
+          sql += f"""
+          INSERT INTO SourceNormalizationRun (
+            id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,
+            totalRecords,status,summaryJson,startedAt,completedAt
+          ) VALUES (
+            {q(run_id)},{q(institution_id)},{q(BATCH)},'BASELINE',10,5,5,{len(records)},
+            'Completed',{q(json.dumps(summary,separators=(',',':')))},{q(now)},{q(now)}
+          )
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+            processedDocuments=5,totalRecords={len(records)},status='Completed',
+            summaryJson={q(json.dumps(summary,separators=(',',':')))},completedAt={q(now)};
+          """
+
+          Path("/tmp/aura-batch1.sql").write_text(sql)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/aura-batch1.sql"],
+              env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          )
+
+          verify = query(
+              "SELECT recordType,COUNT(*) AS records FROM SourceStructuredRecord "
+              f"WHERE institutionId={q(institution_id)} AND normalizationBatch={q(BATCH)} AND status='Active' "
+              "GROUP BY recordType ORDER BY recordType"
+          )
+          run = query(
+              "SELECT batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status "
+              f"FROM SourceNormalizationRun WHERE institutionId={q(institution_id)} AND batchCode={q(BATCH)} LIMIT 1"
+          )
+          active_total = sum(int(row["records"]) for row in verify)
+          if not run or run[0]["status"] != "Completed" or int(run[0]["processedDocuments"]) != 5:
+              raise RuntimeError("NORMALIZATION_RUN_NOT_VERIFIED")
+          if active_total != len(records):
+              raise RuntimeError(f"NORMALIZATION_COUNT_MISMATCH_{active_total}_{len(records)}")
+
+          print("Aura batch 1 verification:")
+          print(json.dumps({"run": run[0], "recordCounts": verify, "activeTotal": active_total}, indent=2))
+          PY
+
+          python /tmp/normalize.py
+          rm -f /tmp/normalize.py /tmp/aura-batch1.sql
