@@ -131,7 +131,6 @@ async function ensureDataHubSchema(db: D1DatabaseLike) {
       updatedAt TEXT NOT NULL
     )
   `).run();
-}
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS SourceDataIssue (
       id TEXT PRIMARY KEY NOT NULL,
@@ -153,6 +152,7 @@ async function ensureDataHubSchema(db: D1DatabaseLike) {
     CREATE INDEX IF NOT EXISTS idx_source_issue_institution
     ON SourceDataIssue(institutionId, issueStatus, severity, issueType)
   `).run();
+}
 
 function safeJson(value: string | null | undefined) {
   if (!value) return null;
