@@ -174,7 +174,7 @@ jobs:
               ("MATERIALITY_WORKBOOK", "Kertas Kerja Penentuan Materialitas ICoFR"),
               ("SIGNIFICANT_PROCESS_2026", "Proses Bisnis Kalbar 2026"),
               ("A1GL", "A1GL 30082026"),
-              ("ITGC", "Walkthrough Div IT - Bank Kalbar - ITGC"),
+              ("ITGC", "WLKthrough Div IT - Bank Kalbar - ITGC"),
           ]
 
           docs = {}
