@@ -144,9 +144,9 @@ jobs:
           if process_count!=9: raise RuntimeError("ITGC_TEMPLATE_PROCESS_COUNT_"+str(process_count))
 
           wt=sh.get("Walkthrough Pemerliharaan IT",[])
-          company_line=next((r for r in wt if len(r)>1 and str(r[0]).strip()=="Nama Perusahaan"),None)
-          source_company=str(company_line[1]).strip() if company_line and len(company_line)>1 else ""
-          if source_company!="PT Bank Sulteng": raise RuntimeError("EXPECTED_SULTENG_LABEL_NOT_FOUND")
+          header_text=" | ".join(str(v).strip() for r in wt[:8] for v in r if str(v).strip())
+          if "PT Bank Sulteng" not in header_text: raise RuntimeError("EXPECTED_SULTENG_LABEL_NOT_FOUND")
+          source_company="PT Bank Sulteng"
           control_count=0
           current_system=None
           for row in wt:
