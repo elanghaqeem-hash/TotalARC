@@ -1,0 +1,468 @@
+name: Normalize Seraya next 20 percent ELC ITGC detail
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-next-20pct-elc-itgc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-seraya-next-20pct-elc-itgc
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize ELC BPM narratives and ITGC walkthrough detail
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/normalize_next20.py <<'PY'
+          import csv, hashlib, io, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="SERAYA_UPDATE_NEXT20_ELC_ITGC_20260922"
+          SOURCE_ACCOUNT="serayamg@gmail.com"
+
+          def wr(args):
+              return subprocess.check_output(
+                  ["npx","wrangler",*args],
+                  text=True,
+                  env=os.environ,
+                  stderr=subprocess.DEVNULL
+              )
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def clean(v):
+              return str(v or "").strip()
+
+          def source_rows(text):
+              # Imported spreadsheet text can be CSV or TSV depending on source/export path.
+              delimiter="\t" if text.count("\t") > text.count(",") else ","
+              return list(csv.reader(io.StringIO(text),delimiter=delimiter))
+
+          catalog=rows(f"""
+            SELECT id,institutionId,title,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')={q(SOURCE_ACCOUNT)}
+              AND json_extract(metadataJson,'$.sourceRole')='UPDATE'
+            ORDER BY title
+          """)
+
+          targets=[
+            ("ELC","RCM_BPM_ ELC_Bank_Kalbar_2026 (brhw v2.0)"),
+            ("ITGC","BPM-RCM-Walkthrough ITGC - Bank Kalbar (ver.3)")
+          ]
+          docs={}
+          for code,token in targets:
+              matches=[d for d in catalog if token.lower() in clean(d.get("title")).lower()]
+              if len(matches)!=1:
+                  raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              d=matches[0]
+              chunks=rows(f"SELECT chunkIndex,textContent FROM SourceTextChunk WHERE documentId={q(d['id'])} ORDER BY chunkIndex")
+              text="".join(clean(x.get("textContent")) for x in chunks)
+              if not text.strip():
+                  raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
+              docs[code]={**d,"text":text}
+              print(f"{code} source ready chars={len(text)}")
+
+          institution_id=docs["ELC"]["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()):
+              raise RuntimeError("INSTITUTION_MISMATCH")
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          records=[]
+          issues=[]
+
+          def add_record(doc,record_type,key,title,payload):
+              records.append({
+                  "id":hid(doc["id"],record_type,key),
+                  "institutionId":institution_id,
+                  "sourceDocumentId":doc["id"],
+                  "recordType":record_type,
+                  "recordKey":key,
+                  "recordTitle":title,
+                  "period":"2026",
+                  "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":")),
+                  "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          def add_issue(doc,issue_type,severity,description,record_key=None,field=None,observed=None,expected=None):
+              issues.append({
+                  "id":hid(doc["id"],issue_type,record_key or "",field or ""),
+                  "institutionId":institution_id,
+                  "sourceDocumentId":doc["id"],
+                  "sourceRecordKey":record_key,
+                  "issueType":issue_type,
+                  "severity":severity,
+                  "fieldName":field,
+                  "observedValue":observed,
+                  "expectedContext":expected,
+                  "description":description
+              })
+
+          # ------------------------------------------------------------------
+          # A. ELC workbook: preserve all 46 generated BPM narrative sheets.
+          # These are source-backed references only. The workbook itself states
+          # that ELC content is illustrative/draft and must be validated.
+          # ------------------------------------------------------------------
+          elc=docs["ELC"]
+          elc_text=elc["text"]
+          marker_re=re.compile(r"Kertas Kerja Penyusunan BPM\s*[—-]\s*Tabel Naratif\s*[—-]\s*(ELC-\d{2})",re.I)
+          matches=list(marker_re.finditer(elc_text))
+          if len(matches)!=46:
+              raise RuntimeError(f"ELC_BPM_MARKER_COUNT_{len(matches)}_46")
+
+          unmapped=0
+          for index,match in enumerate(matches):
+              ref=match.group(1).upper()
+              end=matches[index+1].start() if index+1<len(matches) else len(elc_text)
+              segment=elc_text[match.start():end]
+              first_lines=[line.strip() for line in segment.splitlines()[:14] if line.strip()]
+              header=" ".join(first_lines[:5])
+              group_match=re.search(r"Kelompok:\s*(.+?)(?:\s*[,|]|$)",header,re.I)
+              group=group_match.group(1).strip() if group_match else None
+              is_unmapped=bool(re.search(r"BELUM DIPETAKAN",segment,re.I))
+              if is_unmapped:
+                  unmapped+=1
+              design_line=next((line.strip() for line in segment.splitlines() if "CATATAN DESAIN" in line.upper()),None)
+              payload={
+                  "elcReference":ref,
+                  "bank":"PT Bank Kalbar",
+                  "year":2026,
+                  "group":group,
+                  "cosoMappingStatus":"UNMAPPED" if is_unmapped else "SOURCE_MAPPED",
+                  "designNote":design_line,
+                  "sourceGeneratedNarrative":True,
+                  "sourceTextAvailable":True,
+                  "sourceRole":"UPDATE",
+                  "precedencePriority":20,
+                  "illustrativeDraft":True,
+                  "validatedBankKalbarControl":False,
+                  "referenceMasterOnly":not is_unmapped,
+                  "reviewRequired":is_unmapped,
+                  "operationalProcessCreated":False
+              }
+              key=f"SERAYA:ELC:BPM:2026:{ref}"
+              add_record(elc,"ELC_BPM_NARRATIVE_REFERENCE",key,ref+" BPM narrative",payload)
+              if is_unmapped:
+                  add_issue(
+                      elc,
+                      "ELC_BPM_COSO_MAPPING_UNRESOLVED",
+                      "MEDIUM",
+                      "ELC BPM narrative is explicitly marked BELUM DIPETAKAN in the source and requires COSO/RCM mapping review before operational use.",
+                      key,
+                      "cosoMappingStatus",
+                      "UNMAPPED",
+                      "Mapped to an approved ELC/COSO principle"
+                  )
+
+          add_issue(
+              elc,
+              "ELC_BPM_ILLUSTRATIVE_DRAFT_REQUIRES_VALIDATION",
+              "HIGH",
+              "The source workbook labels ELC content as illustrative/draft. All 46 BPM narratives remain source-backed references until Bank Kalbar owner/reviewer validation is documented.",
+              None,
+              "sourceStatus",
+              "Illustrative/Draft",
+              "Validated Bank Kalbar ELC design"
+          )
+          print(f"ELC BPM narratives=46 unmapped={unmapped}")
+
+          # ------------------------------------------------------------------
+          # B. ITGC workbook: parse the 10 Walkthrough/Test-of-One source rows.
+          # Preserve source status/evaluation fields. Do not infer effectiveness.
+          # ------------------------------------------------------------------
+          itgc=docs["ITGC"]
+          all_rows=source_rows(itgc["text"])
+          wt_start=next((i for i,row in enumerate(all_rows) if any("Walkthrough / Verifikasi Rancangan Pengendalian" in clean(c) for c in row)),None)
+          bpm_start=next((i for i,row in enumerate(all_rows) if i>(wt_start or -1) and any("BUSINESS PROCESS MAPPING (BPM)" in clean(c) for c in row)),None)
+          if wt_start is None:
+              raise RuntimeError("ITGC_WALKTHROUGH_SECTION_NOT_FOUND")
+          wt_rows=all_rows[wt_start:bpm_start if bpm_start is not None else len(all_rows)]
+
+          ctrl_re=re.compile(r"^ITGC-(APD|PD|PC|CO)-\d{2}$")
+          walkthrough={}
+          for row in wt_rows:
+              ref_pos=next((i for i,v in enumerate(row) if ctrl_re.fullmatch(clean(v))),None)
+              if ref_pos is None:
+                  continue
+              ref=clean(row[ref_pos]).upper()
+              if ref in walkthrough:
+                  continue
+              vals=list(row)+[""]*80
+              def at(offset):
+                  return clean(vals[ref_pos+offset]) or None
+
+              source_statuses=[]
+              for value in vals[ref_pos+1:]:
+                  normalized=clean(value)
+                  if normalized in ("Belum dimulai","Dalam Process","Selesai"):
+                      if normalized not in source_statuses:
+                          source_statuses.append(normalized)
+
+              payload={
+                  "controlReference":ref,
+                  "controlActivity":at(1),
+                  "controlDescription":at(2),
+                  "supportingDocument":at(3),
+                  "isKeyControl":at(4),
+                  "preventiveDetective":at(16),
+                  "nature":at(17),
+                  "automatedControlType":at(18),
+                  "frequency":at(19),
+                  "supportingSystem":at(20),
+                  "pic":at(21),
+                  "performer":at(22),
+                  "financialStatementItem":at(23),
+                  "effectivePeriod":at(24),
+                  "walkthroughDate":at(25),
+                  "walkthroughMethod":at(26),
+                  "interviewedControlPerformer":at(27),
+                  "objectiveAchievementAndFollowUp":at(28),
+                  "timelinessAssessment":at(29),
+                  "authorityCompetenceSodAssessment":at(30),
+                  "informationReliabilityAssessment":at(31),
+                  "coveredPeriod":at(32),
+                  "executionEvidence":at(33),
+                  "workpaperReference":at(34),
+                  "designConformity":at(35),
+                  "gap":at(36),
+                  "designConclusion":at(37),
+                  "recommendation":at(38),
+                  "walkthroughPerformer":at(39),
+                  "processOwnerApprovalDate":at(40),
+                  "followUpStatus":at(41),
+                  "sourceStatuses":source_statuses,
+                  "sourceRole":"UPDATE",
+                  "precedencePriority":20,
+                  "reviewRequired":True,
+                  "operationalWalkthroughCreated":False
+              }
+              key=f"SERAYA:ITGC:WALKTHROUGH:2026:{ref}"
+              add_record(itgc,"ITGC_WALKTHROUGH_UPDATE_CANDIDATE",key,ref+" walkthrough",payload)
+              walkthrough[ref]=payload
+
+              if payload["effectivePeriod"] and str(payload["effectivePeriod"]).startswith("2025"):
+                  add_issue(
+                      itgc,
+                      "ITGC_EFFECTIVE_PERIOD_PRE_2026_REVIEW",
+                      "MEDIUM",
+                      "ITGC walkthrough row carries a 2025 effective-period value inside the 2026 working paper. The source value is preserved and requires confirmation.",
+                      key,
+                      "effectivePeriod",
+                      payload["effectivePeriod"],
+                      "Confirmed effective period applicable to the 2026 ICOFR cycle"
+                  )
+
+              if not payload["walkthroughDate"] or not payload["designConclusion"]:
+                  add_issue(
+                      itgc,
+                      "ITGC_WALKTHROUGH_EVALUATION_INCOMPLETE",
+                      "MEDIUM",
+                      "Walkthrough/Test-of-One evaluation fields are not fully populated in the source. The row remains review-gated and is not treated as an effective control test.",
+                      key,
+                      "walkthroughEvaluation",
+                      json.dumps({
+                          "walkthroughDate":payload["walkthroughDate"],
+                          "designConclusion":payload["designConclusion"],
+                          "sourceStatuses":payload["sourceStatuses"]
+                      },ensure_ascii=False),
+                      "Completed walkthrough date, evidence and design conclusion"
+                  )
+
+          if len(walkthrough)!=10:
+              raise RuntimeError(f"ITGC_WALKTHROUGH_COUNT_{len(walkthrough)}_10")
+          print("ITGC walkthrough rows=10")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+            description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_issue_institution
+            ON SourceDataIssue(institutionId,issueStatus,severity,issueType);
+
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/next20_ddl.sql").write_text(ddl)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/next20_ddl.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          source_ids=[docs["ELC"]["id"],docs["ITGC"]["id"]]
+          cleanup=[
+              f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE normalizationBatch={q(BATCH)} AND status='Active';"
+          ]
+          cleanup.append(
+              "DELETE FROM SourceDataIssue WHERE institutionId="+q(institution_id)+
+              " AND issueType IN ("+
+              ",".join(q(x) for x in [
+                  "ELC_BPM_COSO_MAPPING_UNRESOLVED",
+                  "ELC_BPM_ILLUSTRATIVE_DRAFT_REQUIRES_VALIDATION",
+                  "ITGC_EFFECTIVE_PERIOD_PRE_2026_REVIEW",
+                  "ITGC_WALKTHROUGH_EVALUATION_INCOMPLETE"
+              ])+");"
+          )
+          Path("/tmp/next20_cleanup.sql").write_text("\n".join(cleanup))
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/next20_cleanup.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          statements=[]
+          for r in records:
+              statements.append(f"""
+                INSERT INTO SourceStructuredRecord
+                (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+                 sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+                VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},
+                 {q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+                 'UPDATE',20,{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+                ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                  recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,
+                  sourceRole='UPDATE',precedencePriority=20,sourceModifiedAt=excluded.sourceModifiedAt,
+                  status='Active',normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """)
+          for x in issues:
+              statements.append(f"""
+                INSERT INTO SourceDataIssue
+                (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,
+                 observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+                VALUES({q(x['id'])},{q(x['institutionId'])},{q(x['sourceDocumentId'])},{q(x['sourceRecordKey'])},
+                 {q(x['issueType'])},{q(x['severity'])},{q(x['fieldName'])},{q(x['observedValue'])},
+                 {q(x['expectedContext'])},{q(x['description'])},'OPEN',{q(now)},{q(now)})
+                ON CONFLICT(id) DO UPDATE SET
+                  severity=excluded.severity,fieldName=excluded.fieldName,observedValue=excluded.observedValue,
+                  expectedContext=excluded.expectedContext,description=excluded.description,
+                  issueStatus='OPEN',updatedAt=excluded.updatedAt;
+              """)
+
+          for start in range(0,len(statements),60):
+              p=f"/tmp/next20_rows_{start//60:03d}.sql"
+              Path(p).write_text("\n".join(statements[start:start+60]))
+              subprocess.check_call(
+                  ["npx","wrangler","d1","execute",DB,"--remote","--file",p],
+                  env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+              )
+
+          counts={}
+          for r in records:
+              counts[r["recordType"]]=counts.get(r["recordType"],0)+1
+          expected_total=56
+          if len(records)!=expected_total:
+              raise RuntimeError(f"NEXT20_RECORD_COUNT_{len(records)}_{expected_total}")
+
+          summary={
+              "processedDocuments":2,
+              "recordCounts":counts,
+              "sourceIssues":len(issues),
+              "elcBpmUnmapped":unmapped,
+              "scope":"next 20 percent deep normalization of ELC BPM and ITGC walkthrough source detail"
+          }
+          run_id=hid(institution_id,BATCH)
+          run_json=json.dumps(summary,separators=(",",":"))
+          run_sql=f"""
+            INSERT INTO SourceNormalizationRun
+            (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,
+             totalRecords,status,summaryJson,startedAt,completedAt)
+            VALUES({q(run_id)},{q(institution_id)},{q(BATCH)},'UPDATE',20,2,2,{expected_total},
+             'Completed',{q(run_json)},{q(now)},{q(now)})
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              sourceRole='UPDATE',precedencePriority=20,totalDocuments=2,processedDocuments=2,
+              totalRecords={expected_total},status='Completed',summaryJson=excluded.summaryJson,
+              completedAt=excluded.completedAt;
+          """
+          Path("/tmp/next20_run.sql").write_text(run_sql)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/next20_run.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          verify=rows(f"""
+            SELECT recordType,COUNT(*) records
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)}
+              AND normalizationBatch={q(BATCH)}
+              AND status='Active'
+            GROUP BY recordType
+            ORDER BY recordType
+          """)
+          verified=sum(int(x["records"]) for x in verify)
+          if verified!=expected_total:
+              raise RuntimeError(f"NEXT20_VERIFY_COUNT_{verified}_{expected_total}")
+
+          issue_verify=rows(f"""
+            SELECT issueType,severity,COUNT(*) records
+            FROM SourceDataIssue
+            WHERE institutionId={q(institution_id)}
+              AND issueStatus='OPEN'
+              AND sourceDocumentId IN ({','.join(q(x) for x in source_ids)})
+            GROUP BY issueType,severity
+            ORDER BY issueType
+          """)
+
+          print(json.dumps({
+              "processedDocuments":2,
+              "activeRecords":verified,
+              "recordCounts":verify,
+              "elcBpmUnmapped":unmapped,
+              "sourceIssues":issue_verify
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/normalize_next20.py
+          rm -f /tmp/normalize_next20.py /tmp/next20_*.sql
