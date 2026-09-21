@@ -220,6 +220,8 @@ jobs:
           rows = doc["sheets"][sheet_name]
           current_process = None
           current_sub = None
+          current_sub_key = None
+          sub_occurrences = {}
           process_count = subprocess_count = step_count = 0
           for row in rows:
               row = row + [""] * max(0, 7 - len(row))
@@ -228,6 +230,7 @@ jobs:
                   proc_no = str(int(a))
                   current_process = proc_no
                   current_sub = None
+                  current_sub_key = None
                   add(doc, "BUSINESS_PROCESS_BASELINE", f"BPM:2025:{proc_no}", str(b).strip(), "2025", {
                       "processNumber": proc_no,
                       "processName": str(b).strip(),
@@ -239,11 +242,15 @@ jobs:
                   process_count += 1
               if isinstance(c, str) and re.fullmatch(r"[a-zA-Z]\.", c.strip()) and str(d).strip() and current_process:
                   current_sub = c.strip().lower()
+                  occurrence_key = (current_process, current_sub)
+                  sub_occurrences[occurrence_key] = sub_occurrences.get(occurrence_key, 0) + 1
+                  current_sub_key = f"{current_sub}:{sub_occurrences[occurrence_key]}"
                   add(doc, "BUSINESS_SUBPROCESS_BASELINE",
-                      f"BPM:2025:{current_process}:SUB:{current_sub}",
+                      f"BPM:2025:{current_process}:SUB:{current_sub_key}",
                       str(d).strip(), "2025", {
                           "processNumber": current_process,
                           "subprocessCode": current_sub,
+                          "subprocessOccurrence": sub_occurrences[occurrence_key],
                           "subprocessName": str(d).strip(),
                           "baselineOnly": True,
                           "operationalMasterCreated": False,
@@ -252,7 +259,7 @@ jobs:
                   subprocess_count += 1
               if isinstance(d, (int,float)) and str(e).strip() and current_process:
                   step_no = str(int(d))
-                  sub_key = current_sub or "UNSPECIFIED"
+                  sub_key = current_sub_key or "UNSPECIFIED:1"
                   add(doc, "BUSINESS_PROCESS_STEP_BASELINE",
                       f"BPM:2025:{current_process}:{sub_key}:STEP:{step_no}",
                       str(e).strip(), "2025", {
