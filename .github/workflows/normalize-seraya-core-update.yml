@@ -151,7 +151,7 @@ jobs:
                   ]:
                       pos=values.index(label); parameters[key]=value_at(data,pos)
               if "RASIO PM / OM" in values and "CLEARLY TRIVIAL THRESHOLD" in values:
-                  data=next_nonempty(table,idx)
+                  data=compact(next_nonempty(table,idx) or [])
                   for label,key in [
                     ("RASIO PM / OM","PM_RATIO"),
                     ("CLEARLY TRIVIAL THRESHOLD","CLEARLY_TRIVIAL"),
