@@ -1,0 +1,263 @@
+name: Normalize Seraya core 2026 walkthroughs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-core-walkthroughs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-seraya-core-walkthroughs
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize three real Bank Kalbar walkthrough sources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize_walkthroughs.py <<'PY'
+          import hashlib, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="SERAYA_UPDATE_WALKTHROUGH_CORE_3_20260921"
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+          def hid(*p): return hashlib.sha256("|".join(map(str,p)).encode()).hexdigest()[:40]
+          def parse_json(v):
+              try: return json.loads(v or "{}")
+              except: return {}
+
+          catalog=rows("""
+            SELECT id,institutionId,title,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='serayamg@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='UPDATE'
+            ORDER BY title
+          """)
+          targets=[
+            ("OP_RISK","Kertas_Kerja_Manajemen_Risiko__IOW_ (walkthrough)",6),
+            ("EQUITY","Kertas_Kerja_Pengelolaan_Ekuitas_dan_Aksi_Korporasi (Walkthrough)",5),
+            ("COMMITMENTS","Kertas_Kerja_Komitmen_Kontinjensi_dan_Bank_Garansi (walkthrough)",4)
+          ]
+          docs={}
+          for code,token,expected in targets:
+              matches=[d for d in catalog if token.lower() in str(d["title"]).lower()]
+              if len(matches)!=1: raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              d=matches[0]
+              chunks=rows(f"SELECT chunkIndex,textContent FROM SourceTextChunk WHERE documentId={q(d['id'])} ORDER BY chunkIndex")
+              text="".join(str(x.get("textContent") or "") for x in chunks)
+              if not text.strip(): raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
+              docs[code]={**d,"text":text,"expected":expected}
+              print(f"{code} source ready textLength={len(text)}")
+
+          institution_id=docs["OP_RISK"]["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()): raise RuntimeError("INSTITUTION_MISMATCH")
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          records=[]; issues=[]
+
+          def add(doc,code,session):
+              no=session["sessionNumber"]
+              key=f"SERAYA:WT:2026:{code}:{no:02d}"
+              records.append({
+                  "id":hid(doc["id"],"WALKTHROUGH_SESSION_UPDATE_CANDIDATE",key),
+                  "institutionId":institution_id,"sourceDocumentId":doc["id"],
+                  "recordType":"WALKTHROUGH_SESSION_UPDATE_CANDIDATE","recordKey":key,
+                  "recordTitle":session["businessProcess"]+" — "+session["subprocess"],
+                  "period":"2026","payloadJson":json.dumps(session,ensure_ascii=False,separators=(",",":")),
+                  "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          def add_issue(doc,issue_type,severity,record_key,field_name,observed,expected,description):
+              issues.append({
+                  "id":hid(doc["id"],issue_type,record_key or "",field_name or ""),
+                  "institutionId":institution_id,"sourceDocumentId":doc["id"],"sourceRecordKey":record_key,
+                  "issueType":issue_type,"severity":severity,"fieldName":field_name,
+                  "observedValue":observed,"expectedContext":expected,"description":description
+              })
+
+          total_real=0
+          for code,token,expected in targets:
+              doc=docs[code]; sessions=[]; example_count=0
+              for line in doc["text"].splitlines():
+                  parts=line.split("\t")
+                  if len(parts)<16: continue
+                  first=str(parts[0]).strip()
+                  walk_type=str(parts[1]).strip() if len(parts)>1 else ""
+                  if first.lower().startswith("contoh") and walk_type in {"Awal","Pemutakhiran"}:
+                      example_count+=1
+                      continue
+                  if not re.fullmatch(r"\d+",first) or walk_type not in {"Awal","Pemutakhiran"}:
+                      continue
+                  parts=parts+[""]*(18-len(parts))
+                  session_no=int(first)
+                  session={
+                      "sessionNumber":session_no,
+                      "walkthroughType":walk_type,
+                      "updateTrigger":str(parts[2]).strip() or None,
+                      "executionDate":str(parts[3]).strip() or None,
+                      "businessProcess":str(parts[4]).strip() or None,
+                      "subprocess":str(parts[5]).strip() or None,
+                      "processOwner":str(parts[6]).strip() or None,
+                      "secondLineAccompanied":str(parts[7]).strip() or None,
+                      "inquiry":str(parts[8]).strip() or None,
+                      "documentsInspected":str(parts[9]).strip() or None,
+                      "observation":str(parts[10]).strip() or None,
+                      "changeDescription":str(parts[11]).strip() or None,
+                      "documentsImpacted":str(parts[12]).strip() or None,
+                      "changeLogRecorded":str(parts[13]).strip() or None,
+                      "effectiveQuarterForCSA":str(parts[14]).strip() or None,
+                      "conclusion":str(parts[15]).strip() or None,
+                      "consistencyValidation":str(parts[16]).strip() or None,
+                      "notes":str(parts[17]).strip() or None,
+                      "sourceRole":"UPDATE","precedencePriority":20,
+                      "reviewRequired":True,"operationalWalkthroughCreated":False
+                  }
+                  sessions.append(session)
+                  add(doc,code,session)
+
+                  date=session.get("executionDate") or ""
+                  match=re.search(r"(20\d{2})$",date)
+                  if match and int(match.group(1))!=2026:
+                      add_issue(
+                          doc,"DATE_OUTSIDE_TARGET_YEAR","HIGH",f"SERAYA:WT:2026:{code}:{session_no:02d}",
+                          "executionDate",date,"Workbook is labelled TB 2026",
+                          "Source date is outside the workbook target year. The original value is preserved and must be confirmed before operational use."
+                      )
+
+              if len(sessions)!=expected:
+                  raise RuntimeError(f"{code}_REAL_SESSION_COUNT_{len(sessions)}_{expected}")
+              total_real+=len(sessions)
+
+              # Detect recap mismatch where examples are counted as sessions.
+              recap=None
+              for line in doc["text"].splitlines():
+                  if "Total Sesi Walkthrough Dilaksanakan" in line:
+                      p=[x.strip() for x in line.split("\t") if x.strip()]
+                      if p:
+                          try: recap=int(float(p[-1]))
+                          except: recap=None
+                      break
+              if recap is not None and recap!=len(sessions):
+                  add_issue(
+                      doc,"RECAP_SESSION_COUNT_MISMATCH","MEDIUM",None,"Total Sesi Walkthrough Dilaksanakan",
+                      str(recap),str(len(sessions))+" real data rows after excluding "+str(example_count)+" example row(s)",
+                      "Recap count does not equal real walkthrough rows after template/example rows are excluded."
+                  )
+              print(f"{code} normalized real sessions={len(sessions)} examplesExcluded={example_count} recap={recap}")
+
+          if total_real!=15: raise RuntimeError("TOTAL_WALKTHROUGH_COUNT_"+str(total_real))
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+            description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_issue_institution ON SourceDataIssue(institutionId,issueStatus,severity,issueType);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/wt_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/wt_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          source_ids=[d["id"] for d in docs.values()]
+          sup="\n".join(
+              f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE sourceDocumentId={q(doc_id)} AND normalizationBatch={q(BATCH)} AND status='Active';"
+              for doc_id in source_ids
+          )+"\n"+"\n".join(f"DELETE FROM SourceDataIssue WHERE sourceDocumentId={q(doc_id)};" for doc_id in source_ids)
+          Path("/tmp/wt_sup.sql").write_text(sup)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/wt_sup.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          sql=[]
+          for r in records:
+              sql.append(f"""
+              INSERT INTO SourceStructuredRecord
+              (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+              VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+              'UPDATE',20,{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+              ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,sourceRole='UPDATE',
+                precedencePriority=20,sourceModifiedAt=excluded.sourceModifiedAt,status='Active',
+                normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """)
+          for issue in issues:
+              sql.append(f"""
+              INSERT INTO SourceDataIssue
+              (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+              VALUES({q(issue['id'])},{q(issue['institutionId'])},{q(issue['sourceDocumentId'])},{q(issue['sourceRecordKey'])},{q(issue['issueType'])},{q(issue['severity'])},
+              {q(issue['fieldName'])},{q(issue['observedValue'])},{q(issue['expectedContext'])},{q(issue['description'])},'OPEN',{q(now)},{q(now)})
+              ON CONFLICT(id) DO UPDATE SET severity=excluded.severity,fieldName=excluded.fieldName,observedValue=excluded.observedValue,
+              expectedContext=excluded.expectedContext,description=excluded.description,issueStatus='OPEN',updatedAt=excluded.updatedAt;
+              """)
+          Path("/tmp/wt_rows.sql").write_text("\n".join(sql))
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/wt_rows.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          summary={"OP_RISK":6,"EQUITY":5,"COMMITMENTS":4,"dataIssues":len(issues)}
+          rid=hid(institution_id,BATCH)
+          runsql=f"""
+          INSERT INTO SourceNormalizationRun
+          (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status,summaryJson,startedAt,completedAt)
+          VALUES({q(rid)},{q(institution_id)},{q(BATCH)},'UPDATE',20,3,3,15,'Completed',{q(json.dumps(summary,separators=(',',':')))}, {q(now)},{q(now)})
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET sourceRole='UPDATE',precedencePriority=20,totalDocuments=3,processedDocuments=3,
+          totalRecords=15,status='Completed',summaryJson={q(json.dumps(summary,separators=(',',':')))},completedAt={q(now)};
+          """
+          Path("/tmp/wt_run.sql").write_text(runsql)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/wt_run.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows(f"""
+            SELECT COUNT(*) records FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)} AND normalizationBatch={q(BATCH)} AND status='Active'
+          """)[0]
+          issue_verify=rows(f"""
+            SELECT issueType,severity,COUNT(*) records
+            FROM SourceDataIssue WHERE institutionId={q(institution_id)} AND issueStatus='OPEN'
+              AND sourceDocumentId IN ({','.join(q(x) for x in source_ids)})
+            GROUP BY issueType,severity ORDER BY issueType
+          """)
+          if int(verify["records"])!=15: raise RuntimeError("WALKTHROUGH_VERIFY_COUNT_"+str(verify["records"]))
+          print(json.dumps({"processedDocuments":3,"activeRecords":15,"sourceIssues":issue_verify},indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/normalize_walkthroughs.py
+          rm -f /tmp/normalize_walkthroughs.py /tmp/wt_*.sql
