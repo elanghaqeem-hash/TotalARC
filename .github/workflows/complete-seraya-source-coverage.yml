@@ -1,0 +1,348 @@
+name: Complete Seraya source display coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/complete-seraya-source-coverage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-complete-seraya-source-coverage
+  cancel-in-progress: false
+
+jobs:
+  complete-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Ensure every Seraya source is visible or explicitly unidentified
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/complete_source_coverage.py <<'PY'
+          import hashlib, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH = "SERAYA_SOURCE_DISPLAY_COMPLETION_20260922"
+          SOURCE_ACCOUNT = "serayamg@gmail.com"
+
+          def wr(args):
+              return subprocess.check_output(
+                  ["npx", "wrangler", *args],
+                  text=True,
+                  env=os.environ,
+                  stderr=subprocess.DEVNULL,
+              )
+
+          dbs = json.loads(wr(["d1", "list", "--json"]))
+          db = next((x for x in dbs if re.search(r"total.?arc", x["name"], re.I)), None)
+          if not db:
+              db = dbs[0] if len(dbs) == 1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB = db["name"]
+
+          def rows(sql):
+              raw = json.loads(wr(["d1", "execute", DB, "--remote", "--json", "--command", sql]))
+              raw = raw if isinstance(raw, list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          def q(value):
+              return "NULL" if value is None else "'" + str(value).replace("'", "''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()[:40]
+
+          def metadata(value):
+              try:
+                  parsed = json.loads(value or "{}")
+                  return parsed if isinstance(parsed, dict) else {}
+              except Exception:
+                  return {}
+
+          now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+          ddl = """
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,
+            recordKey TEXT NOT NULL,
+            recordTitle TEXT,
+            period TEXT,
+            payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL DEFAULT 0,
+            sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',
+            normalizationBatch TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+
+          CREATE TABLE IF NOT EXISTS SourceDataQuality (
+            recordId TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            completenessStatus TEXT NOT NULL,
+            completenessScore INTEGER NOT NULL DEFAULT 0,
+            missingFieldsJson TEXT,
+            mappingStatus TEXT NOT NULL,
+            targetModule TEXT,
+            targetHref TEXT,
+            issueCode TEXT,
+            evaluatedAt TEXT NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceDocumentId TEXT NOT NULL,
+            sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            fieldName TEXT,
+            observedValue TEXT,
+            expectedContext TEXT,
+            description TEXT NOT NULL,
+            issueStatus TEXT NOT NULL DEFAULT 'OPEN',
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            batchCode TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,
+            totalDocuments INTEGER NOT NULL,
+            processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            summaryJson TEXT,
+            startedAt TEXT NOT NULL,
+            completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/source_coverage_ddl.sql").write_text(ddl)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/source_coverage_ddl.sql"],
+              env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          )
+
+          documents = rows(f"""
+            SELECT d.id,d.institutionId,d.externalId,d.title,d.module,d.sourceKind,d.mimeType,
+                   d.sourceModifiedAt,d.textLength,d.rawSizeBytes,d.metadataJson,
+                   COUNT(sr.id) AS activeStructuredRecords
+            FROM SourceDocument d
+            LEFT JOIN SourceStructuredRecord sr
+              ON sr.sourceDocumentId=d.id AND sr.status='Active'
+            WHERE d.status='Active'
+              AND json_extract(d.metadataJson,'$.sourceAccount')={q(SOURCE_ACCOUNT)}
+            GROUP BY d.id
+            ORDER BY activeStructuredRecords ASC,d.title ASC
+          """)
+
+          if not documents:
+              raise RuntimeError("NO_SERAYA_SOURCE_DOCUMENTS")
+
+          institution_ids = sorted({str(d["institutionId"]) for d in documents})
+          if len(institution_ids) != 1:
+              raise RuntimeError("SERAYA_SOURCE_INSTITUTION_AMBIGUOUS")
+          institution_id = institution_ids[0]
+
+          fallback_count = 0
+          issue_count = 0
+          statements = []
+
+          for doc in documents:
+              meta = metadata(doc.get("metadataJson"))
+              source_role = str(meta.get("sourceRole") or "UPDATE").upper()
+              priority = int(meta.get("precedencePriority") or (20 if source_role == "UPDATE" else 10))
+              active = int(doc.get("activeStructuredRecords") or 0)
+              detail_href = "/admin/data-hub/source/" + str(doc["id"])
+
+              if active == 0:
+                  fallback_count += 1
+                  record_key = "SERAYA:SOURCE:" + str(doc.get("externalId") or doc["id"])
+                  record_id = hid(doc["id"], "SOURCE_UNIDENTIFIED_DOCUMENT", record_key)
+                  payload = {
+                      "sourceDocumentId": doc["id"],
+                      "externalId": doc.get("externalId"),
+                      "title": doc.get("title"),
+                      "module": doc.get("module"),
+                      "sourceKind": doc.get("sourceKind"),
+                      "mimeType": doc.get("mimeType"),
+                      "sourceAccount": SOURCE_ACCOUNT,
+                      "sourceRole": source_role,
+                      "precedencePriority": priority,
+                      "textLength": int(doc.get("textLength") or 0),
+                      "rawSizeBytes": int(doc.get("rawSizeBytes") or 0),
+                      "fullTextAvailableInSourceLibrary": int(doc.get("textLength") or 0) > 0,
+                      "rawArtifactAvailableInSourceLibrary": int(doc.get("rawSizeBytes") or 0) > 0,
+                      "reviewRequired": True,
+                      "normalizationStatus": "UNIDENTIFIED_FORMAT",
+                      "reason": "No format-specific structured parser has produced records for this source yet.",
+                  }
+                  payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                  statements.append(f"""
+                    INSERT INTO SourceStructuredRecord
+                    (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+                     sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+                    VALUES({q(record_id)},{q(institution_id)},{q(doc['id'])},'SOURCE_UNIDENTIFIED_DOCUMENT',
+                     {q(record_key)},{q(doc.get('title'))},NULL,{q(payload_json)},{q(source_role)},{priority},
+                     {q(doc.get('sourceModifiedAt'))},'Active',{q(BATCH)},{q(now)},{q(now)})
+                    ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                      recordTitle=excluded.recordTitle,payloadJson=excluded.payloadJson,
+                      sourceRole=excluded.sourceRole,precedencePriority=excluded.precedencePriority,
+                      sourceModifiedAt=excluded.sourceModifiedAt,status='Active',
+                      normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+                  """)
+                  statements.append(f"""
+                    INSERT INTO SourceDataQuality
+                    (recordId,institutionId,completenessStatus,completenessScore,missingFieldsJson,
+                     mappingStatus,targetModule,targetHref,issueCode,evaluatedAt)
+                    VALUES({q(record_id)},{q(institution_id)},'UNIDENTIFIED_FORMAT',0,'[]',
+                     'NEEDS_MAPPING','Data Integration Hub',{q(detail_href)},
+                     'UNIDENTIFIED_SOURCE_FORMAT',{q(now)})
+                    ON CONFLICT(recordId) DO UPDATE SET
+                      completenessStatus='UNIDENTIFIED_FORMAT',completenessScore=0,missingFieldsJson='[]',
+                      mappingStatus='NEEDS_MAPPING',targetModule='Data Integration Hub',
+                      targetHref={q(detail_href)},issueCode='UNIDENTIFIED_SOURCE_FORMAT',evaluatedAt={q(now)};
+                  """)
+                  issue_id = hid(doc["id"], "UNIDENTIFIED_SOURCE_FORMAT")
+                  statements.append(f"""
+                    INSERT INTO SourceDataIssue
+                    (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,
+                     observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+                    VALUES({q(issue_id)},{q(institution_id)},{q(doc['id'])},{q(record_key)},
+                     'UNIDENTIFIED_SOURCE_FORMAT','MEDIUM','sourceFormat',{q(doc.get('title'))},
+                     'A format-specific normalization rule or approved manual mapping',
+                     'Source is preserved and fully viewable, but has not yet been normalized into a domain-specific Total ARC record.',
+                     'OPEN',{q(now)},{q(now)})
+                    ON CONFLICT(id) DO UPDATE SET
+                      observedValue=excluded.observedValue,expectedContext=excluded.expectedContext,
+                      description=excluded.description,issueStatus='OPEN',updatedAt=excluded.updatedAt;
+                  """)
+                  issue_count += 1
+
+              if int(doc.get("textLength") or 0) == 0:
+                  issue_id = hid(doc["id"], "TEXT_NOT_INDEXED")
+                  statements.append(f"""
+                    INSERT INTO SourceDataIssue
+                    (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,
+                     observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+                    VALUES({q(issue_id)},{q(institution_id)},{q(doc['id'])},NULL,'TEXT_NOT_INDEXED','HIGH',
+                     'textLength','0','Indexed source text should be available for review',
+                     'Source artifact is registered but no indexed text is available. Raw artifact status must be reviewed.',
+                     'OPEN',{q(now)},{q(now)})
+                    ON CONFLICT(id) DO UPDATE SET issueStatus='OPEN',updatedAt=excluded.updatedAt;
+                  """)
+                  issue_count += 1
+
+              if int(doc.get("rawSizeBytes") or 0) == 0:
+                  issue_id = hid(doc["id"], "RAW_NOT_STORED")
+                  statements.append(f"""
+                    INSERT INTO SourceDataIssue
+                    (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,
+                     observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+                    VALUES({q(issue_id)},{q(institution_id)},{q(doc['id'])},NULL,'RAW_NOT_STORED','MEDIUM',
+                     'rawSizeBytes','0','Raw source artifact retained when technically available',
+                     'Indexed/derived data may exist, but the raw source bytes are not stored in the Total ARC source library.',
+                     'OPEN',{q(now)},{q(now)})
+                    ON CONFLICT(id) DO UPDATE SET issueStatus='OPEN',updatedAt=excluded.updatedAt;
+                  """)
+                  issue_count += 1
+
+          for start in range(0, len(statements), 60):
+              path = f"/tmp/source_coverage_{start//60:03d}.sql"
+              Path(path).write_text("\n".join(statements[start:start+60]))
+              subprocess.check_call(
+                  ["npx","wrangler","d1","execute",DB,"--remote","--file",path],
+                  env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+              )
+
+          coverage = rows(f"""
+            SELECT
+              COUNT(*) AS sourceDocuments,
+              SUM(CASE WHEN structuredCount>0 THEN 1 ELSE 0 END) AS displayedDocuments,
+              SUM(CASE WHEN structuredCount=0 THEN 1 ELSE 0 END) AS uncoveredDocuments
+            FROM (
+              SELECT d.id,COUNT(sr.id) AS structuredCount
+              FROM SourceDocument d
+              LEFT JOIN SourceStructuredRecord sr
+                ON sr.sourceDocumentId=d.id AND sr.status='Active'
+              WHERE d.status='Active'
+                AND json_extract(d.metadataJson,'$.sourceAccount')={q(SOURCE_ACCOUNT)}
+              GROUP BY d.id
+            )
+          """)
+          summary = coverage[0]
+          uncovered = int(summary.get("uncoveredDocuments") or 0)
+          if uncovered != 0:
+              raise RuntimeError(f"SOURCE_DISPLAY_COVERAGE_INCOMPLETE_{uncovered}")
+
+          generic = rows(f"""
+            SELECT COUNT(*) AS records
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)}
+              AND recordType='SOURCE_UNIDENTIFIED_DOCUMENT'
+              AND status='Active'
+          """)
+          source_documents = int(summary.get("sourceDocuments") or 0)
+          displayed = int(summary.get("displayedDocuments") or 0)
+          generic_records = int(generic[0].get("records") or 0)
+
+          run_id = hid(institution_id, BATCH)
+          run_summary = {
+              "sourceAccount": SOURCE_ACCOUNT,
+              "sourceDocuments": source_documents,
+              "displayedDocuments": displayed,
+              "uncoveredDocuments": uncovered,
+              "genericFallbackRecords": generic_records,
+              "newFallbacksThisRun": fallback_count,
+              "issuesWrittenThisRun": issue_count,
+              "coveragePercent": 100 if source_documents else 0,
+          }
+          run_json = json.dumps(run_summary, separators=(",", ":"))
+          run_sql = f"""
+            INSERT INTO SourceNormalizationRun
+            (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,
+             totalRecords,status,summaryJson,startedAt,completedAt)
+            VALUES({q(run_id)},{q(institution_id)},{q(BATCH)},'UPDATE',20,{source_documents},
+             {displayed},{generic_records},'Completed',{q(run_json)},{q(now)},{q(now)})
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              totalDocuments=excluded.totalDocuments,processedDocuments=excluded.processedDocuments,
+              totalRecords=excluded.totalRecords,status='Completed',summaryJson=excluded.summaryJson,
+              completedAt=excluded.completedAt;
+          """
+          Path("/tmp/source_coverage_run.sql").write_text(run_sql)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/source_coverage_run.sql"],
+              env=os.environ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+          )
+
+          print(json.dumps(run_summary, indent=2))
+          PY
+          python /tmp/complete_source_coverage.py
+          rm -f /tmp/complete_source_coverage.py /tmp/source_coverage_*.sql
