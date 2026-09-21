@@ -317,10 +317,18 @@ export default function DataIntegrationHubPage() {
                   <div className="mt-1 break-words text-sm font-black text-slate-900">{source.title}</div>
                   <div className="mt-1 text-[10px] text-slate-500">{source.sourceAccount || 'Unknown source account'} · {source.sourceKind}</div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-                  <div className="rounded-lg bg-slate-50 px-2 py-2"><b className="block text-slate-900">{number(source.structuredRecords)}</b>records</div>
-                  <div className="rounded-lg bg-slate-50 px-2 py-2"><b className="block text-slate-900">{humanBytes(source.rawSizeBytes)}</b>raw</div>
-                  <div className="rounded-lg bg-slate-50 px-2 py-2"><b className="block text-slate-900">{number(source.textLength)}</b>chars</div>
+                <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                  <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                    <div className="rounded-lg bg-slate-50 px-2 py-2"><b className="block text-slate-900">{number(source.structuredRecords)}</b>records</div>
+                    <div className="rounded-lg bg-slate-50 px-2 py-2"><b className="block text-slate-900">{humanBytes(source.rawSizeBytes)}</b>raw</div>
+                    <div className="rounded-lg bg-slate-50 px-2 py-2"><b className="block text-slate-900">{number(source.textLength)}</b>chars</div>
+                  </div>
+                  <Link
+                    href={'/admin/data-hub/source/' + source.id}
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-black text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                  >
+                    Open full source <ExternalLink className="h-3 w-3" />
+                  </Link>
                 </div>
               </div>
               {(source.issues || []).length > 0 && (
@@ -498,7 +506,14 @@ export default function DataIntegrationHubPage() {
                     <span className="font-mono text-[9px] font-black text-slate-700">{issue.issueType}</span>
                     {issue.sourceRecordKey && <span className="text-[9px] text-slate-400">{issue.sourceRecordKey}</span>}
                   </div>
-                  <div className="mt-1 text-xs font-black text-slate-900">{issue.sourceTitle}</div>
+                  <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs font-black text-slate-900">{issue.sourceTitle}</div>
+                    {issue.sourceDocumentId && (
+                      <Link href={'/admin/data-hub/source/' + issue.sourceDocumentId} className="inline-flex items-center gap-1 text-[9px] font-black text-brand-700 hover:underline">
+                        Open source <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    )}
+                  </div>
                   <div className="mt-1 text-[10px] leading-4 text-slate-600">{issue.description}</div>
                   {(issue.observedValue || issue.expectedContext) && (
                     <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 text-[10px]">
