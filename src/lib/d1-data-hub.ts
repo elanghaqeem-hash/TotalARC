@@ -206,10 +206,25 @@ export async function getSourceCoverage(institutionId: string) {
     ORDER BY d.updatedAt DESC
   `).bind(institutionId).all<Record<string, unknown>>();
 
-  const rows = (documents.results || []).map(row => {
+  type SourceCoverageRow = Record<string, unknown> & {
+    id: string;
+    title: string;
+    module?: string | null;
+    sourceKind?: string | null;
+    rawSizeBytes?: number | null;
+    textLength?: number | null;
+    structuredRecords?: number | null;
+    sourceAccount?: string | null;
+    sourceRole?: string | null;
+    precedencePriority: number;
+    sourceCollection?: string | null;
+    logicalKey: string;
+  };
+
+  const rows: SourceCoverageRow[] = (documents.results || []).map(row => {
     const metadata = safeJson(String(row.metadataJson || '')) || {};
     return {
-      ...row,
+      ...(row as Record<string, unknown>),
       metadataJson: undefined,
       sourceAccount: metadata.sourceAccount || null,
       sourceRole: metadata.sourceRole || null,
