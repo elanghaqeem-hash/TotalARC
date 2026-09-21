@@ -1,0 +1,195 @@
+name: Normalize Seraya Angsuran Emas walkthrough
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-angsuran-emas.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Normalize Angsuran Emas session and detail controls
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/normalize_angsuran.py <<'PY'
+          import hashlib,json,os,re,subprocess
+          from datetime import datetime,timezone
+          from pathlib import Path
+
+          DOC_ID="2faf4b92-355b-46bc-88c9-5534ea8d23df"
+          CODE="GOLD_INSTALLMENT"
+          BATCH="SERAYA_UPDATE_WALKTHROUGH_ANGSURAN_EMAS_20260921"
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or dbs[0]
+          DB=db["name"]
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+          def hid(*p): return hashlib.sha256("|".join(map(str,p)).encode()).hexdigest()[:40]
+
+          docrows=rows(f"""SELECT id,institutionId,title,sourceModifiedAt FROM SourceDocument
+                           WHERE id={q(DOC_ID)} AND status='Active' LIMIT 1""")
+          if len(docrows)!=1: raise RuntimeError("SOURCE_NOT_FOUND")
+          doc=docrows[0]
+          chunks=rows(f"SELECT chunkIndex,textContent FROM SourceTextChunk WHERE documentId={q(DOC_ID)} ORDER BY chunkIndex")
+          text="".join(str(x.get("textContent") or "") for x in chunks)
+          if not text.strip(): raise RuntimeError("SOURCE_TEXT_MISSING")
+          institution_id=doc["institutionId"]
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+          s1=text.find("## Sheet: 2. Ringkasan Sesi Walkthrough")
+          s2=text.find("## Sheet: 3. Detail Proses & Pengendalian")
+          if s1<0 or s2<0 or s2<=s1: raise RuntimeError("REQUIRED_SECTIONS_MISSING")
+          session_section=text[s1:s2]
+          next_sheet=text.find("## Sheet:",s2+10)
+          detail_section=text[s2:next_sheet if next_sheet>s2 else len(text)]
+
+          session_lines=[line for line in session_section.splitlines() if line.strip()]
+          hi=next((i for i,line in enumerate(session_lines) if "Jenis" in line and "Walkthrough" in line and "Pemicu" in line),None)
+          if hi is None or hi+1>=len(session_lines): raise RuntimeError("SESSION_HEADER_NOT_FOUND")
+          vals=session_lines[hi+1].split("\t")+[""]*14
+          session={
+            "sessionNumber":1,"walkthroughType":vals[0].strip() or None,"updateTrigger":vals[1].strip() or None,
+            "executionDate":vals[2].strip() or None,"businessProcess":vals[3].strip() or None,
+            "subprocess":vals[4].strip() or None,"processOwner":vals[5].strip() or None,
+            "secondLineAccompanied":vals[6].strip() or None,"identifiedProcessSteps":vals[7].strip() or None,
+            "requestedSampleDocuments":vals[8].strip() or None,"documentsImpacted":vals[9].strip() or None,
+            "changeLogRecorded":vals[10].strip() or None,"conclusion":vals[11].strip() or None,
+            "consistencyValidation":vals[12].strip() or None,"notes":vals[13].strip() or None,
+            "sourceProcessCode":CODE,"sourceRole":"UPDATE","precedencePriority":20,
+            "reviewRequired":True,"operationalWalkthroughCreated":False
+          }
+
+          records=[]; issues=[]
+          session_key=f"SERAYA:WT:2026:{CODE}:01"
+          records.append({
+            "id":hid(DOC_ID,"WALKTHROUGH_SESSION_UPDATE_CANDIDATE",session_key),
+            "recordType":"WALKTHROUGH_SESSION_UPDATE_CANDIDATE","recordKey":session_key,
+            "recordTitle":(session["businessProcess"] or CODE)+" — "+(session["subprocess"] or "Walkthrough 2026"),
+            "payloadJson":json.dumps(session,ensure_ascii=False,separators=(",",":"))
+          })
+
+          detail_lines=[line for line in detail_section.splitlines() if line.strip()]
+          dhi=next((i for i,line in enumerate(detail_lines) if line.startswith("No\tDokumen\tPIC\tAktivitas")),None)
+          if dhi is None: raise RuntimeError("DETAIL_HEADER_NOT_FOUND")
+          current_group=None; detail_count=0
+          for line in detail_lines[dhi+1:]:
+              p=line.split("\t")
+              first=p[0].strip() if p else ""
+              if re.match(r"^[A-Z]\.\s+",first):
+                  current_group=first; continue
+              if not re.fullmatch(r"\d+",first): continue
+              p=p+[""]*(9-len(p)); no=int(first)
+              payload={
+                "stepNumber":no,"detailGroup":current_group,"document":p[1].strip() or None,
+                "pic":p[2].strip() or None,"controlActivity":p[3].strip() or None,
+                "assertions":p[4].strip() or None,"controlType":p[5].strip() or None,
+                "nature":p[6].strip() or None,"frequency":p[7].strip() or None,
+                "supportingSystem":p[8].strip() or None,"businessProcess":session.get("businessProcess"),
+                "subprocess":session.get("subprocess"),"sourceProcessCode":CODE,"sourceRole":"UPDATE",
+                "precedencePriority":20,"reviewRequired":True,"operationalControlCreated":False
+              }
+              key=f"SERAYA:WTCTRL:2026:{CODE}:{no:03d}"
+              records.append({
+                "id":hid(DOC_ID,"WALKTHROUGH_CONTROL_DETAIL_UPDATE_CANDIDATE",key),
+                "recordType":"WALKTHROUGH_CONTROL_DETAIL_UPDATE_CANDIDATE","recordKey":key,
+                "recordTitle":payload["controlActivity"] or f"{CODE} step {no}",
+                "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":"))
+              })
+              detail_count+=1
+              if not payload["controlActivity"]:
+                  issues.append(("WALKTHROUGH_CONTROL_ACTIVITY_MISSING","HIGH",key,"controlActivity",None,
+                                 "Control/activity description should be present",
+                                 "Detail walkthrough row has no control/activity description."))
+
+          if detail_count==0: raise RuntimeError("NO_DETAIL_ROWS")
+          declared=None
+          m=re.search(r"\d+",session.get("identifiedProcessSteps") or "")
+          if m: declared=int(m.group(0))
+          if declared is not None and declared!=detail_count:
+              issues.append(("DETAIL_STEP_COUNT_MISMATCH","MEDIUM",session_key,"identifiedProcessSteps",str(declared),
+                             f"{detail_count} detail rows parsed from Sheet 3",
+                             "Walkthrough summary step count does not match parsed detail rows."))
+
+          ddl="""CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+              id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+              recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+              sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+              status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+              id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+              issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+              description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+              id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+              precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+              totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT);
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch ON SourceNormalizationRun(institutionId,batchCode);"""
+          Path("/tmp/a_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/a_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          cleanup=f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE sourceDocumentId={q(DOC_ID)} AND normalizationBatch={q(BATCH)} AND status='Active';\nDELETE FROM SourceDataIssue WHERE sourceDocumentId={q(DOC_ID)};"
+          Path("/tmp/a_cleanup.sql").write_text(cleanup)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/a_cleanup.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          sql=[]
+          for r in records:
+              sql.append(f"""INSERT INTO SourceStructuredRecord
+                (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+                VALUES({q(r['id'])},{q(institution_id)},{q(DOC_ID)},{q(r['recordType'])},{q(r['recordKey'])},{q(r['recordTitle'])},'2026',{q(r['payloadJson'])},'UPDATE',20,{q(doc.get('sourceModifiedAt'))},'Active',{q(BATCH)},{q(now)},{q(now)})
+                ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                recordTitle=excluded.recordTitle,payloadJson=excluded.payloadJson,sourceRole='UPDATE',precedencePriority=20,
+                sourceModifiedAt=excluded.sourceModifiedAt,status='Active',normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;""")
+          for issue_type,severity,record_key,field,observed,expected,description in issues:
+              iid=hid(DOC_ID,issue_type,record_key,field)
+              sql.append(f"""INSERT INTO SourceDataIssue
+                (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+                VALUES({q(iid)},{q(institution_id)},{q(DOC_ID)},{q(record_key)},{q(issue_type)},{q(severity)},{q(field)},{q(observed)},{q(expected)},{q(description)},'OPEN',{q(now)},{q(now)})
+                ON CONFLICT(id) DO UPDATE SET severity=excluded.severity,observedValue=excluded.observedValue,
+                expectedContext=excluded.expectedContext,description=excluded.description,issueStatus='OPEN',updatedAt=excluded.updatedAt;""")
+          Path("/tmp/a_rows.sql").write_text("\n".join(sql))
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/a_rows.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          summary={"sessionRecords":1,"detailControlRecords":detail_count,"issues":len(issues)}
+          rid=hid(institution_id,BATCH)
+          runsql=f"""INSERT INTO SourceNormalizationRun
+             (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status,summaryJson,startedAt,completedAt)
+             VALUES({q(rid)},{q(institution_id)},{q(BATCH)},'UPDATE',20,1,1,{len(records)},'Completed',{q(json.dumps(summary,separators=(',',':')))}, {q(now)},{q(now)})
+             ON CONFLICT(institutionId,batchCode) DO UPDATE SET totalDocuments=1,processedDocuments=1,totalRecords={len(records)},
+             status='Completed',summaryJson={q(json.dumps(summary,separators=(',',':')))},completedAt={q(now)};"""
+          Path("/tmp/a_run.sql").write_text(runsql)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/a_run.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows(f"""SELECT recordType,COUNT(*) records FROM SourceStructuredRecord
+                           WHERE sourceDocumentId={q(DOC_ID)} AND normalizationBatch={q(BATCH)} AND status='Active'
+                           GROUP BY recordType ORDER BY recordType""")
+          total=sum(int(x["records"]) for x in verify)
+          if total!=len(records): raise RuntimeError(f"VERIFY_COUNT_{total}_{len(records)}")
+          print(json.dumps({"processedDocuments":1,"activeRecords":total,"declaredSteps":declared,
+                            "detailControlRecords":detail_count,"recordCounts":verify,"issues":len(issues)},indent=2))
+          PY
+          python /tmp/normalize_angsuran.py
+          rm -f /tmp/normalize_angsuran.py /tmp/a_*.sql
