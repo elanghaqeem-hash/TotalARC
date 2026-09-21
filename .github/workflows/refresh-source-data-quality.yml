@@ -1,0 +1,204 @@
+name: Refresh Source Data Quality
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/refresh-source-data-quality.yml'
+      - 'src/lib/d1-data-hub.ts'
+      - 'src/app/api/admin/data-hub/route.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-source-data-quality
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Evaluate structured source data completeness and mapping readiness
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/evaluate_quality.py <<'PY'
+          import json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceDataQuality (
+            recordId TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            completenessStatus TEXT NOT NULL,
+            completenessScore INTEGER NOT NULL DEFAULT 0,
+            missingFieldsJson TEXT,
+            mappingStatus TEXT NOT NULL,
+            targetModule TEXT,
+            targetHref TEXT,
+            issueCode TEXT,
+            evaluatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_quality_institution
+            ON SourceDataQuality(institutionId,completenessStatus,mappingStatus);
+          """
+          Path("/tmp/quality_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/quality_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          records=rows("""
+            SELECT id,institutionId,recordType,payloadJson
+            FROM SourceStructuredRecord
+            WHERE status='Active'
+            ORDER BY institutionId,recordType,recordKey
+          """)
+          if not records: raise RuntimeError("NO_STRUCTURED_SOURCE_RECORDS")
+
+          RULES={
+            "BUSINESS_PROCESS_BASELINE": (["processNumber","processName"],["processNumber","processName"],"Process Architecture","/processes"),
+            "BUSINESS_SUBPROCESS_BASELINE": (["processNumber","subprocessCode","subprocessName"],["processNumber","subprocessCode","subprocessName"],"Process Architecture","/processes"),
+            "BUSINESS_PROCESS_STEP_BASELINE": (["processNumber","stepNumber","stepName"],["processNumber","subprocessCode","stepNumber","stepName"],"Process Architecture","/processes"),
+            "ICOFR_SIGNIFICANT_PROCESS": (["processCode","processName"],["processCode","processName","proposedOwner","scope","relatedSignificantAccounts","significanceCriteria"],"Process Architecture","/processes"),
+            "ICOFR_SIGNIFICANT_ACCOUNT": (["accountName"],["accountName","finalConclusion","relatedProcesses","processOwners","relatedApplications"],"ICOFR Accounts","/icofr/accounts"),
+            "FINANCIAL_STATEMENT_LINE": (["statement","accountCode","accountName"],["statement","accountCode","accountName","values"],"ICOFR Accounts","/icofr/accounts"),
+            "GL_ACCOUNT_MASTER": (["glCode","glName"],["glCode","glName","fields"],"ICOFR Accounts","/icofr/accounts"),
+            "ACCOUNT_TYPE_MASTER": (["accountTypeCode","accountTypeName"],["accountTypeCode","accountTypeName","fields"],"ICOFR Accounts","/icofr/accounts"),
+            "DEPOSIT_TYPE_MASTER": (["depositCode","depositName"],["depositCode","depositName","fields"],"ICOFR Accounts","/icofr/accounts"),
+            "LOAN_TYPE_MASTER": (["loanType","title"],["loanType","title","fields"],"ICOFR Accounts","/icofr/accounts"),
+            "LOAN_TYPE_ACCOUNT_EXTENSION": (["loanType"],["loanType","fields"],"ICOFR Accounts","/icofr/accounts"),
+            "ICOFR_MATERIALITY_PARAMETER": (["parameter","normalizedValue"],["parameter","normalizedValue","approvalStatus"],"ICOFR Scoping","/icofr/scoping"),
+            "ICOFR_MATERIALITY_DOCUMENT_STATUS": (["status"],["status","version"],"ICOFR Scoping","/icofr/scoping"),
+            "ICOFR_BENCHMARK_INPUT": (["year"],["year","profitBeforeTax","operatingIncome","totalAssets","totalExpenses"],"ICOFR Scoping","/icofr/scoping"),
+            "ICOFR_DEFICIENCY_THRESHOLD": (["severity"],["severity","percentageThreshold","amountThresholdRpMillion","minimumFollowUp"],"ICOFR Deficiencies","/icofr/deficiencies"),
+            "ICOFR_DEFICIENCY_MATRIX": (["magnitude","likelihood","classification"],["magnitude","likelihood","classification"],"ICOFR Deficiencies","/icofr/deficiencies"),
+            "WALKTHROUGH_CONTROL_CANDIDATE": (["controlActivity"],["controlActivity","pic","frequency","system"],"Walkthrough & ToD","/tod"),
+            "WALKTHROUGH_TEST_OF_ONE_CANDIDATE": (["controlActivity"],["controlActivity"],"Walkthrough & ToD","/tod"),
+            "KPR_WALKTHROUGH_CONTROL_CANDIDATE": (["controlActivity"],["controlActivity","pic","frequency","system"],"Walkthrough & ToD","/tod"),
+            "KPR_TEST_OF_ONE_CANDIDATE": (["controlActivity"],["controlActivity"],"Walkthrough & ToD","/tod"),
+            "ITGC_CONTROL_CANDIDATE": (["controlActivity"],["controlActivity","pic","frequency","supportingSystem"],"ITGC","/icofr/itgc"),
+            "ITGC_TEST_OF_ONE_CANDIDATE": (["controlActivity"],["controlActivity","evidenceAvailable"],"ITGC","/icofr/itgc"),
+            "ITGC_BUSINESS_PROCESS_TEMPLATE_NORMALIZED": (["processName"],["processName","subprocessSummary"],"ITGC","/icofr/itgc"),
+            "ITGC_MAINTENANCE_CONTROL_CANDIDATE": (["controlActivity"],["controlActivity","controlType","nature","frequency","system"],"ITGC","/icofr/itgc"),
+          }
+
+          def present(value):
+              if value is None: return False
+              if isinstance(value,str): return bool(value.strip())
+              if isinstance(value,(list,dict)): return len(value)>0
+              return True
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          evaluated=[]
+          counters={"COMPLETE":0,"PARTIAL":0,"INCOMPLETE":0,"UNIDENTIFIED_FORMAT":0}
+          mapping_counts={}
+
+          for record in records:
+              try: payload=json.loads(record.get("payloadJson") or "{}")
+              except Exception: payload={}
+              rule=RULES.get(record["recordType"])
+
+              if not rule:
+                  completeness="UNIDENTIFIED_FORMAT"; score=0; missing=[]
+                  target_module="Unidentified"; target_href="/admin/data-hub"
+                  mapping="NEEDS_MAPPING"; issue="UNIDENTIFIED_FORMAT"
+              else:
+                  required,expected,target_module,target_href=rule
+                  missing=[field for field in required if not present(payload.get(field))]
+                  filled=sum(1 for field in expected if present(payload.get(field)))
+                  score=round((filled/len(expected))*100) if expected else 100
+                  completeness="INCOMPLETE" if missing else ("PARTIAL" if score<80 else "COMPLETE")
+
+                  if payload.get("operationalMasterCreated") is True or payload.get("operationalMasterUpdated") is True or payload.get("operationalCoaUpdated") is True or payload.get("operationalTestCreated") is True:
+                      mapping="MAPPED"
+                  elif str(payload.get("approvalStatus") or "").lower()=="draft" or (record["recordType"]=="ICOFR_MATERIALITY_DOCUMENT_STATUS" and str(payload.get("status") or "").lower()=="draft"):
+                      mapping="NEEDS_APPROVAL"
+                  elif payload.get("reviewRequired") is True:
+                      mapping="NEEDS_REVIEW"
+                  elif payload.get("referenceMasterOnly") is True:
+                      mapping="REFERENCE_ONLY"
+                  else:
+                      mapping="NEEDS_MAPPING"
+
+                  issues=[]
+                  if missing: issues.append("MISSING_REQUIRED_FIELDS")
+                  elif completeness=="PARTIAL": issues.append("OPTIONAL_FIELDS_MISSING")
+                  if mapping=="NEEDS_REVIEW": issues.append("REVIEW_REQUIRED")
+                  elif mapping=="NEEDS_APPROVAL": issues.append("APPROVAL_REQUIRED")
+                  elif mapping=="NEEDS_MAPPING": issues.append("STAGED_ONLY")
+                  issue=",".join(issues) if issues else None
+
+              counters[completeness]=counters.get(completeness,0)+1
+              mapping_counts[mapping]=mapping_counts.get(mapping,0)+1
+              evaluated.append((
+                  record["id"],record["institutionId"],completeness,score,json.dumps(missing,separators=(",",":")),
+                  mapping,target_module,target_href,issue,now
+              ))
+
+          institution_ids=sorted(set(r["institutionId"] for r in records))
+          for institution_id in institution_ids:
+              Path("/tmp/quality_delete.sql").write_text(f"DELETE FROM SourceDataQuality WHERE institutionId={q(institution_id)};")
+              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/quality_delete.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          for start in range(0,len(evaluated),300):
+              sql=[]
+              for x in evaluated[start:start+300]:
+                  sql.append(f"""
+                  INSERT INTO SourceDataQuality
+                  (recordId,institutionId,completenessStatus,completenessScore,missingFieldsJson,mappingStatus,targetModule,targetHref,issueCode,evaluatedAt)
+                  VALUES({q(x[0])},{q(x[1])},{q(x[2])},{x[3]},{q(x[4])},{q(x[5])},{q(x[6])},{q(x[7])},{q(x[8])},{q(x[9])})
+                  ON CONFLICT(recordId) DO UPDATE SET
+                    institutionId=excluded.institutionId,completenessStatus=excluded.completenessStatus,
+                    completenessScore=excluded.completenessScore,missingFieldsJson=excluded.missingFieldsJson,
+                    mappingStatus=excluded.mappingStatus,targetModule=excluded.targetModule,targetHref=excluded.targetHref,
+                    issueCode=excluded.issueCode,evaluatedAt=excluded.evaluatedAt;
+                  """)
+              p=f"/tmp/quality_{start//300:03d}.sql"
+              Path(p).write_text("\n".join(sql))
+              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows("""
+            SELECT completenessStatus,COUNT(*) records
+            FROM SourceDataQuality
+            GROUP BY completenessStatus
+            ORDER BY completenessStatus
+          """)
+          total=sum(int(r["records"]) for r in verify)
+          if total!=len(records): raise RuntimeError(f"QUALITY_COUNT_MISMATCH_{total}_{len(records)}")
+          print(json.dumps({
+              "evaluatedRecords":total,
+              "completeness":counters,
+              "mapping":mapping_counts,
+              "verification":verify
+          },indent=2))
+          PY
+          python /tmp/evaluate_quality.py
+          rm -f /tmp/evaluate_quality.py /tmp/quality_*.sql
