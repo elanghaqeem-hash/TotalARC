@@ -1,0 +1,59 @@
+name: Diagnose archive walkthrough text layout
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-archive-walkthrough-layout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Inspect bounded walkthrough text context
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/diag.py <<'PY'
+          import json, os, re, subprocess
+          IDS=[
+            ("AML","81a8c78c-3e2d-4e06-8eac-1eb69af50295"),
+            ("KUR","81873415-1c65-457c-8e1a-ca297b792052")
+          ]
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or dbs[0]
+          DB=db["name"]
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "'" + str(v).replace("'","''") + "'"
+          for code,doc_id in IDS:
+              chunks=rows(f"SELECT textContent FROM SourceTextChunk WHERE documentId={q(doc_id)} ORDER BY chunkIndex")
+              text="".join(str(x.get("textContent") or "") for x in chunks)
+              print("\n### "+code)
+              print("PREFIX_REPR="+repr(text[:1600]))
+              for marker in ["Awal","Pemutakhiran","Total Sesi Walkthrough Dilaksanakan","Nama Proses Bisnis","Kesimpulan"]:
+                  pos=text.find(marker)
+                  print("MARKER="+marker+" POS="+str(pos))
+                  if pos>=0:
+                      print("CTX_REPR="+repr(text[max(0,pos-350):min(len(text),pos+1300)]))
+          PY
+          python /tmp/diag.py
+          rm -f /tmp/diag.py
