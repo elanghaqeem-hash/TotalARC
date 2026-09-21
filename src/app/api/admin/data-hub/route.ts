@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedProfile } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
-import { getDataHubSummary, getSourceCoverage, listDataHubRecords } from '@/lib/d1-data-hub';
+import { getDataHubSummary, getSourceCoverage, getSourceGovernance, listDataHubRecords } from '@/lib/d1-data-hub';
 import { resolveSourceInstitution } from '@/lib/d1-source-library';
 
 export const dynamic = 'force-dynamic';
@@ -33,15 +33,17 @@ export async function GET(request: Request) {
     const view = url.searchParams.get('view') || 'records';
 
     if (view === 'summary') {
-      const [summary, sourceCoverage] = await Promise.all([
+      const [summary, sourceCoverage, governance] = await Promise.all([
         getDataHubSummary(institution.id),
-        getSourceCoverage(institution.id)
+        getSourceCoverage(institution.id),
+        getSourceGovernance(institution.id)
       ]);
       return NextResponse.json({
         storage: 'cloudflare-d1',
         institutionId: institution.id,
         summary,
-        sourceCoverage
+        sourceCoverage,
+        governance
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
 

@@ -1,0 +1,156 @@
+name: Refine source mapping policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/refine-source-mapping-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Apply governed operational-link policy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/refine_mapping.py <<'PY'
+          import hashlib, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+          def hid(*p): return hashlib.sha256("|".join(map(str,p)).encode()).hexdigest()[:40]
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceOperationalLink (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceRecordId TEXT NOT NULL,
+            sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,
+            targetModule TEXT NOT NULL,
+            targetHref TEXT,
+            targetEntityType TEXT,
+            targetEntityId TEXT,
+            linkStatus TEXT NOT NULL,
+            decisionBasis TEXT NOT NULL,
+            effectiveSourceRole TEXT,
+            precedencePriority INTEGER NOT NULL DEFAULT 0,
+            promotedAt TEXT,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_operational_record ON SourceOperationalLink(sourceRecordId);
+          CREATE INDEX IF NOT EXISTS idx_source_operational_target ON SourceOperationalLink(institutionId,targetModule,linkStatus);
+          """
+          Path("/tmp/link_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/link_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          queue=rows("""
+            SELECT mq.*, sr.payloadJson
+            FROM SourceMappingQueue mq
+            JOIN SourceStructuredRecord sr ON sr.id=mq.sourceRecordId
+            ORDER BY mq.institutionId,mq.recordType,mq.sourceRecordId
+          """)
+          if not queue: raise RuntimeError("MAPPING_QUEUE_EMPTY")
+
+          reference_types={
+            "GL_ACCOUNT_MASTER","ACCOUNT_TYPE_MASTER","DEPOSIT_TYPE_MASTER",
+            "LOAN_TYPE_MASTER","LOAN_TYPE_ACCOUNT_EXTENSION","FINANCIAL_STATEMENT_LINE"
+          }
+          config_types={
+            "ICOFR_MATERIALITY_PARAMETER","ICOFR_MATERIALITY_DOCUMENT_STATUS","ICOFR_BENCHMARK_INPUT",
+            "ICOFR_DEFICIENCY_THRESHOLD","ICOFR_DEFICIENCY_MATRIX"
+          }
+          candidate_types={
+            "ICOFR_SIGNIFICANT_ACCOUNT","ICOFR_SIGNIFICANT_PROCESS",
+            "BUSINESS_PROCESS_BASELINE","BUSINESS_SUBPROCESS_BASELINE","BUSINESS_PROCESS_STEP_BASELINE",
+            "WALKTHROUGH_CONTROL_CANDIDATE","WALKTHROUGH_TEST_OF_ONE_CANDIDATE",
+            "KPR_WALKTHROUGH_CONTROL_CANDIDATE","KPR_TEST_OF_ONE_CANDIDATE",
+            "ITGC_CONTROL_CANDIDATE","ITGC_TEST_OF_ONE_CANDIDATE",
+            "ITGC_BUSINESS_PROCESS_TEMPLATE_NORMALIZED","ITGC_MAINTENANCE_CONTROL_CANDIDATE"
+          }
+          target_entity={
+            "ICOFR Accounts":"ICOFRFinancialItem",
+            "ICOFR Scoping":"ICOFRScope",
+            "ICOFR Deficiencies":"ICOFRDeficiencyPolicy",
+            "Process Architecture":"BusinessProcess",
+            "ITGC":"ICOFRControl",
+            "Walkthrough & ToD":"Walkthrough"
+          }
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          links=[]
+          policy_counts={}
+
+          for r in queue:
+              rt=r["recordType"]
+              if rt in reference_types:
+                  status="SOURCE_REFERENCE"
+                  basis="Displayed in target module as source-backed reference; not promoted to operational master."
+              elif rt in config_types:
+                  status="CONFIG_REVIEW"
+                  basis="Configuration/scoping policy data requires approval or reconciliation before operational use."
+              elif rt in candidate_types:
+                  status="REVIEW_REQUIRED"
+                  basis="Candidate business/process/control/test data requires owner/reviewer validation and relationship keys before promotion."
+              else:
+                  status="UNIDENTIFIED_POLICY"
+                  basis="No operational promotion policy is defined for this record type."
+              policy_counts[status]=policy_counts.get(status,0)+1
+              links.append((r,status,basis))
+
+          institutions=sorted({r["institutionId"] for r in queue})
+          statements=[]
+          for institution_id in institutions:
+              statements.append(f"DELETE FROM SourceOperationalLink WHERE institutionId={q(institution_id)};")
+          for r,status,basis in links:
+              target=r.get("targetModule") or "Unidentified"
+              lid=hid("OPLINK",r["sourceRecordId"])
+              statements.append(f"""
+              INSERT INTO SourceOperationalLink
+              (id,institutionId,sourceRecordId,sourceDocumentId,recordType,targetModule,targetHref,targetEntityType,targetEntityId,linkStatus,decisionBasis,effectiveSourceRole,precedencePriority,promotedAt,createdAt,updatedAt)
+              VALUES({q(lid)},{q(r['institutionId'])},{q(r['sourceRecordId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(target)},{q(r.get('targetHref'))},
+              {q(target_entity.get(target))},NULL,{q(status)},{q(basis)},{q(r.get('sourceRole'))},{int(r.get('precedencePriority') or 0)},NULL,{q(now)},{q(now)});
+              """)
+          for start in range(0,len(statements),350):
+              p=f"/tmp/link_{start//350:03d}.sql"
+              Path(p).write_text("\n".join(statements[start:start+350]))
+              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows("""
+            SELECT linkStatus,targetModule,COUNT(*) records
+            FROM SourceOperationalLink
+            GROUP BY linkStatus,targetModule
+            ORDER BY linkStatus,targetModule
+          """)
+          total=sum(int(r["records"]) for r in verify)
+          if total!=len(queue): raise RuntimeError(f"OP_LINK_COUNT_MISMATCH_{total}_{len(queue)}")
+          print(json.dumps({"totalLinks":total,"policyCounts":policy_counts,"verification":verify},indent=2))
+          PY
+          python /tmp/refine_mapping.py
+          rm -f /tmp/refine_mapping.py /tmp/link_*.sql

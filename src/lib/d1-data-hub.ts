@@ -48,6 +48,68 @@ async function ensureDataHubSchema(db: D1DatabaseLike) {
     CREATE INDEX IF NOT EXISTS idx_source_quality_institution
     ON SourceDataQuality(institutionId, completenessStatus, mappingStatus)
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS SourceReconciliation (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      baselineDocumentId TEXT,
+      updateDocumentId TEXT,
+      baselineTitle TEXT,
+      updateTitle TEXT,
+      module TEXT,
+      matchMethod TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      effectiveDocumentId TEXT,
+      reason TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )
+  `).run();
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_source_recon_institution
+    ON SourceReconciliation(institutionId, status, module)
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS SourceMappingQueue (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceRecordId TEXT NOT NULL,
+      sourceDocumentId TEXT NOT NULL,
+      recordType TEXT NOT NULL,
+      targetModule TEXT,
+      targetHref TEXT,
+      proposedAction TEXT NOT NULL,
+      queueStatus TEXT NOT NULL,
+      sourceRole TEXT,
+      precedencePriority INTEGER NOT NULL DEFAULT 0,
+      completenessStatus TEXT,
+      mappingStatus TEXT,
+      reason TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS SourceOperationalLink (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceRecordId TEXT NOT NULL,
+      sourceDocumentId TEXT NOT NULL,
+      recordType TEXT NOT NULL,
+      targetModule TEXT NOT NULL,
+      targetHref TEXT,
+      targetEntityType TEXT,
+      targetEntityId TEXT,
+      linkStatus TEXT NOT NULL,
+      decisionBasis TEXT NOT NULL,
+      effectiveSourceRole TEXT,
+      precedencePriority INTEGER NOT NULL DEFAULT 0,
+      promotedAt TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )
+  `).run();
 }
 
 function safeJson(value: string | null | undefined) {
@@ -274,4 +336,77 @@ export async function getSourceCoverage(institutionId: string) {
       potentiallyMoreCompleteSource: richer ? { id: richer.id, title: richer.title, textLength: richer.textLength, rawSizeBytes: richer.rawSizeBytes } : null
     };
   });
+}
+
+export async function getSourceGovernance(institutionId: string) {
+  const db = await getDb();
+  await ensureDataHubSchema(db);
+
+  const reconciliationSummary = await db.prepare(`
+    SELECT status,matchMethod,COUNT(*) AS records
+    FROM SourceReconciliation
+    WHERE institutionId=?
+    GROUP BY status,matchMethod
+    ORDER BY status,matchMethod
+  `).bind(institutionId).all<Record<string, unknown>>();
+
+  const reconciliation = await db.prepare(`
+    SELECT id,baselineDocumentId,updateDocumentId,baselineTitle,updateTitle,module,
+           matchMethod,confidence,status,effectiveDocumentId,reason,updatedAt
+    FROM SourceReconciliation
+    WHERE institutionId=?
+    ORDER BY
+      CASE status
+        WHEN 'AMBIGUOUS_REVIEW' THEN 1
+        WHEN 'HIGH_CONFIDENCE_REVIEW' THEN 2
+        WHEN 'NEW_UPDATE_SOURCE' THEN 3
+        WHEN 'AUTO_LINKED' THEN 4
+        ELSE 5
+      END,
+      confidence DESC,
+      COALESCE(updateTitle,baselineTitle)
+    LIMIT 200
+  `).bind(institutionId).all<Record<string, unknown>>();
+
+  const mappingSummary = await db.prepare(`
+    SELECT queueStatus,targetModule,COUNT(*) AS records
+    FROM SourceMappingQueue
+    WHERE institutionId=?
+    GROUP BY queueStatus,targetModule
+    ORDER BY queueStatus,targetModule
+  `).bind(institutionId).all<Record<string, unknown>>();
+
+  const operationalSummary = await db.prepare(`
+    SELECT linkStatus,targetModule,COUNT(*) AS records
+    FROM SourceOperationalLink
+    WHERE institutionId=?
+    GROUP BY linkStatus,targetModule
+    ORDER BY linkStatus,targetModule
+  `).bind(institutionId).all<Record<string, unknown>>();
+
+  const operationalExceptions = await db.prepare(`
+    SELECT l.id,l.sourceRecordId,l.recordType,l.targetModule,l.targetHref,l.targetEntityType,
+           l.linkStatus,l.decisionBasis,l.effectiveSourceRole,l.precedencePriority,
+           sr.recordKey,sr.recordTitle,d.title AS sourceTitle,
+           q.completenessStatus,q.completenessScore,q.missingFieldsJson
+    FROM SourceOperationalLink l
+    JOIN SourceStructuredRecord sr ON sr.id=l.sourceRecordId
+    JOIN SourceDocument d ON d.id=l.sourceDocumentId
+    LEFT JOIN SourceDataQuality q ON q.recordId=l.sourceRecordId
+    WHERE l.institutionId=? AND l.linkStatus IN ('REVIEW_REQUIRED','CONFIG_REVIEW','UNIDENTIFIED_POLICY')
+    ORDER BY l.linkStatus,l.targetModule,sr.recordKey
+    LIMIT 300
+  `).bind(institutionId).all<Record<string, unknown>>();
+
+  return {
+    reconciliationSummary: reconciliationSummary.results || [],
+    reconciliation: reconciliation.results || [],
+    mappingSummary: mappingSummary.results || [],
+    operationalSummary: operationalSummary.results || [],
+    operationalExceptions: (operationalExceptions.results || []).map(item => ({
+      ...item,
+      missingFields: safeJson(String(item.missingFieldsJson || '')) || [],
+      missingFieldsJson: undefined
+    }))
+  };
 }

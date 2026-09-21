@@ -24,6 +24,13 @@ type SummaryResponse = {
     batches?: Array<Record<string, any>>;
   };
   sourceCoverage?: Array<Record<string, any>>;
+  governance?: {
+    reconciliationSummary?: Array<Record<string, any>>;
+    reconciliation?: Array<Record<string, any>>;
+    mappingSummary?: Array<Record<string, any>>;
+    operationalSummary?: Array<Record<string, any>>;
+    operationalExceptions?: Array<Record<string, any>>;
+  };
 };
 
 type RecordsResponse = {
@@ -62,7 +69,7 @@ export default function DataIntegrationHubPage() {
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [loadingRecords, setLoadingRecords] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'records' | 'sources' | 'exceptions'>('records');
+  const [tab, setTab] = useState<'records' | 'sources' | 'governance' | 'exceptions'>('records');
   const [page, setPage] = useState(1);
   const [recordType, setRecordType] = useState('');
   const [quality, setQuality] = useState('');
@@ -113,6 +120,12 @@ export default function DataIntegrationHubPage() {
   const sources = summary.sourceCoverage || [];
   const recordTypes = useMemo(() => byType.map(item => String(item.recordType || '')).filter(Boolean), [byType]);
   const sourceExceptions = useMemo(() => sources.filter(source => (source.issues || []).length > 0), [sources]);
+  const governance = summary.governance || {};
+  const reconciliation = governance.reconciliation || [];
+  const reconciliationSummary = governance.reconciliationSummary || [];
+  const mappingSummary = governance.mappingSummary || [];
+  const operationalSummary = governance.operationalSummary || [];
+  const operationalExceptions = governance.operationalExceptions || [];
   const totalPages = Math.max(1, Math.ceil(number(records.total) / 50));
 
   const applyQuickFilter = (next: { quality?: string; mapping?: string }) => {
@@ -169,10 +182,11 @@ export default function DataIntegrationHubPage() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {[
             ['records', 'All Structured Data'],
             ['sources', 'Source Coverage'],
+            ['governance', 'Reconciliation & Mapping'],
             ['exceptions', 'Exceptions']
           ].map(([value, label]) => (
             <button
@@ -323,6 +337,93 @@ export default function DataIntegrationHubPage() {
             </article>
           ))}
         </section>
+      )}
+
+      {tab === 'governance' && (
+        <div className="space-y-5">
+          <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-[10px] font-bold uppercase text-slate-400">Reconciliation rows</div>
+              <div className="mt-1 text-2xl font-black text-slate-900">{reconciliationSummary.reduce((sum, item) => sum + number(item.records), 0)}</div>
+              <div className="mt-1 text-[10px] text-slate-500">Aura baseline vs Seraya update classification</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-[10px] font-bold uppercase text-slate-400">Operational links</div>
+              <div className="mt-1 text-2xl font-black text-slate-900">{operationalSummary.reduce((sum, item) => sum + number(item.records), 0)}</div>
+              <div className="mt-1 text-[10px] text-slate-500">source-backed links to Total ARC modules</div>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="text-[10px] font-bold uppercase text-amber-700">Governance exceptions</div>
+              <div className="mt-1 text-2xl font-black text-amber-900">{operationalExceptions.length}</div>
+              <div className="mt-1 text-[10px] text-amber-700">review/config/policy items shown below</div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-black text-slate-900">Source precedence reconciliation</h2>
+            <p className="mt-1 text-[10px] text-slate-500">No fuzzy candidate is promoted automatically. Exact links may choose UPDATE as effective; unmatched UPDATE sources stay independent until structured normalization.</p>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-[10px]">
+                <thead className="text-slate-400"><tr><th className="px-2 py-2">Status</th><th className="px-2 py-2">Method</th><th className="px-2 py-2">Confidence</th><th className="px-2 py-2">Baseline</th><th className="px-2 py-2">Update</th><th className="px-2 py-2">Module</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {reconciliation.map(item => (
+                    <tr key={item.id}>
+                      <td className="px-2 py-2"><span className={'rounded-full border px-2 py-0.5 font-bold ' + badgeClass(String(item.status))}>{item.status}</span></td>
+                      <td className="px-2 py-2 text-slate-600">{item.matchMethod}</td>
+                      <td className="px-2 py-2">{Math.round(number(item.confidence) * 100)}%</td>
+                      <td className="max-w-[260px] px-2 py-2 text-slate-700">{item.baselineTitle || '—'}</td>
+                      <td className="max-w-[260px] px-2 py-2 font-semibold text-slate-900">{item.updateTitle || '—'}</td>
+                      <td className="px-2 py-2">{item.module || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-black text-slate-900">Mapping queue</h2>
+              <div className="mt-3 space-y-2">
+                {mappingSummary.map((item, index) => (
+                  <div key={item.queueStatus + ':' + item.targetModule + ':' + index} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2">
+                    <div><div className="text-[10px] font-black text-slate-800">{item.queueStatus}</div><div className="text-[9px] text-slate-500">{item.targetModule || 'Unidentified'}</div></div>
+                    <div className="text-sm font-black text-slate-900">{number(item.records)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-black text-slate-900">Operational-link policy</h2>
+              <div className="mt-3 space-y-2">
+                {operationalSummary.map((item, index) => (
+                  <div key={item.linkStatus + ':' + item.targetModule + ':' + index} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2">
+                    <div><div className="text-[10px] font-black text-slate-800">{item.linkStatus}</div><div className="text-[9px] text-slate-500">{item.targetModule}</div></div>
+                    <div className="text-sm font-black text-slate-900">{number(item.records)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <h2 className="text-sm font-black text-amber-900">Items that must not be auto-promoted</h2>
+            <div className="mt-3 space-y-2">
+              {operationalExceptions.slice(0, 100).map(item => (
+                <div key={item.id} className="rounded-xl border border-amber-200 bg-white p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-800">{item.linkStatus}</span>
+                    <span className="text-[9px] font-bold text-slate-500">{item.targetModule}</span>
+                    <span className="text-[9px] text-slate-400">{item.recordType}</span>
+                  </div>
+                  <div className="mt-1 text-xs font-black text-slate-900">{item.recordTitle || item.recordKey}</div>
+                  <div className="mt-1 text-[10px] text-slate-500">Source: {item.sourceTitle}</div>
+                  <div className="mt-2 text-[10px] leading-4 text-amber-800">{item.decisionBasis}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       )}
 
       {tab === 'exceptions' && (
