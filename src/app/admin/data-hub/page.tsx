@@ -29,6 +29,7 @@ type SummaryResponse = {
     reconciliation?: Array<Record<string, any>>;
     mappingSummary?: Array<Record<string, any>>;
     operationalSummary?: Array<Record<string, any>>;
+    conflicts?: Array<Record<string, any>>;
     operationalExceptions?: Array<Record<string, any>>;
   };
 };
@@ -125,6 +126,7 @@ export default function DataIntegrationHubPage() {
   const reconciliationSummary = governance.reconciliationSummary || [];
   const mappingSummary = governance.mappingSummary || [];
   const operationalSummary = governance.operationalSummary || [];
+  const conflicts = governance.conflicts || [];
   const operationalExceptions = governance.operationalExceptions || [];
   const totalPages = Math.max(1, Math.ceil(number(records.total) / 50));
 
@@ -380,6 +382,34 @@ export default function DataIntegrationHubPage() {
               </table>
             </div>
           </section>
+
+          {conflicts.length > 0 && (
+            <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-rose-600" />
+                <h2 className="text-sm font-black text-rose-900">Open source-data conflicts</h2>
+              </div>
+              <p className="mt-1 text-[10px] text-rose-700">
+                Conflicting source values are displayed together. Total ARC does not choose a winner until the review/approval decision is recorded.
+              </p>
+              <div className="mt-4 space-y-2">
+                {conflicts.map(item => (
+                  <div key={item.id} className="rounded-xl border border-rose-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[9px] font-black text-rose-800">{item.conflictStatus}</span>
+                      <span className="font-mono text-[10px] font-black text-slate-700">{item.conflictGroup} · {item.parameterKey}</span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3 text-[10px]">
+                      <div className="rounded-lg bg-slate-50 p-2"><b className="block text-slate-500">Baseline</b>{item.baselineValue ?? '—'}<div className="text-[9px] text-slate-400">{item.baselineStatus || ''}</div></div>
+                      <div className="rounded-lg bg-sky-50 p-2"><b className="block text-sky-700">Seraya update</b>{item.updateValue ?? '—'}<div className="text-[9px] text-sky-600">{item.updateStatus || ''}</div></div>
+                      <div className="rounded-lg bg-indigo-50 p-2"><b className="block text-indigo-700">Other update source</b>{item.otherUpdateValue ?? '—'}<div className="text-[9px] text-indigo-600">{item.otherUpdateStatus || ''}</div></div>
+                    </div>
+                    <div className="mt-2 text-[10px] leading-4 text-rose-800">{item.reason}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

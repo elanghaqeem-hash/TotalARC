@@ -1,0 +1,402 @@
+name: Normalize Seraya core update sources
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-core-update.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-seraya-core-update
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize Seraya materiality, gap, methodology and risk register
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize_seraya_core.py <<'PY'
+          import csv, hashlib, io, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="SERAYA_UPDATE_CORE_4_20260921"
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def parse_json(value):
+              try: return json.loads(value or "{}")
+              except: return {}
+
+          catalog=rows("""
+            SELECT id,institutionId,title,module,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='serayamg@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='UPDATE'
+            ORDER BY title
+          """)
+          targets=[
+            ("MATERIALITY_DOC2","Dokumen 2 Kertas Kerja Penentuan Materialitas"),
+            ("GAP","Dokumen 3 Gap_Analysis_BPM_RCM"),
+            ("METHODOLOGY","Dokumen 7_Kerangka_Metodologi_ICOFR_2026"),
+            ("RISK_REGISTER","Dokumen 9 Register_Risiko_Pelaporan_Keuangan_2026"),
+          ]
+
+          docs={}
+          for code,token in targets:
+              matches=[d for d in catalog if token.lower() in str(d["title"]).lower()]
+              if len(matches)!=1: raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              d=matches[0]
+              chunks=rows(f"SELECT chunkIndex,textContent FROM SourceTextChunk WHERE documentId={q(d['id'])} ORDER BY chunkIndex")
+              text="".join(str(x.get("textContent") or "") for x in chunks)
+              if not text.strip(): raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
+              md=parse_json(d.get("metadataJson"))
+              docs[code]={**d,"text":text,"sourceRole":md.get("sourceRole","UPDATE"),"precedencePriority":int(md.get("precedencePriority",20))}
+              print(f"{code} source ready textLength={len(text)} rawSize={d.get('rawSizeBytes',0)}")
+
+          institution_id=docs["MATERIALITY_DOC2"]["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()): raise RuntimeError("INSTITUTION_MISMATCH")
+
+          records=[]
+          def add(doc,record_type,record_key,title,period,payload):
+              records.append({
+                  "id":hid(doc["id"],record_type,record_key),
+                  "institutionId":doc["institutionId"],
+                  "sourceDocumentId":doc["id"],
+                  "recordType":record_type,
+                  "recordKey":record_key,
+                  "recordTitle":title,
+                  "period":period,
+                  "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":")),
+                  "sourceRole":"UPDATE",
+                  "precedencePriority":20,
+                  "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          def csv_rows(text):
+              return list(csv.reader(io.StringIO(text)))
+
+          def next_nonempty(table,start):
+              for row in table[start+1:]:
+                  if any(str(v).strip() for v in row): return row
+              return None
+
+          def value_at(row,index):
+              if row is None or index>=len(row): return None
+              value=str(row[index]).strip()
+              return value if value else None
+
+          def numeric_text(value):
+              if value is None: return None
+              s=str(value).strip()
+              s=s.replace("Rp","").replace("juta","").replace("Juta","").replace("%","").strip()
+              if re.fullmatch(r"-?\d+(?:\.\d+)?",s):
+                  return float(s)
+              if re.fullmatch(r"-?[\d.]+,\d+",s):
+                  return float(s.replace(".","").replace(",","."))
+              m=re.search(r"([\d.]+(?:,\d+)?)",s)
+              return float(m.group(1).replace(".","").replace(",",".")) if m else None
+
+          # A. Materiality workpaper update candidates (Doc 2).
+          doc=docs["MATERIALITY_DOC2"]; table=csv_rows(doc["text"])
+          parameters={}
+          for idx,row in enumerate(table):
+              values=[str(v).strip() for v in row]
+              if "OVERALL MATERIALITY (OM)" in values and "PERFORMANCE MATERIALITY (PM)" in values:
+                  data=next_nonempty(table,idx)
+                  for label,key in [
+                    ("OVERALL MATERIALITY (OM)","OM"),
+                    ("PERFORMANCE MATERIALITY (PM)","PM"),
+                    ("HAIRCUT AMBANG TOLERANSI","HAIRCUT"),
+                    ("AMBANG TOLERANSI (post-haircut)","POST_HAIRCUT_TOLERANCE")
+                  ]:
+                      pos=values.index(label); parameters[key]=value_at(data,pos)
+              if "RASIO PM / OM" in values and "CLEARLY TRIVIAL THRESHOLD" in values:
+                  data=next_nonempty(table,idx)
+                  for label,key in [
+                    ("RASIO PM / OM","PM_RATIO"),
+                    ("CLEARLY TRIVIAL THRESHOLD","CLEARLY_TRIVIAL"),
+                    ("CV LABA SEBELUM PAJAK (5 th)","CV_EBT_5Y"),
+                    ("AMBANG MATERIAL WEAKNESS","MATERIAL_WEAKNESS_THRESHOLD")
+                  ]:
+                      if label in values:
+                          pos=values.index(label); parameters[key]=value_at(data,pos)
+          if len(parameters)!=8: raise RuntimeError("SERAYA_DOC2_MATERIALITY_PARAMETER_COUNT_"+str(len(parameters)))
+
+          status_text="DRAFT – Menunggu Reviu dan Pengesahan"
+          for key,raw in parameters.items():
+              add(doc,"ICOFR_MATERIALITY_UPDATE_CANDIDATE",f"SERAYA:DOC2:MATERIALITY:2026:{key}",key,"2026",{
+                  "parameter":key,
+                  "sourceValue":raw,
+                  "normalizedValue":numeric_text(raw),
+                  "unit":"percent" if key in {"HAIRCUT","PM_RATIO","CV_EBT_5Y"} else "Rp juta",
+                  "approvalStatus":"Draft",
+                  "documentStatus":status_text,
+                  "sourceVariant":"Seraya Dokumen 2",
+                  "sourceRole":"UPDATE",
+                  "reviewRequired":True,
+                  "operationalScopeUpdated":False
+              })
+          add(doc,"ICOFR_MATERIALITY_UPDATE_CANDIDATE","SERAYA:DOC2:MATERIALITY:2026:DOCUMENT_STATUS","Materiality document status","2026",{
+              "parameter":"DOCUMENT_STATUS","sourceValue":status_text,"approvalStatus":"Draft",
+              "sourceVariant":"Seraya Dokumen 2","sourceRole":"UPDATE","reviewRequired":True,
+              "operationalScopeUpdated":False
+          })
+          print("SERAYA materiality Doc2 records=9")
+
+          # B. Gap analysis register.
+          doc=docs["GAP"]; table=csv_rows(doc["text"]); gap_count=0
+          gap_re=re.compile(r"^G-\d{2}$")
+          for row in table:
+              pos=next((i for i,v in enumerate(row) if gap_re.fullmatch(str(v).strip())),None)
+              if pos is None: continue
+              values=[str(v).strip() if v is not None else "" for v in row[pos:pos+11]]
+              values += [""]*(11-len(values))
+              ref,area,priority,evidence,gap,criteria,impact,recommendation,pic,target,status=values[:11]
+              if not gap: continue
+              add(doc,"ICOFR_GAP_ITEM",f"SERAYA:GAP:2026:{ref}",ref,"2026",{
+                  "gapReference":ref,"area":area or None,"priority":priority or None,
+                  "evidenceSource":evidence or None,"gapDescription":gap,"criteria":criteria or None,
+                  "impact":impact or None,"recommendation":recommendation or None,"proposedPic":pic or None,
+                  "targetCompletion":target or None,"sourceStatus":status or None,
+                  "sourceRole":"UPDATE","reviewRequired":True,"operationalDeficiencyCreated":False
+              })
+              gap_count+=1
+          if gap_count!=64: raise RuntimeError("SERAYA_GAP_COUNT_"+str(gap_count))
+          print("SERAYA gap records="+str(gap_count))
+
+          # C. Methodology 2026 materiality update candidate set.
+          doc=docs["METHODOLOGY"]; table=csv_rows(doc["text"])
+          methodology_params={}
+          labels={
+            "Overall Materiality (OM)":"OM",
+            "Haircut":"HAIRCUT",
+            "Performance Materiality (PM)":"PM",
+            "Ambang risiko medium (15% x PM)":"MEDIUM_RISK_THRESHOLD",
+            "Clearly trivial (5% x PM)":"CLEARLY_TRIVIAL"
+          }
+          for row in table:
+              stripped=[str(v).strip() for v in row]
+              for label,key in labels.items():
+                  if label in stripped:
+                      pos=stripped.index(label)
+                      methodology_params[key]={
+                          "value":value_at(row,pos+1),
+                          "status":value_at(row,pos+2)
+                      }
+          if len(methodology_params)!=5: raise RuntimeError("SERAYA_METHODOLOGY_PARAM_COUNT_"+str(len(methodology_params)))
+          for key,item in methodology_params.items():
+              raw=item["value"]; source_status=item["status"] or "Unspecified"
+              add(doc,"ICOFR_MATERIALITY_UPDATE_CANDIDATE",f"SERAYA:DOC7:MATERIALITY:2026:{key}",key,"2026",{
+                  "parameter":key,"sourceValue":raw,"normalizedValue":numeric_text(raw),
+                  "unit":"percent" if key=="HAIRCUT" else "Rp",
+                  "approvalStatus":source_status,
+                  "sourceVariant":"Seraya Dokumen 7 Kerangka Metodologi",
+                  "sourceRole":"UPDATE","reviewRequired":True,"operationalScopeUpdated":False
+              })
+          print("SERAYA methodology materiality records=5")
+
+          # D. Risk register: only the real per-FSLI register section, explicitly draft/review-required.
+          doc=docs["RISK_REGISTER"]; table=csv_rows(doc["text"])
+          risk_count=0; in_fsli=False
+          risk_re=re.compile(r"^R-[A-Z0-9]+-\d{2}$")
+          for row in table:
+              joined=" ".join(str(v) for v in row)
+              if "REGISTER RISIKO PELAPORAN KEUANGAN PER AKUN SIGNIFIKAN" in joined:
+                  in_fsli=True; continue
+              if in_fsli and "REGISTER RISIKO KECURANGAN" in joined:
+                  in_fsli=False
+              if not in_fsli: continue
+              pos=next((i for i,v in enumerate(row) if risk_re.fullmatch(str(v).strip())),None)
+              if pos is None: continue
+              vals=[str(v).strip() for v in row[pos:pos+15]]
+              vals += [""]*(15-len(vals))
+              ref,account,exposure,quant_rating,process,subprocess_name,risk_statement,cause,assertions,likelihood,impact,rating,fraud,mitigation,coverage=vals[:15]
+              if not risk_statement: continue
+              add(doc,"ICOFR_RISK_UPDATE_CANDIDATE",f"SERAYA:RISK:2026:{ref}",ref,"2026",{
+                  "riskReference":ref,"significantAccount":account or None,
+                  "exposureRpMillion":numeric_text(exposure),"quantitativeRating":quant_rating or None,
+                  "businessProcess":process or None,"subprocess":subprocess_name or None,
+                  "riskStatement":risk_statement,"cause":cause or None,"assertions":assertions or None,
+                  "likelihood":likelihood or None,"impact":impact or None,"riskRating":rating or None,
+                  "fraudRisk":fraud or None,"proposedMitigation":mitigation or None,
+                  "rcm2025Coverage":coverage or None,
+                  "sourceRole":"UPDATE","sourceStatus":"Draft – validate with Process Owner",
+                  "requiresProcessOwnerValidation":True,"reviewRequired":True,
+                  "operationalRiskCreated":False
+              })
+              risk_count+=1
+          if risk_count!=35: raise RuntimeError("SERAYA_RISK_COUNT_"+str(risk_count))
+          print("SERAYA risk candidate records="+str(risk_count))
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_precedence ON SourceStructuredRecord(institutionId,recordType,recordKey,precedencePriority);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch ON SourceNormalizationRun(institutionId,batchCode);
+          CREATE TABLE IF NOT EXISTS SourceDataConflict (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,conflictGroup TEXT NOT NULL,parameterKey TEXT NOT NULL,
+            baselineDocumentId TEXT,updateDocumentId TEXT,otherUpdateDocumentId TEXT,
+            baselineValue TEXT,updateValue TEXT,otherUpdateValue TEXT,
+            baselineStatus TEXT,updateStatus TEXT,otherUpdateStatus TEXT,
+            conflictStatus TEXT NOT NULL,reason TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_conflict_key ON SourceDataConflict(institutionId,conflictGroup,parameterKey);
+          """
+          Path("/tmp/seraya_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/seraya_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          # Supersede prior rows only from these four source documents.
+          sup="\n".join(
+              f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE sourceDocumentId={q(d['id'])} AND normalizationBatch={q(BATCH)} AND status='Active';"
+              for d in docs.values()
+          )
+          Path("/tmp/seraya_sup.sql").write_text(sup)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/seraya_sup.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          def insert_record(r):
+              return f"""
+              INSERT INTO SourceStructuredRecord
+              (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+              VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+              'UPDATE',20,{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+              ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,
+                sourceRole='UPDATE',precedencePriority=20,sourceModifiedAt=excluded.sourceModifiedAt,status='Active',
+                normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """
+
+          for start in range(0,len(records),100):
+              p=f"/tmp/seraya_records_{start//100:03d}.sql"
+              Path(p).write_text("\n".join(insert_record(r) for r in records[start:start+100]))
+              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          # Explicit materiality conflicts: Aura/Doc2 old set vs Methodology newer 2026 set.
+          aura=rows(f"""
+            SELECT sourceDocumentId,payloadJson
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)} AND status='Active'
+              AND recordType='ICOFR_MATERIALITY_PARAMETER' AND sourceRole='BASELINE'
+          """)
+          aura_values={}
+          aura_doc=None
+          for item in aura:
+              p=parse_json(item.get("payloadJson")); key=p.get("parameter")
+              if key:
+                  aura_values[key]=p.get("normalizedValue")
+                  aura_doc=item.get("sourceDocumentId")
+
+          doc2_values={k:numeric_text(v) for k,v in parameters.items()}
+          doc7_values={k:numeric_text(v["value"]) for k,v in methodology_params.items()}
+          conflict_keys=["OM","PM","HAIRCUT","CLEARLY_TRIVIAL"]
+          conflicts=[]
+          for key in conflict_keys:
+              bv=aura_values.get(key); uv=doc2_values.get(key); ov=doc7_values.get(key)
+              # Convert methodology Rp to Rp juta when source is full rupiah.
+              if key!="HAIRCUT" and ov is not None and ov>1000000: ov=ov/1000000
+              if key=="HAIRCUT" and ov is not None and ov>1: ov=ov/100
+              conflict=not (bv is not None and uv is not None and ov is not None and abs(float(bv)-float(uv))<0.0001 and abs(float(uv)-float(ov))<0.0001)
+              status="OPEN_REVIEW" if conflict else "CONSISTENT"
+              reason="Seraya methodology/risk-era parameters differ from Aura/Seraya Doc2 values; no automatic winner is selected." if conflict else "Values align across compared sources."
+              conflicts.append((key,bv,uv,ov,status,reason))
+
+          conflict_sql=[]
+          for key,bv,uv,ov,status,reason in conflicts:
+              cid=hid(institution_id,"MATERIALITY_2026",key)
+              conflict_sql.append(f"""
+              INSERT INTO SourceDataConflict
+              (id,institutionId,conflictGroup,parameterKey,baselineDocumentId,updateDocumentId,otherUpdateDocumentId,baselineValue,updateValue,otherUpdateValue,
+               baselineStatus,updateStatus,otherUpdateStatus,conflictStatus,reason,createdAt,updatedAt)
+              VALUES({q(cid)},{q(institution_id)},'MATERIALITY_2026',{q(key)},{q(aura_doc)},{q(docs['MATERIALITY_DOC2']['id'])},{q(docs['METHODOLOGY']['id'])},
+                     {q(bv)},{q(uv)},{q(ov)},'BASELINE DRAFT','DRAFT','SOURCE-ASSERTED MIXED FINAL/PROVISIONAL',{q(status)},{q(reason)},{q(now)},{q(now)})
+              ON CONFLICT(institutionId,conflictGroup,parameterKey) DO UPDATE SET
+                baselineDocumentId=excluded.baselineDocumentId,updateDocumentId=excluded.updateDocumentId,otherUpdateDocumentId=excluded.otherUpdateDocumentId,
+                baselineValue=excluded.baselineValue,updateValue=excluded.updateValue,otherUpdateValue=excluded.otherUpdateValue,
+                baselineStatus=excluded.baselineStatus,updateStatus=excluded.updateStatus,otherUpdateStatus=excluded.otherUpdateStatus,
+                conflictStatus=excluded.conflictStatus,reason=excluded.reason,updatedAt=excluded.updatedAt;
+              """)
+          Path("/tmp/seraya_conflict.sql").write_text("\n".join(conflict_sql))
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/seraya_conflict.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          counts={}
+          for r in records: counts[r["recordType"]]=counts.get(r["recordType"],0)+1
+          run_id=hid(institution_id,BATCH)
+          summary={"files":[x[0] for x in targets],"recordCounts":counts,"materialityConflicts":conflict_keys}
+          runsql=f"""
+          INSERT INTO SourceNormalizationRun
+          (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status,summaryJson,startedAt,completedAt)
+          VALUES({q(run_id)},{q(institution_id)},{q(BATCH)},'UPDATE',20,4,4,{len(records)},'Completed',{q(json.dumps(summary,separators=(',',':')))}, {q(now)},{q(now)})
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+            sourceRole='UPDATE',precedencePriority=20,totalDocuments=4,processedDocuments=4,totalRecords={len(records)},status='Completed',
+            summaryJson={q(json.dumps(summary,separators=(',',':')))},completedAt={q(now)};
+          """
+          Path("/tmp/seraya_run.sql").write_text(runsql)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/seraya_run.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows(f"""
+            SELECT recordType,COUNT(*) records
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)} AND normalizationBatch={q(BATCH)} AND status='Active'
+            GROUP BY recordType ORDER BY recordType
+          """)
+          total=sum(int(r["records"]) for r in verify)
+          expected=9+64+5+35
+          if total!=expected: raise RuntimeError(f"SERAYA_CORE_COUNT_MISMATCH_{total}_{expected}")
+          conflict_verify=rows(f"""
+            SELECT parameterKey,baselineValue,updateValue,otherUpdateValue,conflictStatus
+            FROM SourceDataConflict
+            WHERE institutionId={q(institution_id)} AND conflictGroup='MATERIALITY_2026'
+            ORDER BY parameterKey
+          """)
+          print("Seraya core update verification:")
+          print(json.dumps({"processedDocuments":4,"activeTotal":total,"recordCounts":verify,"materialityConflicts":conflict_verify},indent=2,ensure_ascii=False))
+          PY
+          python /tmp/normalize_seraya_core.py
+          rm -f /tmp/normalize_seraya_core.py /tmp/seraya_*.sql
