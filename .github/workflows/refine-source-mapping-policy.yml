@@ -137,9 +137,10 @@ jobs:
               VALUES({q(lid)},{q(r['institutionId'])},{q(r['sourceRecordId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(target)},{q(r.get('targetHref'))},
               {q(target_entity.get(target))},NULL,{q(status)},{q(basis)},{q(r.get('sourceRole'))},{int(r.get('precedencePriority') or 0)},NULL,{q(now)},{q(now)});
               """)
-          for start in range(0,len(statements),350):
-              p=f"/tmp/link_{start//350:03d}.sql"
-              Path(p).write_text("\n".join(statements[start:start+350]))
+          chunk_size=100
+          for start in range(0,len(statements),chunk_size):
+              p=f"/tmp/link_{start//chunk_size:03d}.sql"
+              Path(p).write_text("\n".join(statements[start:start+chunk_size]))
               subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 
           verify=rows("""
