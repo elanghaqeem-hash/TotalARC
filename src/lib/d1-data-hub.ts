@@ -132,6 +132,27 @@ async function ensureDataHubSchema(db: D1DatabaseLike) {
     )
   `).run();
 }
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS SourceDataIssue (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceDocumentId TEXT NOT NULL,
+      sourceRecordKey TEXT,
+      issueType TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      fieldName TEXT,
+      observedValue TEXT,
+      expectedContext TEXT,
+      description TEXT NOT NULL,
+      issueStatus TEXT NOT NULL DEFAULT 'OPEN',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )
+  `).run();
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_source_issue_institution
+    ON SourceDataIssue(institutionId, issueStatus, severity, issueType)
+  `).run();
 
 function safeJson(value: string | null | undefined) {
   if (!value) return null;
@@ -428,12 +449,26 @@ export async function getSourceGovernance(institutionId: string) {
     ORDER BY conflictStatus DESC,conflictGroup,parameterKey
   `).bind(institutionId).all<Record<string, unknown>>();
 
+  const sourceIssues = await db.prepare(`
+    SELECT i.id,i.sourceDocumentId,i.sourceRecordKey,i.issueType,i.severity,i.fieldName,
+           i.observedValue,i.expectedContext,i.description,i.issueStatus,i.updatedAt,
+           d.title AS sourceTitle,d.module AS sourceModule
+    FROM SourceDataIssue i
+    JOIN SourceDocument d ON d.id=i.sourceDocumentId
+    WHERE i.institutionId=? AND i.issueStatus='OPEN'
+    ORDER BY
+      CASE i.severity WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
+      i.issueType,d.title
+    LIMIT 500
+  `).bind(institutionId).all<Record<string, unknown>>();
+
   return {
     reconciliationSummary: reconciliationSummary.results || [],
     reconciliation: reconciliation.results || [],
     mappingSummary: mappingSummary.results || [],
     operationalSummary: operationalSummary.results || [],
     conflicts: conflicts.results || [],
+    sourceIssues: sourceIssues.results || [],
     operationalExceptions: (operationalExceptions.results || []).map(item => ({
       ...item,
       missingFields: safeJson(String(item.missingFieldsJson || '')) || [],
