@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/normalize_seraya_core.py <<'PY'
-          import csv, hashlib, io, json, os, re, subprocess
+          import hashlib, json, os, re, subprocess
           from datetime import datetime, timezone
           from pathlib import Path
 
@@ -109,8 +109,11 @@ jobs:
                   "sourceModifiedAt":doc.get("sourceModifiedAt")
               })
 
-          def csv_rows(text):
-              return list(csv.reader(io.StringIO(text)))
+          def tab_rows(text):
+              return [line.split("\t") for line in text.splitlines() if line.strip()]
+
+          def compact(row):
+              return [str(v).strip() for v in row if str(v).strip()]
 
           def next_nonempty(table,start):
               for row in table[start+1:]:
@@ -134,12 +137,12 @@ jobs:
               return float(m.group(1).replace(".","").replace(",",".")) if m else None
 
           # A. Materiality workpaper update candidates (Doc 2).
-          doc=docs["MATERIALITY_DOC2"]; table=csv_rows(doc["text"])
+          doc=docs["MATERIALITY_DOC2"]; table=tab_rows(doc["text"])
           parameters={}
           for idx,row in enumerate(table):
-              values=[str(v).strip() for v in row]
+              values=compact(row)
               if "OVERALL MATERIALITY (OM)" in values and "PERFORMANCE MATERIALITY (PM)" in values:
-                  data=next_nonempty(table,idx)
+                  data=compact(next_nonempty(table,idx) or [])
                   for label,key in [
                     ("OVERALL MATERIALITY (OM)","OM"),
                     ("PERFORMANCE MATERIALITY (PM)","PM"),
@@ -181,12 +184,12 @@ jobs:
           print("SERAYA materiality Doc2 records=9")
 
           # B. Gap analysis register.
-          doc=docs["GAP"]; table=csv_rows(doc["text"]); gap_count=0
+          doc=docs["GAP"]; table=tab_rows(doc["text"]); gap_count=0
           gap_re=re.compile(r"^G-\d{2}$")
           for row in table:
               pos=next((i for i,v in enumerate(row) if gap_re.fullmatch(str(v).strip())),None)
               if pos is None: continue
-              values=[str(v).strip() if v is not None else "" for v in row[pos:pos+11]]
+              values=[str(v).strip() if v is not None else "" for v in row[pos:]]
               values += [""]*(11-len(values))
               ref,area,priority,evidence,gap,criteria,impact,recommendation,pic,target,status=values[:11]
               if not gap: continue
@@ -202,7 +205,7 @@ jobs:
           print("SERAYA gap records="+str(gap_count))
 
           # C. Methodology 2026 materiality update candidate set.
-          doc=docs["METHODOLOGY"]; table=csv_rows(doc["text"])
+          doc=docs["METHODOLOGY"]; table=tab_rows(doc["text"])
           methodology_params={}
           labels={
             "Overall Materiality (OM)":"OM",
@@ -212,13 +215,13 @@ jobs:
             "Clearly trivial (5% x PM)":"CLEARLY_TRIVIAL"
           }
           for row in table:
-              stripped=[str(v).strip() for v in row]
+              stripped=compact(row)
               for label,key in labels.items():
                   if label in stripped:
                       pos=stripped.index(label)
                       methodology_params[key]={
-                          "value":value_at(row,pos+1),
-                          "status":value_at(row,pos+2)
+                          "value":value_at(stripped,pos+1),
+                          "status":value_at(stripped,pos+2)
                       }
           if len(methodology_params)!=5: raise RuntimeError("SERAYA_METHODOLOGY_PARAM_COUNT_"+str(len(methodology_params)))
           for key,item in methodology_params.items():
@@ -233,7 +236,7 @@ jobs:
           print("SERAYA methodology materiality records=5")
 
           # D. Risk register: only the real per-FSLI register section, explicitly draft/review-required.
-          doc=docs["RISK_REGISTER"]; table=csv_rows(doc["text"])
+          doc=docs["RISK_REGISTER"]; table=tab_rows(doc["text"])
           risk_count=0; in_fsli=False
           risk_re=re.compile(r"^R-[A-Z0-9]+-\d{2}$")
           for row in table:
@@ -245,7 +248,7 @@ jobs:
               if not in_fsli: continue
               pos=next((i for i,v in enumerate(row) if risk_re.fullmatch(str(v).strip())),None)
               if pos is None: continue
-              vals=[str(v).strip() for v in row[pos:pos+15]]
+              vals=[str(v).strip() for v in row[pos:]]
               vals += [""]*(15-len(vals))
               ref,account,exposure,quant_rating,process,subprocess_name,risk_statement,cause,assertions,likelihood,impact,rating,fraud,mitigation,coverage=vals[:15]
               if not risk_statement: continue
