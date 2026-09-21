@@ -224,12 +224,22 @@ export async function getSourceCoverage(institutionId: string) {
   const rows: SourceCoverageRow[] = (documents.results || []).map(row => {
     const metadata = safeJson(String(row.metadataJson || '')) || {};
     return {
-      ...(row as Record<string, unknown>),
-      metadataJson: undefined,
-      sourceAccount: metadata.sourceAccount || null,
-      sourceRole: metadata.sourceRole || null,
+      id: String(row.id || ''),
+      title: String(row.title || ''),
+      module: row.module ? String(row.module) : null,
+      sourceKind: row.sourceKind ? String(row.sourceKind) : null,
+      rawSizeBytes: Number(row.rawSizeBytes || 0),
+      textLength: Number(row.textLength || 0),
+      structuredRecords: Number(row.structuredRecords || 0),
+      incompleteRecords: Number(row.incompleteRecords || 0),
+      partialRecords: Number(row.partialRecords || 0),
+      unidentifiedRecords: Number(row.unidentifiedRecords || 0),
+      sourceModifiedAt: row.sourceModifiedAt ? String(row.sourceModifiedAt) : null,
+      updatedAt: row.updatedAt ? String(row.updatedAt) : null,
+      sourceAccount: metadata.sourceAccount ? String(metadata.sourceAccount) : null,
+      sourceRole: metadata.sourceRole ? String(metadata.sourceRole) : null,
       precedencePriority: Number(metadata.precedencePriority || 0),
-      sourceCollection: metadata.sourceCollection || null,
+      sourceCollection: metadata.sourceCollection ? String(metadata.sourceCollection) : null,
       logicalKey: [row.sourceKind || '', row.module || '', normalizeTitle(String(row.title || ''))].join(':')
     };
   });
