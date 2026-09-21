@@ -1,0 +1,306 @@
+name: Normalize Seraya ITGC and ELC half-load batch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-itgc-elc-halfload.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-seraya-itgc-elc-halfload
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize ITGC controls and ELC draft references
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize_itgc_elc.py <<'PY'
+          import hashlib, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="SERAYA_UPDATE_ITGC_ELC_HALFLOAD_20260921"
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+          def hid(*p): return hashlib.sha256("|".join(map(str,p)).encode()).hexdigest()[:40]
+
+          catalog=rows("""
+            SELECT id,institutionId,title,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='serayamg@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='UPDATE'
+            ORDER BY title
+          """)
+          targets=[
+            ("ELC","RCM_BPM_ ELC_Bank_Kalbar_2026 (brhw v2.0)",17),
+            ("ITGC","BPM-RCM-Walkthrough ITGC - Bank Kalbar (ver.3)",10)
+          ]
+          docs={}
+          for code,token,expected in targets:
+              matches=[d for d in catalog if token.lower() in str(d["title"]).lower()]
+              if len(matches)!=1: raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              d=matches[0]
+              chunks=rows(f"SELECT chunkIndex,textContent FROM SourceTextChunk WHERE documentId={q(d['id'])} ORDER BY chunkIndex")
+              text="".join(str(x.get("textContent") or "") for x in chunks)
+              if not text.strip(): raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
+              docs[code]={**d,"text":text,"expected":expected}
+              print(f"{code} source ready textLength={len(text)}")
+
+          institution_id=docs["ELC"]["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()): raise RuntimeError("INSTITUTION_MISMATCH")
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          records=[]; issues=[]
+
+          def add_record(doc,record_type,key,title,payload):
+              records.append({
+                "id":hid(doc["id"],record_type,key),
+                "institutionId":institution_id,
+                "sourceDocumentId":doc["id"],
+                "recordType":record_type,
+                "recordKey":key,
+                "recordTitle":title,
+                "period":"2026",
+                "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":")),
+                "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          def add_issue(doc,issue_type,severity,description):
+              issues.append({
+                "id":hid(doc["id"],issue_type),
+                "institutionId":institution_id,
+                "sourceDocumentId":doc["id"],
+                "issueType":issue_type,
+                "severity":severity,
+                "description":description
+              })
+
+          # 1) ELC: source explicitly states the 17 principle rows are illustrative drafts,
+          # therefore store only as source-backed principle references, not operational controls.
+          elc=docs["ELC"]; seen={}
+          elc_re=re.compile(r"^ELC-(\d{2})$")
+          for line in elc["text"].splitlines():
+              parts=line.split("\t")
+              pos=next((i for i,v in enumerate(parts) if elc_re.fullmatch(str(v).strip())),None)
+              if pos is None: continue
+              ref=str(parts[pos]).strip()
+              if ref in seen: continue
+              vals=parts+[""]*20
+              component=str(vals[pos-1]).strip() or None
+              principle=str(vals[pos+1]).strip() or None
+              area=str(vals[pos+2]).strip() or None
+              activity=str(vals[pos+3]).strip() or None
+              frequency=str(vals[pos+4]).strip() or None
+              evidence=str(vals[pos+5]).strip() or None
+              function=str(vals[pos+6]).strip() or None
+              performer=str(vals[pos+7]).strip() or None
+              control_type=str(vals[pos+8]).strip() or None
+              risk=str(vals[pos+9]).strip() or None
+              payload={
+                "controlReference":ref,
+                "cosoComponent":component,
+                "cosoPrinciple":principle,
+                "areaOrProcess":area,
+                "illustrativeActivity":activity,
+                "illustrativeFrequency":frequency,
+                "illustrativeEvidence":evidence,
+                "illustrativeFunction":function,
+                "illustrativePerformer":performer,
+                "illustrativeControlType":control_type,
+                "illustrativeRisk":risk,
+                "sourceRole":"UPDATE",
+                "precedencePriority":20,
+                "illustrativeDraft":True,
+                "validatedBankKalbarControl":False,
+                "referenceMasterOnly":True,
+                "operationalControlCreated":False
+              }
+              add_record(elc,"ELC_PRINCIPLE_TEMPLATE_REFERENCE",f"SERAYA:ELC:2026:{ref}",ref,payload)
+              seen[ref]=True
+          if len(seen)!=17: raise RuntimeError(f"ELC_REFERENCE_COUNT_{len(seen)}_17")
+          add_issue(
+            elc,"ELC_ILLUSTRATIVE_DRAFT_NOT_VALIDATED","HIGH",
+            "The ELC source explicitly states its 17 principle rows are illustrative drafts and are not walkthrough-validated Bank Kalbar controls. They must remain reference-only until validated."
+          )
+          print("ELC normalized reference rows=17")
+
+          # 2) ITGC: parse only the RCM section. The source marks it DRAFT pending Lini Kedua walkthrough validation.
+          itgc=docs["ITGC"]
+          start=itgc["text"].find("RISK CONTROL MATRIX (RCM)")
+          if start<0: raise RuntimeError("ITGC_RCM_SECTION_NOT_FOUND")
+          end=itgc["text"].find("Log Perubahan Proses Bisnis dan Pengendalian",start)
+          segment=itgc["text"][start:end if end>start else len(itgc["text"])]
+          ctrl_re=re.compile(r"^ITGC-(APD|PD|PC|CO)-(\d{2})$")
+          controls={}
+          for line in segment.splitlines():
+              parts=line.split("\t")
+              pos=next((i for i,v in enumerate(parts) if ctrl_re.fullmatch(str(v).strip())),None)
+              if pos is None: continue
+              ref=str(parts[pos]).strip()
+              if ref in controls: continue
+              vals=parts+[""]*30
+              number=str(vals[pos-4]).strip() if pos>=4 else None
+              subprocess_name=str(vals[pos-3]).strip() if pos>=3 else None
+              location=str(vals[pos-2]).strip() if pos>=2 else None
+              risk=str(vals[pos-1]).strip() if pos>=1 else None
+              control_name=str(vals[pos+1]).strip() or None
+              description=str(vals[pos+2]).strip() or None
+              evidence=str(vals[pos+3]).strip() or None
+              key_control=str(vals[pos+4]).strip() or None
+              preventive_detective=str(vals[pos+5]).strip() or None
+              nature=str(vals[pos+6]).strip() or None
+              automated_type=str(vals[pos+7]).strip() or None
+              frequency=str(vals[pos+8]).strip() or None
+              applications=str(vals[pos+9]).strip() or None
+              function=str(vals[pos+10]).strip() or None
+              performer=str(vals[pos+11]).strip() or None
+              effective_period=str(vals[pos+12]).strip() or None
+              payload={
+                "controlReference":ref,
+                "sequence":number,
+                "subprocess":subprocess_name,
+                "location":location,
+                "riskStatement":risk,
+                "controlActivity":control_name,
+                "controlDescription":description,
+                "evidence":evidence,
+                "isKeyControl":key_control,
+                "preventiveDetective":preventive_detective,
+                "nature":nature,
+                "automatedControlType":automated_type,
+                "frequency":frequency,
+                "supportingSystem":applications,
+                "pic":function,
+                "performer":performer,
+                "effectivePeriod":effective_period,
+                "sourceRole":"UPDATE",
+                "precedencePriority":20,
+                "sourceDocumentStatus":"DRAFT — menunggu validasi walkthrough oleh Lini Kedua (Fungsi ICOFR)",
+                "reviewRequired":True,
+                "operationalControlCreated":False
+              }
+              add_record(itgc,"ITGC_CONTROL_UPDATE_CANDIDATE",f"SERAYA:ITGC:2026:{ref}",ref,payload)
+              controls[ref]=True
+          if len(controls)!=10: raise RuntimeError(f"ITGC_CONTROL_COUNT_{len(controls)}_10")
+          add_issue(
+            itgc,"ITGC_DRAFT_REQUIRES_WALKTHROUGH_VALIDATION","MEDIUM",
+            "The ITGC RCM source is marked DRAFT and states it is awaiting walkthrough validation by Lini Kedua/Fungsi ICOFR. The 10 controls remain review-gated candidates."
+          )
+          print("ITGC normalized control candidates=10")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+            description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_issue_institution ON SourceDataIssue(institutionId,issueStatus,severity,issueType);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/half_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/half_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          source_ids=[d["id"] for d in docs.values()]
+          cleanup="\n".join(
+            f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE sourceDocumentId={q(doc_id)} AND normalizationBatch={q(BATCH)} AND status='Active';"
+            for doc_id in source_ids
+          )+"\n"+"\n".join(f"DELETE FROM SourceDataIssue WHERE sourceDocumentId={q(doc_id)} AND issueType IN ('ELC_ILLUSTRATIVE_DRAFT_NOT_VALIDATED','ITGC_DRAFT_REQUIRES_WALKTHROUGH_VALIDATION');" for doc_id in source_ids)
+          Path("/tmp/half_cleanup.sql").write_text(cleanup)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/half_cleanup.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          statements=[]
+          for r in records:
+              statements.append(f"""
+              INSERT INTO SourceStructuredRecord
+              (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+              VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+              'UPDATE',20,{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+              ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,sourceRole='UPDATE',
+                precedencePriority=20,sourceModifiedAt=excluded.sourceModifiedAt,status='Active',
+                normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """)
+          for issue in issues:
+              statements.append(f"""
+              INSERT INTO SourceDataIssue
+              (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+              VALUES({q(issue['id'])},{q(issue['institutionId'])},{q(issue['sourceDocumentId'])},NULL,{q(issue['issueType'])},{q(issue['severity'])},
+              NULL,NULL,NULL,{q(issue['description'])},'OPEN',{q(now)},{q(now)})
+              ON CONFLICT(id) DO UPDATE SET severity=excluded.severity,description=excluded.description,issueStatus='OPEN',updatedAt=excluded.updatedAt;
+              """)
+          Path("/tmp/half_rows.sql").write_text("\n".join(statements))
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/half_rows.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          summary={"ELC_PRINCIPLE_TEMPLATE_REFERENCE":17,"ITGC_CONTROL_UPDATE_CANDIDATE":10,"sourceIssues":2}
+          rid=hid(institution_id,BATCH)
+          runsql=f"""
+          INSERT INTO SourceNormalizationRun
+          (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status,summaryJson,startedAt,completedAt)
+          VALUES({q(rid)},{q(institution_id)},{q(BATCH)},'UPDATE',20,2,2,27,'Completed',{q(json.dumps(summary,separators=(',',':')))}, {q(now)},{q(now)})
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET sourceRole='UPDATE',precedencePriority=20,totalDocuments=2,processedDocuments=2,
+          totalRecords=27,status='Completed',summaryJson={q(json.dumps(summary,separators=(',',':')))},completedAt={q(now)};
+          """
+          Path("/tmp/half_run.sql").write_text(runsql)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/half_run.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows(f"""
+            SELECT recordType,COUNT(*) records
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)} AND normalizationBatch={q(BATCH)} AND status='Active'
+            GROUP BY recordType ORDER BY recordType
+          """)
+          total=sum(int(x["records"]) for x in verify)
+          issue_verify=rows(f"""
+            SELECT issueType,severity,COUNT(*) records
+            FROM SourceDataIssue
+            WHERE institutionId={q(institution_id)} AND issueStatus='OPEN'
+              AND sourceDocumentId IN ({','.join(q(x) for x in source_ids)})
+            GROUP BY issueType,severity ORDER BY issueType
+          """)
+          if total!=27: raise RuntimeError(f"HALFLOAD_VERIFY_COUNT_{total}_27")
+          print(json.dumps({"processedDocuments":2,"activeRecords":total,"recordCounts":verify,"sourceIssues":issue_verify},indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/normalize_itgc_elc.py
+          rm -f /tmp/normalize_itgc_elc.py /tmp/half_*.sql
