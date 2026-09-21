@@ -81,7 +81,8 @@ jobs:
 
           reference_types={
             "GL_ACCOUNT_MASTER","ACCOUNT_TYPE_MASTER","DEPOSIT_TYPE_MASTER",
-            "LOAN_TYPE_MASTER","LOAN_TYPE_ACCOUNT_EXTENSION","FINANCIAL_STATEMENT_LINE"
+            "LOAN_TYPE_MASTER","LOAN_TYPE_ACCOUNT_EXTENSION","FINANCIAL_STATEMENT_LINE",
+            "ELC_PRINCIPLE_TEMPLATE_REFERENCE"
           }
           config_types={
             "ICOFR_MATERIALITY_PARAMETER","ICOFR_MATERIALITY_UPDATE_CANDIDATE","ICOFR_MATERIALITY_DOCUMENT_STATUS","ICOFR_BENCHMARK_INPUT",
@@ -93,7 +94,8 @@ jobs:
             "WALKTHROUGH_CONTROL_CANDIDATE","WALKTHROUGH_TEST_OF_ONE_CANDIDATE",
             "KPR_WALKTHROUGH_CONTROL_CANDIDATE","KPR_TEST_OF_ONE_CANDIDATE",
             "ITGC_CONTROL_CANDIDATE","ITGC_TEST_OF_ONE_CANDIDATE",
-            "ITGC_BUSINESS_PROCESS_TEMPLATE_NORMALIZED","ITGC_MAINTENANCE_CONTROL_CANDIDATE",
+            "ITGC_BUSINESS_PROCESS_TEMPLATE_NORMALIZED","ITGC_MAINTENANCE_CONTROL_CANDIDATE","ITGC_CONTROL_UPDATE_CANDIDATE",
+            "WALKTHROUGH_SESSION_UPDATE_CANDIDATE",
             "ICOFR_GAP_ITEM","ICOFR_RISK_UPDATE_CANDIDATE"
           }
           target_entity={
@@ -103,7 +105,8 @@ jobs:
             "Process Architecture":"BusinessProcess",
             "ITGC":"ICOFRControl",
             "Walkthrough & ToD":"Walkthrough",
-            "Risk Universe":"RiskMaster"
+            "Risk Universe":"RiskMaster",
+            "ELC":"ICOFRControl"
           }
           now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
           links=[]
