@@ -1,0 +1,350 @@
+name: Process Aura final six sources
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/process-aura-final-six.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-aura-final-six
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Normalize final six Aura baseline sources into D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize_final_six.py <<'PY'
+          import base64, hashlib, json, os, re, subprocess, tempfile, zipfile
+          import xml.etree.ElementTree as ET
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="AURA_FINAL_6_20260921"
+          NS={"a":"http://schemas.openxmlformats.org/spreadsheetml/2006/main","r":"http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+          def sid(*parts): return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+          def col(ref):
+              m=re.match(r"([A-Z]+)",ref or "A1"); n=0
+              for ch in m.group(1): n=n*26+ord(ch)-64
+              return n-1
+          def clean(v):
+              if v is None: return None
+              if isinstance(v,str):
+                  v=v.strip()
+                  return v if v else None
+              return v
+
+          def xlsx_sheets(raw_bytes):
+              with tempfile.NamedTemporaryFile(suffix=".xlsx") as tmp:
+                  tmp.write(raw_bytes); tmp.flush()
+                  with zipfile.ZipFile(tmp.name) as z:
+                      shared=[]
+                      if "xl/sharedStrings.xml" in z.namelist():
+                          root=ET.fromstring(z.read("xl/sharedStrings.xml"))
+                          for si in root.findall("a:si",NS):
+                              shared.append("".join((t.text or "") for t in si.findall(".//a:t",NS)))
+                      wb=ET.fromstring(z.read("xl/workbook.xml"))
+                      rels=ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+                      relmap={r.attrib["Id"]:r.attrib["Target"] for r in rels}
+                      out={}
+                      for sh in wb.findall("a:sheets/a:sheet",NS):
+                          name=sh.attrib["name"]
+                          rid=sh.attrib["{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"]
+                          target=relmap[rid]
+                          if target.startswith("/"): target=target.lstrip("/")
+                          elif not target.startswith("xl/"): target="xl/"+target.lstrip("/")
+                          if target not in z.namelist(): continue
+                          root=ET.fromstring(z.read(target))
+                          data=[]
+                          for row in root.findall(".//a:sheetData/a:row",NS):
+                              vals={}; mx=-1
+                              for c in row.findall("a:c",NS):
+                                  i=col(c.attrib.get("r","A1")); mx=max(mx,i)
+                                  typ=c.attrib.get("t"); v=c.find("a:v",NS); ins=c.find("a:is",NS); value=""
+                                  if typ=="s" and v is not None and v.text is not None:
+                                      value=shared[int(v.text)]
+                                  elif typ=="inlineStr" and ins is not None:
+                                      value="".join((t.text or "") for t in ins.findall(".//a:t",NS))
+                                  elif typ=="b" and v is not None:
+                                      value=(v.text=="1")
+                                  elif v is not None and v.text is not None:
+                                      try:
+                                          num=float(v.text); value=int(num) if num.is_integer() else num
+                                      except: value=v.text
+                                  vals[i]=value
+                              data.append([vals.get(i,"") for i in range(mx+1)] if mx>=0 else [])
+                          out[name.strip()]=data
+                      return out
+
+          catalog=rows("""
+            SELECT id,institutionId,title,mimeType,sourceModifiedAt,metadataJson,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='aurakasih6987@gmail.com'
+              AND json_extract(metadataJson,'$.sourceRole')='BASELINE'
+            ORDER BY title
+          """)
+          targets=[
+              ("A2AT","A2AT_202509031507"),
+              ("A2DE","A2DE_202509031507"),
+              ("BEBAN_BUNGA","Otomatisasi Pengakuan Beban Bunga"),
+              ("KPR","Kredit KPR ok"),
+              ("LR2024","LABA RUGI 31 12 2024 AUDITED"),
+              ("LR2025","LABA RUGI 31 12 2025 AUDITED"),
+          ]
+          docs={}
+          for code,token in targets:
+              matches=[r for r in catalog if token.lower() in str(r["title"]).lower()]
+              if len(matches)!=1: raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              meta=matches[0]
+              chunks=rows(f"SELECT chunkIndex,dataBase64 FROM SourceBinaryChunk WHERE documentId={q(meta['id'])} ORDER BY chunkIndex")
+              raw=b"".join(base64.b64decode(r["dataBase64"]) for r in chunks)
+              if not raw: raise RuntimeError("SOURCE_BINARY_MISSING_"+code)
+              md=json.loads(meta.get("metadataJson") or "{}")
+              docs[code]={**meta,"sheets":xlsx_sheets(raw),"sourceRole":md.get("sourceRole","BASELINE"),
+                          "precedencePriority":int(md.get("precedencePriority",10))}
+              print(f"{code} source ready rawSize={meta.get('rawSizeBytes',0)} sheets={len(docs[code]['sheets'])}")
+
+          records=[]
+          def add(doc,rt,key,title,period,payload):
+              records.append({
+                  "id":sid(doc["id"],rt,key),"institutionId":doc["institutionId"],"sourceDocumentId":doc["id"],
+                  "recordType":rt,"recordKey":key,"recordTitle":title,"period":period,
+                  "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":")),
+                  "sourceRole":doc["sourceRole"],"precedencePriority":doc["precedencePriority"],
+                  "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          # A2AT account-type master
+          doc=docs["A2AT"]; sh=next(iter(doc["sheets"].values()))
+          headers=[str(v).strip() for v in sh[0]]
+          c=0
+          for row in sh[1:]:
+              row=row+[""]*max(0,len(headers)-len(row))
+              code=str(row[1]).strip() if len(row)>1 else ""
+              name=str(row[2]).strip() if len(row)>2 else ""
+              if not code or not name: continue
+              fields={headers[i]:clean(row[i]) for i in range(len(headers))}
+              add(doc,"ACCOUNT_TYPE_MASTER","A2AT:"+code,name,None,{
+                  "accountTypeCode":code,"accountTypeName":name,"statusRecord":clean(row[0]),
+                  "fields":fields,"baselineOnly":True,"referenceMasterOnly":True,
+                  "operationalMasterUpdated":False
+              })
+              c+=1
+          if c!=300: raise RuntimeError("A2AT_COUNT_"+str(c))
+          print("A2AT normalized records="+str(c))
+
+          # A2DE deposit-type master
+          doc=docs["A2DE"]; sh=next(iter(doc["sheets"].values()))
+          headers=[str(v).strip() for v in sh[0]]
+          c=0
+          for row in sh[1:]:
+              row=row+[""]*max(0,len(headers)-len(row))
+              code=str(row[1]).strip() if len(row)>1 else ""
+              name=str(row[2]).strip() if len(row)>2 else ""
+              if not code or not name: continue
+              fields={headers[i]:clean(row[i]) for i in range(len(headers))}
+              add(doc,"DEPOSIT_TYPE_MASTER","A2DE:"+code,name,None,{
+                  "depositCode":code,"depositName":name,"statusRecord":clean(row[0]),
+                  "fields":fields,"baselineOnly":True,"referenceMasterOnly":True,
+                  "operationalMasterUpdated":False
+              })
+              c+=1
+          if c!=54: raise RuntimeError("A2DE_COUNT_"+str(c))
+          print("A2DE normalized records="+str(c))
+
+          # Beban bunga walkthrough and Test of One
+          doc=docs["BEBAN_BUNGA"]; sh=doc["sheets"].get("Walkthrough IT",[])
+          c=0
+          for idx,row in enumerate(sh,1):
+              row=row+[""]*10
+              if 11<=idx<=16 and clean(row[4]) not in (None,"↓"):
+                  no=int(row[1]) if isinstance(row[1],(int,float)) else c+1
+                  add(doc,"WALKTHROUGH_CONTROL_CANDIDATE",f"WT:INTEREST_EXPENSE:{no:02d}",str(row[4]).strip(),"2025-12-31",{
+                      "sequence":no,"documentName":clean(row[2]),"pic":clean(row[3]),
+                      "controlActivity":clean(row[4]),"controlType":clean(row[5]),"nature":clean(row[7]),
+                      "frequency":clean(row[8]),"system":clean(row[9]),"sourceSheet":"Walkthrough IT",
+                      "baselineOnly":True,"reviewRequired":True,"operationalMasterCreated":False
+                  }); c+=1
+          if c!=6: raise RuntimeError("BEBAN_CONTROL_COUNT_"+str(c))
+          t=doc["sheets"].get("Test of One",[]); tc=0
+          for idx,row in enumerate(t,1):
+              row=row+[""]*3
+              if 11<=idx<=16 and isinstance(row[0],(int,float)) and clean(row[1]):
+                  no=int(row[0])
+                  add(doc,"WALKTHROUGH_TEST_OF_ONE_CANDIDATE",f"WT:INTEREST_EXPENSE:TEST:{no:02d}",str(row[1]).strip(),"2025-12-31",{
+                      "sequence":no,"controlActivity":clean(row[1]),"sourceSheet":"Test of One",
+                      "baselineOnly":True,"reviewRequired":True,"operationalTestCreated":False
+                  }); tc+=1
+          if tc!=6: raise RuntimeError("BEBAN_TEST_COUNT_"+str(tc))
+          print(f"BEBAN_BUNGA normalized controls={c} tests={tc}")
+
+          # KPR walkthrough and Test of One
+          doc=docs["KPR"]; sh=doc["sheets"].get("Walkthrough Pinj KPR",[])
+          kc=0; parent=None; subocc={}
+          for idx,row in enumerate(sh,1):
+              row=row+[""]*10
+              if not (11<=idx<=33) or not clean(row[3]): continue
+              if isinstance(row[0],(int,float)): parent=int(row[0]); subocc[parent]=0
+              if parent is None: continue
+              subocc[parent]=subocc.get(parent,0)+1
+              add(doc,"KPR_WALKTHROUGH_CONTROL_CANDIDATE",f"KPR:CONTROL:{parent:02d}:{subocc[parent]:02d}",str(row[3]).strip(),"2024-12-31",{
+                  "parentSequence":parent,"subSequence":subocc[parent],"documentName":clean(row[1]),"pic":clean(row[2]),
+                  "controlActivity":clean(row[3]),"controlType":clean(row[4]),"nature":clean(row[7]),
+                  "frequency":clean(row[8]),"system":clean(row[9]),"sourceSheet":"Walkthrough Pinj KPR",
+                  "baselineOnly":True,"reviewRequired":True,"operationalMasterCreated":False
+              }); kc+=1
+          if kc!=23: raise RuntimeError("KPR_CONTROL_COUNT_"+str(kc))
+          t=doc["sheets"].get("Test of One",[]); section=None; kt=0
+          for idx,row in enumerate(t,1):
+              row=row+[""]*3
+              if isinstance(row[0],str) and row[0].strip() in {"I","II","III","IV","V","VI"}:
+                  section=row[0].strip()
+              if 7<=idx<=25 and isinstance(row[0],(int,float)) and clean(row[1]) and section:
+                  no=int(row[0])
+                  add(doc,"KPR_TEST_OF_ONE_CANDIDATE",f"KPR:TEST:{section}:{no:02d}",str(row[1]).strip(),"2024-12-31",{
+                      "section":section,"sequence":no,"controlActivity":clean(row[1]),"sourceSheet":"Test of One",
+                      "baselineOnly":True,"reviewRequired":True,"operationalTestCreated":False
+                  }); kt+=1
+          if kt!=15: raise RuntimeError("KPR_TEST_COUNT_"+str(kt))
+          print(f"KPR normalized controls={kc} tests={kt}")
+
+          # Audited income statement lines 2024 / 2025
+          code_re=re.compile(r"^\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}$")
+          for code,year,sheet_name in [("LR2024","2024","LABA RUGI"),("LR2025","2025","per cabang konsol")]:
+              doc=docs[code]; sh=doc["sheets"].get(sheet_name,[])
+              if not sh: raise RuntimeError(code+"_SHEET_MISSING")
+              fc=0
+              for row_index,row in enumerate(sh,1):
+                  found=None
+                  for i,v in enumerate(row[:4]):
+                      if isinstance(v,str) and code_re.fullmatch(v.strip()):
+                          found=(i,v.strip())
+                          break
+                  if not found: continue
+                  pos_i,pos=found
+                  name=str(row[pos_i+1]).strip() if pos_i+1<len(row) else ""
+                  if not name: continue
+                  values=[clean(v) for v in row[pos_i+2:]]
+                  add(doc,"FINANCIAL_STATEMENT_LINE",f"IS:{year}:{pos}",name,f"{year}-12-31",{
+                      "statement":"Income Statement","year":int(year),"accountCode":pos,"accountName":name,
+                      "values":values,"sourceSheet":sheet_name,"auditedSource":True,
+                      "baselineOnly":True
+                  }); fc+=1
+              if fc!=314: raise RuntimeError(code+"_COUNT_"+str(fc))
+              print(f"{code} normalized records={fc}")
+
+          institution_id=next(iter(docs.values()))["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()): raise RuntimeError("INSTITUTION_MISMATCH")
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_precedence ON SourceStructuredRecord(institutionId,recordType,recordKey,precedencePriority);
+          CREATE INDEX IF NOT EXISTS idx_source_structured_batch ON SourceStructuredRecord(institutionId,normalizationBatch);
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch ON SourceNormalizationRun(institutionId,batchCode);
+          DROP VIEW IF EXISTS SourceStructuredEffective;
+          CREATE VIEW SourceStructuredEffective AS
+          SELECT * FROM (
+            SELECT r.*,ROW_NUMBER() OVER (
+              PARTITION BY institutionId,recordType,recordKey
+              ORDER BY precedencePriority DESC,COALESCE(sourceModifiedAt,updatedAt) DESC,updatedAt DESC
+            ) precedenceRank
+            FROM SourceStructuredRecord r WHERE status='Active'
+          ) WHERE precedenceRank=1;
+          """
+          Path("/tmp/final_ddl.sql").write_text(ddl)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/final_ddl.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          # Supersede prior active normalization rows from only these six sources.
+          sup="\n".join(
+              f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE sourceDocumentId={q(d['id'])} AND status='Active';"
+              for d in docs.values()
+          )
+          Path("/tmp/final_sup.sql").write_text(sup)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/final_sup.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          def insert_sql(r):
+              return f"""
+              INSERT INTO SourceStructuredRecord
+              (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+              VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},{q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+              {q(r['sourceRole'])},{int(r['precedencePriority'])},{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+              ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+              recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,
+              sourceRole=excluded.sourceRole,precedencePriority=excluded.precedencePriority,sourceModifiedAt=excluded.sourceModifiedAt,
+              status='Active',normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """
+
+          for start in range(0,len(records),200):
+              p=f"/tmp/final_records_{start//200:03d}.sql"
+              Path(p).write_text("\n".join(insert_sql(r) for r in records[start:start+200]))
+              subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file",p],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          counts={}
+          for r in records: counts[r["recordType"]]=counts.get(r["recordType"],0)+1
+          summary={"files":[c for c,_ in targets],"recordCounts":counts}
+          rid=sid(institution_id,BATCH)
+          runsql=f"""
+          INSERT INTO SourceNormalizationRun
+          (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status,summaryJson,startedAt,completedAt)
+          VALUES({q(rid)},{q(institution_id)},{q(BATCH)},'BASELINE',10,6,6,{len(records)},'Completed',{q(json.dumps(summary,separators=(',',':')))}, {q(now)},{q(now)})
+          ON CONFLICT(institutionId,batchCode) DO UPDATE SET sourceRole='BASELINE',precedencePriority=10,totalDocuments=6,
+          processedDocuments=6,totalRecords={len(records)},status='Completed',
+          summaryJson={q(json.dumps(summary,separators=(',',':')))},completedAt={q(now)};
+          """
+          Path("/tmp/final_run.sql").write_text(runsql)
+          subprocess.check_call(["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/final_run.sql"],env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+          verify=rows(f"SELECT recordType,COUNT(*) records FROM SourceStructuredRecord WHERE normalizationBatch={q(BATCH)} AND status='Active' GROUP BY recordType ORDER BY recordType")
+          total=sum(int(r["records"]) for r in verify)
+          if total!=1032: raise RuntimeError("FINAL_BATCH_COUNT_"+str(total))
+          run=rows(f"SELECT batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status FROM SourceNormalizationRun WHERE institutionId={q(institution_id)} AND batchCode={q(BATCH)} LIMIT 1")
+          if not run or run[0]["status"]!="Completed" or int(run[0]["processedDocuments"])!=6: raise RuntimeError("FINAL_RUN_NOT_VERIFIED")
+          print("Aura final six verification:")
+          print(json.dumps({"run":run[0],"recordCounts":verify,"activeTotal":total},indent=2))
+          PY
+          python /tmp/normalize_final_six.py
+          rm -f /tmp/normalize_final_six.py /tmp/final_*.sql
