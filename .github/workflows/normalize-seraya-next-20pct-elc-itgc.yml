@@ -73,7 +73,11 @@ jobs:
 
           def source_rows(text):
               # Imported spreadsheet text can be CSV or TSV depending on source/export path.
-              delimiter="\t" if text.count("\t") > text.count(",") else ","
+              sample=text[:20000]
+              try:
+                  delimiter=csv.Sniffer().sniff(sample,delimiters=",\t").delimiter
+              except Exception:
+                  delimiter="\t" if "\t" in sample else ","
               return list(csv.reader(io.StringIO(text),delimiter=delimiter))
 
           catalog=rows(f"""
@@ -96,7 +100,7 @@ jobs:
                   raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
               d=matches[0]
               chunks=rows(f"SELECT chunkIndex,textContent FROM SourceTextChunk WHERE documentId={q(d['id'])} ORDER BY chunkIndex")
-              text="".join(clean(x.get("textContent")) for x in chunks)
+              text="".join(str(x.get("textContent") or "") for x in chunks)
               if not text.strip():
                   raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
               docs[code]={**d,"text":text}
