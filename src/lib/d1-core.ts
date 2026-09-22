@@ -17,7 +17,7 @@ type D1DatabaseLike = {
 
 const PROCESS_CATEGORIES = [
   { id: 'ref:CAT-GOV', code: 'CAT-GOV', name: 'Governance & Strategy', orderIndex: 1 },
-  { id: 'ref:CAT-CORE', code: 'CAT-CORE', name: 'Core Business Operations', orderIndex: 2 },
+  { id: 'ref:CAT-CORE', code: 'CAT-CORE', name: 'Core Business Operation', orderIndex: 2 },
   { id: 'ref:CAT-FIN', code: 'CAT-FIN', name: 'Finance & Treasury', orderIndex: 3 },
   { id: 'ref:CAT-IT', code: 'CAT-IT', name: 'Information Technology & Cyber', orderIndex: 4 },
   { id: 'ref:CAT-PROC', code: 'CAT-PROC', name: 'Procurement & Vendor Management', orderIndex: 5 },
@@ -148,6 +148,37 @@ export async function ensureCoreDomainSchema() {
       updatedAt TEXT NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_institution_legal_name ON Institution(legalName);
+
+    CREATE TABLE IF NOT EXISTS LegalEntity (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      country TEXT NOT NULL DEFAULT 'Indonesia',
+      taxId TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_entity_institution_code
+      ON LegalEntity(institutionId, code);
+
+    CREATE TABLE IF NOT EXISTS OrganizationUnit (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      legalEntityId TEXT,
+      parentId TEXT,
+      type TEXT NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      headName TEXT,
+      headEmail TEXT,
+      status TEXT NOT NULL DEFAULT 'Active',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_org_unit_institution_code
+      ON OrganizationUnit(institutionId, code);
+    CREATE INDEX IF NOT EXISTS idx_org_unit_parent ON OrganizationUnit(parentId);
 
     CREATE TABLE IF NOT EXISTS ProcessCategory (
       id TEXT PRIMARY KEY NOT NULL,
@@ -476,6 +507,14 @@ async function hydrateProcess(
     );
   }
 
+  const orgUnit = row.orgUnitId
+    ? await first<Record<string, unknown>>(
+        db,
+        'SELECT * FROM OrganizationUnit WHERE id = ? LIMIT 1',
+        [row.orgUnitId]
+      )
+    : null;
+
   return {
     ...processRow(row),
     id: String(row.id),
@@ -488,7 +527,7 @@ async function hydrateProcess(
     classification: String(row.classification || ''),
     status: String(row.status || ''),
     category,
-    orgUnit: null,
+    orgUnit,
     objectives,
     sipoc,
     activities,
@@ -510,9 +549,10 @@ export async function listProcessLookups() {
 
 export async function listBusinessProcesses() {
   const db = await ensureCoreDomainSchema();
-  const [categories, rows, objectives, sipocs, activities, risks, controls] = await Promise.all([
+  const [categories, rows, orgUnits, objectives, sipocs, activities, risks, controls] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY processId ASC'),
+    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY level ASC, processId ASC'),
+    all<Record<string, unknown>>(db, "SELECT * FROM OrganizationUnit WHERE status = 'Active' ORDER BY code ASC"),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessObjective ORDER BY createdAt ASC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM SIPOC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity ORDER BY orderIndex ASC, createdAt ASC'),
@@ -521,6 +561,7 @@ export async function listBusinessProcesses() {
   ]);
 
   const categoryMap = new Map(categories.map(category => [String(category.id), category]));
+  const orgUnitMap = new Map(orgUnits.map(unit => [String(unit.id), unit]));
   const sipocMap = new Map(sipocs.map(item => [String(item.processId), item]));
   const groupByProcess = (items: Array<Record<string, unknown>>) => {
     const grouped = new Map<string, Array<Record<string, unknown>>>();
@@ -553,7 +594,7 @@ export async function listBusinessProcesses() {
       classification: String(row.classification || ''),
       status: String(row.status || ''),
       category: categoryMap.get(String(row.categoryId)) || null,
-      orgUnit: null,
+      orgUnit: row.orgUnitId ? orgUnitMap.get(String(row.orgUnitId)) || null : null,
       objectives: objectivesByProcess.get(id) || [],
       sipoc: sipocMap.get(id) || null,
       activities: activitiesByProcess.get(id) || [],
@@ -617,6 +658,8 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
 
   const id = crypto.randomUUID();
   const now = nowIso();
+  const ownerName =
+    typeof input.ownerName === 'string' ? input.ownerName.trim() : '';
 
   await run(
     db,
@@ -633,7 +676,7 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
       enterpriseId,
       input.name,
       nullable(input.description),
-      input.ownerName,
+      ownerName,
       input.criticality,
       input.classification,
       input.isIcofrRelevant ? 1 : 0,
@@ -654,7 +697,7 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
     level: 2,
     parentProcessId: null,
     description: nullable(input.description),
-    ownerName: input.ownerName,
+    ownerName,
     ownerEmail: null,
     managerName: null,
     criticality: input.criticality,
