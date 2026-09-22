@@ -44,7 +44,7 @@ export default function ProcessesPage() {
     name: '',
     categoryId: '',
     ownerName: '',
-    criticality: 'Critical',
+    criticality: 'Not Assessed',
     classification: 'Core',
     isIcofrRelevant: true,
     description: ''
@@ -100,7 +100,7 @@ export default function ProcessesPage() {
       name: '',
       categoryId: categories[0]?.id || '',
       ownerName: '',
-      criticality: 'Critical',
+      criticality: 'Not Assessed',
       classification: 'Core',
       isIcofrRelevant: true,
       description: ''
@@ -239,6 +239,10 @@ export default function ProcessesPage() {
           <p className="text-xs text-slate-500 mt-1">
             Levels 0–5 Hierarchical Process Model. Single source of truth connecting activities, risks, and controls.
           </p>
+
+          <div className="mt-2 text-[11px] text-slate-400">
+            Source-fed processes remain <strong>Draft / Not Assessed</strong> until Process Owner validation is completed.
+          </div>
         </div>
 
         <div className="flex items-center space-x-3">
@@ -326,11 +330,21 @@ export default function ProcessesPage() {
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                           proc.criticality === 'Critical'
                             ? 'bg-red-50 text-red-700 border-red-200'
+                            : proc.criticality === 'Not Assessed'
+                            ? 'bg-slate-50 text-slate-600 border-slate-200'
                             : 'bg-amber-50 text-amber-700 border-amber-200'
                         }`}
                       >
                         {proc.criticality}
                       </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
+                        L{proc.level}
+                      </span>
+                      {String(proc.tags || '').includes('"sourceBacked":true') && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
+                          Source-backed
+                        </span>
+                      )}
                       {proc.isIcofrRelevant && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
                           ICOFR
@@ -352,7 +366,9 @@ export default function ProcessesPage() {
                 </p>
 
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                  <span className="min-w-0 truncate">Owner: <strong>{proc.ownerName}</strong></span>
+                  <span className="min-w-0 truncate">
+                    Owner: <strong>{proc.ownerName || proc.orgUnit?.name || 'Not assigned'}</strong>
+                  </span>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
@@ -630,11 +646,10 @@ export default function ProcessesPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Process Owner *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Process Owner</label>
                   <input
                     type="text"
-                    required
-                    placeholder="Enter process owner name"
+                    placeholder="Leave blank if source/owner is not yet confirmed"
                     value={formData.ownerName}
                     onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
@@ -648,6 +663,7 @@ export default function ProcessesPage() {
                     onChange={e => setFormData({ ...formData, criticality: e.target.value })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
+                    <option value="Not Assessed">Not Assessed</option>
                     <option value="Critical">Critical</option>
                     <option value="High">High</option>
                     <option value="Medium">Medium</option>
