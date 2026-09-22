@@ -36,9 +36,9 @@ export async function POST(request: Request) {
     const criticality = typeof body.criticality === 'string' ? body.criticality.trim() : '';
     const classification = typeof body.classification === 'string' ? body.classification.trim() : '';
 
-    if (!name || !categoryId || !ownerName || !criticality || !classification) {
+    if (!name || !categoryId || !criticality || !classification) {
       return NextResponse.json(
-        { error: 'name, categoryId, ownerName, criticality, and classification are required.' },
+        { error: 'name, categoryId, criticality, and classification are required.' },
         { status: 400 }
       );
     }
@@ -80,9 +80,9 @@ export async function PATCH(request: Request) {
     const criticality = typeof body.criticality === 'string' ? body.criticality.trim() : '';
     const classification = typeof body.classification === 'string' ? body.classification.trim() : '';
 
-    if (!id || !name || !categoryId || !ownerName || !criticality || !classification) {
+    if (!id || !name || !categoryId || !criticality || !classification) {
       return NextResponse.json(
-        { error: 'id, name, categoryId, ownerName, criticality, and classification are required.' },
+        { error: 'id, name, categoryId, criticality, and classification are required.' },
         { status: 400 }
       );
     }
