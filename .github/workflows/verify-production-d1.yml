@@ -147,7 +147,14 @@ jobs:
               .code == "DIV-UMUM" or
               .code == "FUNC-SKAI" or
               .code == "FUNC-ICOFR"
-            )] | length) == 17
+            )] | length) == 17 and
+            ([.organizationUnits[] | select(.code == "DIR-UMUM" and .parentId != null)] | length) == 1 and
+            (.hierarchyEvidence | type) == "array" and
+            ([.hierarchyEvidence[] | select(.hierarchyStatus == "PENDING_PARENT")] | length) == 0 and
+            (.branchExpansions | type) == "array" and
+            (.branchExpansions | length) == 23 and
+            ([.branchExpansions[] | select(.structureType == "CONVENTIONAL_2026" and .nodeCount == 13)] | length) == 19 and
+            ([.branchExpansions[] | select(.structureType == "SHARIA_2026" and .nodeCount == 4)] | length) == 4
           '
 
           check_json "processes" "/api/processes" '

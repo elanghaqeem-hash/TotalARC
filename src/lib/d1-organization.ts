@@ -692,8 +692,6 @@ export async function getOrganizationStructure() {
     };
   }
 
-  await ensureBankKalbarOrganizationCompletion(db, institution);
-
   const [legalEntities, organizationUnits, hierarchyEvidence, organizationTemplates, branchExpansions] = await Promise.all([
     all<Record<string, unknown>>(
       db,
