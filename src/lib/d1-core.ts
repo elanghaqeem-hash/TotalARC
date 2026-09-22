@@ -103,6 +103,7 @@ function nullable(value: unknown) {
 }
 
 function riskRating(score: number) {
+  if (!Number.isFinite(score) || score <= 0) return 'Not Assessed';
   if (score >= 15) return 'Critical';
   if (score >= 10) return 'High';
   if (score >= 5) return 'Medium';
@@ -299,6 +300,25 @@ export async function ensureCoreDomainSchema() {
     CREATE INDEX IF NOT EXISTS idx_risk_process ON RiskMaster(processId);
     CREATE INDEX IF NOT EXISTS idx_risk_enterprise_id ON RiskMaster(riskId);
     CREATE INDEX IF NOT EXISTS idx_risk_inherent_rating ON RiskMaster(inherentRating);
+
+    CREATE TABLE IF NOT EXISTS OperationalRiskMetadata (
+      riskId TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceStructuredRecordId TEXT NOT NULL UNIQUE,
+      sourceRecordType TEXT NOT NULL,
+      sourceRecordKey TEXT NOT NULL,
+      sourceDocumentId TEXT NOT NULL,
+      sourceRiskRating TEXT,
+      sourceStatus TEXT,
+      sourceCause TEXT,
+      sourceImpactLabel TEXT,
+      reviewRequired INTEGER NOT NULL DEFAULT 1,
+      feedBatch TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_operational_risk_metadata_institution
+      ON OperationalRiskMetadata(institutionId);
 
     CREATE TABLE IF NOT EXISTS ControlMaster (
       id TEXT PRIMARY KEY NOT NULL,
@@ -978,11 +998,11 @@ export async function listRiskLookups() {
 
 export async function listRisks() {
   const db = await ensureCoreDomainSchema();
-  const [rows, processes, activities, mappings] = await Promise.all([
+  const [rows, processes, activities, mappings, sourceMetadata] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM RiskMaster ORDER BY riskId ASC'),
     all<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess'
+      'SELECT id, processId, name, level, parentProcessId, categoryId, criticality, classification FROM BusinessProcess'
     ),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity'),
     all<Record<string, unknown>>(
@@ -995,10 +1015,12 @@ export async function listRisks() {
          FROM ControlRiskMapping m
          JOIN ControlMaster c ON c.id = m.controlId
         ORDER BY c.controlId ASC`
-    )
+    ),
+    all<Record<string, unknown>>(db, 'SELECT * FROM OperationalRiskMetadata')
   ]);
 
   const processById = new Map(processes.map(item => [String(item.id), item]));
+  const sourceMetadataByRiskId = new Map(sourceMetadata.map(item => [String(item.riskId), item]));
   const activityById = new Map(activities.map(item => [String(item.id), item]));
   const mappingsByRisk = new Map<string, Array<Record<string, unknown>>>();
   for (const mapping of mappings) {
@@ -1013,6 +1035,7 @@ export async function listRisks() {
     return {
       ...riskRow(row),
       process: processById.get(String(row.processId)) || null,
+      sourceMetadata: sourceMetadataByRiskId.get(String(row.id)) || null,
       activity: row.activityId ? activityById.get(String(row.activityId)) || null : null,
       controls: riskMappings.map(mapping => ({
         id: mapping.id,
@@ -1061,8 +1084,9 @@ export async function createRisk(input: Record<string, unknown>) {
 
   const likelihood = Number(input.inherentLikelihood);
   const impactValue = Number(input.inherentImpact);
-  const score = likelihood * impactValue;
-  const rating = riskRating(score);
+  const assessed = likelihood >= 1 && likelihood <= 5 && impactValue >= 1 && impactValue <= 5;
+  const score = assessed ? likelihood * impactValue : 0;
+  const rating = assessed ? riskRating(score) : 'Not Assessed';
   const id = crypto.randomUUID();
   const now = nowIso();
   const description =
