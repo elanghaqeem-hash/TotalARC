@@ -313,7 +313,10 @@ async function findPrimaryInstitution(db: D1DatabaseLike) {
 }
 
 export async function provisionBootstrapAdministrator(
-  options: { reconcilePendingAdmin?: boolean } = { reconcilePendingAdmin: true }
+  options: {
+    reconcilePendingAdmin?: boolean;
+    resetExistingConfiguredAdmin?: boolean;
+  } = { reconcilePendingAdmin: true, resetExistingConfiguredAdmin: false }
 ) {
   const db = await ensureAuthSchema();
   const env = await runtimeEnv();
@@ -335,6 +338,68 @@ export async function provisionBootstrapAdministrator(
   );
   const password = await createPasswordHash(bootstrapPassword);
   const now = new Date().toISOString();
+
+  if (options.resetExistingConfiguredAdmin) {
+    const configuredAdmin = await first<AuthUserRow>(
+      db,
+      `SELECT * FROM AuthUser
+       WHERE role = 'Admin' AND emailNormalized = ?
+       ORDER BY createdAt ASC
+       LIMIT 1`,
+      [bootstrapEmail]
+    );
+
+    if (configuredAdmin) {
+      await run(
+        db,
+        `UPDATE AuthUser SET
+          institutionId = COALESCE(institutionId, ?),
+          passwordHash = ?,
+          passwordSalt = ?,
+          passwordIterations = ?,
+          active = 1,
+          mustChangePassword = 1,
+          credentialResetAt = ?,
+          temporaryCredentialExpiresAt = NULL,
+          failedLoginCount = 0,
+          lockedUntil = NULL,
+          updatedAt = ?
+        WHERE id = ?`,
+        [
+          institution?.id || null,
+          password.hash,
+          password.salt,
+          password.iterations,
+          now,
+          now,
+          configuredAdmin.id
+        ]
+      );
+
+      await savePasswordHistory(
+        configuredAdmin.id,
+        password.hash,
+        password.salt,
+        password.iterations
+      );
+      await revokeUserSessions(
+        configuredAdmin.id,
+        'Bootstrap administrator break-glass credential recovery',
+        configuredAdmin.id
+      );
+      await writeAuthEvent(db, {
+        userId: configuredAdmin.id,
+        institutionId: configuredAdmin.institutionId || institution?.id || null,
+        eventType: 'BOOTSTRAP_ADMIN_RECOVERED',
+        email: bootstrapEmail,
+        role: 'Admin',
+        detail:
+          'Bootstrap administrator credential recovered from deployment secrets; sessions revoked and password change required.'
+      });
+
+      return { status: 'recovered' as const, userId: configuredAdmin.id };
+    }
+  }
 
   if (Number(count?.count || 0) === 0) {
     const id = crypto.randomUUID();
