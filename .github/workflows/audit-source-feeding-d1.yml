@@ -1,0 +1,280 @@
+name: Audit Total ARC source feeding D1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-source-feeding-d1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-audit-source-feeding-d1
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Read-only audit of source feeding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/audit_source_feeding.py <<'PY'
+          import json, os, re, subprocess, sys, time
+
+          def wr(args, retries=4):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(
+                      ["npx","wrangler",*args],
+                      text=True,env=os.environ,capture_output=True
+                  )
+                  if p.returncode==0:
+                      return p.stdout
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("WRANGLER_FAILURE",json.dumps({
+                  "returncode":last[0],
+                  "stdout":last[1][-4000:],
+                  "stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("WRANGLER_COMMAND_FAILED")
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def has_table(name):
+              x=rows("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='"+name.replace("'","''")+"'")
+              return bool(x and int(x[0].get("n") or 0))
+
+          tables=["SourceDocument","SourceTextChunk","SourceStructuredRecord","SourceNormalizationRun",
+                  "SourceDataIssue","SourceDataQuality","SourceMappingQueue","SourceOperationalLink","SourceDataConflict"]
+          table_status={t:has_table(t) for t in tables}
+          print("=== TABLE STATUS ===")
+          print(json.dumps(table_status,indent=2))
+
+          required=["SourceDocument","SourceTextChunk","SourceStructuredRecord","SourceNormalizationRun"]
+          missing=[t for t in required if not table_status[t]]
+          if missing:
+              raise RuntimeError("MISSING_SOURCE_TABLES_"+",".join(missing))
+
+          print("=== SOURCE DOCUMENT COVERAGE BY ACCOUNT/ROLE ===")
+          source_summary=rows("""
+            SELECT
+              COALESCE(json_extract(metadataJson,'$.sourceAccount'),'UNSPECIFIED') sourceAccount,
+              COALESCE(json_extract(metadataJson,'$.sourceRole'),'UNSPECIFIED') sourceRole,
+              COUNT(*) documents,
+              SUM(CASE WHEN textLength>0 THEN 1 ELSE 0 END) textIndexed,
+              SUM(CASE WHEN rawSizeBytes>0 THEN 1 ELSE 0 END) rawStored
+            FROM SourceDocument
+            WHERE status='Active'
+            GROUP BY sourceAccount,sourceRole
+            ORDER BY sourceAccount,sourceRole
+          """)
+          print(json.dumps(source_summary,indent=2,ensure_ascii=False))
+
+          print("=== PER-SOURCE STRUCTURED COVERAGE ===")
+          coverage=rows("""
+            SELECT
+              d.id,
+              d.title,
+              COALESCE(json_extract(d.metadataJson,'$.sourceAccount'),'UNSPECIFIED') sourceAccount,
+              COALESCE(json_extract(d.metadataJson,'$.sourceRole'),'UNSPECIFIED') sourceRole,
+              d.textLength,
+              d.rawSizeBytes,
+              SUM(CASE WHEN sr.status='Active' THEN 1 ELSE 0 END) activeRecords,
+              SUM(CASE WHEN sr.status='Active' AND sr.recordType<>'SOURCE_UNIDENTIFIED_DOCUMENT' THEN 1 ELSE 0 END) specificRecords,
+              SUM(CASE WHEN sr.status='Active' AND sr.recordType='SOURCE_UNIDENTIFIED_DOCUMENT' THEN 1 ELSE 0 END) genericRecords
+            FROM SourceDocument d
+            LEFT JOIN SourceStructuredRecord sr ON sr.sourceDocumentId=d.id
+            WHERE d.status='Active'
+              AND COALESCE(json_extract(d.metadataJson,'$.sourceAccount'),'') IN ('aurakasih6987@gmail.com','serayamg@gmail.com')
+            GROUP BY d.id,d.title,sourceAccount,sourceRole,d.textLength,d.rawSizeBytes
+            ORDER BY sourceAccount,sourceRole,d.title
+          """)
+          print(json.dumps(coverage,indent=2,ensure_ascii=False))
+
+          zero_specific=[x for x in coverage if int(x.get("specificRecords") or 0)==0]
+          no_text=[x for x in coverage if int(x.get("textLength") or 0)<=0]
+          no_raw=[x for x in coverage if int(x.get("rawSizeBytes") or 0)<=0]
+
+          print("=== COVERAGE EXCEPTIONS ===")
+          print(json.dumps({
+              "zeroSpecificCount":len(zero_specific),
+              "zeroSpecific":[{"id":x["id"],"title":x["title"],"sourceAccount":x["sourceAccount"],"sourceRole":x["sourceRole"],"genericRecords":x["genericRecords"]} for x in zero_specific],
+              "textNotIndexedCount":len(no_text),
+              "rawNotStoredCount":len(no_raw)
+          },indent=2,ensure_ascii=False))
+
+          print("=== ACTIVE RECORDS BY BATCH ===")
+          batches=rows("""
+            SELECT normalizationBatch,sourceRole,precedencePriority,COUNT(*) records,
+                   COUNT(DISTINCT sourceDocumentId) documents
+            FROM SourceStructuredRecord
+            WHERE status='Active'
+            GROUP BY normalizationBatch,sourceRole,precedencePriority
+            ORDER BY normalizationBatch
+          """)
+          print(json.dumps(batches,indent=2,ensure_ascii=False))
+
+          print("=== TARGET BATCH COUNTS ===")
+          targets=[
+            "SERAYA_UPDATE_NEXT20_RISK_CONTROL_BPM_20260922",
+            "SERAYA_UPDATE_FINAL30_CLOSURE_20260922"
+          ]
+          target_counts={}
+          for batch in targets:
+              x=rows("SELECT recordType,COUNT(*) records FROM SourceStructuredRecord WHERE status='Active' AND normalizationBatch='"+batch+"' GROUP BY recordType ORDER BY recordType")
+              target_counts[batch]=x
+          print(json.dumps(target_counts,indent=2,ensure_ascii=False))
+
+          print("=== NORMALIZATION RUN REGISTER ===")
+          runs=rows("""
+            SELECT batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,status,completedAt
+            FROM SourceNormalizationRun
+            ORDER BY completedAt, batchCode
+          """)
+          print(json.dumps(runs,indent=2,ensure_ascii=False))
+
+          if table_status["SourceDataQuality"]:
+              quality=rows("""
+                SELECT completenessStatus,mappingStatus,COUNT(*) records
+                FROM SourceDataQuality
+                GROUP BY completenessStatus,mappingStatus
+                ORDER BY completenessStatus,mappingStatus
+              """)
+              quality_total=rows("SELECT COUNT(*) records FROM SourceDataQuality")
+          else:
+              quality=[]; quality_total=[{"records":0}]
+          print("=== DATA QUALITY ===")
+          print(json.dumps({"total":quality_total[0]["records"] if quality_total else 0,"groups":quality},indent=2,ensure_ascii=False))
+
+          if table_status["SourceMappingQueue"]:
+              mapping=rows("""
+                SELECT queueStatus,mappingStatus,targetModule,COUNT(*) records
+                FROM SourceMappingQueue
+                GROUP BY queueStatus,mappingStatus,targetModule
+                ORDER BY queueStatus,mappingStatus,targetModule
+              """)
+              mapping_total=rows("SELECT COUNT(*) records FROM SourceMappingQueue")
+          else:
+              mapping=[]; mapping_total=[{"records":0}]
+          print("=== MAPPING QUEUE ===")
+          print(json.dumps({"total":mapping_total[0]["records"] if mapping_total else 0,"groups":mapping},indent=2,ensure_ascii=False))
+
+          if table_status["SourceOperationalLink"]:
+              links=rows("""
+                SELECT linkStatus,targetModule,COUNT(*) records
+                FROM SourceOperationalLink
+                GROUP BY linkStatus,targetModule
+                ORDER BY linkStatus,targetModule
+              """)
+              link_total=rows("SELECT COUNT(*) records FROM SourceOperationalLink")
+          else:
+              links=[]; link_total=[{"records":0}]
+          print("=== OPERATIONAL LINKS ===")
+          print(json.dumps({"total":link_total[0]["records"] if link_total else 0,"groups":links},indent=2,ensure_ascii=False))
+
+          if table_status["SourceDataIssue"]:
+              issue_groups=rows("""
+                SELECT issueStatus,severity,issueType,COUNT(*) records
+                FROM SourceDataIssue
+                GROUP BY issueStatus,severity,issueType
+                ORDER BY issueStatus,severity,issueType
+              """)
+          else:
+              issue_groups=[]
+          print("=== SOURCE ISSUES ===")
+          print(json.dumps(issue_groups,indent=2,ensure_ascii=False))
+
+          if table_status["SourceDataConflict"]:
+              conflicts=rows("""
+                SELECT conflictGroup,conflictStatus,COUNT(*) records
+                FROM SourceDataConflict
+                GROUP BY conflictGroup,conflictStatus
+                ORDER BY conflictGroup,conflictStatus
+              """)
+          else:
+              conflicts=[]
+          print("=== SOURCE CONFLICTS ===")
+          print(json.dumps(conflicts,indent=2,ensure_ascii=False))
+
+          # Inspect indexed Methodology text shape only; do not dump source content.
+          meth=rows("""
+            SELECT d.id,d.title,c.chunkIndex,
+                   instr(upper(c.textContent),'METODE PENGUJIAN') methodPos,
+                   instr(upper(c.textContent),'INQUIRY') inquiryPos,
+                   instr(upper(c.textContent),'KALENDER KEGIATAN ICOFR') calendarPos
+            FROM SourceDocument d
+            JOIN SourceTextChunk c ON c.documentId=d.id
+            WHERE d.status='Active'
+              AND json_extract(d.metadataJson,'$.sourceAccount')='serayamg@gmail.com'
+              AND lower(d.title) LIKE '%dokumen 7_kerangka_metodologi_icofr_2026%'
+              AND (
+                instr(upper(c.textContent),'METODE PENGUJIAN')>0 OR
+                instr(upper(c.textContent),'INQUIRY')>0 OR
+                instr(upper(c.textContent),'KALENDER KEGIATAN ICOFR')>0
+              )
+            ORDER BY c.chunkIndex
+          """)
+          print("=== METHODOLOGY INDEX SHAPE ===")
+          print(json.dumps(meth,indent=2,ensure_ascii=False))
+
+          active_total=int(rows("SELECT COUNT(*) records FROM SourceStructuredRecord WHERE status='Active'")[0]["records"])
+          source_total=len(coverage)
+          covered=sum(1 for x in coverage if int(x.get("activeRecords") or 0)>0)
+          specific=sum(1 for x in coverage if int(x.get("specificRecords") or 0)>0)
+          quality_n=int(quality_total[0]["records"] if quality_total else 0)
+          mapping_n=int(mapping_total[0]["records"] if mapping_total else 0)
+          links_n=int(link_total[0]["records"] if link_total else 0)
+
+          result={
+              "sourceDocumentsAudited":source_total,
+              "displayCoveredSources":covered,
+              "specificDomainCoveredSources":specific,
+              "activeStructuredRecords":active_total,
+              "qualityRecords":quality_n,
+              "mappingQueueRecords":mapping_n,
+              "operationalLinkRecords":links_n,
+              "zeroSpecificSources":len(zero_specific),
+              "next20RiskControlRecords":sum(int(x["records"]) for x in target_counts[targets[0]]),
+              "final30Records":sum(int(x["records"]) for x in target_counts[targets[1]])
+          }
+          print("=== AUDIT RESULT ===")
+          print(json.dumps(result,indent=2,ensure_ascii=False))
+
+          # Read-only audit should fail loudly when the two latest intended batches are absent.
+          if result["next20RiskControlRecords"]!=30:
+              raise RuntimeError("NEXT20_RISK_CONTROL_NOT_FULLY_LOADED")
+          if result["final30Records"]!=193:
+              raise RuntimeError("FINAL30_NOT_FULLY_LOADED")
+          if result["displayCoveredSources"]!=result["sourceDocumentsAudited"]:
+              raise RuntimeError("SOURCE_DISPLAY_COVERAGE_NOT_COMPLETE")
+          PY
+
+          python /tmp/audit_source_feeding.py
+          rm -f /tmp/audit_source_feeding.py
