@@ -8,7 +8,7 @@ on:
       - 'src/lib/d1-data-hub.ts'
       - 'src/app/api/admin/data-hub/route.ts'
   workflow_run:
-    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail', 'Normalize Seraya next 20 percent risk control BPM linkage']
+    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail', 'Normalize Seraya next 20 percent risk control BPM linkage', 'Normalize Seraya final 30 percent closure']
     types: [completed]
   workflow_dispatch:
 
@@ -112,6 +112,23 @@ jobs:
             "WALKTHROUGH_TEMPLATE_REFERENCE": (["templateType","bank","year"],["templateType","bank","year","checklistItems"],"Walkthrough & ToD","/tod"),
             "WALKTHROUGH_CHECKLIST_REFERENCE": (["sequence","activity"],["sequence","stage","activity"],"Walkthrough & ToD","/tod"),
             "ICOFR_RISK_DETAIL_UPDATE_CANDIDATE": (["riskReference","riskStatement"],["riskReference","businessProcess","subprocess","riskType","riskStatement","assertions","riskRating"],"Risk Universe","/risks"),
+            "ICOFR_FRAUD_RISK_UPDATE_CANDIDATE": (["fraudReference","fraudCategory","fraudScheme","bankContextScenario","riskRating","requiredAntiFraudControl"],["fraudReference","fraudCategory","fraudScheme","bankContextScenario","impactedAccounts","incentivePressure","opportunity","rationalization","riskRating","requiredAntiFraudControl","sourceStatus"],"Risk Universe","/risks"),
+            "ICOFR_IT_RISK_UPDATE_CANDIDATE": (["itRiskReference","itgcArea","riskStatement","financialReportingImpact","riskRating","requiredControl"],["itRiskReference","itgcArea","riskStatement","financialReportingImpact","cobitObjectives","riskRating","requiredControl","priorCoverageStatus"],"ITGC","/icofr/itgc"),
+            "ICOFR_SIGNIFICANT_APPLICATION_REFERENCE": (["applicationName","financialReportingRole","impactedAccounts","applicationOwner","requiredItgcAreas"],["applicationName","financialReportingRole","impactedAccounts","applicationOwner","vendor","requiredItgcAreas","notes"],"ITGC","/icofr/itgc"),
+            "ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE": (["elcRiskReference","cosoComponent","cosoPrinciple","riskStatement","financialReportingImpact","riskRating","requiredEntityControl"],["elcRiskReference","cosoComponent","cosoPrinciple","riskStatement","financialReportingImpact","riskRating","requiredEntityControl","sourceDocumentStatus"],"ELC","/icofr/elc"),
+            "ICOFR_COSO_PRINCIPLE_REFERENCE": (["principleNumber","cosoComponent","principleDescription","expectedControl"],["principleNumber","cosoComponent","principleDescription","expectedControl","bankKalbarSourceDocuments","sourceStatus"],"ELC","/icofr/elc"),
+            "ICOFR_COBIT_ITGC_REFERENCE": (["cobitObjectiveId","cobitObjective"],["cobitObjectiveId","cobitObjective","programDevelopment","programChanges","computerOperations","accessToProgramAndData","areaCount","bankKalbarRelevance"],"ITGC","/icofr/itgc"),
+            "ICOFR_RCM_ALLOWED_VALUE_REFERENCE": (["rcmField","allowedValue","definition"],["rcmField","allowedValue","definition"],"RCM","/rcm"),
+            "ICOFR_TESTING_METHOD_REFERENCE": (["sequence","method","description","assuranceLevel"],["sequence","method","description","assuranceLevel","usageNote"],"Walkthrough & ToD","/tod"),
+            "ICOFR_TOE_SAMPLE_RULE_REFERENCE": (["frequency","populationAssumption","sampleSize"],["frequency","populationAssumption","sampleSize","practiceComparator","additionalRule"],"Walkthrough & ToD","/toe"),
+            "ICOFR_REMEDIATION_SAMPLE_RULE_REFERENCE": (["frequency","minimumPostRemediationPeriod","sampleSize"],["frequency","minimumPostRemediationPeriod","sampleSize"],"Walkthrough & ToD","/toe"),
+            "ICOFR_SAMPLE_SELECTION_METHOD_REFERENCE": (["selectionMethod","description","usageSuitability"],["selectionMethod","description","usageSuitability"],"Walkthrough & ToD","/toe"),
+            "ICOFR_DEFICIENCY_LEVEL_REFERENCE": (["level","abbreviation","definition","reportRecipients"],["level","abbreviation","definition","reportRecipients"],"ICOFR Deficiencies","/icofr/deficiencies"),
+            "ICOFR_DEFICIENCY_DECISION_REFERENCE": (["decisionBox","question","ifYes","ifNo"],["decisionBox","question","ifYes","ifNo"],"ICOFR Deficiencies","/icofr/deficiencies"),
+            "ICOFR_MATERIAL_WEAKNESS_INDICATOR_REFERENCE": (["sequence","indicator"],["sequence","indicator"],"ICOFR Deficiencies","/icofr/deficiencies"),
+            "ICOFR_CALENDAR_MILESTONE_REFERENCE": (["period","activity","icoFrPhase","responsibleParty","deliverable","sourceStatus"],["period","activity","icoFrPhase","responsibleParty","deliverable","sourceStatus"],"ICOFR","/icofr"),
+            "ICOFR_METHODOLOGY_ISSUE_CANDIDATE": (["issueReference","issue","description","impact","recommendedOption","decisionOwner","priority"],["issueReference","issue","description","impact","recommendedOption","decisionOwner","priority"],"ICOFR","/icofr"),
+            "ICOFR_TRAINING_REFERENCE_DOCUMENT": (["documentTitle","trainingTopic","trainingOnly","operationalUseProhibited"],["documentTitle","trainingTopic","trainingOnly","containsWorkedExamples","containsEmptyPracticeTemplate","operationalUseProhibited","fullTextAvailableInSourceLibrary"],"CSA","/csa"),
             "ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE": (["controlReference","linkedRiskReference","businessProcess","subprocess","riskStatement","controlActivity","controlDescription","evidence","keyControl","preventiveDetective","nature","frequency","pic","performer","financialStatementItem","effectivePeriod"],["controlReference","linkedRiskReference","businessProcess","subprocess","riskStatement","riskRating","controlActivity","controlDescription","evidence","keyControl","ipo","assertions","preventiveDetective","nature","automatedControlType","frequency","supportingSystem","pic","performer","financialStatementItem","effectivePeriod"],"RCM","/rcm"),
             "ICOFR_TLC_BPM_NARRATIVE_REFERENCE": (["controlReference","linkedRiskReference","linkedControlRecordKey","businessProcess","subprocess","sourceTextAvailable"],["controlReference","linkedRiskReference","linkedControlRecordKey","businessProcess","subprocess","designNote","sourceTextAvailable"],"Process Architecture","/processes"),
             "CSA_LINE2_EVALUATION_CANDIDATE": (["areaOrProcess","line1Score","line2Score"],["areaOrProcess","riskAssessed","keyControl","line1Score","line2VerificationMethod","line2Score","gap","indication","followUpStatus"],"CSA","/csa"),
