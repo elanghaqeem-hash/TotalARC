@@ -83,6 +83,21 @@ export async function POST(request: Request) {
       );
     }
 
+    if (
+      code.includes("exceeded D1's free tier daily row write limit") ||
+      code.includes("exceeded D1's free tier daily row read limit")
+    ) {
+      console.error('Total ARC authentication blocked by Cloudflare D1 daily quota:', code);
+      return NextResponse.json(
+        {
+          error:
+            'Kapasitas database harian Total ARC sedang mencapai batas layanan Cloudflare D1. Login sementara tidak dapat diproses sampai kuota database tersedia kembali.',
+          code: 'AUTH_DATABASE_DAILY_QUOTA_EXCEEDED'
+        },
+        { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '3600' } }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Email atau password tidak sesuai.' },
       { status: 401, headers: { 'Cache-Control': 'no-store' } }

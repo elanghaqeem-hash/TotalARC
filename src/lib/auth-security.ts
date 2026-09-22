@@ -72,36 +72,45 @@ export async function ensureAuthSecuritySchema() {
 
   schemaReady = (async () => {
     const db = await getDb();
-    await executeSchemaScript(db, `
-      CREATE TABLE IF NOT EXISTS AuthSession (
-        id TEXT PRIMARY KEY NOT NULL,
-        userId TEXT NOT NULL,
-        institutionId TEXT,
-        issuedAt TEXT NOT NULL,
-        expiresAt TEXT NOT NULL,
-        lastSeenAt TEXT NOT NULL,
-        revokedAt TEXT,
-        revokedReason TEXT,
-        revokedBy TEXT,
-        ipAddress TEXT,
-        userAgent TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_auth_session_user
-        ON AuthSession(userId,expiresAt,revokedAt);
-      CREATE INDEX IF NOT EXISTS idx_auth_session_institution
-        ON AuthSession(institutionId,expiresAt,revokedAt);
+    const sessionTable = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AuthSession' LIMIT 1")
+      .first<{ name?: string }>();
+    const passwordHistoryTable = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AuthPasswordHistory' LIMIT 1")
+      .first<{ name?: string }>();
 
-      CREATE TABLE IF NOT EXISTS AuthPasswordHistory (
-        id TEXT PRIMARY KEY NOT NULL,
-        userId TEXT NOT NULL,
-        passwordHash TEXT NOT NULL,
-        passwordSalt TEXT NOT NULL,
-        passwordIterations INTEGER NOT NULL,
-        createdAt TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_auth_password_history_user
-        ON AuthPasswordHistory(userId,createdAt DESC);
-    `);
+    if (!sessionTable || !passwordHistoryTable) {
+      await executeSchemaScript(db, `
+        CREATE TABLE IF NOT EXISTS AuthSession (
+          id TEXT PRIMARY KEY NOT NULL,
+          userId TEXT NOT NULL,
+          institutionId TEXT,
+          issuedAt TEXT NOT NULL,
+          expiresAt TEXT NOT NULL,
+          lastSeenAt TEXT NOT NULL,
+          revokedAt TEXT,
+          revokedReason TEXT,
+          revokedBy TEXT,
+          ipAddress TEXT,
+          userAgent TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_session_user
+          ON AuthSession(userId,expiresAt,revokedAt);
+        CREATE INDEX IF NOT EXISTS idx_auth_session_institution
+          ON AuthSession(institutionId,expiresAt,revokedAt);
+
+        CREATE TABLE IF NOT EXISTS AuthPasswordHistory (
+          id TEXT PRIMARY KEY NOT NULL,
+          userId TEXT NOT NULL,
+          passwordHash TEXT NOT NULL,
+          passwordSalt TEXT NOT NULL,
+          passwordIterations INTEGER NOT NULL,
+          createdAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_password_history_user
+          ON AuthPasswordHistory(userId,createdAt DESC);
+      `);
+    }
     return db;
   })().catch(error => {
     schemaReady = null;

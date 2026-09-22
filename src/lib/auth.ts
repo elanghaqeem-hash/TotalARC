@@ -116,53 +116,63 @@ export async function ensureAuthSchema() {
 
   authSchemaReady = (async () => {
     const db = await getDb();
-    await executeSchemaScript(db, `
-      CREATE TABLE IF NOT EXISTS AuthUser (
-        id TEXT PRIMARY KEY NOT NULL,
-        institutionId TEXT,
-        orgUnitId TEXT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL,
-        emailNormalized TEXT NOT NULL,
-        passwordHash TEXT NOT NULL,
-        passwordSalt TEXT NOT NULL,
-        passwordIterations INTEGER NOT NULL DEFAULT 100000,
-        role TEXT NOT NULL,
-        department TEXT,
-        active INTEGER NOT NULL DEFAULT 1,
-        mustChangePassword INTEGER NOT NULL DEFAULT 0,
-        credentialResetAt TEXT,
-        temporaryCredentialExpiresAt TEXT,
-        failedLoginCount INTEGER NOT NULL DEFAULT 0,
-        lockedUntil TEXT,
-        lastLoginAt TEXT,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_email
-        ON AuthUser(emailNormalized);
-      CREATE INDEX IF NOT EXISTS idx_auth_user_institution
-        ON AuthUser(institutionId);
-      CREATE INDEX IF NOT EXISTS idx_auth_user_role
-        ON AuthUser(role);
+    const authUserTable = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AuthUser' LIMIT 1")
+      .first<{ name?: string }>();
+    const authEventTable = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AuthEvent' LIMIT 1")
+      .first<{ name?: string }>();
 
-      CREATE TABLE IF NOT EXISTS AuthEvent (
-        id TEXT PRIMARY KEY NOT NULL,
-        userId TEXT,
-        institutionId TEXT,
-        eventType TEXT NOT NULL,
-        email TEXT,
-        role TEXT,
-        ipAddress TEXT,
-        userAgent TEXT,
-        detail TEXT,
-        createdAt TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_auth_event_created
-        ON AuthEvent(createdAt);
-      CREATE INDEX IF NOT EXISTS idx_auth_event_user
-        ON AuthEvent(userId);
-    `);
+    if (!authUserTable || !authEventTable) {
+      await executeSchemaScript(db, `
+        CREATE TABLE IF NOT EXISTS AuthUser (
+          id TEXT PRIMARY KEY NOT NULL,
+          institutionId TEXT,
+          orgUnitId TEXT,
+          name TEXT NOT NULL,
+          email TEXT NOT NULL,
+          emailNormalized TEXT NOT NULL,
+          passwordHash TEXT NOT NULL,
+          passwordSalt TEXT NOT NULL,
+          passwordIterations INTEGER NOT NULL DEFAULT 100000,
+          role TEXT NOT NULL,
+          department TEXT,
+          active INTEGER NOT NULL DEFAULT 1,
+          mustChangePassword INTEGER NOT NULL DEFAULT 0,
+          credentialResetAt TEXT,
+          temporaryCredentialExpiresAt TEXT,
+          failedLoginCount INTEGER NOT NULL DEFAULT 0,
+          lockedUntil TEXT,
+          lastLoginAt TEXT,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_email
+          ON AuthUser(emailNormalized);
+        CREATE INDEX IF NOT EXISTS idx_auth_user_institution
+          ON AuthUser(institutionId);
+        CREATE INDEX IF NOT EXISTS idx_auth_user_role
+          ON AuthUser(role);
+
+        CREATE TABLE IF NOT EXISTS AuthEvent (
+          id TEXT PRIMARY KEY NOT NULL,
+          userId TEXT,
+          institutionId TEXT,
+          eventType TEXT NOT NULL,
+          email TEXT,
+          role TEXT,
+          ipAddress TEXT,
+          userAgent TEXT,
+          detail TEXT,
+          createdAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_event_created
+          ON AuthEvent(createdAt);
+        CREATE INDEX IF NOT EXISTS idx_auth_event_user
+          ON AuthEvent(userId);
+      `);
+    }
+
     const columns = await db.prepare('PRAGMA table_info(AuthUser)').all<{ name?: string }>();
     const names = new Set((columns.results || []).map(column => String(column.name || '')));
     if (!names.has('credentialResetAt')) {
