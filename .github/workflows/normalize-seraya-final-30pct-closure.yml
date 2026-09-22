@@ -1,0 +1,765 @@
+name: Normalize Seraya final 30 percent closure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-final-30pct-closure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-seraya-final-30pct-closure
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize final source depth and close generic coverage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/normalize_final30.py <<'PY'
+          import csv, hashlib, io, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="SERAYA_UPDATE_FINAL30_CLOSURE_20260922"
+          SOURCE_ACCOUNT="serayamg@gmail.com"
+          EXPECTED_TOTAL=193
+
+          TARGETS=[
+            ("RISKREG","Dokumen 9 Register_Risiko_Pelaporan_Keuangan_2026"),
+            ("METHODOLOGY","Dokumen 7_Kerangka_Metodologi_ICOFR_2026"),
+            ("CSA_TRAINING_XLSX","Contoh_Dokumen_CSA_Latihan.xlsx"),
+            ("CSA_TRAINING_DOCX","Contoh_Dokumen_CSA_Latihan.docx"),
+          ]
+
+          def wr(args):
+              return subprocess.check_output(
+                  ["npx","wrangler",*args],
+                  text=True,env=os.environ,stderr=subprocess.DEVNULL
+              )
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def clean(v):
+              return str(v or "").strip()
+
+          def parse_rows(text):
+              sample=text[:30000]
+              try:
+                  delimiter=csv.Sniffer().sniff(sample,delimiters=",\t").delimiter
+              except Exception:
+                  delimiter="\t" if "\t" in sample else ","
+              return list(csv.reader(io.StringIO(text),delimiter=delimiter))
+
+          def compact(row):
+              vals=[clean(v) for v in row if clean(v)]
+              if vals and re.fullmatch(r"\d+",vals[0]):
+                  vals=vals[1:]
+              return vals
+
+          catalog=rows(f"""
+            SELECT id,institutionId,title,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')={q(SOURCE_ACCOUNT)}
+              AND json_extract(metadataJson,'$.sourceRole')='UPDATE'
+            ORDER BY title
+          """)
+
+          docs={}
+          for code,token in TARGETS:
+              matches=[d for d in catalog if token.lower() in clean(d.get("title")).lower()]
+              if len(matches)!=1:
+                  raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              d=matches[0]
+              chunks=rows(f"""
+                SELECT chunkIndex,textContent
+                FROM SourceTextChunk
+                WHERE documentId={q(d['id'])}
+                ORDER BY chunkIndex
+              """)
+              text="".join(str(x.get("textContent") or "") for x in chunks)
+              if not text.strip():
+                  raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
+              docs[code]={**d,"text":text,"rows":parse_rows(text)}
+              print(f"{code} ready chars={len(text)}")
+
+          institution_id=docs["RISKREG"]["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()):
+              raise RuntimeError("INSTITUTION_MISMATCH")
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          records=[]
+          issues=[]
+
+          def add_record(doc,record_type,key,title,payload):
+              records.append({
+                  "id":hid(doc["id"],record_type,key),
+                  "institutionId":institution_id,
+                  "sourceDocumentId":doc["id"],
+                  "recordType":record_type,
+                  "recordKey":key,
+                  "recordTitle":title,
+                  "period":"2026",
+                  "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":")),
+                  "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          def add_issue(doc,issue_type,severity,description,record_key=None,field=None,observed=None,expected=None):
+              issues.append({
+                  "id":hid(doc["id"],issue_type,record_key or "",field or ""),
+                  "institutionId":institution_id,
+                  "sourceDocumentId":doc["id"],
+                  "sourceRecordKey":record_key,
+                  "issueType":issue_type,
+                  "severity":severity,
+                  "fieldName":field,
+                  "observedValue":observed,
+                  "expectedContext":expected,
+                  "description":description
+              })
+
+          # ------------------------------------------------------------------
+          # 1. Risk Register: remaining specialist registers not yet normalized.
+          # ------------------------------------------------------------------
+          riskdoc=docs["RISKREG"]
+          fraud={}
+          itrisks={}
+          apps={}
+          elcrisks={}
+          state=None
+
+          for row in riskdoc["rows"]:
+              vals=compact(row)
+              if not vals:
+                  continue
+              joined=" ".join(vals).upper()
+
+              if "REGISTER RISIKO KECURANGAN" in joined:
+                  state="FRAUD"; continue
+              if "REGISTER RISIKO TEKNOLOGI INFORMASI" in joined:
+                  state="IT"; continue
+              if "PEMETAAN ITGC PER APLIKASI SIGNIFIKAN" in joined:
+                  state="APP"; continue
+              if "REGISTER RISIKO TINGKAT ENTITAS" in joined:
+                  state="ELC"; continue
+              if "MATRIKS CAKUPAN RISIKO TERHADAP ASERSI" in joined:
+                  state=None; continue
+              if "CATATAN PENTING" in joined and state=="APP":
+                  state=None; continue
+
+              if state=="FRAUD":
+                  pos=next((i for i,v in enumerate(vals) if re.fullmatch(r"F-\d{2}",v)),None)
+                  if pos is None:
+                      continue
+                  x=vals[pos:]+[""]*20
+                  ref=x[0]
+                  if ref in fraud:
+                      continue
+                  payload={
+                      "fraudReference":ref,
+                      "fraudCategory":x[1] or None,
+                      "fraudScheme":x[2] or None,
+                      "bankContextScenario":x[3] or None,
+                      "impactedAccounts":x[4] or None,
+                      "incentivePressure":x[5] or None,
+                      "opportunity":x[6] or None,
+                      "rationalization":x[7] or None,
+                      "riskRating":x[8] or None,
+                      "requiredAntiFraudControl":x[9] or None,
+                      "sourceStatus":x[10] or None,
+                      "sourceRole":"UPDATE","precedencePriority":20,
+                      "reviewRequired":True,"operationalRiskCreated":False
+                  }
+                  key=f"SERAYA:FRAUDRISK:2026:{ref}"
+                  add_record(riskdoc,"ICOFR_FRAUD_RISK_UPDATE_CANDIDATE",key,ref+" — "+(x[2] or "Fraud risk"),payload)
+                  fraud[ref]=payload
+
+              elif state=="IT":
+                  pos=next((i for i,v in enumerate(vals) if re.fullmatch(r"IT-(?:PD|PC|CO|AP)-\d{2}",v)),None)
+                  if pos is None:
+                      continue
+                  x=vals[pos:]+[""]*15
+                  ref=x[0]
+                  if ref in itrisks:
+                      continue
+                  payload={
+                      "itRiskReference":ref,
+                      "itgcArea":x[1] or None,
+                      "riskStatement":x[2] or None,
+                      "financialReportingImpact":x[3] or None,
+                      "cobitObjectives":[v.strip() for v in re.split(r"[,;]",x[4]) if v.strip()],
+                      "riskRating":x[5] or None,
+                      "requiredControl":x[6] or None,
+                      "priorCoverageStatus":x[7] or None,
+                      "sourceRole":"UPDATE","precedencePriority":20,
+                      "reviewRequired":True,"operationalRiskCreated":False
+                  }
+                  key=f"SERAYA:ITRISK:2026:{ref}"
+                  add_record(riskdoc,"ICOFR_IT_RISK_UPDATE_CANDIDATE",key,ref+" — "+(x[2] or "IT risk"),payload)
+                  itrisks[ref]=payload
+
+              elif state=="APP":
+                  if vals[0].lower()=="aplikasi" or len(vals)<6:
+                      continue
+                  app_name=vals[0]
+                  if app_name in apps:
+                      continue
+                  x=vals+[""]*10
+                  payload={
+                      "applicationName":app_name,
+                      "financialReportingRole":x[1] or None,
+                      "impactedAccounts":x[2] or None,
+                      "applicationOwner":x[3] or None,
+                      "vendor":x[4] or None,
+                      "requiredItgcAreas":x[5] or None,
+                      "notes":x[6] or None,
+                      "sourceRole":"UPDATE","precedencePriority":20,
+                      "referenceMasterOnly":False,"reviewRequired":True,
+                      "operationalApplicationCreated":False
+                  }
+                  key="SERAYA:SIGAPP:2026:"+hid(app_name)[:12]
+                  add_record(riskdoc,"ICOFR_SIGNIFICANT_APPLICATION_REFERENCE",key,app_name,payload)
+                  apps[app_name]=payload
+                  if "perlu dikonfirmasi" in (x[4]+" "+x[6]).lower() or "belum dianalisis" in x[6].lower():
+                      add_issue(
+                          riskdoc,"SIGNIFICANT_APPLICATION_METADATA_INCOMPLETE","MEDIUM",
+                          "Significant application source row contains vendor/scope information that still requires confirmation.",
+                          key,"vendor/scope",f"{x[4]} | {x[6]}",
+                          "Confirmed vendor and approved ITGC scope"
+                      )
+
+              elif state=="ELC":
+                  pos=next((i for i,v in enumerate(vals) if re.fullmatch(r"E-\d{2}",v)),None)
+                  if pos is None:
+                      continue
+                  x=vals[pos:]+[""]*15
+                  ref=x[0]
+                  if ref in elcrisks:
+                      continue
+                  payload={
+                      "elcRiskReference":ref,
+                      "cosoComponent":x[1] or None,
+                      "cosoPrinciple":x[2] or None,
+                      "riskStatement":x[3] or None,
+                      "financialReportingImpact":x[4] or None,
+                      "riskRating":x[5] or None,
+                      "requiredEntityControl":x[6] or None,
+                      "sourceDocumentStatus":x[7] or None,
+                      "sourceRole":"UPDATE","precedencePriority":20,
+                      "reviewRequired":True,"operationalElcRiskCreated":False
+                  }
+                  key=f"SERAYA:ELCRISK:2026:{ref}"
+                  add_record(riskdoc,"ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE",key,ref+" — "+(x[3] or "ELC risk"),payload)
+                  elcrisks[ref]=payload
+
+          if len(fraud)!=11: raise RuntimeError(f"FRAUD_RISK_COUNT_{len(fraud)}_11")
+          if len(itrisks)!=16: raise RuntimeError(f"IT_RISK_COUNT_{len(itrisks)}_16")
+          if len(apps)!=6: raise RuntimeError(f"SIGNIFICANT_APPLICATION_COUNT_{len(apps)}_6")
+          if len(elcrisks)!=17: raise RuntimeError(f"ELC_RISK_COUNT_{len(elcrisks)}_17")
+          print(f"Risk register deep records fraud={len(fraud)} it={len(itrisks)} apps={len(apps)} elc={len(elcrisks)}")
+
+          # ------------------------------------------------------------------
+          # 2. Methodology: turn remaining normative/reference tables into
+          # structured, source-backed records. They are never auto-promoted.
+          # ------------------------------------------------------------------
+          meth=docs["METHODOLOGY"]
+          coso={}
+          cobit={}
+          allowed={}
+          testing_methods={}
+          toe_rules={}
+          remediation_rules={}
+          selection_methods={}
+          deficiency_levels={}
+          deficiency_boxes={}
+          mw_indicators={}
+          calendar={}
+          method_issues={}
+          state=None
+          test_sub=None
+          deficiency_sub=None
+
+          allowed_categories={
+              "Level Pengendalian","Tipe Pengendalian","Sifat Pelaksanaan",
+              "Jenis Pengendalian Otomatis","IPO — Information Processing Objective",
+              "Asersi Laporan Keuangan","Frekuensi Pelaksanaan","Pengendalian Utama",
+              "Penilaian Risiko","Risiko Terkait Fraud","Status Pengendalian"
+          }
+
+          for row in meth["rows"]:
+              vals=compact(row)
+              if not vals:
+                  continue
+              joined=" ".join(vals)
+              upper=joined.upper()
+
+              if "PEMETAAN 17 PRINSIP COSO" in upper:
+                  state="COSO"; continue
+              if "PEMETAAN TUJUAN COBIT 2019" in upper:
+                  state="COBIT"; continue
+              if "KAMUS ISTILAH DAN DAFTAR NILAI SAH" in upper:
+                  state="ALLOWED"; continue
+              if "METODE PENGUJIAN DAN PENENTUAN JUMLAH SAMPEL" in upper:
+                  state="TESTING"; test_sub=None; continue
+              if "KLASIFIKASI DAN PENENTUAN TINGKAT DEFISIENSI" in upper:
+                  state="DEFICIENCY"; deficiency_sub=None; continue
+              if "KALENDER KEGIATAN ICOFR TAHUN BUKU 2026" in upper:
+                  state="CALENDAR"; continue
+              if "DAFTAR ISU METODOLOGIS" in upper:
+                  state="ISSUES"; continue
+
+              if state=="COSO":
+                  p=next((i for i,v in enumerate(vals) if re.fullmatch(r"(?:[1-9]|1[0-7])",v)),None)
+                  if p is None or p<1:
+                      continue
+                  principle=int(vals[p])
+                  component=vals[p-1]
+                  if component not in {
+                      "Lingkungan Pengendalian","Penilaian Risiko","Aktivitas Pengendalian",
+                      "Informasi dan Komunikasi","Aktivitas Pemantauan"
+                  }:
+                      continue
+                  x=vals[p:]+[""]*10
+                  payload={
+                      "principleNumber":principle,"cosoComponent":component,
+                      "principleDescription":x[1] or None,
+                      "expectedControl":x[2] or None,
+                      "bankKalbarSourceDocuments":x[3] or None,
+                      "sourceStatus":x[4] or None,
+                      "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True
+                  }
+                  key=f"SERAYA:METH:COSO:{principle:02d}"
+                  add_record(meth,"ICOFR_COSO_PRINCIPLE_REFERENCE",key,f"COSO Principle {principle}",payload)
+                  coso[principle]=payload
+
+              elif state=="COBIT":
+                  p=next((i for i,v in enumerate(vals) if re.fullmatch(r"(?:APO|BAI|DSS)\d{2}",v)),None)
+                  if p is None:
+                      continue
+                  ref=vals[p]
+                  if ref in cobit:
+                      continue
+                  x=vals[p:]+[""]*12
+                  payload={
+                      "cobitObjectiveId":ref,
+                      "cobitObjective":x[1] or None,
+                      "programDevelopment":x[2]=="✓",
+                      "programChanges":x[3]=="✓",
+                      "computerOperations":x[4]=="✓",
+                      "accessToProgramAndData":x[5]=="✓",
+                      "areaCount":x[6] or None,
+                      "bankKalbarRelevance":x[7] or None,
+                      "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True
+                  }
+                  key=f"SERAYA:METH:COBIT:{ref}"
+                  add_record(meth,"ICOFR_COBIT_ITGC_REFERENCE",key,ref+" — "+(x[1] or "COBIT objective"),payload)
+                  cobit[ref]=payload
+
+              elif state=="ALLOWED":
+                  if len(vals)<3 or vals[0] not in allowed_categories:
+                      continue
+                  category,value,definition=vals[0],vals[1],vals[2]
+                  key="SERAYA:METH:RCMVALUE:"+hid(category,value)[:16]
+                  payload={
+                      "rcmField":category,"allowedValue":value,"definition":definition,
+                      "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True
+                  }
+                  add_record(meth,"ICOFR_RCM_ALLOWED_VALUE_REFERENCE",key,category+" — "+value,payload)
+                  allowed[key]=payload
+
+              elif state=="TESTING":
+                  if upper.startswith("A. METODE PENGUJIAN"):
+                      test_sub="METHOD"; continue
+                  if upper.startswith("B. JUMLAH SAMPEL TEST OF OPERATING"):
+                      test_sub="TOE"; continue
+                  if upper.startswith("C. JUMLAH SAMPEL PENGUJIAN ULANG"):
+                      test_sub="REMEDIATION"; continue
+                  if upper.startswith("E. METODE PEMILIHAN SAMPEL"):
+                      test_sub="SELECTION"; continue
+                  if upper.startswith("F.") or upper.startswith("G."):
+                      test_sub=None; continue
+
+                  if test_sub=="METHOD":
+                      p=next((i for i,v in enumerate(vals) if re.fullmatch(r"[1-4]",v)),None)
+                      if p is None or p+3>=len(vals):
+                          continue
+                      x=vals[p:]+[""]*8
+                      no=int(x[0])
+                      payload={"sequence":no,"method":x[1],"description":x[2],"assuranceLevel":x[3],"usageNote":x[4] or None,
+                               "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                      key=f"SERAYA:METH:TESTMETHOD:{no:02d}"
+                      add_record(meth,"ICOFR_TESTING_METHOD_REFERENCE",key,x[1],payload)
+                      testing_methods[no]=payload
+
+                  elif test_sub=="TOE":
+                      if vals[0] in {"Frekuensi pengendalian","Ketentuan"} or len(vals)<3:
+                          continue
+                      if vals[0] not in {"Tahunan","Kuartalan","Bulanan","Mingguan","Harian","Lebih dari sekali dalam sehari","Ad hoc (per kejadian)","Pengendalian otomatis"}:
+                          continue
+                      x=vals+[""]*8
+                      payload={"frequency":x[0],"populationAssumption":x[1],"sampleSize":x[2],"practiceComparator":x[3] or None,"additionalRule":x[4] or None,
+                               "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                      key="SERAYA:METH:TOESAMPLE:"+hid(x[0])[:12]
+                      add_record(meth,"ICOFR_TOE_SAMPLE_RULE_REFERENCE",key,x[0],payload)
+                      toe_rules[x[0]]=payload
+
+                  elif test_sub=="REMEDIATION":
+                      if vals[0]=="Frekuensi pengendalian" or len(vals)<3:
+                          continue
+                      if vals[0] not in {"Kuartalan","Bulanan","Mingguan","Harian","Lebih dari sekali dalam sehari","Pengendalian otomatis"}:
+                          continue
+                      x=vals+[""]*6
+                      payload={"frequency":x[0],"minimumPostRemediationPeriod":x[1],"sampleSize":x[2],
+                               "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                      key="SERAYA:METH:REMEDIATIONSAMPLE:"+hid(x[0])[:12]
+                      add_record(meth,"ICOFR_REMEDIATION_SAMPLE_RULE_REFERENCE",key,x[0],payload)
+                      remediation_rules[x[0]]=payload
+
+                  elif test_sub=="SELECTION":
+                      if vals[0]=="Metode" or len(vals)<3:
+                          continue
+                      method=vals[0]
+                      if not any(x in method.lower() for x in ["acak","sistematik","moneter","sembarang","blok"]):
+                          continue
+                      payload={"selectionMethod":method,"description":vals[1],"usageSuitability":vals[2],
+                               "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                      key="SERAYA:METH:SAMPLESELECTION:"+hid(method)[:12]
+                      add_record(meth,"ICOFR_SAMPLE_SELECTION_METHOD_REFERENCE",key,method,payload)
+                      selection_methods[method]=payload
+
+              elif state=="DEFICIENCY":
+                  if upper.startswith("A. TIGA TINGKAT DEFISIENSI"):
+                      deficiency_sub="LEVEL"; continue
+                  if upper.startswith("B. ALUR PENENTUAN TINGKAT DEFISIENSI"):
+                      deficiency_sub="BOX"; continue
+                  if upper.startswith("C. LIMA INDIKATOR KELEMAHAN MATERIAL"):
+                      deficiency_sub="MW"; continue
+                  if upper.startswith("D.") or upper.startswith("E.") or upper.startswith("F."):
+                      deficiency_sub=None; continue
+
+                  if deficiency_sub=="LEVEL":
+                      if vals[0] not in {"Control Deficiency","Significant Deficiency","Material Weakness"} or len(vals)<4:
+                          continue
+                      payload={"level":vals[0],"abbreviation":vals[1],"definition":vals[2],"reportRecipients":vals[3],
+                               "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                      key="SERAYA:METH:DEFLEVEL:"+vals[1]
+                      add_record(meth,"ICOFR_DEFICIENCY_LEVEL_REFERENCE",key,vals[0],payload)
+                      deficiency_levels[vals[1]]=payload
+
+                  elif deficiency_sub=="BOX":
+                      if not re.fullmatch(r"Kotak [1-7]",vals[0]) or len(vals)<4:
+                          continue
+                      payload={"decisionBox":vals[0],"question":vals[1],"ifYes":vals[2],"ifNo":vals[3],
+                               "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                      key="SERAYA:METH:DEFBOX:"+vals[0].split()[-1]
+                      add_record(meth,"ICOFR_DEFICIENCY_DECISION_REFERENCE",key,vals[0],payload)
+                      deficiency_boxes[vals[0]]=payload
+
+                  elif deficiency_sub=="MW":
+                      if len(vals)<2 or not re.fullmatch(r"[1-5]",vals[0]):
+                          continue
+                      no=int(vals[0])
+                      payload={"sequence":no,"indicator":vals[1],
+                               "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                      key=f"SERAYA:METH:MWIND:{no:02d}"
+                      add_record(meth,"ICOFR_MATERIAL_WEAKNESS_INDICATOR_REFERENCE",key,f"MW indicator {no}",payload)
+                      mw_indicators[no]=payload
+
+              elif state=="CALENDAR":
+                  if vals[0]=="Periode" or len(vals)<6:
+                      continue
+                  if not (
+                      vals[0].startswith("Bulan") or vals[0].startswith("Kuartal") or
+                      vals[0].startswith("Januari") or vals[0].startswith("Bersamaan")
+                  ):
+                      continue
+                  period,activity,phase,owner,output,status=vals[:6]
+                  key="SERAYA:METH:CALENDAR:"+hid(period,activity)[:16]
+                  payload={"period":period,"activity":activity,"icoFrPhase":phase,"responsibleParty":owner,"deliverable":output,"sourceStatus":status,
+                           "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True}
+                  add_record(meth,"ICOFR_CALENDAR_MILESTONE_REFERENCE",key,period+" — "+activity,payload)
+                  calendar[key]=payload
+
+              elif state=="ISSUES":
+                  p=next((i for i,v in enumerate(vals) if re.fullmatch(r"I-\d{2}",v)),None)
+                  if p is None:
+                      continue
+                  x=vals[p:]+[""]*10
+                  ref=x[0]
+                  if ref in method_issues:
+                      continue
+                  payload={"issueReference":ref,"issue":x[1],"description":x[2],"impact":x[3],"recommendedOption":x[4],"decisionOwner":x[5],"priority":x[6],
+                           "sourceRole":"UPDATE","precedencePriority":20,"reviewRequired":True,"operationalIssueCreated":False}
+                  key=f"SERAYA:METH:ISSUE:{ref}"
+                  add_record(meth,"ICOFR_METHODOLOGY_ISSUE_CANDIDATE",key,ref+" — "+x[1],payload)
+                  method_issues[ref]=payload
+
+          expected_counts={
+              "COSO":17,"COBIT":15,"ALLOWED":33,"TEST_METHOD":4,"TOE":8,
+              "REMEDIATION":6,"SELECTION":5,"DEF_LEVEL":3,"DEF_BOX":7,
+              "MW_INDICATOR":5,"CALENDAR":24,"METHOD_ISSUE":14
+          }
+          actual_counts={
+              "COSO":len(coso),"COBIT":len(cobit),"ALLOWED":len(allowed),"TEST_METHOD":len(testing_methods),
+              "TOE":len(toe_rules),"REMEDIATION":len(remediation_rules),"SELECTION":len(selection_methods),
+              "DEF_LEVEL":len(deficiency_levels),"DEF_BOX":len(deficiency_boxes),
+              "MW_INDICATOR":len(mw_indicators),"CALENDAR":len(calendar),"METHOD_ISSUE":len(method_issues)
+          }
+          for k,v in expected_counts.items():
+              if actual_counts[k]!=v:
+                  raise RuntimeError(f"METHODOLOGY_{k}_COUNT_{actual_counts[k]}_{v}")
+          print("Methodology deep records "+json.dumps(actual_counts,ensure_ascii=False))
+
+          # ------------------------------------------------------------------
+          # 3. CSA training artifacts: explicitly classify as training-only.
+          # Do not create any operational CSA result from example persons,
+          # transaction references, scores or conclusions in these files.
+          # ------------------------------------------------------------------
+          for code in ("CSA_TRAINING_XLSX","CSA_TRAINING_DOCX"):
+              doc=docs[code]
+              payload={
+                  "documentTitle":doc["title"],
+                  "trainingTopic":"Control Self Assessment (CSA)",
+                  "trainingOnly":True,
+                  "containsWorkedExamples":True,
+                  "containsEmptyPracticeTemplate":True,
+                  "operationalUseProhibited":True,
+                  "fullTextAvailableInSourceLibrary":True,
+                  "sourceRole":"UPDATE","precedencePriority":20,"referenceMasterOnly":True
+              }
+              key="SERAYA:TRAINING:CSA:"+code
+              add_record(doc,"ICOFR_TRAINING_REFERENCE_DOCUMENT",key,doc["title"],payload)
+              add_issue(
+                  doc,"TRAINING_SOURCE_EXCLUDED_FROM_OPERATIONAL_DATA","LOW",
+                  "CSA source is explicitly a training/example artifact. It is retained for reference but excluded from operational CSA results, control effectiveness conclusions and Bank Kalbar evidence.",
+                  key,"operationalUseProhibited","true",
+                  "Training/reference only"
+              )
+
+          # Record-count contract: 50 risk-register deep records + 141 methodology
+          # records + 2 training-document references = 193.
+          counts={}
+          for r in records:
+              counts[r["recordType"]]=counts.get(r["recordType"],0)+1
+          if len(records)!=EXPECTED_TOTAL:
+              raise RuntimeError(f"FINAL30_RECORD_COUNT_{len(records)}_{EXPECTED_TOTAL}")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+            description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_issue_institution
+            ON SourceDataIssue(institutionId,issueStatus,severity,issueType);
+
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/final30_ddl.sql").write_text(ddl)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/final30_ddl.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          source_ids=[d["id"] for d in docs.values()]
+          cleanup=[
+              f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE normalizationBatch={q(BATCH)} AND status='Active';",
+              "DELETE FROM SourceDataIssue WHERE institutionId="+q(institution_id)+
+              " AND sourceDocumentId IN ("+",".join(q(x) for x in source_ids)+")"+
+              " AND issueType IN ('SIGNIFICANT_APPLICATION_METADATA_INCOMPLETE','TRAINING_SOURCE_EXCLUDED_FROM_OPERATIONAL_DATA');"
+          ]
+          Path("/tmp/final30_cleanup.sql").write_text("\n".join(cleanup))
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/final30_cleanup.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          statements=[]
+          for r in records:
+              statements.append(f"""
+                INSERT INTO SourceStructuredRecord
+                (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+                 sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+                VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},
+                 {q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+                 'UPDATE',20,{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+                ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                  recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,
+                  sourceRole='UPDATE',precedencePriority=20,sourceModifiedAt=excluded.sourceModifiedAt,
+                  status='Active',normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """)
+
+          for x in issues:
+              statements.append(f"""
+                INSERT INTO SourceDataIssue
+                (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,
+                 observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+                VALUES({q(x['id'])},{q(x['institutionId'])},{q(x['sourceDocumentId'])},{q(x['sourceRecordKey'])},
+                 {q(x['issueType'])},{q(x['severity'])},{q(x['fieldName'])},{q(x['observedValue'])},
+                 {q(x['expectedContext'])},{q(x['description'])},'OPEN',{q(now)},{q(now)})
+                ON CONFLICT(id) DO UPDATE SET
+                  severity=excluded.severity,fieldName=excluded.fieldName,observedValue=excluded.observedValue,
+                  expectedContext=excluded.expectedContext,description=excluded.description,
+                  issueStatus='OPEN',updatedAt=excluded.updatedAt;
+              """)
+
+          for start in range(0,len(statements),65):
+              p=f"/tmp/final30_rows_{start//65:03d}.sql"
+              Path(p).write_text("\n".join(statements[start:start+65]))
+              subprocess.check_call(
+                  ["npx","wrangler","d1","execute",DB,"--remote","--file",p],
+                  env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+              )
+
+          # Generic fallback records are no longer needed once a source has any
+          # non-generic active structured record. Truly unidentified sources remain.
+          resolve_generic=f"""
+            UPDATE SourceStructuredRecord AS generic
+            SET status='Superseded',updatedAt={q(now)}
+            WHERE generic.institutionId={q(institution_id)}
+              AND generic.status='Active'
+              AND generic.recordType='SOURCE_UNIDENTIFIED_DOCUMENT'
+              AND EXISTS (
+                SELECT 1 FROM SourceStructuredRecord specific
+                WHERE specific.sourceDocumentId=generic.sourceDocumentId
+                  AND specific.status='Active'
+                  AND specific.recordType<>'SOURCE_UNIDENTIFIED_DOCUMENT'
+              );
+          """
+          Path("/tmp/final30_generic.sql").write_text(resolve_generic)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/final30_generic.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          verify=rows(f"""
+            SELECT recordType,COUNT(*) records
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)}
+              AND normalizationBatch={q(BATCH)}
+              AND status='Active'
+            GROUP BY recordType ORDER BY recordType
+          """)
+          verified=sum(int(x["records"]) for x in verify)
+          if verified!=EXPECTED_TOTAL:
+              raise RuntimeError(f"FINAL30_VERIFY_COUNT_{verified}_{EXPECTED_TOTAL}")
+
+          remaining_generic=rows(f"""
+            SELECT d.id,d.title
+            FROM SourceStructuredRecord sr
+            JOIN SourceDocument d ON d.id=sr.sourceDocumentId
+            WHERE sr.institutionId={q(institution_id)}
+              AND sr.status='Active'
+              AND sr.recordType='SOURCE_UNIDENTIFIED_DOCUMENT'
+              AND json_extract(d.metadataJson,'$.sourceAccount')={q(SOURCE_ACCOUNT)}
+            ORDER BY d.title
+          """)
+
+          source_coverage=rows(f"""
+            SELECT
+              COUNT(*) sourceDocuments,
+              SUM(CASE WHEN EXISTS (
+                SELECT 1 FROM SourceStructuredRecord sr
+                WHERE sr.sourceDocumentId=d.id AND sr.status='Active'
+              ) THEN 1 ELSE 0 END) displayedDocuments
+            FROM SourceDocument d
+            WHERE d.status='Active'
+              AND json_extract(d.metadataJson,'$.sourceAccount')={q(SOURCE_ACCOUNT)}
+          """)
+          coverage=source_coverage[0] if source_coverage else {"sourceDocuments":0,"displayedDocuments":0}
+          source_count=int(coverage.get("sourceDocuments") or 0)
+          displayed_count=int(coverage.get("displayedDocuments") or 0)
+          coverage_pct=round(displayed_count*100/source_count,2) if source_count else 0
+
+          summary={
+              "processedDocuments":4,
+              "activeRecords":verified,
+              "recordCounts":counts,
+              "sourceIssues":len(issues),
+              "remainingGenericSources":[{"id":x.get("id"),"title":x.get("title")} for x in remaining_generic],
+              "sourceDocuments":source_count,
+              "displayedDocuments":displayed_count,
+              "displayCoveragePercent":coverage_pct,
+              "scope":"final 30 percent semantic-depth closure"
+          }
+          run_id=hid(institution_id,BATCH)
+          run_json=json.dumps(summary,ensure_ascii=False,separators=(",",":"))
+          run_sql=f"""
+            INSERT INTO SourceNormalizationRun
+            (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,
+             totalRecords,status,summaryJson,startedAt,completedAt)
+            VALUES({q(run_id)},{q(institution_id)},{q(BATCH)},'UPDATE',20,4,4,{EXPECTED_TOTAL},
+             'Completed',{q(run_json)},{q(now)},{q(now)})
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              sourceRole='UPDATE',precedencePriority=20,totalDocuments=4,processedDocuments=4,
+              totalRecords={EXPECTED_TOTAL},status='Completed',summaryJson=excluded.summaryJson,
+              completedAt=excluded.completedAt;
+          """
+          Path("/tmp/final30_run.sql").write_text(run_sql)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/final30_run.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          print(json.dumps({
+              "processedDocuments":4,
+              "activeRecords":verified,
+              "recordCounts":verify,
+              "remainingGenericSources":remaining_generic,
+              "sourceCoverage":coverage,
+              "displayCoveragePercent":coverage_pct
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/normalize_final30.py
+          rm -f /tmp/normalize_final30.py /tmp/final30_*.sql
