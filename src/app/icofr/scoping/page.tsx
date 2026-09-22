@@ -34,6 +34,15 @@ type ScopeItem = {
   code?: string | null;
   name: string;
   inScope?: boolean;
+  amount?: number | null;
+  rationale?: string | null;
+  sourceMetadata?: {
+    sourceKey?: string | null;
+    sourceConclusion?: string | null;
+    decisionStatus?: string | null;
+    sourceReference?: string | null;
+    payload?: Record<string, unknown> | null;
+  } | null;
 };
 
 type ScopeParameter = {
@@ -58,6 +67,23 @@ type PopulationSummary = {
   notSignificantCount?: number | null;
   sourceStatus: string;
   sourceNote?: string | null;
+};
+
+type ScopeIssue = {
+  id: string;
+  issueCode: string;
+  category: string;
+  severity: string;
+  status: string;
+  description: string;
+  activeDecision?: string | null;
+};
+
+type ScopeLink = {
+  id: string;
+  fromItemId: string;
+  toItemId: string;
+  relationType: string;
 };
 
 type ScopeRecord = {
@@ -89,6 +115,8 @@ type ScopeRecord = {
   items: ScopeItem[];
   parameters?: ScopeParameter[];
   populationSummaries?: PopulationSummary[];
+  links?: ScopeLink[];
+  issues?: ScopeIssue[];
   updatedAt?: string;
 };
 
@@ -1158,9 +1186,74 @@ export default function IcofrScopingPage() {
                             key={pop.id}
                             className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[9px] font-bold text-slate-600"
                           >
-                            {pop.populationType}: {pop.significantCount ?? '—'} / {pop.assessedCount ?? '—'} significant
+                            {pop.populationType}: {pop.significantCount ?? '—'} / {pop.assessedCount ?? '—'} source-significant
                           </span>
                         ))}
+                      </div>
+                    )}
+
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
+                        Scoping inventory
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="rounded-lg bg-slate-50 p-2">
+                          <div className="text-[9px] text-slate-400">FSLI in scope</div>
+                          <div className="text-xs font-black text-slate-800">
+                            {scope.items.filter(item => item.itemType === 'Financial Account' && item.inScope).length}/
+                            {scope.items.filter(item => item.itemType === 'Financial Account').length}
+                          </div>
+                          <div className="text-[8px] text-slate-400">incl. borderline</div>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2">
+                          <div className="text-[9px] text-slate-400">Processes</div>
+                          <div className="text-xs font-black text-slate-800">
+                            {scope.items.filter(item => item.itemType === 'Business Process' && item.inScope).length}/
+                            {scope.items.filter(item => item.itemType === 'Business Process').length}
+                          </div>
+                          <div className="text-[8px] text-slate-400">P-01 to P-16</div>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2">
+                          <div className="text-[9px] text-slate-400">Applications</div>
+                          <div className="text-xs font-black text-slate-800">
+                            {scope.items.filter(item => item.itemType === 'IT System' && item.inScope).length}/
+                            {scope.items.filter(item => item.itemType === 'IT System').length}
+                          </div>
+                          <div className="text-[8px] text-slate-400">revalidation applies</div>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2">
+                          <div className="text-[9px] text-slate-400">Open source issues</div>
+                          <div className="text-xs font-black text-slate-800">
+                            {scope.issues?.filter(issue => issue.status === 'OPEN').length || 0}
+                          </div>
+                          <div className="text-[8px] text-slate-400">not silently reconciled</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {scope.issues && scope.issues.filter(issue => issue.status === 'OPEN').length > 0 && (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                          <AlertCircle className="h-3 w-3" />
+                          Source reconciliation / revalidation
+                        </div>
+                        <div className="mt-2 space-y-1.5">
+                          {scope.issues
+                            .filter(issue => issue.status === 'OPEN')
+                            .slice(0, 4)
+                            .map(issue => (
+                              <div key={issue.id} className="text-[9px] leading-4 text-amber-900">
+                                <span className="font-black">{issue.issueCode}</span>
+                                {' · '}
+                                {issue.description}
+                              </div>
+                            ))}
+                          {scope.issues.filter(issue => issue.status === 'OPEN').length > 4 && (
+                            <div className="text-[9px] font-bold text-amber-700">
+                              +{scope.issues.filter(issue => issue.status === 'OPEN').length - 4} additional open issue(s)
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
