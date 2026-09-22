@@ -1,0 +1,496 @@
+name: Promote Bank Kalbar deep organization hierarchy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-bank-kalbar-deep-organization.yml'
+      - 'src/lib/d1-organization.ts'
+      - 'src/app/organization/page.tsx'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-promote-bank-kalbar-deep-organization
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Promote source-governed deep organization hierarchy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/promote_bank_kalbar_deep_org.py <<'PY'
+          import hashlib, json, os, re, subprocess, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="BANK_KALBAR_DEEP_ORG_20260922"
+          LEGAL_NAME="PT. Bank Pembangunan Daerah Kalimantan Barat"
+          AS_OF="2026-09-22"
+
+          SOURCES = {
+            "seraya_units": "SERAYA:1PP3k6wnVdYEWQCtxcGtw-dCpmHfjYutf#Daftar Fungsi/Unit Kerja Bank Kalbar",
+            "aura_branch_sop": "AURA:1qGRMYziU7V3Z4HXhUGNx8mFullqaVoFK#DIR/PP-0024/2026 tanggal 9 Juni 2026",
+            "aura_central_amendment": "AURA:1NWZMKg1JNPZlrd3hyPrwjziqqdx6doEG#PP-0003 Perubahan Kelima Struktur Organisasi",
+            "seraya_annual_report_reference": "SERAYA:1o1L4wikmcIH715l_C_e2kTI_mLlnts6V#Laporan Tahunan 2025 diterima/digunakan",
+            "website_management": "https://bankkalbar.co.id/jajaran_manajemen.php",
+            "website_network": "https://bankkalbar.co.id/jaringan_kantor.php",
+            "website_contact": "https://bankkalbar.co.id/hubungi_kami.php"
+          }
+
+          CURRENT_DIRECTORS = [
+            ("DIR-UTAMA", "Direktur Utama", "Rokidi, S.E., M.M."),
+            ("DIR-KEPATUHAN", "Direktur Kepatuhan", "R.S.M. Al Amin B.A., S.E., S.H., M.E., M.H."),
+            ("DIR-PEMASARAN-UUS", "Direktur Pemasaran & UUS", "Yuse Chaidi Amzar, S.E., M.E.")
+          ]
+
+          CONVENTIONAL_BRANCHES = [
+            ("BR-KCU-PONTIANAK", "Cabang Utama Pontianak"),
+            ("BR-FLAMBOYAN", "Cabang Flamboyan"),
+            ("BR-KUBU-RAYA", "Cabang Kubu Raya"),
+            ("BR-MEMPAWAH", "Cabang Mempawah"),
+            ("BR-SINGKAWANG", "Cabang Singkawang"),
+            ("BR-SAMBAS", "Cabang Sambas"),
+            ("BR-PEMANGKAT", "Cabang Pemangkat"),
+            ("BR-BENGKAYANG", "Cabang Bengkayang"),
+            ("BR-NGABANG", "Cabang Ngabang"),
+            ("BR-SANGGAU", "Cabang Sanggau"),
+            ("BR-BALAI-KARANGAN", "Cabang Balai Karangan"),
+            ("BR-SEKADAU", "Cabang Sekadau"),
+            ("BR-SINTANG", "Cabang Sintang"),
+            ("BR-NANGA-PINOH", "Cabang Nanga Pinoh"),
+            ("BR-PUTUSSIBAU", "Cabang Putussibau"),
+            ("BR-SEMITAU", "Cabang Semitau"),
+            ("BR-KETAPANG", "Cabang Ketapang"),
+            ("BR-SUKADANA", "Cabang Sukadana"),
+            ("BR-JAKARTA", "Cabang Jakarta")
+          ]
+
+          SHARIA_BRANCHES = [
+            ("BR-SYARIAH-PONTIANAK", "Cabang Syariah Pontianak"),
+            ("BR-SYARIAH-SINGKAWANG", "Cabang Syariah Singkawang"),
+            ("BR-SYARIAH-SAMBAS", "Cabang Syariah Sambas"),
+            ("BR-SYARIAH-KETAPANG", "Cabang Syariah Ketapang")
+          ]
+
+          TEMPLATE_NODES = [
+            ("KC-CONV", None, "Context", "Kantor Cabang Konvensional", "Structural context", 0),
+            ("PEMIMPIN-CABANG", "KC-CONV", "Position", "Pemimpin Cabang", "Direct", 0),
+            ("WAKIL-PEMIMPIN", "PEMIMPIN-CABANG", "Position", "Wakil Pemimpin Cabang", "Direct", 1),
+            ("KCP", "PEMIMPIN-CABANG", "Office", "Kantor Cabang Pembantu", "Direct", 1),
+            ("UUM", "PEMIMPIN-CABANG", "Unit", "Unit Usaha Mikro", "Direct", 1),
+            ("SEKSI-KREDIT", "PEMIMPIN-CABANG", "Unit", "Seksi Kredit", "Direct", 1),
+            ("SEKSI-PENAGIHAN", "PEMIMPIN-CABANG", "Unit", "Seksi Penagihan & Pemulihan Kredit", "Direct", 1),
+            ("SEKSI-PENGHIMPUNAN", "PEMIMPIN-CABANG", "Unit", "Seksi Penghimpunan Dana", "Direct", 1),
+            ("SEKSI-UMUM", "PEMIMPIN-CABANG", "Unit", "Seksi Umum dan Personalia", "Direct", 1),
+            ("KCP-KAS", "PEMIMPIN-CABANG", "Office", "Kantor Cabang Pembantu Kas", "Direct", 1),
+            ("KCP-KELILING", "PEMIMPIN-CABANG", "Office", "Kantor Cabang Pembantu Keliling", "Direct", 1),
+            ("SEKSI-PELAYANAN", "PEMIMPIN-CABANG", "Unit", "Seksi Pelayanan Nasabah", "Indirect supervision", 1),
+            ("SEKSI-AKUNTANSI", "PEMIMPIN-CABANG", "Unit", "Seksi Akuntansi", "Indirect supervision", 1),
+            ("KONTROL-INTERN", "KC-CONV", "Control Function", "Kontrol Intern Cabang", "Control line shown on formal chart", 1)
+          ]
+
+          def wr(args, retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(["npx","wrangler",*args], text=True, env=os.environ, capture_output=True)
+                  if p.returncode == 0:
+                      return p.stdout
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("WRANGLER_FAILURE", json.dumps({
+                  "returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              }, ensure_ascii=False))
+              raise RuntimeError("WRANGLER_COMMAND_FAILED")
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def execute_file(path, retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(
+                      ["npx","wrangler","d1","execute",DB,"--remote","--file",path],
+                      text=True, env=os.environ, capture_output=True
+                  )
+                  if p.returncode==0:
+                      return
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("D1_WRITE_FAILURE", json.dumps({
+                  "path":path,"returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("D1_WRITE_FAILED_"+path)
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          ddl="""
+          CREATE TABLE IF NOT EXISTS OrganizationHierarchyEvidence (
+            unitId TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            sourceStatus TEXT NOT NULL,
+            hierarchyStatus TEXT NOT NULL,
+            sourceReferencesJson TEXT NOT NULL,
+            sourceNote TEXT,
+            asOfDate TEXT,
+            updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_org_hierarchy_evidence_institution
+            ON OrganizationHierarchyEvidence(institutionId);
+          CREATE INDEX IF NOT EXISTS idx_org_hierarchy_evidence_status
+            ON OrganizationHierarchyEvidence(hierarchyStatus);
+
+          CREATE TABLE IF NOT EXISTS OrganizationStructureTemplate (
+            id TEXT PRIMARY KEY NOT NULL,
+            institutionId TEXT NOT NULL,
+            templateCode TEXT NOT NULL,
+            nodeCode TEXT NOT NULL,
+            parentNodeCode TEXT,
+            relationshipType TEXT NOT NULL DEFAULT 'Direct',
+            type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            conditional INTEGER NOT NULL DEFAULT 0,
+            sourceReference TEXT NOT NULL,
+            sortOrder INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'Active',
+            updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_org_structure_template_node
+            ON OrganizationStructureTemplate(institutionId,templateCode,nodeCode);
+          """
+          Path("/tmp/deep_org_ddl.sql").write_text(ddl)
+          execute_file("/tmp/deep_org_ddl.sql")
+
+          inst=rows("SELECT * FROM Institution WHERE legalName="+q(LEGAL_NAME)+" LIMIT 1")
+          if len(inst)!=1:
+              raise RuntimeError("BANK_KALBAR_INSTITUTION_NOT_FOUND")
+          institution_id=str(inst[0]["id"])
+
+          entity=rows(
+              "SELECT * FROM LegalEntity WHERE institutionId="+q(institution_id)+" AND code='BANK-KALBAR' LIMIT 1"
+          )
+          if len(entity)!=1:
+              raise RuntimeError("BANK_KALBAR_LEGAL_ENTITY_NOT_FOUND")
+          entity_id=str(entity[0]["id"])
+
+          existing_units=rows(
+              "SELECT id,code,name,type,parentId,createdAt FROM OrganizationUnit WHERE institutionId="+q(institution_id)
+          )
+          by_code={str(x["code"]):x for x in existing_units}
+
+          required_existing=["EXEC-DIREKSI","DIV-UUS","GOV-DEKOM","GOV-KOM-AUD"]
+          missing=[code for code in required_existing if code not in by_code]
+          if missing:
+              raise RuntimeError("REQUIRED_EXISTING_ORG_UNITS_MISSING_"+",".join(missing))
+
+          unit_ids={code:str(row["id"]) for code,row in by_code.items()}
+          statements=[]
+
+          def upsert_unit(code,name,unit_type,parent_code=None,head_name=None):
+              existing=by_code.get(code)
+              uid=str(existing["id"]) if existing else hid(institution_id,code,"ORG-UNIT")
+              unit_ids[code]=uid
+              created=str(existing.get("createdAt") or now) if existing else now
+              parent_id=unit_ids.get(parent_code) if parent_code else None
+              statements.append(f"""
+              INSERT INTO OrganizationUnit (
+                id,institutionId,legalEntityId,parentId,type,code,name,headName,headEmail,status,createdAt,updatedAt
+              ) VALUES (
+                {q(uid)},{q(institution_id)},{q(entity_id)},{q(parent_id)},{q(unit_type)},{q(code)},{q(name)},
+                {q(head_name)},NULL,'Active',{q(created)},{q(now)}
+              )
+              ON CONFLICT(institutionId,code) DO UPDATE SET
+                legalEntityId=excluded.legalEntityId,
+                parentId=excluded.parentId,
+                type=excluded.type,
+                name=excluded.name,
+                headName=COALESCE(excluded.headName,OrganizationUnit.headName),
+                status='Active',
+                updatedAt=excluded.updatedAt;
+              """)
+              return uid
+
+          for code,name,head in CURRENT_DIRECTORS:
+              upsert_unit(code,name,"Directorate","EXEC-DIREKSI",head)
+
+          # Public current website names this as a division. Preserve the existing record id/code.
+          upsert_unit("FUNC-CORSEC","Divisi Corporate Secretary","Division",None,None)
+
+          # Explicitly named by the 9 June 2026 branch SOP as the Kantor Pusat coordination point.
+          upsert_unit("DIV-CREDIT-RECOVERY","Divisi Credit Recovery","Division",None,None)
+
+          # The current director title explicitly includes UUS; the UUS definition in source material
+          # identifies the UUS as the head-office parent for sharia offices.
+          upsert_unit("DIV-UUS","Divisi UUS","Division","DIR-PEMASARAN-UUS",None)
+
+          for code,name in CONVENTIONAL_BRANCHES:
+              upsert_unit(code,name,"Branch",None,None)
+
+          for code,name in SHARIA_BRANCHES:
+              upsert_unit(code,name,"Branch","DIV-UUS",None)
+
+          Path("/tmp/deep_org_units.sql").write_text("\n".join(statements))
+          execute_file("/tmp/deep_org_units.sql")
+
+          # Refresh unit ids after upsert.
+          managed_codes=[x[0] for x in CURRENT_DIRECTORS]
+          managed_codes += ["FUNC-CORSEC","DIV-CREDIT-RECOVERY","DIV-UUS"]
+          managed_codes += [x[0] for x in CONVENTIONAL_BRANCHES] + [x[0] for x in SHARIA_BRANCHES]
+          managed_codes += [
+              "GOV-DEKOM","GOV-KOM-AUD","EXEC-DIREKSI",
+              "DIV-SDM","DIV-TREASURY","DIV-KREDIT","DIV-AKUNTANSI","DIV-KEPATUHAN",
+              "DIV-TI","DIV-MR","DIV-EBANK","DIV-STRATEGI","DIV-UMUM","FUNC-SKAI","FUNC-ICOFR"
+          ]
+          managed_codes=sorted(set(managed_codes))
+          code_sql=",".join(q(x) for x in managed_codes)
+          managed=rows(
+              "SELECT id,code,name,type,parentId,status FROM OrganizationUnit WHERE institutionId="+q(institution_id)+
+              " AND code IN ("+code_sql+") ORDER BY code"
+          )
+          by_code_live={str(x["code"]):x for x in managed}
+          missing_managed=[code for code in managed_codes if code not in by_code_live]
+          if missing_managed:
+              raise RuntimeError("MANAGED_ORG_UNIT_MISSING_"+",".join(missing_managed))
+
+          def evidence(code,source_status,hierarchy_status,refs,note):
+              row=by_code_live[code]
+              refs_json=json.dumps(refs,ensure_ascii=False,separators=(",",":"))
+              return f"""
+              INSERT INTO OrganizationHierarchyEvidence (
+                unitId,institutionId,sourceStatus,hierarchyStatus,sourceReferencesJson,sourceNote,asOfDate,updatedAt
+              ) VALUES (
+                {q(row['id'])},{q(institution_id)},{q(source_status)},{q(hierarchy_status)},
+                {q(refs_json)},{q(note)},{q(AS_OF)},{q(now)}
+              )
+              ON CONFLICT(unitId) DO UPDATE SET
+                sourceStatus=excluded.sourceStatus,
+                hierarchyStatus=excluded.hierarchyStatus,
+                sourceReferencesJson=excluded.sourceReferencesJson,
+                sourceNote=excluded.sourceNote,
+                asOfDate=excluded.asOfDate,
+                updatedAt=excluded.updatedAt;
+              """
+
+          evidence_sql=[]
+
+          evidence_sql.append(evidence(
+              "GOV-DEKOM","VERIFIED_EXISTENCE","VERIFIED_TOP_LEVEL",
+              [SOURCES["seraya_units"],SOURCES["website_management"]],
+              "Dewan Komisaris is source-confirmed; no artificial parent is assigned."
+          ))
+          evidence_sql.append(evidence(
+              "GOV-KOM-AUD","VERIFIED_EXISTENCE_AND_PARENT","VERIFIED_PARENT",
+              [SOURCES["seraya_units"],SOURCES["aura_central_amendment"]],
+              "Komite Audit is maintained under Dewan Komisaris from the previously verified formal hierarchy."
+          ))
+          evidence_sql.append(evidence(
+              "EXEC-DIREKSI","VERIFIED_EXISTENCE","VERIFIED_TOP_LEVEL",
+              [SOURCES["seraya_units"],SOURCES["website_management"]],
+              "Direksi is source-confirmed; current individual director roles are maintained beneath this node."
+          ))
+
+          for code,_,_ in CURRENT_DIRECTORS:
+              evidence_sql.append(evidence(
+                  code,"VERIFIED_CURRENT_MANAGEMENT","VERIFIED_PARENT",
+                  [SOURCES["website_management"]],
+                  "Current director role is published on Bank Kalbar's official management page and linked under Direksi."
+              ))
+
+          evidence_sql.append(evidence(
+              "DIV-UUS","VERIFIED_EXISTENCE","VERIFIED_PARENT",
+              [SOURCES["seraya_units"],SOURCES["website_management"]],
+              "UUS is linked to the current Direktur Pemasaran & UUS; source material defines UUS as the head-office parent for sharia offices."
+          ))
+          evidence_sql.append(evidence(
+              "FUNC-CORSEC","VERIFIED_CURRENT_NAMING","PENDING_PARENT",
+              [SOURCES["seraya_units"],SOURCES["website_contact"]],
+              "Official current contact page uses the name Divisi Corporate Secretary. Exact current director-level parent remains unassigned until a readable formal central-office amendment confirms it."
+          ))
+          evidence_sql.append(evidence(
+              "DIV-CREDIT-RECOVERY","VERIFIED_EXISTENCE","PENDING_PARENT",
+              [SOURCES["aura_branch_sop"]],
+              "DIR/PP-0024/2026 explicitly refers to Kantor Pusat Up. Divisi Credit Recovery. The exact director-level parent is not stated in the readable branch SOP."
+          ))
+
+          pending_central=[
+              "DIV-SDM","DIV-TREASURY","DIV-KREDIT","DIV-AKUNTANSI","DIV-KEPATUHAN",
+              "DIV-TI","DIV-MR","DIV-EBANK","DIV-STRATEGI","DIV-UMUM","FUNC-SKAI","FUNC-ICOFR"
+          ]
+          for code in pending_central:
+              evidence_sql.append(evidence(
+                  code,"VERIFIED_EXISTENCE","PENDING_PARENT",
+                  [SOURCES["seraya_units"],SOURCES["aura_central_amendment"]],
+                  "Unit existence is source-backed. Exact current director-level reporting line is deliberately left unassigned because the latest central-office amendment is scanned and not text-verifiable in the connected source."
+              ))
+
+          for code,_ in CONVENTIONAL_BRANCHES:
+              evidence_sql.append(evidence(
+                  code,"VERIFIED_CURRENT_OFFICE","PENDING_PARENT",
+                  [SOURCES["website_network"],SOURCES["aura_branch_sop"]],
+                  "Active conventional branch is listed on the official Bank Kalbar office network. DIR/PP-0024/2026 states branch supervision is from Direksi through the relevant Division Head, but does not identify one single central parent for every branch."
+              ))
+
+          for code,_ in SHARIA_BRANCHES:
+              evidence_sql.append(evidence(
+                  code,"VERIFIED_CURRENT_OFFICE","VERIFIED_FUNCTIONAL_PARENT",
+                  [SOURCES["website_network"],SOURCES["website_management"],SOURCES["aura_branch_sop"]],
+                  "Active sharia branch is listed on the official network and is linked to UUS as the source-defined head-office parent for sharia offices."
+              ))
+
+          Path("/tmp/deep_org_evidence.sql").write_text("\n".join(evidence_sql))
+          execute_file("/tmp/deep_org_evidence.sql")
+
+          template_statements=[]
+          source_ref=SOURCES["aura_branch_sop"]
+          for order,(node_code,parent_code,node_type,name,relationship,conditional) in enumerate(TEMPLATE_NODES, start=1):
+              tid=hid(institution_id,"KC-CONV-2026",node_code)
+              template_statements.append(f"""
+              INSERT INTO OrganizationStructureTemplate (
+                id,institutionId,templateCode,nodeCode,parentNodeCode,relationshipType,type,name,
+                conditional,sourceReference,sortOrder,status,updatedAt
+              ) VALUES (
+                {q(tid)},{q(institution_id)},'KC-CONV-2026',{q(node_code)},{q(parent_code)},
+                {q(relationship)},{q(node_type)},{q(name)},{int(conditional)},{q(source_ref)},{order},'Active',{q(now)}
+              )
+              ON CONFLICT(institutionId,templateCode,nodeCode) DO UPDATE SET
+                parentNodeCode=excluded.parentNodeCode,
+                relationshipType=excluded.relationshipType,
+                type=excluded.type,
+                name=excluded.name,
+                conditional=excluded.conditional,
+                sourceReference=excluded.sourceReference,
+                sortOrder=excluded.sortOrder,
+                status='Active',
+                updatedAt=excluded.updatedAt;
+              """)
+          Path("/tmp/deep_org_template.sql").write_text("\n".join(template_statements))
+          execute_file("/tmp/deep_org_template.sql")
+
+          template_count=rows(
+              "SELECT COUNT(*) AS n FROM OrganizationStructureTemplate WHERE institutionId="+q(institution_id)+
+              " AND templateCode='KC-CONV-2026' AND status='Active'"
+          )
+          if int(template_count[0]["n"]) != len(TEMPLATE_NODES):
+              raise RuntimeError("BRANCH_TEMPLATE_VERIFY_FAILED")
+
+          dmrk=rows(
+              "SELECT COUNT(*) AS n FROM OrganizationUnit WHERE institutionId="+q(institution_id)+
+              " AND (code='DMRK' OR name='Direktorat Manajemen Risiko dan Kepatuhan')"
+          )
+          if int(dmrk[0]["n"]) != 0:
+              raise RuntimeError("REMOVED_DMRK_REAPPEARED")
+
+          feed_table=rows("SELECT name FROM sqlite_master WHERE type='table' AND name='OperationalDataFeedRun'")
+          if feed_table:
+              source_refs=list(SOURCES.values())
+              summary={
+                  "institution":LEGAL_NAME,
+                  "managedUnitCount":len(managed_codes),
+                  "directorRoleCount":len(CURRENT_DIRECTORS),
+                  "conventionalBranchCount":len(CONVENTIONAL_BRANCHES),
+                  "shariaBranchCount":len(SHARIA_BRANCHES),
+                  "formalBranchTemplateNodes":len(TEMPLATE_NODES),
+                  "policy":"Parent relationships are populated only where source-confirmed; unresolved central reporting lines remain null and are surfaced as PENDING_PARENT.",
+                  "annualReportNote":"Project source confirms Annual Report 2025 was received/used, but the standalone report file was not directly readable/indexed in the connected Drive search during this promotion.",
+                  "sourcePrecedence":"Seraya update > Aura baseline/formal amendment where overlapping; official Bank Kalbar website used for current management and office-network corroboration."
+              }
+              feed_id=hid(institution_id,BATCH)
+              feed_sql=f"""
+              INSERT INTO OperationalDataFeedRun
+              (id,institutionId,batchCode,module,sourceRole,sourceReferencesJson,recordsUpserted,status,summaryJson,completedAt)
+              VALUES(
+                {q(feed_id)},{q(institution_id)},{q(BATCH)},'Institution & Organization',
+                'GOVERNED_MULTI_SOURCE_DEEPENING',{q(json.dumps(source_refs,ensure_ascii=False,separators=(",",":")))},
+                {len(managed_codes)+len(TEMPLATE_NODES)},'Completed',
+                {q(json.dumps(summary,ensure_ascii=False,separators=(",",":")))},{q(now)}
+              )
+              ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+                sourceReferencesJson=excluded.sourceReferencesJson,
+                recordsUpserted=excluded.recordsUpserted,
+                status='Completed',
+                summaryJson=excluded.summaryJson,
+                completedAt=excluded.completedAt;
+              """
+              Path("/tmp/deep_org_feed.sql").write_text(feed_sql)
+              execute_file("/tmp/deep_org_feed.sql")
+
+          audit_id=hid(institution_id,BATCH,"AUDIT")
+          audit_value={
+              "managedUnitCount":len(managed_codes),
+              "directorRoles":[x[1] for x in CURRENT_DIRECTORS],
+              "conventionalBranches":[x[1] for x in CONVENTIONAL_BRANCHES],
+              "shariaBranches":[x[1] for x in SHARIA_BRANCHES],
+              "formalBranchTemplate":"DIR/PP-0024/2026",
+              "dmrkExcluded":True
+          }
+          audit_sql=f"""
+          INSERT OR REPLACE INTO AuditLog
+          (id,institutionId,userName,userRole,action,entityType,recordId,oldValue,newValue,reason,ipAddress,timestamp)
+          VALUES(
+            {q(audit_id)},{q(institution_id)},'System','System','UPSERT','OrganizationHierarchy',
+            {q(BATCH)},NULL,{q(json.dumps(audit_value,ensure_ascii=False,separators=(",",":")))},
+            'Deepen Bank Kalbar organization from Aura formal sources, Seraya update sources, and official Bank Kalbar current website without inventing unresolved reporting lines.',
+            NULL,{q(now)}
+          );
+          """
+          Path("/tmp/deep_org_audit.sql").write_text(audit_sql)
+          execute_file("/tmp/deep_org_audit.sql")
+
+          evidence_summary=rows(
+              "SELECT hierarchyStatus,COUNT(*) AS n FROM OrganizationHierarchyEvidence WHERE institutionId="+
+              q(institution_id)+" GROUP BY hierarchyStatus ORDER BY hierarchyStatus"
+          )
+          branches=rows(
+              "SELECT code,name,parentId FROM OrganizationUnit WHERE institutionId="+q(institution_id)+
+              " AND type='Branch' AND status='Active' ORDER BY name"
+          )
+
+          print("=== BANK KALBAR DEEP ORGANIZATION RESULT ===")
+          print(json.dumps({
+              "institutionId":institution_id,
+              "managedUnitCount":len(managed_codes),
+              "directorRoleCount":len(CURRENT_DIRECTORS),
+              "activeBranchCount":len(branches),
+              "conventionalBranchCount":len(CONVENTIONAL_BRANCHES),
+              "shariaBranchCount":len(SHARIA_BRANCHES),
+              "formalBranchTemplateNodes":len(TEMPLATE_NODES),
+              "hierarchyEvidence":evidence_summary,
+              "dmrkCount":int(dmrk[0]["n"]),
+              "branches":branches,
+              "sources":SOURCES
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/promote_bank_kalbar_deep_org.py
+          rm -f /tmp/promote_bank_kalbar_deep_org.py /tmp/deep_org_ddl.sql /tmp/deep_org_units.sql /tmp/deep_org_evidence.sql /tmp/deep_org_template.sql /tmp/deep_org_feed.sql /tmp/deep_org_audit.sql

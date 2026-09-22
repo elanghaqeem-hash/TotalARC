@@ -40,10 +40,34 @@ type OrganizationUnit = {
   status?: string;
 };
 
+type HierarchyEvidence = {
+  unitId: string;
+  sourceStatus: string;
+  hierarchyStatus: string;
+  sourceReferencesJson: string;
+  sourceNote?: string | null;
+  asOfDate?: string | null;
+};
+
+type OrganizationTemplateNode = {
+  id: string;
+  templateCode: string;
+  nodeCode: string;
+  parentNodeCode?: string | null;
+  relationshipType: string;
+  type: string;
+  name: string;
+  conditional: number;
+  sourceReference: string;
+  sortOrder: number;
+};
+
 type OrganizationPayload = {
   institution: Institution | null;
   legalEntities: LegalEntity[];
   organizationUnits: OrganizationUnit[];
+  hierarchyEvidence?: HierarchyEvidence[];
+  organizationTemplates?: OrganizationTemplateNode[];
   storage?: string;
 };
 
@@ -166,6 +190,14 @@ export default function OrganizationPage() {
   const institution = data?.institution || null;
   const legalEntities = data?.legalEntities || [];
   const organizationUnits = data?.organizationUnits || [];
+  const hierarchyEvidence = data?.hierarchyEvidence || [];
+  const organizationTemplates = data?.organizationTemplates || [];
+  const verifiedHierarchyCount = hierarchyEvidence.filter(item =>
+    item.hierarchyStatus.startsWith('VERIFIED')
+  ).length;
+  const pendingHierarchy = hierarchyEvidence.filter(item =>
+    item.hierarchyStatus.includes('PENDING')
+  );
 
   const rootUnits = useMemo(() => {
     const knownIds = new Set(organizationUnits.map(unit => unit.id));
@@ -649,6 +681,104 @@ export default function OrganizationPage() {
               </div>
             </div>
           </div>
+
+          {(hierarchyEvidence.length > 0 || organizationTemplates.length > 0) && (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="font-black text-slate-900">Hierarchy Source Governance</h2>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                      Reporting lines are populated only when supported by a formal source.
+                      Units may exist while their central parent remains pending confirmation.
+                    </p>
+                  </div>
+                  <div className="flex gap-2 text-[10px] font-black">
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                      {verifiedHierarchyCount} verified
+                    </span>
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">
+                      {pendingHierarchy.length} pending
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {pendingHierarchy.length === 0 ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
+                      All source-managed reporting lines are verified.
+                    </div>
+                  ) : (
+                    pendingHierarchy.slice(0, 12).map(item => {
+                      const unit = organizationUnits.find(candidate => candidate.id === item.unitId);
+                      return (
+                        <div key={item.unitId} className="rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+                          <div className="text-xs font-black text-slate-800">
+                            {unit ? `${unit.code} · ${unit.name}` : item.unitId}
+                          </div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                            {item.sourceNote || 'Parent relationship is awaiting a source-backed confirmation.'}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  {pendingHierarchy.length > 12 && (
+                    <div className="text-[11px] font-bold text-slate-400">
+                      +{pendingHierarchy.length - 12} additional source-managed unit(s) pending hierarchy confirmation.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div>
+                  <h2 className="font-black text-slate-900">Formal Branch Structure Reference</h2>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    Reference hierarchy from the latest available branch SOP. Conditional nodes are
+                    not treated as active at every branch unless branch-specific evidence exists.
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {organizationTemplates.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-xs text-slate-500">
+                      No formal structure template has been loaded.
+                    </div>
+                  ) : (
+                    organizationTemplates.map(node => {
+                      const parent = node.parentNodeCode
+                        ? organizationTemplates.find(candidate =>
+                            candidate.templateCode === node.templateCode &&
+                            candidate.nodeCode === node.parentNodeCode
+                          )
+                        : null;
+                      return (
+                        <div key={node.id} className="rounded-xl border border-slate-200 p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-wide text-brand-600">
+                              {node.type}
+                            </span>
+                            <span className="text-xs font-black text-slate-800">{node.name}</span>
+                            {Boolean(node.conditional) && (
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">
+                                conditional
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {parent ? `Parent: ${parent.name}` : 'Template root'}
+                            {' · '}
+                            {node.relationshipType}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
