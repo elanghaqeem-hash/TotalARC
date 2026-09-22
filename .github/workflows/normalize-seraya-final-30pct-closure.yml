@@ -208,6 +208,15 @@ jobs:
                   key=f"SERAYA:FRAUDRISK:2026:{ref}"
                   add_record(riskdoc,"ICOFR_FRAUD_RISK_UPDATE_CANDIDATE",key,ref+" — "+(x[2] or "Fraud risk"),payload)
                   fraud[ref]=payload
+                  status_upper=(x[10] or "").upper()
+                  if "BELUM ADA" in status_upper:
+                      add_issue(riskdoc,"FRAUD_RISK_CONTROL_GAP","HIGH",
+                          "Fraud risk source states that the required anti-fraud control is not yet available.",
+                          key,"sourceStatus",x[10],"Mapped and validated anti-fraud control")
+                  elif "SEBAGIAN" in status_upper:
+                      add_issue(riskdoc,"FRAUD_RISK_PARTIAL_CONTROL_COVERAGE","MEDIUM",
+                          "Fraud risk source states that control coverage is only partial.",
+                          key,"sourceStatus",x[10],"Complete mapped control coverage")
 
               elif state=="IT":
                   pos=next((i for i,v in enumerate(vals) if re.fullmatch(r"IT-(?:PD|PC|CO|AP)-\d{2}",v)),None)
@@ -232,6 +241,15 @@ jobs:
                   key=f"SERAYA:ITRISK:2026:{ref}"
                   add_record(riskdoc,"ICOFR_IT_RISK_UPDATE_CANDIDATE",key,ref+" — "+(x[2] or "IT risk"),payload)
                   itrisks[ref]=payload
+                  coverage_upper=(x[7] or "").upper()
+                  if "BELUM ADA" in coverage_upper:
+                      add_issue(riskdoc,"IT_RISK_CONTROL_GAP","HIGH",
+                          "IT risk source states that the required ITGC control is not yet available.",
+                          key,"priorCoverageStatus",x[7],"Mapped and validated ITGC control")
+                  elif "SEBAGIAN" in coverage_upper:
+                      add_issue(riskdoc,"IT_RISK_PARTIAL_CONTROL_COVERAGE","MEDIUM",
+                          "IT risk source states that prior ITGC coverage is only partial.",
+                          key,"priorCoverageStatus",x[7],"Complete mapped ITGC coverage")
 
               elif state=="APP":
                   if vals[0].lower()=="aplikasi" or len(vals)<6:
@@ -286,6 +304,12 @@ jobs:
                   key=f"SERAYA:ELCRISK:2026:{ref}"
                   add_record(riskdoc,"ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE",key,ref+" — "+(x[3] or "ELC risk"),payload)
                   elcrisks[ref]=payload
+                  source_upper=(x[7] or "").upper()
+                  if "BELUM" in source_upper or "GAP" in source_upper or "PERLU" in source_upper:
+                      sev="HIGH" if "BELUM ADA" in source_upper else "MEDIUM"
+                      add_issue(riskdoc,"ELC_SOURCE_EVIDENCE_GAP",sev,
+                          "Entity-level risk source indicates missing, insufficient or still-to-be-confirmed supporting control evidence.",
+                          key,"sourceDocumentStatus",x[7],"Validated supporting ELC evidence")
 
           if len(fraud)!=11: raise RuntimeError(f"FRAUD_RISK_COUNT_{len(fraud)}_11")
           if len(itrisks)!=16: raise RuntimeError(f"IT_RISK_COUNT_{len(itrisks)}_16")
@@ -528,6 +552,10 @@ jobs:
                   key=f"SERAYA:METH:ISSUE:{ref}"
                   add_record(meth,"ICOFR_METHODOLOGY_ISSUE_CANDIDATE",key,ref+" — "+x[1],payload)
                   method_issues[ref]=payload
+                  add_issue(meth,"METHODOLOGY_FORMAL_DECISION_REQUIRED",
+                      "HIGH" if (x[6] or "").upper()=="TINGGI" else "MEDIUM",
+                      "Methodology source identifies an issue requiring a formal Bank Kalbar decision before or during the next ICOFR phase.",
+                      key,"priority",x[6],x[5] or "Formal decision owner")
 
           expected_counts={
               "COSO":17,"COBIT":15,"ALLOWED":33,"TEST_METHOD":4,"TOE":8,
@@ -616,7 +644,9 @@ jobs:
               f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE normalizationBatch={q(BATCH)} AND status='Active';",
               "DELETE FROM SourceDataIssue WHERE institutionId="+q(institution_id)+
               " AND sourceDocumentId IN ("+",".join(q(x) for x in source_ids)+")"+
-              " AND issueType IN ('SIGNIFICANT_APPLICATION_METADATA_INCOMPLETE','TRAINING_SOURCE_EXCLUDED_FROM_OPERATIONAL_DATA');"
+              " AND issueType IN ('SIGNIFICANT_APPLICATION_METADATA_INCOMPLETE','TRAINING_SOURCE_EXCLUDED_FROM_OPERATIONAL_DATA',"+
+              "'FRAUD_RISK_CONTROL_GAP','FRAUD_RISK_PARTIAL_CONTROL_COVERAGE','IT_RISK_CONTROL_GAP','IT_RISK_PARTIAL_CONTROL_COVERAGE',"+
+              "'ELC_SOURCE_EVIDENCE_GAP','METHODOLOGY_FORMAL_DECISION_REQUIRED');"
           ]
           Path("/tmp/final30_cleanup.sql").write_text("\n".join(cleanup))
           subprocess.check_call(
