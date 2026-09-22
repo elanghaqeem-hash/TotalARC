@@ -166,7 +166,30 @@ jobs:
 
           check_json "risks" "/api/risks" '
             .storage == "cloudflare-d1" and
-            (.risks | type) == "array"
+            (.risks | type) == "array" and
+            ([.risks[] | select(
+              .sourceMetadata != null and
+              .sourceMetadata.feedBatch == "BANK_KALBAR_RISK_UNIVERSE_20260922"
+            )] | length) == 50 and
+            ([.risks[] | select(
+              .sourceMetadata != null and
+              .sourceMetadata.feedBatch == "BANK_KALBAR_RISK_UNIVERSE_20260922" and
+              .status == "Draft" and
+              .inherentScore == 0 and
+              .inherentRating == "Not Assessed" and
+              .residualScore == 0 and
+              .residualRating == "Not Assessed"
+            )] | length) == 50 and
+            ([.risks[] | select(.riskId == "R-KRD-01")] | length) == 1 and
+            ([.risks[] | select(.riskId == "R-012")] | length) == 1 and
+            ([.risks[] | select(
+              .sourceMetadata != null and
+              (
+                .sourceMetadata.sourceRecordType == "ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE" or
+                .sourceMetadata.sourceRecordType == "ICOFR_FRAUD_RISK_UPDATE_CANDIDATE" or
+                .sourceMetadata.sourceRecordType == "ICOFR_IT_RISK_UPDATE_CANDIDATE"
+              )
+            )] | length) == 0
           '
 
           check_json "controls" "/api/controls" '
