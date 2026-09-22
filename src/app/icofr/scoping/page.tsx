@@ -36,6 +36,30 @@ type ScopeItem = {
   inScope?: boolean;
 };
 
+type ScopeParameter = {
+  id: string;
+  parameterCode: string;
+  label: string;
+  numericValue?: number | null;
+  percentValue?: number | null;
+  formula?: string | null;
+  basis?: string | null;
+  status: string;
+  sourceNote?: string | null;
+};
+
+type PopulationSummary = {
+  id: string;
+  populationType: string;
+  assessedCount?: number | null;
+  significantCount?: number | null;
+  quantitativeSignificantCount?: number | null;
+  qualitativeOnlyCount?: number | null;
+  notSignificantCount?: number | null;
+  sourceStatus: string;
+  sourceNote?: string | null;
+};
+
 type ScopeRecord = {
   id: string;
   scopeName: string;
@@ -63,6 +87,8 @@ type ScopeRecord = {
   approvedBy?: string | null;
   notes?: string | null;
   items: ScopeItem[];
+  parameters?: ScopeParameter[];
+  populationSummaries?: PopulationSummary[];
   updatedAt?: string;
 };
 
@@ -176,9 +202,11 @@ export default function IcofrScopingPage() {
     [omAmount, pmPercent]
   );
 
+  const pmAmount = numberOrZero(form.performanceMaterialityAmount);
+
   const calculatedTrivial = useMemo(
-    () => omAmount * (trivialPercent / 100),
-    [omAmount, trivialPercent]
+    () => pmAmount * (trivialPercent / 100),
+    [pmAmount, trivialPercent]
   );
 
   const toggleSelection = (
@@ -666,7 +694,7 @@ export default function IcofrScopingPage() {
                   </label>
 
                   <label className="text-xs font-bold text-slate-700">
-                    Clearly trivial / SAD % of OM
+                    Clearly trivial / SAD % of PM
                     <input
                       type="number"
                       min="0"
@@ -696,7 +724,7 @@ export default function IcofrScopingPage() {
                       />
                       <button
                         type="button"
-                        title="Use OM × clearly trivial percentage"
+                        title="Use PM × clearly trivial percentage"
                         onClick={() =>
                           setForm({
                             ...form,
@@ -866,6 +894,7 @@ export default function IcofrScopingPage() {
                       <option value="Materiality + Risk-based">Materiality + Risk-based</option>
                       <option value="Full Scope">Full Scope</option>
                       <option value="Top-down">Top-down</option>
+                      <option value="Top-down risk-based">Top-down risk-based</option>
                     </select>
                   </label>
 
@@ -1094,6 +1123,46 @@ export default function IcofrScopingPage() {
                         </div>
                       </div>
                     </div>
+
+                    {scope.parameters && scope.parameters.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
+                          Source-governed parameters
+                        </div>
+                        <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                          {scope.parameters.slice(0, 6).map(parameter => (
+                            <div key={parameter.id} className="flex items-start justify-between gap-2 text-[10px]">
+                              <span className="text-slate-500">{parameter.label}</span>
+                              <span className="text-right font-bold text-slate-800">
+                                {parameter.numericValue !== null && parameter.numericValue !== undefined
+                                  ? formatAmount(parameter.numericValue, scope.currency)
+                                  : parameter.percentValue !== null && parameter.percentValue !== undefined
+                                    ? `${parameter.percentValue}%`
+                                    : parameter.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {scope.parameters.some(parameter => parameter.status.includes('RECONCILIATION')) && (
+                          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[9px] leading-4 text-amber-800">
+                            Source reconciliation required: the memorandum values are preserved as written and are not silently recalculated.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {scope.populationSummaries && scope.populationSummaries.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {scope.populationSummaries.map(pop => (
+                          <span
+                            key={pop.id}
+                            className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[9px] font-bold text-slate-600"
+                          >
+                            {pop.populationType}: {pop.significantCount ?? '—'} / {pop.assessedCount ?? '—'} significant
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
                       <span className="text-[10px] text-slate-500">

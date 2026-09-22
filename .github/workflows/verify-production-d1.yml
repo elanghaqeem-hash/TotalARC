@@ -256,7 +256,40 @@ jobs:
 
           check_json "icofr-scoping" "/api/icofr/scoping" '
             .storage == "cloudflare-d1" and
-            (.scopes | type) == "array"
+            (.scopes | type) == "array" and
+            ([.scopes[] | select(
+              .fiscalYear == 2026 and
+              .scopeName == "Bank Kalbar ICOFR Tahun Buku 2026" and
+              .benchmarkType == "Profit Before Tax" and
+              .benchmarkAmount == 673381000000 and
+              .overallMaterialityPercent == 5 and
+              .overallMaterialityAmount == 31904900000 and
+              .performanceMaterialityPercent == 50 and
+              .performanceMaterialityAmount == 15952500000 and
+              .clearlyTrivialPercent == 5 and
+              .clearlyTrivialAmount == 797620000 and
+              .status == "Under Review" and
+              (.parameters | type) == "array" and
+              ([.parameters[] | select(.parameterCode == "OM_AMOUNT" and .status == "UNDER_REVIEW_RECONCILIATION")] | length) == 1 and
+              ([.parameters[] | select(.parameterCode == "PM_AMOUNT" and .status == "PROVISIONAL")] | length) == 1 and
+              ([.populationSummaries[] | select(
+                .populationType == "FSLI" and
+                .assessedCount == 52 and
+                .significantCount == 38 and
+                .quantitativeSignificantCount == 36 and
+                .qualitativeOnlyCount == 2 and
+                .notSignificantCount == 14
+              )] | length) == 1 and
+              ([.populationSummaries[] | select(
+                .populationType == "APPLICATION" and
+                .assessedCount == 62 and
+                .significantCount == 31 and
+                .sourceStatus == "REVALIDATION_REQUIRED"
+              )] | length) == 1 and
+              ([.items[] | select(.code == "SC-ELC" and .inScope == true)] | length) == 1 and
+              ([.items[] | select(.code == "SC-ITGC" and .inScope == true)] | length) == 1 and
+              ([.items[] | select(.code == "SC-CUSTOMER-SERVICE" and .inScope == false)] | length) == 1
+            )] | length) == 1
           '
 
           check_json "icofr-financial-items" "/api/icofr/financial-items" '

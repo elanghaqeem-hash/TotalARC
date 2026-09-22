@@ -1,0 +1,36 @@
+name: Promote Bank Kalbar ICOFR 2026 scoping
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/promote-bank-kalbar-icofr-2026-scoping.py'
+      - 'src/lib/d1-icofr.ts'
+      - 'src/app/icofr/scoping/page.tsx'
+      - '.github/workflows/promote-bank-kalbar-icofr-2026-scoping.yml'
+      - '.github/workflows/verify-production-d1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-bank-kalbar-icofr-2026-scoping
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Promote source-governed FY2026 ICOFR scoping to production D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/promote-bank-kalbar-icofr-2026-scoping.py
