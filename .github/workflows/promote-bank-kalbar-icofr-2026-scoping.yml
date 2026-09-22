@@ -34,3 +34,64 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
         run: python scripts/promote-bank-kalbar-icofr-2026-scoping.py
+
+      - name: Verify production ICOFR scoping API
+        env:
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is required for production verification."
+            exit 1
+          fi
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+
+          check_json() {
+            local name="$1"
+            local path="$2"
+            local expression="$3"
+            local output="/tmp/totalarc-${name}.json"
+            local code
+            code="$(curl --silent --show-error --location --max-time 30 \
+              --output "$output" --write-out "%{http_code}" \
+              --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" \
+              "$BASE_URL$path" || true)"
+            if [ "$code" != "200" ]; then
+              echo "::error::$name returned HTTP ${code:-unknown}."
+              cat "$output" 2>/dev/null || true
+              return 1
+            fi
+            if ! jq -e "$expression" "$output" >/dev/null 2>&1; then
+              echo "::error::$name returned an unexpected payload."
+              cat "$output" 2>/dev/null || true
+              return 1
+            fi
+            echo "$name: healthy"
+          }
+
+          check_json "icofr-scoping" "/api/icofr/scoping" '
+            .storage == "cloudflare-d1" and
+            ([.scopes[] | select(
+              .fiscalYear == 2026 and
+              .scopeName == "Bank Kalbar ICOFR Tahun Buku 2026" and
+              .benchmarkAmount == 673381000000 and
+              .overallMaterialityAmount == 31904900000 and
+              .performanceMaterialityAmount == 15952500000 and
+              .clearlyTrivialAmount == 797620000 and
+              .status == "Under Review" and
+              ([.parameters[] | select(.parameterCode == "OM_AMOUNT" and .status == "UNDER_REVIEW_RECONCILIATION")] | length) == 1 and
+              ([.parameters[] | select(.parameterCode == "PM_AMOUNT" and .status == "PROVISIONAL")] | length) == 1 and
+              ([.populationSummaries[] | select(.populationType == "FSLI" and .assessedCount == 52 and .significantCount == 38)] | length) == 1 and
+              ([.populationSummaries[] | select(.populationType == "APPLICATION" and .assessedCount == 62 and .significantCount == 31)] | length) == 1
+            )] | length) == 1
+          '
+
+          check_json "icofr-financial-items" "/api/icofr/financial-items" '
+            .storage == "cloudflare-d1" and
+            ([.records[] | select(.itemCode == "FSLI-REVERSE-REPO" and .significant == true and .balanceAmount == 289920000000)] | length) == 1 and
+            ([.records[] | select(.itemCode == "FSLI-CKPN-EXPENSE" and .significant == true and .balanceAmount == 102040000000)] | length) == 1
+          '
