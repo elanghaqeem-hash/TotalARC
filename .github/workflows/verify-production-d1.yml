@@ -153,7 +153,15 @@ jobs:
           check_json "processes" "/api/processes" '
             .storage == "cloudflare-d1" and
             (.processes | type) == "array" and
-            (.categories | type) == "array"
+            (.categories | type) == "array" and
+            ([.categories[] | select(.code == "CAT-CORE" and .name == "Core Business Operation")] | length) == 1 and
+            ([.processes[] | select(.level == 2)] | length) >= 18 and
+            ([.processes[] | select(.level == 3)] | length) >= 48 and
+            ([.processes[] | select(.processId == "KRD" and .name == "Perkreditan")] | length) == 1 and
+            ([.processes[] | select(.processId == "DPK")] | length) == 1 and
+            ([.processes[] | select(.processId == "MRO")] | length) == 1 and
+            ([.processes[] | select(.processId == "TRY")] | length) == 1 and
+            ([.processes[] | select(.processId == "UUS")] | length) == 1
           '
 
           check_json "risks" "/api/risks" '
