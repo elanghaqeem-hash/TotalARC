@@ -1,10 +1,6 @@
 name: Refine source mapping policy
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/refine-source-mapping-policy.yml'
   workflow_run:
     workflows: ['Reconcile source precedence and mapping queue']
     types: [completed]
