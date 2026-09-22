@@ -1,0 +1,154 @@
+name: Diagnose Bank Kalbar BPM candidates
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-bank-kalbar-bpm-candidates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Inspect source-backed BPM candidates
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/diag_bpm.py <<'PY'
+          import json, os, re, subprocess
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          inst=rows("""
+            SELECT id,name,legalName
+            FROM Institution
+            WHERE lower(name) LIKE '%bank kalbar%'
+               OR lower(legalName) LIKE '%pembangunan daerah kalimantan barat%'
+            ORDER BY createdAt
+          """)
+          if len(inst)!=1: raise RuntimeError("BANK_KALBAR_INSTITUTION_COUNT_"+str(len(inst)))
+          iid=inst[0]["id"]
+
+          existing=rows(f"""
+            SELECT bp.processId,bp.name,bp.level,bp.status,bp.classification,bp.isIcofrRelevant,
+                   pc.code categoryCode,pc.name categoryName
+            FROM BusinessProcess bp
+            LEFT JOIN ProcessCategory pc ON pc.id=bp.categoryId
+            WHERE bp.institutionId='{iid}'
+            ORDER BY bp.processId
+          """)
+          print("=== CURRENT OPERATIONAL BPM ===")
+          print(json.dumps(existing,indent=2,ensure_ascii=False))
+
+          type_counts=rows(f"""
+            SELECT recordType,COUNT(*) records
+            FROM SourceStructuredRecord
+            WHERE institutionId='{iid}' AND status='Active'
+              AND (
+                recordType LIKE '%BPM%'
+                OR recordType LIKE '%RISK%UPDATE%CANDIDATE%'
+                OR recordType LIKE '%RISK_DETAIL%'
+                OR recordType LIKE '%CONTROL_DETAIL%'
+                OR recordType LIKE '%WALKTHROUGH%'
+              )
+            GROUP BY recordType
+            ORDER BY recordType
+          """)
+          print("=== SOURCE RECORD TYPES ===")
+          print(json.dumps(type_counts,indent=2,ensure_ascii=False))
+
+          source=rows(f"""
+            SELECT id,sourceDocumentId,recordType,recordKey,recordTitle,sourceRole,precedencePriority,
+                   normalizationBatch,payloadJson
+            FROM SourceStructuredRecord
+            WHERE institutionId='{iid}' AND status='Active'
+              AND recordType IN (
+                'ICOFR_RISK_DETAIL_UPDATE_CANDIDATE',
+                'ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE',
+                'ICOFR_RISK_UPDATE_CANDIDATE',
+                'ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE',
+                'ICOFR_FRAUD_RISK_UPDATE_CANDIDATE',
+                'ICOFR_IT_RISK_UPDATE_CANDIDATE',
+                'ITGC_WALKTHROUGH_UPDATE_CANDIDATE'
+              )
+            ORDER BY recordType,recordKey
+          """)
+
+          grouped={}
+          sample={}
+          for r in source:
+              try: p=json.loads(r.get("payloadJson") or "{}")
+              except: p={}
+              process=(p.get("businessProcess") or p.get("process") or p.get("areaOrProcess") or "").strip() if isinstance(p.get("businessProcess") or p.get("process") or p.get("areaOrProcess") or "",str) else ""
+              subprocess_name=(p.get("subprocess") or p.get("subProcess") or "").strip() if isinstance(p.get("subprocess") or p.get("subProcess") or "",str) else ""
+              if process:
+                  k=(process,subprocess_name)
+                  grouped.setdefault(k,{"count":0,"types":set(),"batches":set(),"documents":set()})
+                  grouped[k]["count"]+=1
+                  grouped[k]["types"].add(r["recordType"])
+                  grouped[k]["batches"].add(r["normalizationBatch"])
+                  grouped[k]["documents"].add(r["sourceDocumentId"])
+                  sample.setdefault(k,p)
+
+          out=[]
+          for (process,subprocess_name),v in sorted(grouped.items()):
+              out.append({
+                "businessProcess":process,
+                "subprocess":subprocess_name or None,
+                "recordCount":v["count"],
+                "recordTypes":sorted(v["types"]),
+                "normalizationBatches":sorted(v["batches"]),
+                "sourceDocuments":sorted(v["documents"]),
+                "sampleKeys":sorted(sample[(process,subprocess_name)].keys())
+              })
+          print("=== DISTINCT SOURCE-BACKED PROCESS PAIRS ===")
+          print(json.dumps(out,indent=2,ensure_ascii=False))
+
+          refs=rows(f"""
+            SELECT recordType,recordKey,recordTitle,payloadJson
+            FROM SourceStructuredRecord
+            WHERE institutionId='{iid}' AND status='Active'
+              AND recordType IN ('ICOFR_TLC_BPM_NARRATIVE_REFERENCE','ELC_BPM_NARRATIVE_REFERENCE')
+            ORDER BY recordType,recordKey
+            LIMIT 12
+          """)
+          print("=== REFERENCE-ONLY BPM EXAMPLES (NOT ELIGIBLE) ===")
+          safe=[]
+          for r in refs:
+              p=json.loads(r.get("payloadJson") or "{}")
+              safe.append({
+                "recordType":r["recordType"],"recordKey":r["recordKey"],"recordTitle":r["recordTitle"],
+                "referenceMasterOnly":p.get("referenceMasterOnly"),
+                "reviewRequired":p.get("reviewRequired"),
+                "validatedBankKalbarProcess":p.get("validatedBankKalbarProcess"),
+                "operationalProcessCreated":p.get("operationalProcessCreated")
+              })
+          print(json.dumps(safe,indent=2,ensure_ascii=False))
+          PY
+          python /tmp/diag_bpm.py
+          rm -f /tmp/diag_bpm.py
