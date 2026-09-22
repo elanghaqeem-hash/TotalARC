@@ -1,4 +1,4 @@
-name: Diagnose requested DMRK organization unit
+name: Remove requested DMRK organization unit
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  remove:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -21,7 +21,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Inspect exact DMRK record and references
+      - name: Remove exact requested DMRK record and verify
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -35,24 +35,91 @@ jobs:
           ' /tmp/d1-list.json)"
           test -n "$DB_NAME"
           echo "Database: $DB_NAME"
-          npx wrangler d1 execute "$DB_NAME" --remote --json --command "
-            SELECT id,institutionId,legalEntityId,parentId,type,code,name,headName,headEmail,status,createdAt,updatedAt
+
+          BEFORE="$(npx wrangler d1 execute "$DB_NAME" --remote --json --command "
+            SELECT COUNT(*) AS recordCount
             FROM OrganizationUnit
-            WHERE code='DMRK' AND name='Direktorat Manajemen Risiko dan Kepatuhan';
-          "
-          npx wrangler d1 execute "$DB_NAME" --remote --json --command "
-            SELECT COUNT(*) AS childCount
+            WHERE id='d0dccb3f-6a92-4d6b-abdd-9f258eca4666'
+              AND code='DMRK'
+              AND name='Direktorat Manajemen Risiko dan Kepatuhan';
+          ")"
+          BEFORE_COUNT="$(printf '%s' "$BEFORE" | jq -r '.[0].results[0].recordCount // 0')"
+          echo "Exact DMRK records before deletion: $BEFORE_COUNT"
+
+          if [ "$BEFORE_COUNT" -gt 1 ]; then
+            echo "::error::More than one exact DMRK record matched; deletion blocked."
+            exit 1
+          fi
+
+          if [ "$BEFORE_COUNT" -eq 1 ]; then
+            CHILDREN="$(npx wrangler d1 execute "$DB_NAME" --remote --json --command "
+              SELECT COUNT(*) AS childCount
+              FROM OrganizationUnit
+              WHERE parentId='d0dccb3f-6a92-4d6b-abdd-9f258eca4666';
+            " | jq -r '.[0].results[0].childCount // 0')"
+            REFS="$(npx wrangler d1 execute "$DB_NAME" --remote --json --command "
+              SELECT COUNT(*) AS processReferences
+              FROM BusinessProcess
+              WHERE orgUnitId='d0dccb3f-6a92-4d6b-abdd-9f258eca4666';
+            " | jq -r '.[0].results[0].processReferences // 0')"
+
+            echo "Child units: $CHILDREN"
+            echo "Business process references: $REFS"
+
+            if [ "$CHILDREN" -ne 0 ] || [ "$REFS" -ne 0 ]; then
+              echo "::error::DMRK became referenced after diagnosis; deletion blocked to protect linked data."
+              exit 1
+            fi
+
+            npx wrangler d1 execute "$DB_NAME" --remote --command "
+              INSERT INTO AuditLog (
+                id,institutionId,userName,userRole,action,entityType,recordId,
+                oldValue,newValue,reason,ipAddress,timestamp
+              )
+              SELECT
+                lower(hex(randomblob(16))),
+                institutionId,
+                'System Maintenance',
+                'Admin',
+                'DELETE',
+                'OrganizationUnit',
+                id,
+                json_object(
+                  'id',id,
+                  'institutionId',institutionId,
+                  'legalEntityId',legalEntityId,
+                  'parentId',parentId,
+                  'type',type,
+                  'code',code,
+                  'name',name,
+                  'headName',headName,
+                  'headEmail',headEmail,
+                  'status',status,
+                  'createdAt',createdAt,
+                  'updatedAt',updatedAt
+                ),
+                NULL,
+                'User-requested removal of Direktorat Manajemen Risiko dan Kepatuhan (DMRK).',
+                NULL,
+                datetime('now')
+              FROM OrganizationUnit
+              WHERE id='d0dccb3f-6a92-4d6b-abdd-9f258eca4666'
+                AND code='DMRK'
+                AND name='Direktorat Manajemen Risiko dan Kepatuhan';
+
+              DELETE FROM OrganizationUnit
+              WHERE id='d0dccb3f-6a92-4d6b-abdd-9f258eca4666'
+                AND code='DMRK'
+                AND name='Direktorat Manajemen Risiko dan Kepatuhan';
+            "
+          fi
+
+          AFTER="$(npx wrangler d1 execute "$DB_NAME" --remote --json --command "
+            SELECT COUNT(*) AS recordCount
             FROM OrganizationUnit
-            WHERE parentId IN (
-              SELECT id FROM OrganizationUnit
-              WHERE code='DMRK' AND name='Direktorat Manajemen Risiko dan Kepatuhan'
-            );
-          "
-          npx wrangler d1 execute "$DB_NAME" --remote --json --command "
-            SELECT COUNT(*) AS processReferences
-            FROM BusinessProcess
-            WHERE orgUnitId IN (
-              SELECT id FROM OrganizationUnit
-              WHERE code='DMRK' AND name='Direktorat Manajemen Risiko dan Kepatuhan'
-            );
-          "
+            WHERE id='d0dccb3f-6a92-4d6b-abdd-9f258eca4666'
+               OR (code='DMRK' AND name='Direktorat Manajemen Risiko dan Kepatuhan');
+          ")"
+          AFTER_COUNT="$(printf '%s' "$AFTER" | jq -r '.[0].results[0].recordCount // -1')"
+          echo "Matching DMRK records after deletion: $AFTER_COUNT"
+          test "$AFTER_COUNT" -eq 0
