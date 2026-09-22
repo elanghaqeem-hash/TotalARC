@@ -117,10 +117,37 @@ jobs:
             .readOnlyProbe == true
           '
 
+          check_json "institution" "/api/onboarding" '
+            .storage == "cloudflare-d1" and
+            .institution.legalName == "PT. Bank Pembangunan Daerah Kalimantan Barat" and
+            .institution.name == "Bank Kalbar"
+          '
+
           check_json "organization" "/api/organization" '
             .storage == "cloudflare-d1" and
+            .institution.legalName == "PT. Bank Pembangunan Daerah Kalimantan Barat" and
             (.legalEntities | type) == "array" and
-            (.organizationUnits | type) == "array"
+            ([.legalEntities[] | select(.code == "BANK-KALBAR")] | length) == 1 and
+            (.organizationUnits | type) == "array" and
+            ([.organizationUnits[] | select(
+              .code == "GOV-DEKOM" or
+              .code == "GOV-KOM-AUD" or
+              .code == "EXEC-DIREKSI" or
+              .code == "FUNC-CORSEC" or
+              .code == "DIV-SDM" or
+              .code == "DIV-TREASURY" or
+              .code == "DIV-KREDIT" or
+              .code == "DIV-AKUNTANSI" or
+              .code == "DIV-KEPATUHAN" or
+              .code == "DIV-TI" or
+              .code == "DIV-MR" or
+              .code == "DIV-UUS" or
+              .code == "DIV-EBANK" or
+              .code == "DIV-STRATEGI" or
+              .code == "DIV-UMUM" or
+              .code == "FUNC-SKAI" or
+              .code == "FUNC-ICOFR"
+            )] | length) == 17
           '
 
           check_json "processes" "/api/processes" '
