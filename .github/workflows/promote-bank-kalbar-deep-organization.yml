@@ -7,6 +7,7 @@ on:
       - '.github/workflows/promote-bank-kalbar-deep-organization.yml'
       - 'src/lib/d1-organization.ts'
       - 'src/app/organization/page.tsx'
+      - 'scripts/promote-bank-kalbar-complete-org.py'
   workflow_dispatch:
 
 permissions:
@@ -494,3 +495,9 @@ jobs:
 
           python /tmp/promote_bank_kalbar_deep_org.py
           rm -f /tmp/promote_bank_kalbar_deep_org.py /tmp/deep_org_ddl.sql /tmp/deep_org_units.sql /tmp/deep_org_evidence.sql /tmp/deep_org_template.sql /tmp/deep_org_feed.sql /tmp/deep_org_audit.sql
+
+      - name: Resolve formal parents and expand all current branches
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/promote-bank-kalbar-complete-org.py
