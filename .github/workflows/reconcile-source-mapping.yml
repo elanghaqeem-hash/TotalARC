@@ -1,10 +1,6 @@
 name: Reconcile source precedence and mapping queue
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/reconcile-source-mapping.yml'
   workflow_run:
     workflows: ['Refresh Source Data Quality']
     types: [completed]
