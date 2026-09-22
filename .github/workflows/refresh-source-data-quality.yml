@@ -2,7 +2,7 @@ name: Refresh Source Data Quality
 
 on:
   workflow_run:
-    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail', 'Normalize Seraya next 20 percent risk control BPM linkage', 'Normalize Seraya final 30 percent closure']
+    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail', 'Normalize Seraya next 20 percent risk control BPM linkage', 'Normalize Seraya final 30 percent closure', 'Complete Aura baseline source display coverage']
     types: [completed]
   workflow_dispatch:
 
@@ -145,6 +145,7 @@ jobs:
             "ICOFR_CALENDAR_MILESTONE_REFERENCE": (["period","activity","icoFrPhase","responsibleParty","deliverable","sourceStatus"],["period","activity","icoFrPhase","responsibleParty","deliverable","sourceStatus"],"ICOFR","/icofr"),
             "ICOFR_METHODOLOGY_ISSUE_CANDIDATE": (["issueReference","issue","description","impact","recommendedOption","decisionOwner","priority"],["issueReference","issue","description","impact","recommendedOption","decisionOwner","priority"],"ICOFR","/icofr"),
             "ICOFR_TRAINING_REFERENCE_DOCUMENT": (["documentTitle","trainingTopic","trainingOnly","operationalUseProhibited"],["documentTitle","trainingTopic","trainingOnly","containsWorkedExamples","containsEmptyPracticeTemplate","operationalUseProhibited","fullTextAvailableInSourceLibrary"],"CSA","/csa"),
+            "SOURCE_BASELINE_REFERENCE_DOCUMENT": (["documentTitle","sourceTextAvailable","sourceRole","referenceMasterOnly"],["documentTitle","sourceModule","sourceKind","sourceTextAvailable","sourceTextLength","rawStored","sourceAccount","sourceRole","precedencePriority","referenceMasterOnly","deepNormalizationRequired","operationalUseProhibited"],"ICOFR","/admin/data-hub"),
             "ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE": (["controlReference","linkedRiskReference","businessProcess","subprocess","riskStatement","controlActivity","controlDescription","evidence","keyControl","preventiveDetective","nature","frequency","pic","performer","financialStatementItem","effectivePeriod"],["controlReference","linkedRiskReference","businessProcess","subprocess","riskStatement","riskRating","controlActivity","controlDescription","evidence","keyControl","ipo","assertions","preventiveDetective","nature","automatedControlType","frequency","supportingSystem","pic","performer","financialStatementItem","effectivePeriod"],"RCM","/rcm"),
             "ICOFR_TLC_BPM_NARRATIVE_REFERENCE": (["controlReference","linkedRiskReference","linkedControlRecordKey","businessProcess","subprocess","sourceTextAvailable"],["controlReference","linkedRiskReference","linkedControlRecordKey","businessProcess","subprocess","designNote","sourceTextAvailable"],"Process Architecture","/processes"),
             "CSA_LINE2_EVALUATION_CANDIDATE": (["areaOrProcess","line1Score","line2Score"],["areaOrProcess","riskAssessed","keyControl","line1Score","line2VerificationMethod","line2Score","gap","indication","followUpStatus"],"CSA","/csa"),
