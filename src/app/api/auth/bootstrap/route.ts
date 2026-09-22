@@ -38,7 +38,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await provisionBootstrapAdministrator();
+    // One-time production recovery for the existing bootstrap administrator.
+    // This flag is reverted immediately after the recovery deployment succeeds.
+    const result = await provisionBootstrapAdministrator({
+      reconcilePendingAdmin: true,
+      resetExistingConfiguredAdmin: true
+    });
     return NextResponse.json(
       { ok: true, status: result.status },
       { headers: { 'Cache-Control': 'no-store' } }
