@@ -186,6 +186,41 @@ export async function ensureIcofrScopeSchema() {
         ON ICOFRScopeItem(scopeId);
       CREATE INDEX IF NOT EXISTS idx_icofr_scope_item_source
         ON ICOFRScopeItem(sourceId);
+
+      CREATE TABLE IF NOT EXISTS ICOFRScopeParameter (
+        id TEXT PRIMARY KEY NOT NULL,
+        scopeId TEXT NOT NULL,
+        parameterCode TEXT NOT NULL,
+        label TEXT NOT NULL,
+        numericValue REAL,
+        percentValue REAL,
+        formula TEXT,
+        basis TEXT,
+        status TEXT NOT NULL,
+        sourceReference TEXT NOT NULL,
+        sourceNote TEXT,
+        sortOrder INTEGER NOT NULL DEFAULT 0,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_icofr_scope_parameter_code
+        ON ICOFRScopeParameter(scopeId, parameterCode);
+
+      CREATE TABLE IF NOT EXISTS ICOFRScopingPopulationSummary (
+        id TEXT PRIMARY KEY NOT NULL,
+        scopeId TEXT NOT NULL,
+        populationType TEXT NOT NULL,
+        assessedCount INTEGER,
+        significantCount INTEGER,
+        quantitativeSignificantCount INTEGER,
+        qualitativeOnlyCount INTEGER,
+        notSignificantCount INTEGER,
+        sourceStatus TEXT NOT NULL,
+        sourceReference TEXT NOT NULL,
+        sourceNote TEXT,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_icofr_population_scope_type
+        ON ICOFRScopingPopulationSummary(scopeId, populationType);
     `);
 
     return db;
@@ -274,7 +309,7 @@ export async function getIcofrScopingData() {
     };
   }
 
-  const [scopeRows, itemRows, legalEntities, organizationUnits, businessProcesses] = await Promise.all([
+  const [scopeRows, itemRows, parameterRows, populationRows, legalEntities, organizationUnits, businessProcesses] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM ICOFRScope WHERE institutionId = ? ORDER BY fiscalYear DESC, updatedAt DESC',
@@ -287,6 +322,24 @@ export async function getIcofrScopingData() {
          JOIN ICOFRScope s ON s.id = i.scopeId
         WHERE s.institutionId = ?
         ORDER BY i.itemType ASC, i.code ASC, i.name ASC`,
+      [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT p.*
+         FROM ICOFRScopeParameter p
+         JOIN ICOFRScope s ON s.id = p.scopeId
+        WHERE s.institutionId = ?
+        ORDER BY p.scopeId ASC, p.sortOrder ASC, p.parameterCode ASC`,
+      [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT p.*
+         FROM ICOFRScopingPopulationSummary p
+         JOIN ICOFRScope s ON s.id = p.scopeId
+        WHERE s.institutionId = ?
+        ORDER BY p.scopeId ASC, p.populationType ASC`,
       [institution.id]
     ),
     all<Record<string, unknown>>(
@@ -315,6 +368,33 @@ export async function getIcofrScopingData() {
     itemsByScope.set(scopeId, list);
   }
 
+  const parametersByScope = new Map<string, Record<string, unknown>[]>();
+  for (const row of parameterRows) {
+    const scopeId = String(row.scopeId);
+    const list = parametersByScope.get(scopeId) || [];
+    list.push({
+      ...row,
+      numericValue: numeric(row.numericValue),
+      percentValue: numeric(row.percentValue)
+    });
+    parametersByScope.set(scopeId, list);
+  }
+
+  const populationsByScope = new Map<string, Record<string, unknown>[]>();
+  for (const row of populationRows) {
+    const scopeId = String(row.scopeId);
+    const list = populationsByScope.get(scopeId) || [];
+    list.push({
+      ...row,
+      assessedCount: numeric(row.assessedCount),
+      significantCount: numeric(row.significantCount),
+      quantitativeSignificantCount: numeric(row.quantitativeSignificantCount),
+      qualitativeOnlyCount: numeric(row.qualitativeOnlyCount),
+      notSignificantCount: numeric(row.notSignificantCount)
+    });
+    populationsByScope.set(scopeId, list);
+  }
+
   return {
     institution: {
       id: institution.id,
@@ -324,7 +404,9 @@ export async function getIcofrScopingData() {
     },
     scopes: scopeRows.map(row => ({
       ...scopeRow(row),
-      items: itemsByScope.get(String(row.id)) || []
+      items: itemsByScope.get(String(row.id)) || [],
+      parameters: parametersByScope.get(String(row.id)) || [],
+      populationSummaries: populationsByScope.get(String(row.id)) || []
     })),
     candidates: {
       legalEntities,
