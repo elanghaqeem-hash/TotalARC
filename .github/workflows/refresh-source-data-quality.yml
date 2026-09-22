@@ -8,7 +8,7 @@ on:
       - 'src/lib/d1-data-hub.ts'
       - 'src/app/api/admin/data-hub/route.ts'
   workflow_run:
-    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail']
+    workflows: ['Normalize Seraya next 20 percent ELC ITGC detail', 'Normalize Seraya next 20 percent risk control BPM linkage']
     types: [completed]
   workflow_dispatch:
 
@@ -112,6 +112,8 @@ jobs:
             "WALKTHROUGH_TEMPLATE_REFERENCE": (["templateType","bank","year"],["templateType","bank","year","checklistItems"],"Walkthrough & ToD","/tod"),
             "WALKTHROUGH_CHECKLIST_REFERENCE": (["sequence","activity"],["sequence","stage","activity"],"Walkthrough & ToD","/tod"),
             "ICOFR_RISK_DETAIL_UPDATE_CANDIDATE": (["riskReference","riskStatement"],["riskReference","businessProcess","subprocess","riskType","riskStatement","assertions","riskRating"],"Risk Universe","/risks"),
+            "ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE": (["controlReference","linkedRiskReference","businessProcess","subprocess","riskStatement","controlActivity","controlDescription","evidence","keyControl","preventiveDetective","nature","frequency","pic","performer","financialStatementItem","effectivePeriod"],["controlReference","linkedRiskReference","businessProcess","subprocess","riskStatement","riskRating","controlActivity","controlDescription","evidence","keyControl","ipo","assertions","preventiveDetective","nature","automatedControlType","frequency","supportingSystem","pic","performer","financialStatementItem","effectivePeriod"],"RCM","/rcm"),
+            "ICOFR_TLC_BPM_NARRATIVE_REFERENCE": (["controlReference","linkedRiskReference","linkedControlRecordKey","businessProcess","subprocess","sourceTextAvailable"],["controlReference","linkedRiskReference","linkedControlRecordKey","businessProcess","subprocess","designNote","sourceTextAvailable"],"Process Architecture","/processes"),
             "CSA_LINE2_EVALUATION_CANDIDATE": (["areaOrProcess","line1Score","line2Score"],["areaOrProcess","riskAssessed","keyControl","line1Score","line2VerificationMethod","line2Score","gap","indication","followUpStatus"],"CSA","/csa"),
             "ICOFR_DATA_REQUEST_ITEM": (["sequence","requestedData","requestStatus"],["sequence","group","requestedData","purpose","responsibleUnit","priority","requestStatus"],"ICOFR Scoping","/icofr/scoping"),
             "ICOFR_PHASE1_TASK": (["sequence","activity","taskStatus"],["sequence","activityGroup","activity","week","responsibleParty","deliverable","taskStatus"],"ICOFR","/icofr"),
