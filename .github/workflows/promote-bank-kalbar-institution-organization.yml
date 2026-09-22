@@ -1,0 +1,337 @@
+name: Promote Bank Kalbar institution and organization
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-bank-kalbar-institution-organization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-promote-bank-kalbar-master
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Promote source-backed institution and organization master
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/promote_bank_kalbar_master.py <<'PY'
+          import hashlib, json, os, re, subprocess, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="BANK_KALBAR_INSTITUTION_ORGANIZATION_20260922"
+          LEGAL_NAME="PT. Bank Pembangunan Daerah Kalimantan Barat"
+          SOURCE_REFS=[
+            "SERAYA:1PP3k6wnVdYEWQCtxcGtw-dCpmHfjYutf#Daftar Fungsi/Unit Kerja Bank Kalbar",
+            "AURA:1Dx7sMabHWiu8BgqgTa3y9U6RPZqoJL7m#DIR/PP-0038/2023 Struktur Organisasi Kantor Pusat",
+            "AURA:1BvlkIrFaXveJHU5tvEaNMfRCqOVArFbQ#DIR/PP-0024/2026 Struktur Cabang",
+            "AURA:1BmkgdxS76YWNCPZJeGahbmk36UQNx2dX#PP-0003 Perubahan Kelima Struktur Organisasi"
+          ]
+
+          UNITS=[
+            ("GOV-DEKOM","Dewan Komisaris","Board / Committee",None),
+            ("GOV-KOM-AUD","Komite Audit","Board / Committee","GOV-DEKOM"),
+            ("EXEC-DIREKSI","Direksi","Board / Committee",None),
+            ("FUNC-CORSEC","Corporate Secretary","Function",None),
+            ("DIV-SDM","Divisi SDM","Division",None),
+            ("DIV-TREASURY","Divisi Treasury","Division",None),
+            ("DIV-KREDIT","Divisi Kredit","Division",None),
+            ("DIV-AKUNTANSI","Divisi Akuntansi","Division",None),
+            ("DIV-KEPATUHAN","Divisi Kepatuhan","Division",None),
+            ("DIV-TI","Divisi Teknologi Informasi","Division",None),
+            ("DIV-MR","Divisi Manajemen Risiko","Division",None),
+            ("DIV-UUS","Divisi UUS","Division",None),
+            ("DIV-EBANK","Divisi Elektronik Banking","Division",None),
+            ("DIV-STRATEGI","Divisi Perencanaan/Strategi","Division",None),
+            ("DIV-UMUM","Divisi Umum","Division",None),
+            ("FUNC-SKAI","SKAI (Satuan Kerja Audit Internal)","Function",None),
+            ("FUNC-ICOFR","Fungsi ICOFR","Function",None)
+          ]
+
+          def wr(args,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(["npx","wrangler",*args],text=True,env=os.environ,capture_output=True)
+                  if p.returncode==0:
+                      return p.stdout
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("WRANGLER_FAILURE",json.dumps({
+                  "returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("WRANGLER_COMMAND_FAILED")
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def execute_file(path,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(
+                      ["npx","wrangler","d1","execute",DB,"--remote","--file",path],
+                      text=True,env=os.environ,capture_output=True
+                  )
+                  if p.returncode==0:
+                      return
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("D1_WRITE_FAILURE",json.dumps({
+                  "path":path,"returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("D1_WRITE_FAILED_"+path)
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          ddl="""
+          CREATE TABLE IF NOT EXISTS Institution (
+            id TEXT PRIMARY KEY NOT NULL,name TEXT NOT NULL,legalName TEXT NOT NULL,shortName TEXT NOT NULL,
+            institutionType TEXT NOT NULL,country TEXT NOT NULL DEFAULT 'Indonesia',provinceState TEXT,city TEXT,
+            registeredAddress TEXT,operationalAddress TEXT,website TEXT,generalEmail TEXT,telephone TEXT,
+            yearEstablished INTEGER,registrationNumber TEXT,taxId TEXT,parentCompany TEXT,holdingCompany TEXT,
+            stockExchange TEXT,ticker TEXT,logo TEXT,employeeCount TEXT,revenueRange TEXT,businessModel TEXT,
+            operatingModel TEXT,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_institution_legal_name ON Institution(legalName);
+
+          CREATE TABLE IF NOT EXISTS LegalEntity (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,code TEXT NOT NULL,name TEXT NOT NULL,
+            country TEXT NOT NULL DEFAULT 'Indonesia',taxId TEXT,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_entity_institution_code ON LegalEntity(institutionId,code);
+
+          CREATE TABLE IF NOT EXISTS OrganizationUnit (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,legalEntityId TEXT,parentId TEXT,
+            type TEXT NOT NULL,code TEXT NOT NULL,name TEXT NOT NULL,headName TEXT,headEmail TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_org_unit_institution_code ON OrganizationUnit(institutionId,code);
+          CREATE INDEX IF NOT EXISTS idx_org_unit_parent ON OrganizationUnit(parentId);
+
+          CREATE TABLE IF NOT EXISTS AuditLog (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT,userName TEXT NOT NULL,userRole TEXT NOT NULL,
+            action TEXT NOT NULL,entityType TEXT NOT NULL,recordId TEXT NOT NULL,oldValue TEXT,newValue TEXT,
+            reason TEXT,ipAddress TEXT,timestamp TEXT NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS OperationalDataFeedRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,module TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,sourceReferencesJson TEXT NOT NULL,recordsUpserted INTEGER NOT NULL,
+            status TEXT NOT NULL,summaryJson TEXT,completedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_operational_feed_batch
+            ON OperationalDataFeedRun(institutionId,batchCode);
+          """
+          Path("/tmp/master_ddl.sql").write_text(ddl)
+          execute_file("/tmp/master_ddl.sql")
+
+          candidates=rows("""
+            SELECT *
+            FROM Institution
+            WHERE lower(name) LIKE '%bank kalbar%'
+               OR lower(legalName) LIKE '%pembangunan daerah kalimantan barat%'
+            ORDER BY createdAt
+          """)
+          if len(candidates)>1:
+              raise RuntimeError("DUPLICATE_BANK_KALBAR_INSTITUTIONS_"+str(len(candidates)))
+
+          if candidates:
+              institution_id=str(candidates[0]["id"])
+              created_at=str(candidates[0].get("createdAt") or now)
+              before=candidates[0]
+          else:
+              institution_id=hid("TOTALARC","BANK-KALBAR","INSTITUTION")
+              created_at=now
+              before=None
+
+          institution_sql=f"""
+          INSERT INTO Institution (
+            id,name,legalName,shortName,institutionType,country,provinceState,city,
+            registeredAddress,telephone,yearEstablished,registrationNumber,createdAt,updatedAt
+          ) VALUES (
+            {q(institution_id)},'Bank Kalbar',{q(LEGAL_NAME)},'Bank Kalbar','Financial Institution',
+            'Indonesia','Kalimantan Barat','Pontianak',
+            'Jalan Rahadi Osman No. 10 Pontianak 78117',
+            '(0561) 732148-734351-736723',1999,'C-8229 HT.01.01 Th.99',{q(created_at)},{q(now)}
+          )
+          ON CONFLICT(id) DO UPDATE SET
+            name='Bank Kalbar',
+            legalName={q(LEGAL_NAME)},
+            shortName='Bank Kalbar',
+            institutionType='Financial Institution',
+            country='Indonesia',
+            provinceState='Kalimantan Barat',
+            city='Pontianak',
+            registeredAddress='Jalan Rahadi Osman No. 10 Pontianak 78117',
+            telephone='(0561) 732148-734351-736723',
+            yearEstablished=1999,
+            registrationNumber='C-8229 HT.01.01 Th.99',
+            updatedAt={q(now)};
+          """
+          Path("/tmp/institution.sql").write_text(institution_sql)
+          execute_file("/tmp/institution.sql")
+
+          existing_entity=rows(
+              "SELECT * FROM LegalEntity WHERE institutionId="+q(institution_id)+" AND code='BANK-KALBAR' LIMIT 1"
+          )
+          entity_id=str(existing_entity[0]["id"]) if existing_entity else hid(institution_id,"BANK-KALBAR","LEGAL-ENTITY")
+          entity_created=str(existing_entity[0].get("createdAt") or now) if existing_entity else now
+          entity_sql=f"""
+          INSERT INTO LegalEntity (id,institutionId,code,name,country,taxId,createdAt,updatedAt)
+          VALUES ({q(entity_id)},{q(institution_id)},'BANK-KALBAR',{q(LEGAL_NAME)},'Indonesia',
+                  {q(existing_entity[0].get('taxId') if existing_entity else None)},{q(entity_created)},{q(now)})
+          ON CONFLICT(institutionId,code) DO UPDATE SET
+            name={q(LEGAL_NAME)},country='Indonesia',updatedAt={q(now)};
+          """
+          Path("/tmp/entity.sql").write_text(entity_sql)
+          execute_file("/tmp/entity.sql")
+
+          entity_check=rows(
+              "SELECT id FROM LegalEntity WHERE institutionId="+q(institution_id)+" AND code='BANK-KALBAR' LIMIT 1"
+          )
+          if len(entity_check)!=1:
+              raise RuntimeError("BANK_KALBAR_LEGAL_ENTITY_NOT_VERIFIED")
+          entity_id=str(entity_check[0]["id"])
+
+          unit_ids={}
+          statements=[]
+          for code,name,unit_type,parent_code in UNITS:
+              existing=rows(
+                  "SELECT id,createdAt FROM OrganizationUnit WHERE institutionId="+q(institution_id)+
+                  " AND code="+q(code)+" LIMIT 1"
+              )
+              uid=str(existing[0]["id"]) if existing else hid(institution_id,code,"ORG-UNIT")
+              unit_ids[code]=uid
+              unit_created=str(existing[0].get("createdAt") or now) if existing else now
+              statements.append(f"""
+              INSERT INTO OrganizationUnit (
+                id,institutionId,legalEntityId,parentId,type,code,name,headName,headEmail,status,createdAt,updatedAt
+              ) VALUES (
+                {q(uid)},{q(institution_id)},{q(entity_id)},NULL,{q(unit_type)},{q(code)},{q(name)},
+                NULL,NULL,'Active',{q(unit_created)},{q(now)}
+              )
+              ON CONFLICT(institutionId,code) DO UPDATE SET
+                legalEntityId=excluded.legalEntityId,
+                type=excluded.type,
+                name=excluded.name,
+                status='Active',
+                updatedAt=excluded.updatedAt;
+              """)
+
+          # Only source-confirmed reporting line is applied at this stage.
+          statements.append(
+              "UPDATE OrganizationUnit SET parentId="+q(unit_ids["GOV-DEKOM"])+",updatedAt="+q(now)+
+              " WHERE institutionId="+q(institution_id)+" AND code='GOV-KOM-AUD';"
+          )
+
+          Path("/tmp/units.sql").write_text("\n".join(statements))
+          execute_file("/tmp/units.sql")
+
+          expected_codes=",".join(q(x[0]) for x in UNITS)
+          verified_units=rows(f"""
+            SELECT code,name,type,parentId
+            FROM OrganizationUnit
+            WHERE institutionId={q(institution_id)}
+              AND status='Active'
+              AND code IN ({expected_codes})
+            ORDER BY code
+          """)
+          if len(verified_units)!=len(UNITS):
+              raise RuntimeError(f"ORG_UNIT_VERIFY_COUNT_{len(verified_units)}_{len(UNITS)}")
+
+          institution=rows("SELECT * FROM Institution WHERE id="+q(institution_id)+" LIMIT 1")
+          if len(institution)!=1 or institution[0].get("legalName")!=LEGAL_NAME:
+              raise RuntimeError("INSTITUTION_VERIFY_FAILED")
+
+          source_refs=json.dumps(SOURCE_REFS,ensure_ascii=False,separators=(",",":"))
+          summary={
+              "institution":LEGAL_NAME,
+              "legalEntityCode":"BANK-KALBAR",
+              "organizationUnits":len(verified_units),
+              "hierarchyRule":"Only source-confirmed parent-child relationships are promoted.",
+              "unconfirmedReportingLinesRemainTopLevel":True,
+              "sourcePrecedence":"Seraya UPDATE preferred when overlapping; Aura retained for formal structure baseline/amendments."
+          }
+          summary_json=json.dumps(summary,ensure_ascii=False,separators=(",",":"))
+          feed_id=hid(institution_id,BATCH)
+          feed_sql=f"""
+            INSERT INTO OperationalDataFeedRun
+            (id,institutionId,batchCode,module,sourceRole,sourceReferencesJson,recordsUpserted,status,summaryJson,completedAt)
+            VALUES({q(feed_id)},{q(institution_id)},{q(BATCH)},'Institution & Organization','GOVERNED_MERGE',
+                   {q(source_refs)},{1+1+len(verified_units)},'Completed',{q(summary_json)},{q(now)})
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              sourceReferencesJson=excluded.sourceReferencesJson,
+              recordsUpserted=excluded.recordsUpserted,
+              status='Completed',
+              summaryJson=excluded.summaryJson,
+              completedAt=excluded.completedAt;
+          """
+          Path("/tmp/feed.sql").write_text(feed_sql)
+          execute_file("/tmp/feed.sql")
+
+          audit_id=hid(institution_id,BATCH,"AUDIT")
+          audit_value=json.dumps(summary,ensure_ascii=False,separators=(",",":"))
+          audit_sql=f"""
+            INSERT OR REPLACE INTO AuditLog
+            (id,institutionId,userName,userRole,action,entityType,recordId,oldValue,newValue,reason,ipAddress,timestamp)
+            VALUES({q(audit_id)},{q(institution_id)},'System','System','UPSERT','InstitutionOrganizationMaster',
+                   {q(BATCH)},NULL,{q(audit_value)},
+                   'Source-governed operational promotion from Aura baseline/formal amendments and Seraya update sources.',
+                   NULL,{q(now)});
+          """
+          Path("/tmp/audit.sql").write_text(audit_sql)
+          execute_file("/tmp/audit.sql")
+
+          unmanaged=rows(
+              "SELECT code,name,type,status FROM OrganizationUnit WHERE institutionId="+q(institution_id)+
+              " AND code NOT IN ("+expected_codes+") ORDER BY code"
+          )
+
+          print("=== BANK KALBAR MASTER PROMOTION RESULT ===")
+          print(json.dumps({
+              "institution":{"id":institution_id,"name":institution[0]["name"],"legalName":institution[0]["legalName"]},
+              "legalEntity":{"id":entity_id,"code":"BANK-KALBAR","name":LEGAL_NAME},
+              "organizationUnits":verified_units,
+              "sourceManagedUnitCount":len(verified_units),
+              "unmanagedExistingUnitCount":len(unmanaged),
+              "unmanagedExistingUnits":unmanaged,
+              "feedBatch":BATCH,
+              "sourceReferences":SOURCE_REFS
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/promote_bank_kalbar_master.py
+          rm -f /tmp/promote_bank_kalbar_master.py /tmp/master_ddl.sql /tmp/institution.sql /tmp/entity.sql /tmp/units.sql /tmp/feed.sql /tmp/audit.sql
