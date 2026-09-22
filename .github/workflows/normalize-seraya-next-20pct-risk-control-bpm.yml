@@ -1,0 +1,462 @@
+name: Normalize Seraya next 20 percent risk control BPM linkage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/normalize-seraya-next-20pct-risk-control-bpm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-seraya-next-20pct-risk-control-bpm
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Normalize Bank Kalbar risk control BPM linkage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/normalize_risk_control_bpm.py <<'PY'
+          import csv, hashlib, io, json, os, re, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="SERAYA_UPDATE_NEXT20_RISK_CONTROL_BPM_20260922"
+          SOURCE_ACCOUNT="serayamg@gmail.com"
+          TARGETS=[
+            ("MR","Identifikasi_Risiko_dan_Pengendalian_ICOFR_Manajemen Risiko",6),
+            ("EQ","Identifikasi_Risiko_dan_Pengendalian_ICOFR_Ekuitas&Aksi",5),
+            ("COM","Identifikasi_Risiko_dan_Pengendalian_ICOFR_-_Komitmen_Kontijensi",4),
+          ]
+
+          def wr(args):
+              return subprocess.check_output(
+                  ["npx","wrangler",*args],
+                  text=True,
+                  env=os.environ,
+                  stderr=subprocess.DEVNULL
+              )
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def clean(v):
+              return str(v or "").strip()
+
+          def parse_rows(text):
+              sample=text[:20000]
+              try:
+                  delimiter=csv.Sniffer().sniff(sample,delimiters=",\t").delimiter
+              except Exception:
+                  delimiter="\t" if "\t" in sample else ","
+              return list(csv.reader(io.StringIO(text),delimiter=delimiter))
+
+          catalog=rows(f"""
+            SELECT id,institutionId,title,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')={q(SOURCE_ACCOUNT)}
+              AND json_extract(metadataJson,'$.sourceRole')='UPDATE'
+            ORDER BY title
+          """)
+
+          docs={}
+          for code,token,expected in TARGETS:
+              matches=[d for d in catalog if token.lower() in clean(d.get("title")).lower()]
+              if len(matches)!=1:
+                  raise RuntimeError(f"SOURCE_MATCH_{code}_{len(matches)}")
+              d=matches[0]
+              chunks=rows(f"""
+                SELECT chunkIndex,textContent
+                FROM SourceTextChunk
+                WHERE documentId={q(d['id'])}
+                ORDER BY chunkIndex
+              """)
+              text="".join(str(x.get("textContent") or "") for x in chunks)
+              if not text.strip():
+                  raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
+              docs[code]={**d,"text":text,"expected":expected}
+              print(f"{code} source ready chars={len(text)}")
+
+          institution_id=docs["MR"]["institutionId"]
+          if any(d["institutionId"]!=institution_id for d in docs.values()):
+              raise RuntimeError("INSTITUTION_MISMATCH")
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          records=[]
+          issues=[]
+
+          def add_record(doc,record_type,key,title,payload):
+              records.append({
+                  "id":hid(doc["id"],record_type,key),
+                  "institutionId":institution_id,
+                  "sourceDocumentId":doc["id"],
+                  "recordType":record_type,
+                  "recordKey":key,
+                  "recordTitle":title,
+                  "period":"2026",
+                  "payloadJson":json.dumps(payload,ensure_ascii=False,separators=(",",":")),
+                  "sourceModifiedAt":doc.get("sourceModifiedAt")
+              })
+
+          def add_issue(doc,issue_type,severity,description,record_key=None,field=None,observed=None,expected=None):
+              issues.append({
+                  "id":hid(doc["id"],issue_type,record_key or "",field or ""),
+                  "institutionId":institution_id,
+                  "sourceDocumentId":doc["id"],
+                  "sourceRecordKey":record_key,
+                  "issueType":issue_type,
+                  "severity":severity,
+                  "fieldName":field,
+                  "observedValue":observed,
+                  "expectedContext":expected,
+                  "description":description
+              })
+
+          ref_re=re.compile(r"^R-\d{3}$")
+
+          for code,doc in docs.items():
+              parsed=parse_rows(doc["text"])
+              controls={}
+              for row in parsed:
+                  p=next((i for i,v in enumerate(row) if ref_re.fullmatch(clean(v))),None)
+                  if p is None or p<8 or len(row)<30:
+                      continue
+
+                  vals=[clean(v) for v in row]+[""]*50
+                  ref=vals[p]
+                  if ref in controls:
+                      continue
+
+                  # RCM TLC columns in these three source workbooks are fixed:
+                  # process, subprocess, entity, location, risk, fraud, rating,
+                  # risk/control ref, control activity, description, evidence,
+                  # key-control, IPO 4 columns, assertions 7 columns, class,
+                  # nature, automation type, frequency, system, PIC, performer,
+                  # FSLI and effective period.
+                  ipo_flags={
+                      "Completeness": bool(vals[p+5]),
+                      "Accuracy": bool(vals[p+6]),
+                      "Validity": bool(vals[p+7]),
+                      "RestrictedAccess": bool(vals[p+8]),
+                  }
+                  assertion_flags={
+                      "Completeness": bool(vals[p+9]),
+                      "Accuracy": bool(vals[p+10]),
+                      "ExistenceOccurrence": bool(vals[p+11]),
+                      "CutOff": bool(vals[p+12]),
+                      "RightsObligations": bool(vals[p+13]),
+                      "ValuationAllocation": bool(vals[p+14]),
+                      "PresentationDisclosure": bool(vals[p+15]),
+                  }
+                  payload={
+                      "controlReference": ref,
+                      "linkedRiskReference": ref,
+                      "linkedRiskRecordKey": f"SERAYA:RISKDETAIL:2026:{ref}",
+                      "businessProcess": vals[p-7] or None,
+                      "subprocess": vals[p-6] or None,
+                      "entity": vals[p-5] or None,
+                      "location": vals[p-4] or None,
+                      "riskStatement": vals[p-3] or None,
+                      "fraudRisk": vals[p-2] or None,
+                      "riskRating": vals[p-1] or None,
+                      "controlActivity": vals[p+1] or None,
+                      "controlDescription": vals[p+2] or None,
+                      "evidence": vals[p+3] or None,
+                      "keyControl": vals[p+4] or None,
+                      "ipo": [k for k,v in ipo_flags.items() if v],
+                      "ipoFlags": ipo_flags,
+                      "assertions": [k for k,v in assertion_flags.items() if v],
+                      "assertionFlags": assertion_flags,
+                      "preventiveDetective": vals[p+16] or None,
+                      "nature": vals[p+17] or None,
+                      "automatedControlType": vals[p+18] or None,
+                      "frequency": vals[p+19] or None,
+                      "supportingSystem": vals[p+20] or None,
+                      "pic": vals[p+21] or None,
+                      "performer": vals[p+22] or None,
+                      "financialStatementItem": vals[p+23] or None,
+                      "effectivePeriod": vals[p+24] or None,
+                      "sourceRole":"UPDATE",
+                      "precedencePriority":20,
+                      "reviewRequired":True,
+                      "operationalControlCreated":False
+                  }
+
+                  required=[
+                      "businessProcess","subprocess","riskStatement",
+                      "controlActivity","controlDescription","evidence",
+                      "keyControl","preventiveDetective","nature","frequency",
+                      "pic","performer","financialStatementItem","effectivePeriod"
+                  ]
+                  missing=[k for k in required if not payload.get(k)]
+                  if missing:
+                      add_issue(
+                          doc,
+                          "RCM_CONTROL_REQUIRED_FIELDS_MISSING",
+                          "HIGH",
+                          "A source RCM control row is missing one or more fields required for operational promotion.",
+                          f"SERAYA:CTRLDETAIL:2026:{ref}",
+                          ",".join(missing),
+                          json.dumps({k:payload.get(k) for k in missing},ensure_ascii=False),
+                          "All required RCM control fields populated"
+                      )
+
+                  key=f"SERAYA:CTRLDETAIL:2026:{ref}"
+                  add_record(
+                      doc,
+                      "ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE",
+                      key,
+                      ref+" — "+(payload["controlActivity"] or "Control"),
+                      payload
+                  )
+                  controls[ref]=payload
+
+              if len(controls)!=doc["expected"]:
+                  raise RuntimeError(f"{code}_CONTROL_COUNT_{len(controls)}_{doc['expected']}")
+
+              marker_re=re.compile(
+                  r"Transaction Level Control \(TLC\)\s*[—-]\s*(R-\d{3})\s*[—-]\s*TB 2026\s*\|\s*Proses:\s*(.*?)\s*\|\s*Sub-Proses:\s*([^\n\r]+)",
+                  re.I
+              )
+              matches=list(marker_re.finditer(doc["text"]))
+              narratives={}
+              for index,match in enumerate(matches):
+                  ref=match.group(1).upper()
+                  if ref not in controls:
+                      continue
+                  end=matches[index+1].start() if index+1<len(matches) else len(doc["text"])
+                  segment=doc["text"][match.start():end]
+                  design_line=next(
+                      (clean(line) for line in segment.splitlines() if "CATATAN DESAIN:" in line.upper()),
+                      None
+                  )
+                  payload={
+                      "controlReference":ref,
+                      "linkedRiskReference":ref,
+                      "linkedRiskRecordKey":f"SERAYA:RISKDETAIL:2026:{ref}",
+                      "linkedControlRecordKey":f"SERAYA:CTRLDETAIL:2026:{ref}",
+                      "businessProcess":clean(match.group(2)) or controls[ref].get("businessProcess"),
+                      "subprocess":clean(match.group(3)) or controls[ref].get("subprocess"),
+                      "sourceGeneratedNarrative":True,
+                      "genericFiveStepDesign":True,
+                      "designNote":design_line,
+                      "sourceTextAvailable":True,
+                      "sourceRole":"UPDATE",
+                      "precedencePriority":20,
+                      "reviewRequired":True,
+                      "referenceMasterOnly":True,
+                      "validatedBankKalbarProcess":False,
+                      "operationalProcessCreated":False
+                  }
+                  key=f"SERAYA:TLCBPM:2026:{ref}"
+                  add_record(
+                      doc,
+                      "ICOFR_TLC_BPM_NARRATIVE_REFERENCE",
+                      key,
+                      ref+" — BPM narrative",
+                      payload
+                  )
+                  narratives[ref]=payload
+
+              if len(narratives)!=doc["expected"]:
+                  raise RuntimeError(f"{code}_BPM_COUNT_{len(narratives)}_{doc['expected']}")
+              if set(narratives)!=set(controls):
+                  raise RuntimeError(f"{code}_RISK_CONTROL_BPM_KEY_MISMATCH")
+
+              add_issue(
+                  doc,
+                  "TLC_BPM_NARRATIVE_REQUIRES_VALIDATION",
+                  "MEDIUM",
+                  "The BPM narratives use a generic five-step design note and must remain reference-only until validated against the actual Bank Kalbar process flow and owner evidence.",
+                  None,
+                  "BPM design status",
+                  f"{len(narratives)} generated narratives",
+                  "Validated actual process flow"
+              )
+
+              print(f"{code} controls={len(controls)} bpmNarratives={len(narratives)}")
+
+          expected_controls=sum(x[2] for x in TARGETS)
+          expected_total=expected_controls*2
+          if len(records)!=expected_total:
+              raise RuntimeError(f"NEXT20_RECORD_COUNT_{len(records)}_{expected_total}")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+            description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_source_issue_institution
+            ON SourceDataIssue(institutionId,issueStatus,severity,issueType);
+
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/rcb_ddl.sql").write_text(ddl)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/rcb_ddl.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          source_ids=[d["id"] for d in docs.values()]
+          cleanup=[
+              f"UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)} WHERE normalizationBatch={q(BATCH)} AND status='Active';",
+              "DELETE FROM SourceDataIssue WHERE institutionId="+q(institution_id)+
+              " AND sourceDocumentId IN ("+",".join(q(x) for x in source_ids)+")"+
+              " AND issueType IN ('RCM_CONTROL_REQUIRED_FIELDS_MISSING','TLC_BPM_NARRATIVE_REQUIRES_VALIDATION');"
+          ]
+          Path("/tmp/rcb_cleanup.sql").write_text("\n".join(cleanup))
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/rcb_cleanup.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          statements=[]
+          for r in records:
+              statements.append(f"""
+                INSERT INTO SourceStructuredRecord
+                (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+                 sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+                VALUES({q(r['id'])},{q(r['institutionId'])},{q(r['sourceDocumentId'])},{q(r['recordType'])},
+                 {q(r['recordKey'])},{q(r['recordTitle'])},{q(r['period'])},{q(r['payloadJson'])},
+                 'UPDATE',20,{q(r['sourceModifiedAt'])},'Active',{q(BATCH)},{q(now)},{q(now)})
+                ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                  recordTitle=excluded.recordTitle,period=excluded.period,payloadJson=excluded.payloadJson,
+                  sourceRole='UPDATE',precedencePriority=20,sourceModifiedAt=excluded.sourceModifiedAt,
+                  status='Active',normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """)
+
+          for x in issues:
+              statements.append(f"""
+                INSERT INTO SourceDataIssue
+                (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,
+                 observedValue,expectedContext,description,issueStatus,createdAt,updatedAt)
+                VALUES({q(x['id'])},{q(x['institutionId'])},{q(x['sourceDocumentId'])},{q(x['sourceRecordKey'])},
+                 {q(x['issueType'])},{q(x['severity'])},{q(x['fieldName'])},{q(x['observedValue'])},
+                 {q(x['expectedContext'])},{q(x['description'])},'OPEN',{q(now)},{q(now)})
+                ON CONFLICT(id) DO UPDATE SET
+                  severity=excluded.severity,fieldName=excluded.fieldName,observedValue=excluded.observedValue,
+                  expectedContext=excluded.expectedContext,description=excluded.description,
+                  issueStatus='OPEN',updatedAt=excluded.updatedAt;
+              """)
+
+          for start in range(0,len(statements),60):
+              p=f"/tmp/rcb_rows_{start//60:03d}.sql"
+              Path(p).write_text("\n".join(statements[start:start+60]))
+              subprocess.check_call(
+                  ["npx","wrangler","d1","execute",DB,"--remote","--file",p],
+                  env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+              )
+
+          counts={}
+          for r in records:
+              counts[r["recordType"]]=counts.get(r["recordType"],0)+1
+          summary={
+              "processedDocuments":3,
+              "riskControlPairs":expected_controls,
+              "recordCounts":counts,
+              "sourceIssues":len(issues),
+              "scope":"next 20 percent: link existing risk detail to control detail and BPM narrative"
+          }
+          run_id=hid(institution_id,BATCH)
+          run_json=json.dumps(summary,separators=(",",":"))
+          run_sql=f"""
+            INSERT INTO SourceNormalizationRun
+            (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,
+             totalRecords,status,summaryJson,startedAt,completedAt)
+            VALUES({q(run_id)},{q(institution_id)},{q(BATCH)},'UPDATE',20,3,3,{expected_total},
+             'Completed',{q(run_json)},{q(now)},{q(now)})
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              sourceRole='UPDATE',precedencePriority=20,totalDocuments=3,processedDocuments=3,
+              totalRecords={expected_total},status='Completed',summaryJson=excluded.summaryJson,
+              completedAt=excluded.completedAt;
+          """
+          Path("/tmp/rcb_run.sql").write_text(run_sql)
+          subprocess.check_call(
+              ["npx","wrangler","d1","execute",DB,"--remote","--file","/tmp/rcb_run.sql"],
+              env=os.environ,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+          )
+
+          verify=rows(f"""
+            SELECT recordType,COUNT(*) records
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)}
+              AND normalizationBatch={q(BATCH)}
+              AND status='Active'
+            GROUP BY recordType
+            ORDER BY recordType
+          """)
+          verified=sum(int(x["records"]) for x in verify)
+          if verified!=expected_total:
+              raise RuntimeError(f"NEXT20_VERIFY_COUNT_{verified}_{expected_total}")
+
+          issue_verify=rows(f"""
+            SELECT issueType,severity,COUNT(*) records
+            FROM SourceDataIssue
+            WHERE institutionId={q(institution_id)}
+              AND issueStatus='OPEN'
+              AND sourceDocumentId IN ({','.join(q(x) for x in source_ids)})
+            GROUP BY issueType,severity
+            ORDER BY issueType
+          """)
+
+          print(json.dumps({
+              "processedDocuments":3,
+              "riskControlPairs":expected_controls,
+              "activeRecords":verified,
+              "recordCounts":verify,
+              "sourceIssues":issue_verify
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/normalize_risk_control_bpm.py
+          rm -f /tmp/normalize_risk_control_bpm.py /tmp/rcb_*.sql
