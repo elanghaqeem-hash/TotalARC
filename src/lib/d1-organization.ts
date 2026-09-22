@@ -421,16 +421,22 @@ async function ensureBankKalbarOrganizationCompletion(
 
   let directorUmum = byCode.get('DIR-UMUM');
   if (!directorUmum) {
-    const id = crypto.randomUUID();
     const now = nowIso();
     await run(
       db,
       `INSERT INTO OrganizationUnit (
         id, institutionId, legalEntityId, parentId, type, code, name,
         headName, headEmail, status, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?)
+      ON CONFLICT(institutionId, code) DO UPDATE SET
+        legalEntityId = excluded.legalEntityId,
+        parentId = excluded.parentId,
+        type = excluded.type,
+        name = excluded.name,
+        status = excluded.status,
+        updatedAt = excluded.updatedAt`,
       [
-        id,
+        crypto.randomUUID(),
         institutionId,
         legalEntity.id,
         byCode.get('EXEC-DIREKSI')!.id,
@@ -443,19 +449,12 @@ async function ensureBankKalbarOrganizationCompletion(
         now
       ]
     );
-    directorUmum = {
-      id,
-      institutionId,
-      legalEntityId: legalEntity.id,
-      parentId: byCode.get('EXEC-DIREKSI')!.id,
-      type: 'Directorate',
-      code: 'DIR-UMUM',
-      name: 'Direktur Umum',
-      headName: null,
-      status: 'Active',
-      createdAt: now,
-      updatedAt: now
-    };
+    directorUmum = await first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM OrganizationUnit WHERE institutionId = ? AND code = ? LIMIT 1',
+      [institutionId, 'DIR-UMUM']
+    ) || undefined;
+    if (!directorUmum) throw new Error('BANK_KALBAR_DIR_UMUM_UPSERT_FAILED');
     byCode.set('DIR-UMUM', directorUmum);
   } else {
     await run(
