@@ -1,0 +1,253 @@
+name: Complete Aura baseline source display coverage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/complete-aura-baseline-display-coverage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-aura-baseline-display-coverage
+  cancel-in-progress: false
+
+jobs:
+  complete:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Add source-backed references for uncovered Aura baseline documents
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/complete_aura_coverage.py <<'PY'
+          import hashlib, json, os, re, subprocess, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="AURA_SOURCE_DISPLAY_COMPLETION_20260922"
+          SOURCE_ACCOUNT="aurakasih6987@gmail.com"
+          TARGET_IDS=[
+            "18c20233-0878-4a42-8dd1-595361264676",
+            "7f52ea64-7085-4d97-8926-f718bc647514",
+            "aab6ddb9-c671-45df-a5e0-aa231556b315",
+            "950fcc86-97b3-4229-946f-28fee50661e8",
+            "d7516025-1c8b-44a3-9241-d3c20181e612",
+          ]
+
+          def wr(args,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(["npx","wrangler",*args],text=True,env=os.environ,capture_output=True)
+                  if p.returncode==0:
+                      return p.stdout
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("WRANGLER_FAILURE",json.dumps({"returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]},ensure_ascii=False))
+              raise RuntimeError("WRANGLER_COMMAND_FAILED")
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def execute_file(path,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(["npx","wrangler","d1","execute",DB,"--remote","--file",path],text=True,env=os.environ,capture_output=True)
+                  if p.returncode==0:
+                      return
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("D1_WRITE_FAILURE",json.dumps({"path":path,"returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]},ensure_ascii=False))
+              raise RuntimeError("D1_WRITE_FAILED_"+path)
+
+          id_list=",".join(q(x) for x in TARGET_IDS)
+          docs=rows(f"""
+            SELECT id,institutionId,title,module,sourceKind,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
+            FROM SourceDocument
+            WHERE status='Active' AND id IN ({id_list})
+            ORDER BY title
+          """)
+          if len(docs)!=5:
+              raise RuntimeError(f"AURA_TARGET_SOURCE_COUNT_{len(docs)}_5")
+          if any(json.loads(d.get("metadataJson") or "{}").get("sourceAccount")!=SOURCE_ACCOUNT for d in docs):
+              raise RuntimeError("AURA_SOURCE_ACCOUNT_MISMATCH")
+          institution_ids={d["institutionId"] for d in docs}
+          if len(institution_ids)!=1:
+              raise RuntimeError("AURA_INSTITUTION_MISMATCH")
+          institution_id=next(iter(institution_ids))
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS SourceStructuredRecord (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            recordType TEXT NOT NULL,recordKey TEXT NOT NULL,recordTitle TEXT,period TEXT,payloadJson TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,precedencePriority INTEGER NOT NULL DEFAULT 0,sourceModifiedAt TEXT,
+            status TEXT NOT NULL DEFAULT 'Active',normalizationBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_structured_source_key
+            ON SourceStructuredRecord(sourceDocumentId,recordType,recordKey);
+
+          CREATE TABLE IF NOT EXISTS SourceDataIssue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,sourceRecordKey TEXT,
+            issueType TEXT NOT NULL,severity TEXT NOT NULL,fieldName TEXT,observedValue TEXT,expectedContext TEXT,
+            description TEXT NOT NULL,issueStatus TEXT NOT NULL DEFAULT 'OPEN',createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS SourceNormalizationRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,sourceRole TEXT NOT NULL,
+            precedencePriority INTEGER NOT NULL,totalDocuments INTEGER NOT NULL,processedDocuments INTEGER NOT NULL,
+            totalRecords INTEGER NOT NULL,status TEXT NOT NULL,summaryJson TEXT,startedAt TEXT NOT NULL,completedAt TEXT
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_source_normalization_batch
+            ON SourceNormalizationRun(institutionId,batchCode);
+          """
+          Path("/tmp/aura_ddl.sql").write_text(ddl)
+          execute_file("/tmp/aura_ddl.sql")
+
+          cleanup=f"""
+            UPDATE SourceStructuredRecord SET status='Superseded',updatedAt={q(now)}
+            WHERE institutionId={q(institution_id)}
+              AND normalizationBatch={q(BATCH)}
+              AND status='Active';
+
+            DELETE FROM SourceDataIssue
+            WHERE institutionId={q(institution_id)}
+              AND sourceDocumentId IN ({id_list})
+              AND issueType IN ('BASELINE_SOURCE_REFERENCE_ONLY','BASELINE_RAW_NOT_STORED');
+          """
+          Path("/tmp/aura_cleanup.sql").write_text(cleanup)
+          execute_file("/tmp/aura_cleanup.sql")
+
+          statements=[]
+          for d in docs:
+              text_available=int(d.get("textLength") or 0)>0
+              raw_stored=int(d.get("rawSizeBytes") or 0)>0
+              payload={
+                  "documentTitle":d["title"],
+                  "sourceModule":d.get("module"),
+                  "sourceKind":d.get("sourceKind"),
+                  "sourceTextAvailable":text_available,
+                  "sourceTextLength":int(d.get("textLength") or 0),
+                  "rawStored":raw_stored,
+                  "rawSizeBytes":int(d.get("rawSizeBytes") or 0),
+                  "sourceAccount":SOURCE_ACCOUNT,
+                  "sourceRole":"BASELINE",
+                  "precedencePriority":10,
+                  "referenceMasterOnly":True,
+                  "deepNormalizationRequired":True,
+                  "operationalUseProhibited":True
+              }
+              key="AURA:SOURCE_REFERENCE:"+d["id"]
+              rid=hid(d["id"],"SOURCE_BASELINE_REFERENCE_DOCUMENT",key)
+              pj=json.dumps(payload,ensure_ascii=False,separators=(",",":"))
+              statements.append(f"""
+                INSERT INTO SourceStructuredRecord
+                (id,institutionId,sourceDocumentId,recordType,recordKey,recordTitle,period,payloadJson,
+                 sourceRole,precedencePriority,sourceModifiedAt,status,normalizationBatch,createdAt,updatedAt)
+                VALUES({q(rid)},{q(institution_id)},{q(d['id'])},'SOURCE_BASELINE_REFERENCE_DOCUMENT',
+                 {q(key)},{q(d['title'])},'BASELINE',{q(pj)},'BASELINE',10,{q(d.get('sourceModifiedAt'))},
+                 'Active',{q(BATCH)},{q(now)},{q(now)})
+                ON CONFLICT(sourceDocumentId,recordType,recordKey) DO UPDATE SET
+                  recordTitle=excluded.recordTitle,payloadJson=excluded.payloadJson,sourceModifiedAt=excluded.sourceModifiedAt,
+                  status='Active',normalizationBatch=excluded.normalizationBatch,updatedAt=excluded.updatedAt;
+              """)
+
+              iid=hid(d["id"],"BASELINE_SOURCE_REFERENCE_ONLY")
+              statements.append(f"""
+                INSERT INTO SourceDataIssue
+                (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,observedValue,
+                 expectedContext,description,issueStatus,createdAt,updatedAt)
+                VALUES({q(iid)},{q(institution_id)},{q(d['id'])},{q(key)},'BASELINE_SOURCE_REFERENCE_ONLY','MEDIUM',
+                 'normalizationStatus','Reference-only','Domain normalization where required',
+                 'Baseline document is retained as a source-backed reference because no domain-specific normalization record currently exists.',
+                 'OPEN',{q(now)},{q(now)})
+                ON CONFLICT(id) DO UPDATE SET issueStatus='OPEN',updatedAt=excluded.updatedAt;
+              """)
+
+              if not raw_stored:
+                  iid2=hid(d["id"],"BASELINE_RAW_NOT_STORED")
+                  statements.append(f"""
+                    INSERT INTO SourceDataIssue
+                    (id,institutionId,sourceDocumentId,sourceRecordKey,issueType,severity,fieldName,observedValue,
+                     expectedContext,description,issueStatus,createdAt,updatedAt)
+                    VALUES({q(iid2)},{q(institution_id)},{q(d['id'])},{q(key)},'BASELINE_RAW_NOT_STORED','MEDIUM',
+                     'rawSizeBytes','0','Raw source binary stored when available',
+                     'Indexed source text exists in D1 but the raw baseline file bytes are not stored in SourceBinaryChunk.',
+                     'OPEN',{q(now)},{q(now)})
+                    ON CONFLICT(id) DO UPDATE SET issueStatus='OPEN',updatedAt=excluded.updatedAt;
+                  """)
+
+          Path("/tmp/aura_rows.sql").write_text("\n".join(statements))
+          execute_file("/tmp/aura_rows.sql")
+
+          verify=rows(f"""
+            SELECT COUNT(*) records
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(institution_id)}
+              AND normalizationBatch={q(BATCH)}
+              AND status='Active'
+              AND recordType='SOURCE_BASELINE_REFERENCE_DOCUMENT'
+          """)
+          loaded=int(verify[0]["records"] if verify else 0)
+          if loaded!=5:
+              raise RuntimeError(f"AURA_REFERENCE_COUNT_{loaded}_5")
+
+          run_id=hid(institution_id,BATCH)
+          summary={
+              "processedDocuments":5,
+              "activeRecords":loaded,
+              "scope":"baseline source display coverage only",
+              "domainNormalizationComplete":False,
+              "rawBinaryComplete":False
+          }
+          run_json=json.dumps(summary,separators=(",",":"))
+          run_sql=f"""
+            INSERT INTO SourceNormalizationRun
+            (id,institutionId,batchCode,sourceRole,precedencePriority,totalDocuments,processedDocuments,totalRecords,
+             status,summaryJson,startedAt,completedAt)
+            VALUES({q(run_id)},{q(institution_id)},{q(BATCH)},'BASELINE',10,5,5,5,'Completed',
+             {q(run_json)},{q(now)},{q(now)})
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              processedDocuments=5,totalRecords=5,status='Completed',summaryJson=excluded.summaryJson,completedAt=excluded.completedAt;
+          """
+          Path("/tmp/aura_run.sql").write_text(run_sql)
+          execute_file("/tmp/aura_run.sql")
+
+          print(json.dumps({
+              "processedDocuments":5,
+              "activeRecords":loaded,
+              "documents":[{"id":d["id"],"title":d["title"],"textLength":d.get("textLength"),"rawSizeBytes":d.get("rawSizeBytes")} for d in docs]
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/complete_aura_coverage.py
+          rm -f /tmp/complete_aura_coverage.py /tmp/aura_*.sql
