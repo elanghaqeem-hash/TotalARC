@@ -139,6 +139,10 @@ export default function RisksPage() {
           <p className="text-xs text-slate-500 mt-1">
             Structured Cause → Event → Impact risk articulation. Interactive 5x5 Likelihood × Impact matrices.
           </p>
+          <p className="mt-2 text-[11px] text-slate-400">
+            Source-fed risks remain Draft / Not Assessed until a validated 1–5 likelihood and impact assessment is completed.
+            Unassessed risks are excluded from the 5×5 heatmap.
+          </p>
         </div>
 
         <div className="flex items-center space-x-3">
@@ -232,11 +236,20 @@ export default function RisksPage() {
                       </h3>
                     </div>
 
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}
-                    >
-                      Score: {r.inherentScore} ({r.inherentRating})
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}
+                      >
+                        {r.inherentScore > 0
+                          ? `Score: ${r.inherentScore} (${r.inherentRating})`
+                          : 'Not Assessed'}
+                      </span>
+                      {r.sourceMetadata?.sourceRiskRating && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
+                          Source rating: {r.sourceMetadata.sourceRiskRating}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <p className="text-xs text-slate-600 mt-2 line-clamp-2 leading-relaxed">
@@ -247,7 +260,11 @@ export default function RisksPage() {
                     <span>Process: <strong>{r.process?.name || 'Unassigned'}</strong></span>
                     <span className="text-emerald-700 font-semibold flex items-center space-x-1">
                       <TrendingDown className="w-3.5 h-3.5" />
-                      <span>Residual: {r.residualScore} ({r.residualRating})</span>
+                      <span>
+                        {r.residualScore > 0
+                          ? `Residual: ${r.residualScore} (${r.residualRating})`
+                          : 'Residual: Not Assessed'}
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -281,6 +298,21 @@ export default function RisksPage() {
                   <h2 className="text-xl font-black text-slate-900 mt-2">
                     {selectedRisk.name}
                   </h2>
+                  {selectedRisk.sourceMetadata && (
+                    <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 font-bold text-violet-700">
+                        Source-backed
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-bold text-slate-600">
+                        Source rating: {selectedRisk.sourceMetadata.sourceRiskRating || 'Not provided'}
+                      </span>
+                      {selectedRisk.sourceMetadata.reviewRequired ? (
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 font-bold text-amber-700">
+                          Owner validation required
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
                 {/* Structured Cause - Event - Impact (Section 29) */}
@@ -292,17 +324,17 @@ export default function RisksPage() {
                   <div className="space-y-2 text-xs">
                     <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                       <span className="text-slate-500 font-bold uppercase text-[10px]">Due to Cause:</span>
-                      <p className="text-slate-800 font-medium mt-0.5">{selectedRisk.cause}</p>
+                      <p className="text-slate-800 font-medium mt-0.5">{selectedRisk.cause || 'Not provided in source'}</p>
                     </div>
 
                     <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200">
                       <span className="text-amber-700 font-bold uppercase text-[10px]">There is a Risk that (Event):</span>
-                      <p className="text-amber-900 font-medium mt-0.5">{selectedRisk.event}</p>
+                      <p className="text-amber-900 font-medium mt-0.5">{selectedRisk.event || 'Not provided in source'}</p>
                     </div>
 
                     <div className="p-3 bg-rose-50/60 rounded-lg border border-rose-200">
                       <span className="text-rose-700 font-bold uppercase text-[10px]">Resulting in (Impact):</span>
-                      <p className="text-rose-900 font-medium mt-0.5">{selectedRisk.impact}</p>
+                      <p className="text-rose-900 font-medium mt-0.5">{selectedRisk.impact || 'Not provided in source'}</p>
                     </div>
                   </div>
                 </div>
@@ -313,10 +345,14 @@ export default function RisksPage() {
                     <span className="text-[10px] uppercase font-bold text-rose-600 tracking-wider">
                       Inherent Risk
                     </span>
-                    <div className="text-3xl font-black text-rose-800">{selectedRisk.inherentScore}</div>
-                    <div className="text-xs font-bold text-rose-700">{selectedRisk.inherentRating} Rating</div>
+                    <div className="text-3xl font-black text-rose-800">
+                      {selectedRisk.inherentScore > 0 ? selectedRisk.inherentScore : '—'}
+                    </div>
+                    <div className="text-xs font-bold text-rose-700">{selectedRisk.inherentRating}</div>
                     <div className="text-[10px] text-rose-600">
-                      Likelihood {selectedRisk.inherentLikelihood} × Impact {selectedRisk.inherentImpact}
+                      {selectedRisk.inherentScore > 0
+                        ? `Likelihood ${selectedRisk.inherentLikelihood} × Impact ${selectedRisk.inherentImpact}`
+                        : 'Awaiting validated 1–5 assessment'}
                     </div>
                   </div>
 
@@ -324,8 +360,10 @@ export default function RisksPage() {
                     <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
                       Residual Risk (Post-Control)
                     </span>
-                    <div className="text-3xl font-black text-emerald-800">{selectedRisk.residualScore}</div>
-                    <div className="text-xs font-bold text-emerald-700">{selectedRisk.residualRating} Rating</div>
+                    <div className="text-3xl font-black text-emerald-800">
+                      {selectedRisk.residualScore > 0 ? selectedRisk.residualScore : '—'}
+                    </div>
+                    <div className="text-xs font-bold text-emerald-700">{selectedRisk.residualRating}</div>
                     <div className="text-[10px] text-emerald-600">
                       Treatment: {selectedRisk.riskTreatment}
                     </div>
@@ -381,7 +419,10 @@ export default function RisksPage() {
                 5×5 {activeTab === 'inherent_heatmap' ? 'Inherent' : 'Residual'} Risk Matrix
               </h2>
               <p className="text-xs text-slate-500">
-                Likelihood (Vertical Axis, 1–5) × Impact (Horizontal Axis, 1–5). Click on cells to inspect mapped risks.
+                Likelihood (Vertical Axis, 1–5) × Impact (Horizontal Axis, 1–5). Only assessed risks are mapped.
+                <span className="ml-1 font-bold text-slate-700">
+                  {risks.filter((risk: any) => Number(risk.inherentScore || 0) === 0).length} risk(s) currently Not Assessed.
+                </span>
               </p>
             </div>
             <div className="flex items-center space-x-2 text-xs">
@@ -576,7 +617,7 @@ export default function RisksPage() {
                     onChange={e => setFormData({ ...formData, inherentLikelihood: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
-                    <option value={0} disabled>Select level</option>
+                    <option value={0}>Not Assessed</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
@@ -590,7 +631,7 @@ export default function RisksPage() {
                     onChange={e => setFormData({ ...formData, inherentImpact: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
-                    <option value={0} disabled>Select level</option>
+                    <option value={0}>Not Assessed</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
