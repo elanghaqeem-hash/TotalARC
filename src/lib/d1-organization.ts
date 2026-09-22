@@ -407,7 +407,7 @@ async function ensureBankKalbarOrganizationCompletion(
     ...CONVENTIONAL_BRANCH_CODES,
     ...SHARIA_BRANCH_CODES
   ];
-  const missing = [...new Set(required)].filter(code => !byCode.has(code));
+  const missing = Array.from(new Set(required)).filter(code => !byCode.has(code));
   if (missing.length > 0) {
     throw new Error(`BANK_KALBAR_ORG_SOURCE_UNITS_MISSING:${missing.join(',')}`);
   }
