@@ -221,6 +221,49 @@ export async function ensureIcofrScopeSchema() {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_icofr_population_scope_type
         ON ICOFRScopingPopulationSummary(scopeId, populationType);
+
+      CREATE TABLE IF NOT EXISTS ICOFRScopeItemMetadata (
+        scopeItemId TEXT PRIMARY KEY NOT NULL,
+        scopeId TEXT NOT NULL,
+        sourceKey TEXT,
+        sourceConclusion TEXT,
+        decisionStatus TEXT NOT NULL,
+        sourceReference TEXT NOT NULL,
+        payloadJson TEXT,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_icofr_scope_item_meta_scope
+        ON ICOFRScopeItemMetadata(scopeId);
+      CREATE INDEX IF NOT EXISTS idx_icofr_scope_item_meta_key
+        ON ICOFRScopeItemMetadata(scopeId, sourceKey);
+
+      CREATE TABLE IF NOT EXISTS ICOFRScopeLink (
+        id TEXT PRIMARY KEY NOT NULL,
+        scopeId TEXT NOT NULL,
+        fromItemId TEXT NOT NULL,
+        toItemId TEXT NOT NULL,
+        relationType TEXT NOT NULL,
+        sourceReference TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_icofr_scope_link_unique
+        ON ICOFRScopeLink(scopeId, fromItemId, toItemId, relationType);
+
+      CREATE TABLE IF NOT EXISTS ICOFRScopingIssue (
+        id TEXT PRIMARY KEY NOT NULL,
+        scopeId TEXT NOT NULL,
+        issueCode TEXT NOT NULL,
+        category TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        status TEXT NOT NULL,
+        description TEXT NOT NULL,
+        activeDecision TEXT,
+        affectedJson TEXT,
+        sourceReference TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_icofr_scope_issue_code
+        ON ICOFRScopingIssue(scopeId, issueCode);
     `);
 
     return db;
@@ -309,7 +352,18 @@ export async function getIcofrScopingData() {
     };
   }
 
-  const [scopeRows, itemRows, parameterRows, populationRows, legalEntities, organizationUnits, businessProcesses] = await Promise.all([
+  const [
+    scopeRows,
+    itemRows,
+    parameterRows,
+    populationRows,
+    itemMetadataRows,
+    linkRows,
+    issueRows,
+    legalEntities,
+    organizationUnits,
+    businessProcesses
+  ] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM ICOFRScope WHERE institutionId = ? ORDER BY fiscalYear DESC, updatedAt DESC',
@@ -344,6 +398,35 @@ export async function getIcofrScopingData() {
     ),
     all<Record<string, unknown>>(
       db,
+      `SELECT m.*
+         FROM ICOFRScopeItemMetadata m
+         JOIN ICOFRScope s ON s.id = m.scopeId
+        WHERE s.institutionId = ?
+        ORDER BY m.scopeId ASC, m.sourceKey ASC`,
+      [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT l.*
+         FROM ICOFRScopeLink l
+         JOIN ICOFRScope s ON s.id = l.scopeId
+        WHERE s.institutionId = ?
+        ORDER BY l.scopeId ASC, l.relationType ASC, l.id ASC`,
+      [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT i.*
+         FROM ICOFRScopingIssue i
+         JOIN ICOFRScope s ON s.id = i.scopeId
+        WHERE s.institutionId = ?
+        ORDER BY i.scopeId ASC,
+                 CASE i.severity WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
+                 i.issueCode ASC`,
+      [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
       'SELECT id, code, name, country FROM LegalEntity WHERE institutionId = ? ORDER BY code ASC, name ASC',
       [institution.id]
     ),
@@ -359,13 +442,55 @@ export async function getIcofrScopingData() {
     )
   ]);
 
+  const metadataByItem = new Map<string, Record<string, unknown>>();
+  for (const row of itemMetadataRows) {
+    let payload: unknown = null;
+    try {
+      payload = row.payloadJson ? JSON.parse(String(row.payloadJson)) : null;
+    } catch {
+      payload = null;
+    }
+    metadataByItem.set(String(row.scopeItemId), {
+      ...row,
+      payload
+    });
+  }
+
   const itemsByScope = new Map<string, Record<string, unknown>[]>();
   for (const rawItem of itemRows) {
     const item = itemRow(rawItem);
     const scopeId = String(rawItem.scopeId);
     const list = itemsByScope.get(scopeId) || [];
-    list.push(item);
+    list.push({
+      ...item,
+      sourceMetadata: metadataByItem.get(String(rawItem.id)) || null
+    });
     itemsByScope.set(scopeId, list);
+  }
+
+  const linksByScope = new Map<string, Record<string, unknown>[]>();
+  for (const row of linkRows) {
+    const scopeId = String(row.scopeId);
+    const list = linksByScope.get(scopeId) || [];
+    list.push(row);
+    linksByScope.set(scopeId, list);
+  }
+
+  const issuesByScope = new Map<string, Record<string, unknown>[]>();
+  for (const row of issueRows) {
+    const scopeId = String(row.scopeId);
+    const list = issuesByScope.get(scopeId) || [];
+    let affected: unknown = null;
+    try {
+      affected = row.affectedJson ? JSON.parse(String(row.affectedJson)) : null;
+    } catch {
+      affected = null;
+    }
+    list.push({
+      ...row,
+      affected
+    });
+    issuesByScope.set(scopeId, list);
   }
 
   const parametersByScope = new Map<string, Record<string, unknown>[]>();
@@ -406,7 +531,9 @@ export async function getIcofrScopingData() {
       ...scopeRow(row),
       items: itemsByScope.get(String(row.id)) || [],
       parameters: parametersByScope.get(String(row.id)) || [],
-      populationSummaries: populationsByScope.get(String(row.id)) || []
+      populationSummaries: populationsByScope.get(String(row.id)) || [],
+      links: linksByScope.get(String(row.id)) || [],
+      issues: issuesByScope.get(String(row.id)) || []
     })),
     candidates: {
       legalEntities,
