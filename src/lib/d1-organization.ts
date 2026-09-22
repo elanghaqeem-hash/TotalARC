@@ -134,6 +134,39 @@ async function ensureOrganizationSchema() {
     CREATE INDEX IF NOT EXISTS idx_org_unit_legal_entity
       ON OrganizationUnit(legalEntityId);
 
+    CREATE TABLE IF NOT EXISTS OrganizationHierarchyEvidence (
+      unitId TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceStatus TEXT NOT NULL,
+      hierarchyStatus TEXT NOT NULL,
+      sourceReferencesJson TEXT NOT NULL,
+      sourceNote TEXT,
+      asOfDate TEXT,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_org_hierarchy_evidence_institution
+      ON OrganizationHierarchyEvidence(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_org_hierarchy_evidence_status
+      ON OrganizationHierarchyEvidence(hierarchyStatus);
+
+    CREATE TABLE IF NOT EXISTS OrganizationStructureTemplate (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      templateCode TEXT NOT NULL,
+      nodeCode TEXT NOT NULL,
+      parentNodeCode TEXT,
+      relationshipType TEXT NOT NULL DEFAULT 'Direct',
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      conditional INTEGER NOT NULL DEFAULT 0,
+      sourceReference TEXT NOT NULL,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Active',
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_org_structure_template_node
+      ON OrganizationStructureTemplate(institutionId, templateCode, nodeCode);
+
     CREATE TABLE IF NOT EXISTS AuditLog (
       id TEXT PRIMARY KEY NOT NULL,
       institutionId TEXT,
@@ -210,7 +243,7 @@ export async function getOrganizationStructure() {
     };
   }
 
-  const [legalEntities, organizationUnits] = await Promise.all([
+  const [legalEntities, organizationUnits, hierarchyEvidence, organizationTemplates] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM LegalEntity WHERE institutionId = ? ORDER BY code ASC, name ASC',
@@ -220,6 +253,16 @@ export async function getOrganizationStructure() {
       db,
       'SELECT * FROM OrganizationUnit WHERE institutionId = ? ORDER BY createdAt ASC, code ASC',
       [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM OrganizationHierarchyEvidence WHERE institutionId = ? ORDER BY hierarchyStatus ASC, unitId ASC',
+      [institution.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM OrganizationStructureTemplate WHERE institutionId = ? AND status = ? ORDER BY templateCode ASC, sortOrder ASC, nodeCode ASC',
+      [institution.id, 'Active']
     )
   ]);
 
@@ -227,6 +270,8 @@ export async function getOrganizationStructure() {
     institution,
     legalEntities,
     organizationUnits,
+    hierarchyEvidence,
+    organizationTemplates,
     users: []
   };
 }
