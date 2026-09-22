@@ -1,0 +1,446 @@
+name: Promote Bank Kalbar Risk Universe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-bank-kalbar-risk-universe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-promote-bank-kalbar-risk-universe
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Promote exact BPM-linked source risks
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/promote_risks.py <<'PY'
+          import hashlib, json, os, re, subprocess, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="BANK_KALBAR_RISK_UNIVERSE_20260922"
+          ELIGIBLE_TYPES=[
+              "ICOFR_RISK_UPDATE_CANDIDATE",
+              "ICOFR_RISK_DETAIL_UPDATE_CANDIDATE",
+          ]
+          REVIEW_TYPES=[
+              "ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE",
+              "ICOFR_FRAUD_RISK_UPDATE_CANDIDATE",
+              "ICOFR_IT_RISK_UPDATE_CANDIDATE",
+          ]
+          QUALITATIVE={"tinggi","sedang","rendah","high","medium","low","critical","kritis"}
+
+          def wr(args,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(["npx","wrangler",*args],text=True,env=os.environ,capture_output=True)
+                  if p.returncode==0:
+                      return p.stdout
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("WRANGLER_FAILURE",json.dumps({
+                  "returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("WRANGLER_COMMAND_FAILED")
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def execute_file(path,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(
+                      ["npx","wrangler","d1","execute",DB,"--remote","--file",path],
+                      text=True,env=os.environ,capture_output=True
+                  )
+                  if p.returncode==0:
+                      return
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("D1_WRITE_FAILURE",json.dumps({
+                  "path":path,"returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("D1_WRITE_FAILED_"+path)
+
+          def txt(v):
+              return v.strip() if isinstance(v,str) else ""
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS RiskMaster (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,processId TEXT NOT NULL,activityId TEXT,
+            riskId TEXT NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL,cause TEXT NOT NULL,event TEXT NOT NULL,
+            impact TEXT NOT NULL,category TEXT NOT NULL,ownerName TEXT NOT NULL,inherentLikelihood INTEGER NOT NULL,
+            inherentImpact INTEGER NOT NULL,inherentScore INTEGER NOT NULL,inherentRating TEXT NOT NULL,
+            residualLikelihood INTEGER NOT NULL,residualImpact INTEGER NOT NULL,residualScore INTEGER NOT NULL,
+            residualRating TEXT NOT NULL,riskTreatment TEXT NOT NULL DEFAULT 'Not Assessed',
+            status TEXT NOT NULL DEFAULT 'Active',version TEXT NOT NULL DEFAULT '1.0',
+            createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_institution_risk_id
+            ON RiskMaster(institutionId,riskId);
+
+          CREATE TABLE IF NOT EXISTS OperationalRiskMetadata (
+            riskId TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceStructuredRecordId TEXT NOT NULL UNIQUE,
+            sourceRecordType TEXT NOT NULL,sourceRecordKey TEXT NOT NULL,sourceDocumentId TEXT NOT NULL,
+            sourceRiskRating TEXT,sourceStatus TEXT,sourceCause TEXT,sourceImpactLabel TEXT,
+            reviewRequired INTEGER NOT NULL DEFAULT 1,feedBatch TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_operational_risk_metadata_institution
+            ON OperationalRiskMetadata(institutionId);
+
+          CREATE TABLE IF NOT EXISTS OperationalSourceRecordLink (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceStructuredRecordId TEXT NOT NULL,
+            module TEXT NOT NULL,operationalTable TEXT NOT NULL,operationalRecordId TEXT NOT NULL,
+            relationType TEXT NOT NULL,batchCode TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_operational_source_link_unique
+            ON OperationalSourceRecordLink(sourceStructuredRecordId,module,operationalRecordId,relationType);
+
+          CREATE TABLE IF NOT EXISTS OperationalPromotionReviewQueue (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceStructuredRecordId TEXT NOT NULL,
+            module TEXT NOT NULL,reasonCode TEXT NOT NULL,reasonDetail TEXT,status TEXT NOT NULL DEFAULT 'OPEN',
+            batchCode TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_operational_promotion_review_unique
+            ON OperationalPromotionReviewQueue(sourceStructuredRecordId,module,reasonCode);
+
+          CREATE TABLE IF NOT EXISTS OperationalDataFeedRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,module TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,sourceReferencesJson TEXT NOT NULL,recordsUpserted INTEGER NOT NULL,
+            status TEXT NOT NULL,summaryJson TEXT,completedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_operational_feed_batch
+            ON OperationalDataFeedRun(institutionId,batchCode);
+
+          CREATE TABLE IF NOT EXISTS AuditLog (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT,userName TEXT NOT NULL,userRole TEXT NOT NULL,
+            action TEXT NOT NULL,entityType TEXT NOT NULL,recordId TEXT NOT NULL,oldValue TEXT,newValue TEXT,
+            reason TEXT,ipAddress TEXT,timestamp TEXT NOT NULL
+          );
+          """
+          Path("/tmp/risk_ddl.sql").write_text(ddl)
+          execute_file("/tmp/risk_ddl.sql")
+
+          inst=rows("""
+            SELECT id,name,legalName
+            FROM Institution
+            WHERE lower(name) LIKE '%bank kalbar%'
+               OR lower(legalName) LIKE '%pembangunan daerah kalimantan barat%'
+            ORDER BY createdAt
+          """)
+          if len(inst)!=1: raise RuntimeError("BANK_KALBAR_INSTITUTION_COUNT_"+str(len(inst)))
+          iid=str(inst[0]["id"])
+
+          bpm=rows(f"""
+            SELECT id,processId,name,level,tags
+            FROM BusinessProcess
+            WHERE institutionId={q(iid)} AND level=3
+            ORDER BY processId
+          """)
+          by_pair={}
+          for b in bpm:
+              try: tags=json.loads(b.get("tags") or "{}")
+              except: tags={}
+              p=txt(tags.get("sourceProcessName"))
+              s=txt(tags.get("sourceSubprocessName"))
+              if p and s:
+                  by_pair[(p,s)]=b
+          if len(by_pair)!=48:
+              raise RuntimeError(f"BPM_SOURCE_PAIR_COUNT_{len(by_pair)}_48")
+
+          all_types=ELIGIBLE_TYPES+REVIEW_TYPES
+          type_list=",".join(q(x) for x in all_types)
+          src=rows(f"""
+            SELECT id,sourceDocumentId,recordType,recordKey,recordTitle,normalizationBatch,payloadJson
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(iid)} AND status='Active'
+              AND recordType IN ({type_list})
+            ORDER BY recordType,recordKey
+          """)
+          if len(src)!=94:
+              raise RuntimeError(f"SOURCE_RISK_COUNT_{len(src)}_94")
+
+          eligible=[]
+          review=[]
+          refs=set()
+          for r in src:
+              try: p=json.loads(r.get("payloadJson") or "{}")
+              except: p={}
+              risk_ref=txt(p.get("riskReference")) or txt(p.get("riskId")) or txt(r.get("recordKey"))
+              statement=txt(p.get("riskStatement")) or txt(p.get("description")) or txt(r.get("recordTitle"))
+              process=txt(p.get("businessProcess")) or txt(p.get("process")) or txt(p.get("areaOrProcess"))
+              subprocess_name=txt(p.get("subprocess")) or txt(p.get("subProcess"))
+              matched=by_pair.get((process,subprocess_name))
+
+              item={
+                  "row":r,"payload":p,"riskReference":risk_ref,"statement":statement,
+                  "process":process,"subprocess":subprocess_name,"matched":matched
+              }
+              if r["recordType"] in ELIGIBLE_TYPES and risk_ref and statement and matched:
+                  if risk_ref in refs: raise RuntimeError("DUPLICATE_ELIGIBLE_RISK_REFERENCE_"+risk_ref)
+                  refs.add(risk_ref)
+                  eligible.append(item)
+              else:
+                  review.append(item)
+
+          if len(eligible)!=50:
+              raise RuntimeError(f"ELIGIBLE_RISK_COUNT_{len(eligible)}_50")
+          if len(review)!=44:
+              raise RuntimeError(f"REVIEW_GATED_RISK_COUNT_{len(review)}_44")
+
+          # Prevent the feed from overwriting an unrelated/manual risk with the same enterprise id.
+          existing=rows(f"""
+            SELECT r.id,r.riskId,m.sourceStructuredRecordId
+            FROM RiskMaster r
+            LEFT JOIN OperationalRiskMetadata m ON m.riskId=r.id
+            WHERE r.institutionId={q(iid)}
+          """)
+          existing_by_ref={str(x["riskId"]):x for x in existing}
+          for item in eligible:
+              ref=item["riskReference"]
+              ex=existing_by_ref.get(ref)
+              if ex and not ex.get("sourceStructuredRecordId"):
+                  raise RuntimeError("MANUAL_RISK_ID_COLLISION_"+ref)
+              if ex and str(ex.get("sourceStructuredRecordId"))!=str(item["row"]["id"]):
+                  raise RuntimeError("SOURCE_RISK_ID_COLLISION_"+ref)
+
+          risk_sql=[]
+          meta_sql=[]
+          link_sql=[]
+          source_docs=set()
+
+          for item in eligible:
+              r=item["row"]; p=item["payload"]; ref=item["riskReference"]; statement=item["statement"]
+              matched=item["matched"]
+              source_docs.add(str(r["sourceDocumentId"]))
+              risk_id=hid(iid,"RISK",ref)
+              ex=existing_by_ref.get(ref)
+              if ex: risk_id=str(ex["id"])
+
+              source_rating=txt(p.get("riskRating")) or txt(p.get("inherentRating"))
+              source_status=txt(p.get("sourceStatus")) or txt(p.get("approvalStatus"))
+              source_cause=txt(p.get("cause"))
+              raw_impact=txt(p.get("impact"))
+              impact_narrative=(
+                  txt(p.get("impactDescription")) or txt(p.get("consequence")) or txt(p.get("financialImpact"))
+              )
+              if not impact_narrative and raw_impact and raw_impact.lower() not in QUALITATIVE:
+                  impact_narrative=raw_impact
+
+              category=txt(p.get("riskCategory")) or "Financial Reporting / ICOFR"
+              description=statement
+              event=statement
+              # The source does not contain validated 1-5 inherent assessment for this batch.
+              # Store zero + Not Assessed rather than translating qualitative labels into synthetic scores.
+              risk_sql.append(f"""
+                INSERT INTO RiskMaster(
+                  id,institutionId,processId,activityId,riskId,name,description,cause,event,impact,category,ownerName,
+                  inherentLikelihood,inherentImpact,inherentScore,inherentRating,residualLikelihood,residualImpact,
+                  residualScore,residualRating,riskTreatment,status,version,createdAt,updatedAt
+                ) VALUES(
+                  {q(risk_id)},{q(iid)},{q(matched['id'])},NULL,{q(ref)},{q(statement)},{q(description)},
+                  {q(source_cause)},{q(event)},{q(impact_narrative)},{q(category)},'',
+                  0,0,0,'Not Assessed',0,0,0,'Not Assessed','Not Assessed','Draft','1.0',{q(now)},{q(now)}
+                )
+                ON CONFLICT(institutionId,riskId) DO UPDATE SET
+                  processId=excluded.processId,name=excluded.name,description=excluded.description,
+                  cause=excluded.cause,event=excluded.event,impact=excluded.impact,category=excluded.category,
+                  inherentLikelihood=0,inherentImpact=0,inherentScore=0,inherentRating='Not Assessed',
+                  residualLikelihood=0,residualImpact=0,residualScore=0,residualRating='Not Assessed',
+                  riskTreatment='Not Assessed',status='Draft',updatedAt=excluded.updatedAt;
+              """)
+
+              meta_sql.append(f"""
+                INSERT INTO OperationalRiskMetadata(
+                  riskId,institutionId,sourceStructuredRecordId,sourceRecordType,sourceRecordKey,sourceDocumentId,
+                  sourceRiskRating,sourceStatus,sourceCause,sourceImpactLabel,reviewRequired,feedBatch,createdAt,updatedAt
+                ) VALUES(
+                  {q(risk_id)},{q(iid)},{q(r['id'])},{q(r['recordType'])},{q(r['recordKey'])},{q(r['sourceDocumentId'])},
+                  {q(source_rating)},{q(source_status)},{q(source_cause)},{q(raw_impact)},1,{q(BATCH)},{q(now)},{q(now)}
+                )
+                ON CONFLICT(riskId) DO UPDATE SET
+                  sourceStructuredRecordId=excluded.sourceStructuredRecordId,sourceRecordType=excluded.sourceRecordType,
+                  sourceRecordKey=excluded.sourceRecordKey,sourceDocumentId=excluded.sourceDocumentId,
+                  sourceRiskRating=excluded.sourceRiskRating,sourceStatus=excluded.sourceStatus,
+                  sourceCause=excluded.sourceCause,sourceImpactLabel=excluded.sourceImpactLabel,
+                  reviewRequired=1,feedBatch=excluded.feedBatch,updatedAt=excluded.updatedAt;
+              """)
+
+              link_id=hid(iid,BATCH,r["id"],risk_id)
+              link_sql.append(f"""
+                INSERT INTO OperationalSourceRecordLink(
+                  id,institutionId,sourceStructuredRecordId,module,operationalTable,operationalRecordId,
+                  relationType,batchCode,createdAt,updatedAt
+                ) VALUES(
+                  {q(link_id)},{q(iid)},{q(r['id'])},'RISK','RiskMaster',{q(risk_id)},
+                  'SOURCE_EVIDENCE_FOR_RISK',{q(BATCH)},{q(now)},{q(now)}
+                )
+                ON CONFLICT(sourceStructuredRecordId,module,operationalRecordId,relationType) DO UPDATE SET
+                  batchCode=excluded.batchCode,updatedAt=excluded.updatedAt;
+              """)
+
+          Path("/tmp/risk_rows.sql").write_text("\n".join(risk_sql))
+          execute_file("/tmp/risk_rows.sql")
+          Path("/tmp/risk_meta.sql").write_text("\n".join(meta_sql))
+          execute_file("/tmp/risk_meta.sql")
+          Path("/tmp/risk_links.sql").write_text("\n".join(link_sql))
+          execute_file("/tmp/risk_links.sql")
+
+          # The 44 entity/fraud/IT candidates remain source-layer records until a validated BPM linkage exists.
+          review_sql=[]
+          for item in review:
+              r=item["row"]; p=item["payload"]
+              reasons=[]
+              process=item["process"]; sub=item["subprocess"]
+              if not process: reasons.append("NO_BUSINESS_PROCESS")
+              if not sub: reasons.append("NO_SUBPROCESS")
+              if process and sub and not item["matched"]: reasons.append("NO_EXACT_BPM_MATCH")
+              reason_code="+".join(reasons) or "PROMOTION_REVIEW_REQUIRED"
+              detail=(
+                  "Risk candidate remains in source/review layer; no operational process assignment is fabricated. "
+                  f"recordType={r['recordType']}; recordKey={r['recordKey']}."
+              )
+              rid=hid(iid,"RISK-REVIEW",r["id"],reason_code)
+              review_sql.append(f"""
+                INSERT INTO OperationalPromotionReviewQueue(
+                  id,institutionId,sourceStructuredRecordId,module,reasonCode,reasonDetail,status,batchCode,createdAt,updatedAt
+                ) VALUES(
+                  {q(rid)},{q(iid)},{q(r['id'])},'RISK',{q(reason_code)},{q(detail)},'OPEN',{q(BATCH)},{q(now)},{q(now)}
+                )
+                ON CONFLICT(sourceStructuredRecordId,module,reasonCode) DO UPDATE SET
+                  reasonDetail=excluded.reasonDetail,status='OPEN',batchCode=excluded.batchCode,updatedAt=excluded.updatedAt;
+              """)
+          Path("/tmp/risk_review.sql").write_text("\n".join(review_sql))
+          execute_file("/tmp/risk_review.sql")
+
+          verify=rows(f"""
+            SELECT
+              COUNT(*) total,
+              SUM(CASE WHEN status='Draft' THEN 1 ELSE 0 END) draftCount,
+              SUM(CASE WHEN inherentScore=0 AND inherentRating='Not Assessed' THEN 1 ELSE 0 END) unassessedCount
+            FROM RiskMaster
+            WHERE institutionId={q(iid)}
+              AND id IN (SELECT riskId FROM OperationalRiskMetadata WHERE institutionId={q(iid)} AND feedBatch={q(BATCH)})
+          """)
+          meta=rows(f"""
+            SELECT COUNT(*) records
+            FROM OperationalRiskMetadata
+            WHERE institutionId={q(iid)} AND feedBatch={q(BATCH)}
+          """)
+          links=rows(f"""
+            SELECT COUNT(*) records
+            FROM OperationalSourceRecordLink
+            WHERE institutionId={q(iid)} AND module='RISK' AND batchCode={q(BATCH)}
+          """)
+          review_count=rows(f"""
+            SELECT COUNT(*) records
+            FROM OperationalPromotionReviewQueue
+            WHERE institutionId={q(iid)} AND module='RISK' AND batchCode={q(BATCH)} AND status='OPEN'
+          """)
+          v=verify[0] if verify else {}
+          if int(v.get("total") or 0)!=50: raise RuntimeError("RISK_VERIFY_TOTAL_NOT_50")
+          if int(v.get("draftCount") or 0)!=50: raise RuntimeError("RISK_VERIFY_DRAFT_NOT_50")
+          if int(v.get("unassessedCount") or 0)!=50: raise RuntimeError("RISK_VERIFY_UNASSESSED_NOT_50")
+          if int(meta[0]["records"] if meta else 0)!=50: raise RuntimeError("RISK_METADATA_NOT_50")
+          if int(links[0]["records"] if links else 0)!=50: raise RuntimeError("RISK_SOURCE_LINK_NOT_50")
+          if int(review_count[0]["records"] if review_count else 0)!=44: raise RuntimeError("RISK_REVIEW_QUEUE_NOT_44")
+
+          rating_counts=rows(f"""
+            SELECT sourceRiskRating,COUNT(*) records
+            FROM OperationalRiskMetadata
+            WHERE institutionId={q(iid)} AND feedBatch={q(BATCH)}
+            GROUP BY sourceRiskRating ORDER BY sourceRiskRating
+          """)
+          process_counts=rows(f"""
+            SELECT bp.processId,bp.name,COUNT(*) risks
+            FROM RiskMaster r
+            JOIN BusinessProcess bp ON bp.id=r.processId
+            JOIN OperationalRiskMetadata m ON m.riskId=r.id
+            WHERE r.institutionId={q(iid)} AND m.feedBatch={q(BATCH)}
+            GROUP BY bp.processId,bp.name ORDER BY bp.processId
+          """)
+
+          summary={
+              "promotedRisks":50,
+              "draftUnassessed":50,
+              "reviewGatedRisks":44,
+              "sourceRiskCandidates":94,
+              "numericLikelihoodImpactTranslated":0,
+              "sourceRatingsPreserved":True,
+              "entityFraudItRisksHeldForBpmLinkage":44
+          }
+          feed_id=hid(iid,BATCH)
+          feed_sql=f"""
+            INSERT INTO OperationalDataFeedRun(
+              id,institutionId,batchCode,module,sourceRole,sourceReferencesJson,recordsUpserted,status,summaryJson,completedAt
+            ) VALUES(
+              {q(feed_id)},{q(iid)},{q(BATCH)},'Risk Universe','UPDATE',
+              {q(json.dumps(sorted(source_docs),separators=(',',':')))},50,'Completed',
+              {q(json.dumps(summary,ensure_ascii=False,separators=(',',':')))},{q(now)}
+            )
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              sourceReferencesJson=excluded.sourceReferencesJson,recordsUpserted=50,status='Completed',
+              summaryJson=excluded.summaryJson,completedAt=excluded.completedAt;
+          """
+          Path("/tmp/risk_feed.sql").write_text(feed_sql)
+          execute_file("/tmp/risk_feed.sql")
+
+          audit_id=hid(iid,BATCH,"AUDIT")
+          audit_sql=f"""
+            INSERT OR REPLACE INTO AuditLog(
+              id,institutionId,userName,userRole,action,entityType,recordId,oldValue,newValue,reason,ipAddress,timestamp
+            ) VALUES(
+              {q(audit_id)},{q(iid)},'System','System','UPSERT','RiskUniverseFeed',{q(BATCH)},NULL,
+              {q(json.dumps(summary,ensure_ascii=False,separators=(',',':')))},
+              'Source-governed promotion of exact BPM-linked Bank Kalbar ICOFR risks; no synthetic 5x5 assessment generated.',
+              NULL,{q(now)}
+            );
+          """
+          Path("/tmp/risk_audit.sql").write_text(audit_sql)
+          execute_file("/tmp/risk_audit.sql")
+
+          print("=== BANK KALBAR RISK UNIVERSE PROMOTION RESULT ===")
+          print(json.dumps({
+              **summary,
+              "sourceRatingCounts":rating_counts,
+              "processCounts":process_counts
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/promote_risks.py
+          rm -f /tmp/promote_risks.py /tmp/risk_*.sql
