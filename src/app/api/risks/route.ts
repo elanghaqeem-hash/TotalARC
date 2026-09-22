@@ -32,13 +32,20 @@ export async function POST(request: Request) {
     const likelihood = Number(body.inherentLikelihood);
     const impactValue = Number(body.inherentImpact);
 
+    const assessmentPending = likelihood === 0 && impactValue === 0;
+    const assessmentComplete =
+      Number.isInteger(likelihood) && likelihood >= 1 && likelihood <= 5 &&
+      Number.isInteger(impactValue) && impactValue >= 1 && impactValue <= 5;
+
     if (
       !name || !cause || !event || !impact || !category || !processId || !ownerName ||
-      !Number.isInteger(likelihood) || likelihood < 1 || likelihood > 5 ||
-      !Number.isInteger(impactValue) || impactValue < 1 || impactValue > 5
+      (!assessmentPending && !assessmentComplete)
     ) {
       return NextResponse.json(
-        { error: 'Complete risk data and a 1-5 inherent likelihood/impact assessment are required.' },
+        {
+          error:
+            'Complete risk articulation and owner are required. Set both likelihood and impact to Not Assessed, or provide both on a 1-5 scale.'
+        },
         { status: 400 }
       );
     }
