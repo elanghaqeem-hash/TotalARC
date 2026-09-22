@@ -110,10 +110,10 @@ jobs:
               return list(csv.reader(io.StringIO(text),delimiter=delimiter))
 
           def compact(row):
-              vals=[clean(v) for v in row if clean(v)]
-              if vals and re.fullmatch(r"\d+",vals[0]):
-                  vals=vals[1:]
-              return vals
+              # SourceTextChunk stores semantic spreadsheet cells without the
+              # exported dataframe row-index column. Preserve leading numeric
+              # sequence values because they are real source data.
+              return [clean(v) for v in row if clean(v)]
 
           catalog=rows(f"""
             SELECT id,institutionId,title,sourceModifiedAt,metadataJson,textLength,rawSizeBytes
