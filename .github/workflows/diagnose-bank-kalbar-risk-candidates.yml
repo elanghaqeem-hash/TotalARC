@@ -1,0 +1,228 @@
+name: Diagnose Bank Kalbar risk candidates
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-bank-kalbar-risk-candidates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Inspect source-backed risk candidates
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/diag_risks.py <<'PY'
+          import json, os, re, subprocess
+          from collections import Counter, defaultdict
+
+          RISK_TYPES=[
+            "ICOFR_RISK_UPDATE_CANDIDATE",
+            "ICOFR_RISK_DETAIL_UPDATE_CANDIDATE",
+            "ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE",
+            "ICOFR_FRAUD_RISK_UPDATE_CANDIDATE",
+            "ICOFR_IT_RISK_UPDATE_CANDIDATE",
+          ]
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "'" + str(v).replace("'","''") + "'"
+
+          inst=rows("""
+            SELECT id,name,legalName
+            FROM Institution
+            WHERE lower(name) LIKE '%bank kalbar%'
+               OR lower(legalName) LIKE '%pembangunan daerah kalimantan barat%'
+            ORDER BY createdAt
+          """)
+          if len(inst)!=1: raise RuntimeError("BANK_KALBAR_INSTITUTION_COUNT_"+str(len(inst)))
+          iid=str(inst[0]["id"])
+
+          current=rows(f"""
+            SELECT r.riskId,r.name,r.category,r.ownerName,r.inherentLikelihood,r.inherentImpact,
+                   r.inherentScore,r.inherentRating,r.residualLikelihood,r.residualImpact,
+                   r.residualScore,r.residualRating,r.status,
+                   bp.processId,bp.name processName,bp.level
+            FROM RiskMaster r
+            LEFT JOIN BusinessProcess bp ON bp.id=r.processId
+            WHERE r.institutionId={q(iid)}
+            ORDER BY r.riskId
+          """)
+          print("=== CURRENT OPERATIONAL RISKS ===")
+          print(json.dumps(current,indent=2,ensure_ascii=False))
+
+          bpm=rows(f"""
+            SELECT id,processId,name,level,parentProcessId,tags
+            FROM BusinessProcess
+            WHERE institutionId={q(iid)}
+            ORDER BY level,processId
+          """)
+          by_pair={}
+          for b in bpm:
+              try: tags=json.loads(b.get("tags") or "{}")
+              except: tags={}
+              p=tags.get("sourceProcessName")
+              s=tags.get("sourceSubprocessName")
+              if b.get("level")==3 and p and s:
+                  by_pair[(str(p).strip(),str(s).strip())]=b
+
+          type_list=",".join(q(x) for x in RISK_TYPES)
+          src=rows(f"""
+            SELECT id,sourceDocumentId,recordType,recordKey,recordTitle,normalizationBatch,payloadJson
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(iid)} AND status='Active'
+              AND recordType IN ({type_list})
+            ORDER BY recordType,recordKey
+          """)
+
+          counts=Counter()
+          ref_occurrences=defaultdict(list)
+          eligible=[]
+          ineligible=[]
+          field_stats=Counter()
+
+          def text(v):
+              return v.strip() if isinstance(v,str) else ""
+
+          def num_1_5(v):
+              if isinstance(v,bool) or v is None: return None
+              if isinstance(v,(int,float)):
+                  n=int(v)
+                  return n if n==v and 1<=n<=5 else None
+              s=str(v).strip()
+              m=re.fullmatch(r"([1-5])(?:\.0+)?",s)
+              return int(m.group(1)) if m else None
+
+          for r in src:
+              counts[r["recordType"]]+=1
+              try: p=json.loads(r.get("payloadJson") or "{}")
+              except: p={}
+
+              risk_ref=text(p.get("riskReference")) or text(p.get("riskId")) or text(r.get("recordKey"))
+              process=text(p.get("businessProcess")) or text(p.get("process")) or text(p.get("areaOrProcess"))
+              sub=text(p.get("subprocess")) or text(p.get("subProcess"))
+              statement=text(p.get("riskStatement")) or text(p.get("description")) or text(r.get("recordTitle"))
+              cause=text(p.get("cause"))
+              impact=text(p.get("impact"))
+              owner=text(p.get("ownerName")) or text(p.get("riskOwner")) or text(p.get("pic")) or text(p.get("proposedPic"))
+              likelihood=num_1_5(p.get("likelihood") if p.get("likelihood") is not None else p.get("inherentLikelihood"))
+              impact_score=num_1_5(p.get("impactScore") if p.get("impactScore") is not None else p.get("inherentImpact"))
+              rating=text(p.get("riskRating")) or text(p.get("inherentRating"))
+              review=bool(p.get("reviewRequired") or p.get("requiresProcessOwnerValidation"))
+              source_status=text(p.get("sourceStatus")) or text(p.get("approvalStatus"))
+
+              if risk_ref: field_stats["riskRef"]+=1
+              if process: field_stats["process"]+=1
+              if sub: field_stats["subprocess"]+=1
+              if statement: field_stats["statement"]+=1
+              if cause: field_stats["cause"]+=1
+              if impact: field_stats["impact"]+=1
+              if owner: field_stats["owner"]+=1
+              if likelihood is not None: field_stats["likelihood1to5"]+=1
+              if impact_score is not None: field_stats["impact1to5"]+=1
+              if rating: field_stats["rating"]+=1
+              if review: field_stats["reviewRequired"]+=1
+
+              pair=(process,sub)
+              matched=by_pair.get(pair)
+              item={
+                  "sourceRecordId":r["id"],
+                  "recordType":r["recordType"],
+                  "recordKey":r["recordKey"],
+                  "riskReference":risk_ref or None,
+                  "businessProcess":process or None,
+                  "subprocess":sub or None,
+                  "riskStatement":statement or None,
+                  "cause":cause or None,
+                  "impactText":impact or None,
+                  "owner":owner or None,
+                  "likelihood1to5":likelihood,
+                  "impact1to5":impact_score,
+                  "sourceRiskRating":rating or None,
+                  "reviewRequired":review,
+                  "sourceStatus":source_status or None,
+                  "normalizationBatch":r["normalizationBatch"],
+                  "sourceDocumentId":r["sourceDocumentId"],
+                  "matchedProcessId":matched["id"] if matched else None,
+                  "matchedEnterpriseProcessId":matched["processId"] if matched else None,
+              }
+              ref_occurrences[risk_ref or str(r["recordKey"])].append(item)
+
+              if matched and statement and risk_ref:
+                  eligible.append(item)
+              else:
+                  reasons=[]
+                  if not process: reasons.append("NO_BUSINESS_PROCESS")
+                  if not sub: reasons.append("NO_SUBPROCESS")
+                  if process and sub and not matched: reasons.append("NO_EXACT_BPM_MATCH")
+                  if not statement: reasons.append("NO_RISK_STATEMENT")
+                  if not risk_ref: reasons.append("NO_RISK_REFERENCE")
+                  item["ineligibleReasons"]=reasons
+                  ineligible.append(item)
+
+          dup_refs=[]
+          for ref,items in sorted(ref_occurrences.items()):
+              if len(items)>1:
+                  dup_refs.append({
+                      "riskReference":ref,
+                      "occurrences":len(items),
+                      "recordTypes":sorted({x["recordType"] for x in items}),
+                      "pairs":sorted({(x.get("businessProcess") or "")+" > "+(x.get("subprocess") or "") for x in items})
+                  })
+
+          print("=== SOURCE RISK TYPE COUNTS ===")
+          print(json.dumps(dict(sorted(counts.items())),indent=2,ensure_ascii=False))
+          print("=== RISK FIELD COMPLETENESS ===")
+          print(json.dumps({
+              "sourceRiskRecords":len(src),
+              "fieldCounts":dict(field_stats),
+              "exactBpmPairsAvailable":len(by_pair)
+          },indent=2,ensure_ascii=False))
+          print("=== ELIGIBLE EXACT BPM-LINKED RISK CANDIDATES ===")
+          print(json.dumps({
+              "count":len(eligible),
+              "items":eligible
+          },indent=2,ensure_ascii=False))
+          print("=== INELIGIBLE / REVIEW-GATED RISK CANDIDATES ===")
+          reason_counts=Counter(reason for x in ineligible for reason in x.get("ineligibleReasons",[]))
+          print(json.dumps({
+              "count":len(ineligible),
+              "reasonCounts":dict(reason_counts),
+              "items":ineligible
+          },indent=2,ensure_ascii=False))
+          print("=== DUPLICATE RISK REFERENCES ACROSS SOURCE RECORDS ===")
+          print(json.dumps({
+              "count":len(dup_refs),
+              "items":dup_refs
+          },indent=2,ensure_ascii=False))
+          PY
+          python /tmp/diag_risks.py
+          rm -f /tmp/diag_risks.py
