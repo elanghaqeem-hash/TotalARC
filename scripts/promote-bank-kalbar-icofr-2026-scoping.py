@@ -386,7 +386,8 @@ execute(scope_sql, "/tmp/icofr_scope.sql")
 managed_prefixes = ["SC-", "FSLI-", "APP-", "LOC-", "LE-", "P-"]
 execute(
     "DELETE FROM ICOFRScopeItem WHERE scopeId=" + q(scope_id)
-    + " AND (" + " OR ".join("code LIKE " + q(p + "%") for p in managed_prefixes) + ");",
+    + " AND (itemType='Business Process' OR "
+    + " OR ".join("code LIKE " + q(p + "%") for p in managed_prefixes) + ");",
     "/tmp/icofr_scope_cleanup.sql",
 )
 execute(
