@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/reconcile-source-mapping.yml'
+  workflow_run:
+    workflows: ['Refresh Source Data Quality']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +15,7 @@ permissions:
 
 jobs:
   reconcile:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
