@@ -1,5 +1,7 @@
 name: Audit Total ARC source feeding D1
 
+# Final rerun marker: all staged source-feeding repairs merged 2026-09-22
+
 on:
   push:
     branches: [main]
