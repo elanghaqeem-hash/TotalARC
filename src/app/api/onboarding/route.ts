@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server';
 import { FRAMEWORK_REFERENCES, INDUSTRY_REFERENCES } from '@/lib/reference-data';
-import { upsertInstitution } from '@/lib/d1';
+import { getPrimaryInstitution, upsertInstitution } from '@/lib/d1';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return NextResponse.json({
-    industries: INDUSTRY_REFERENCES,
-    frameworks: FRAMEWORK_REFERENCES,
-    regulations: []
-  });
+  try {
+    const institution = await getPrimaryInstitution();
+    return NextResponse.json({
+      institution,
+      industries: INDUSTRY_REFERENCES,
+      frameworks: FRAMEWORK_REFERENCES,
+      regulations: [],
+      storage: 'cloudflare-d1'
+    }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    console.error('Institution master read failed:', error);
+    return NextResponse.json(
+      { error: 'Institution master could not be read from the production database.' },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
 }
 
 export async function POST(request: Request) {
