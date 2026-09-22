@@ -456,7 +456,10 @@ export async function provisionBootstrapAdministrator(
   return { status: 'existing' as const, userId: null };
 }
 
-async function ensureBootstrapAdministratorForLogin(db: D1DatabaseLike) {
+async function ensureBootstrapAdministratorForLogin(
+  db: D1DatabaseLike,
+  requestedEmail: string
+) {
   const count = await first<{ count: number }>(
     db,
     'SELECT COUNT(*) AS count FROM AuthUser'
@@ -469,19 +472,39 @@ async function ensureBootstrapAdministratorForLogin(db: D1DatabaseLike) {
 
   const env = await runtimeEnv();
   const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
-  if (!bootstrapEmail) return;
+  if (!bootstrapEmail || requestedEmail !== bootstrapEmail) return;
+
+  const configuredAdmin = await first<{ id: string }>(
+    db,
+    'SELECT id FROM AuthUser WHERE emailNormalized = ? LIMIT 1',
+    [bootstrapEmail]
+  );
+
+  if (configuredAdmin) {
+    const pendingConfiguredAdmin = await first<{ id: string }>(
+      db,
+      `SELECT id FROM AuthUser
+       WHERE id = ? AND role = 'Admin' AND lastLoginAt IS NULL
+       LIMIT 1`,
+      [configuredAdmin.id]
+    );
+
+    if (pendingConfiguredAdmin) {
+      await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
+    }
+    return;
+  }
 
   const pendingAdmin = await first<{ id: string }>(
     db,
     `SELECT id FROM AuthUser
-     WHERE role = 'Admin' AND lastLoginAt IS NULL AND emailNormalized = ?
+     WHERE role = 'Admin' AND lastLoginAt IS NULL
      ORDER BY createdAt ASC
-     LIMIT 1`,
-    [bootstrapEmail]
+     LIMIT 1`
   );
 
   if (pendingAdmin) {
-    await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
+    await provisionBootstrapAdministrator({ reconcilePendingAdmin: true });
   }
 }
 
@@ -525,7 +548,7 @@ export async function authenticateUser(input: {
   if (!emailNormalized || !input.password) throw new Error('INVALID_CREDENTIALS');
 
   const db = await ensureAuthSchema();
-  await ensureBootstrapAdministratorForLogin(db);
+  await ensureBootstrapAdministratorForLogin(db, emailNormalized);
 
   let row = await first<AuthUserRow>(
     db,
