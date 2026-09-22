@@ -62,12 +62,43 @@ type OrganizationTemplateNode = {
   sortOrder: number;
 };
 
+type BranchStructureNode = {
+  nodeCode: string;
+  parentNodeCode?: string | null;
+  relationshipType: string;
+  type: string;
+  name: string;
+  conditional: boolean;
+};
+
+type BranchExpansion = {
+  id: string;
+  branchUnitId: string;
+  branchCode: string;
+  branchName: string;
+  structureType: string;
+  nodeCount: number;
+  structureJson: string;
+  sourceReferencesJson: string;
+  status: string;
+};
+
+function parseBranchStructure(value: string): BranchStructureNode[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 type OrganizationPayload = {
   institution: Institution | null;
   legalEntities: LegalEntity[];
   organizationUnits: OrganizationUnit[];
   hierarchyEvidence?: HierarchyEvidence[];
   organizationTemplates?: OrganizationTemplateNode[];
+  branchExpansions?: BranchExpansion[];
   storage?: string;
 };
 
@@ -192,6 +223,7 @@ export default function OrganizationPage() {
   const organizationUnits = data?.organizationUnits || [];
   const hierarchyEvidence = data?.hierarchyEvidence || [];
   const organizationTemplates = data?.organizationTemplates || [];
+  const branchExpansions = data?.branchExpansions || [];
   const verifiedHierarchyCount = hierarchyEvidence.filter(item =>
     item.hierarchyStatus.startsWith('VERIFIED')
   ).length;
@@ -682,8 +714,9 @@ export default function OrganizationPage() {
             </div>
           </div>
 
-          {(hierarchyEvidence.length > 0 || organizationTemplates.length > 0) && (
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          {(hierarchyEvidence.length > 0 || organizationTemplates.length > 0 || branchExpansions.length > 0) && (
+            <>
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -778,6 +811,81 @@ export default function OrganizationPage() {
                 </div>
               </div>
             </div>
+
+            {branchExpansions.length > 0 && (
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="font-black text-slate-900">Expanded Branch Structures</h2>
+                    <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-slate-500">
+                      The 23 current branches are expanded from source-backed formal structures.
+                      Nodes marked conditional describe an allowed or “sesuai kebutuhan” structure
+                      and do not claim that the position or office is currently staffed at that branch.
+                    </p>
+                  </div>
+                  <span className="w-fit rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-black text-brand-700">
+                    {branchExpansions.length} branches
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {branchExpansions.map(expansion => {
+                    const nodes = parseBranchStructure(expansion.structureJson);
+                    return (
+                      <details
+                        key={expansion.id}
+                        className="group rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                      >
+                        <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-slate-800">
+                              {expansion.branchName}
+                            </div>
+                            <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                              {expansion.branchCode} · {expansion.structureType.replaceAll('_', ' ')}
+                            </div>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[9px] font-black text-slate-500">
+                            {nodes.length} nodes
+                          </span>
+                        </summary>
+
+                        <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                          {nodes.map(node => {
+                            const parent = node.parentNodeCode
+                              ? nodes.find(candidate => candidate.nodeCode === node.parentNodeCode)
+                              : null;
+                            return (
+                              <div key={node.nodeCode} className="rounded-lg bg-white p-2.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[9px] font-black uppercase tracking-wide text-brand-600">
+                                    {node.type}
+                                  </span>
+                                  <span className="text-[11px] font-black text-slate-800">
+                                    {node.name}
+                                  </span>
+                                  {node.conditional && (
+                                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[8px] font-black text-amber-700">
+                                      conditional
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-1 text-[10px] text-slate-500">
+                                  {parent ? `Parent: ${parent.name}` : 'Branch-level node'}
+                                  {' · '}
+                                  {node.relationshipType}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            </>
           )}
         </>
       )}
