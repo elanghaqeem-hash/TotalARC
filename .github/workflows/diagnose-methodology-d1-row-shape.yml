@@ -1,0 +1,98 @@
+name: Diagnose methodology D1 row shape
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-methodology-d1-row-shape.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Inspect methodology row boundaries
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/diagnose_methodology.py <<'PY'
+          import json, os, re, subprocess
+
+          def wr(args):
+              return subprocess.check_output(["npx","wrangler",*args],text=True,env=os.environ,stderr=subprocess.DEVNULL)
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+          def q(v): return "'" + str(v).replace("'","''") + "'"
+
+          docs=rows("""
+            SELECT id,title
+            FROM SourceDocument
+            WHERE status='Active'
+              AND json_extract(metadataJson,'$.sourceAccount')='serayamg@gmail.com'
+              AND lower(title) LIKE '%dokumen 7_kerangka_metodologi_icofr_2026%'
+          """)
+          if len(docs)!=1: raise RuntimeError("METHODOLOGY_SOURCE_MATCH_"+str(len(docs)))
+          doc=docs[0]
+          chunks=rows(f"""
+            SELECT chunkIndex,textContent
+            FROM SourceTextChunk
+            WHERE documentId={q(doc['id'])}
+            ORDER BY chunkIndex
+          """)
+          print("SOURCE",doc["id"],doc["title"],"chunks",len(chunks))
+
+          patterns=[
+            "METODE PENGUJIAN DAN PENENTUAN JUMLAH SAMPEL",
+            "A. METODE PENGUJIAN",
+            "Inquiry",
+            "Reperformance",
+            "C. JUMLAH SAMPEL PENGUJIAN ULANG",
+            "Pengendalian otomatis",
+            "KLASIFIKASI DAN PENENTUAN TINGKAT DEFISIENSI",
+            "C. LIMA INDIKATOR KELEMAHAN MATERIAL",
+            "Teridentifikasi kecurangan",
+            "Pengawasan Komite Audit"
+          ]
+
+          for ch in chunks:
+              text=str(ch.get("textContent") or "")
+              lines=text.splitlines()
+              print("=== CHUNK",ch["chunkIndex"],"chars",len(text),"lines",len(lines),"===")
+              hits=set()
+              for i,line in enumerate(lines):
+                  if any(p.lower() in line.lower() for p in patterns):
+                      for j in range(max(0,i-3),min(len(lines),i+7)):
+                          hits.add(j)
+              for j in sorted(hits):
+                  print(f"ROW {ch['chunkIndex']}:{j} REPR {lines[j]!r}")
+
+          # Also show delimiter evidence around rows with testing/deficiency keywords.
+          for ch in chunks:
+              text=str(ch.get("textContent") or "")
+              print("DELIMITER_EVIDENCE",ch["chunkIndex"],{
+                "commas":text.count(","),
+                "tabs":text.count("\t"),
+                "formfeeds":text.count("\f"),
+                "newlines":text.count("\n")
+              })
+          PY
+          python /tmp/diagnose_methodology.py
+          rm -f /tmp/diagnose_methodology.py
