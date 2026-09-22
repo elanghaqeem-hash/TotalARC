@@ -377,7 +377,24 @@ async function ensureBankKalbarOrganizationCompletion(
     'SELECT migrationCode FROM OrganizationDataMigration WHERE institutionId = ? AND migrationCode = ? LIMIT 1',
     [institutionId, BANK_KALBAR_ORG_MIGRATION]
   );
-  if (alreadyDone) return;
+  if (alreadyDone) {
+    const readiness = await first<Record<string, unknown>>(
+      db,
+      `SELECT
+        (SELECT COUNT(*) FROM OrganizationBranchExpansion WHERE institutionId = ?) AS branchExpansionCount,
+        (SELECT COUNT(*) FROM OrganizationHierarchyEvidence WHERE institutionId = ? AND hierarchyStatus = 'PENDING_PARENT') AS pendingParentCount,
+        (SELECT COUNT(*) FROM OrganizationUnit WHERE institutionId = ? AND code = 'DIR-UMUM' AND parentId IS NOT NULL) AS directorUmumReady`,
+      [institutionId, institutionId, institutionId]
+    );
+
+    if (
+      Number(readiness?.branchExpansionCount || 0) === 23 &&
+      Number(readiness?.pendingParentCount || 0) === 0 &&
+      Number(readiness?.directorUmumReady || 0) === 1
+    ) {
+      return;
+    }
+  }
 
   const sourceCentral =
     'AURA:1NWZMKg1JNPZlrd3hyPrwjziqqdx6doEG#DIR/PP-0003/2026 tanggal 29 Januari 2026 Lampiran halaman 11';
