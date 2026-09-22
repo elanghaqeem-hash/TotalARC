@@ -98,10 +98,15 @@ jobs:
 
           def parse_rows(text):
               sample=text[:30000]
-              try:
-                  delimiter=csv.Sniffer().sniff(sample,delimiters=",\t").delimiter
-              except Exception:
-                  delimiter="\t" if "\t" in sample else ","
+              # D1 indexed spreadsheet text is predominantly TSV. Commas often
+              # occur inside narrative cells and can fool csv.Sniffer.
+              if sample.count("\t") > sample.count(","):
+                  delimiter="\t"
+              else:
+                  try:
+                      delimiter=csv.Sniffer().sniff(sample,delimiters=",\t").delimiter
+                  except Exception:
+                      delimiter=","
               return list(csv.reader(io.StringIO(text),delimiter=delimiter))
 
           def compact(row):
@@ -132,14 +137,15 @@ jobs:
                 ORDER BY chunkIndex
               """)
               chunk_texts=[str(x.get("textContent") or "") for x in chunks if str(x.get("textContent") or "").strip()]
-              text="\n".join(chunk_texts)
+              # Chunks are byte/character continuations of one indexed stream.
+              # Join without a separator so rows split at a chunk boundary are
+              # reconstructed exactly (e.g. remediation sampling rule).
+              text="".join(chunk_texts)
               if not text.strip():
                   raise RuntimeError("SOURCE_TEXT_MISSING_"+code)
-              parsed=[]
-              for chunk_text in chunk_texts:
-                  parsed.extend(parse_rows(chunk_text))
+              parsed=parse_rows(text)
               docs[code]={**d,"text":text,"rows":parsed,"chunkCount":len(chunk_texts)}
-              print(f"{code} ready chars={len(text)} chunks={len(chunk_texts)} rows={len(parsed)}")
+              print(f"{code} ready chars={len(text)} chunks={len(chunk_texts)} rows={len(parsed)} tabs={text.count(chr(9))} commas={text.count(',')}")
 
           institution_id=docs["RISKREG"]["institutionId"]
           if any(d["institutionId"]!=institution_id for d in docs.values()):
