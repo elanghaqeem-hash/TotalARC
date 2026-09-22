@@ -23,6 +23,8 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [industries, setIndustries] = useState<any[]>([]);
   const [frameworks, setFrameworks] = useState<any[]>([]);
+  const [existingInstitution, setExistingInstitution] = useState<any | null>(null);
+  const [saveError, setSaveError] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -31,6 +33,7 @@ export default function OnboardingPage() {
     shortName: '',
     institutionType: '',
     country: 'Indonesia',
+    provinceState: '',
     city: '',
     registeredAddress: '',
     website: '',
@@ -50,13 +53,43 @@ export default function OnboardingPage() {
   });
 
   useEffect(() => {
-    fetch('/api/onboarding')
-      .then(res => res.json())
+    fetch('/api/onboarding', { cache: 'no-store' })
+      .then(async res => {
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.error || 'Institution master could not be loaded.');
+        return payload;
+      })
       .then(d => {
         setIndustries(d.industries || []);
         setFrameworks(d.frameworks || []);
+        setExistingInstitution(d.institution || null);
+
+        if (d.institution) {
+          const institution = d.institution;
+          setFormData(current => ({
+            ...current,
+            name: institution.name || '',
+            legalName: institution.legalName || '',
+            shortName: institution.shortName || '',
+            institutionType: institution.institutionType || '',
+            country: institution.country || 'Indonesia',
+            provinceState: institution.provinceState || '',
+            city: institution.city || '',
+            registeredAddress: institution.registeredAddress || '',
+            website: institution.website || '',
+            generalEmail: institution.generalEmail || '',
+            telephone: institution.telephone || '',
+            yearEstablished: institution.yearEstablished ? String(institution.yearEstablished) : '',
+            stockExchange: institution.stockExchange || '',
+            ticker: institution.ticker || '',
+            businessModel: institution.businessModel || '',
+            operatingModel: institution.operatingModel || '',
+            employeeCount: institution.employeeCount || '',
+            revenueRange: institution.revenueRange || ''
+          }));
+        }
       })
-      .catch(console.error);
+      .catch(error => setSaveError(error instanceof Error ? error.message : 'Institution master could not be loaded.'));
   }, []);
 
   const institutionTypes = [
@@ -77,18 +110,23 @@ export default function OnboardingPage() {
 
   const handleSubmit = async () => {
     setLoading(true);
+    setSaveError('');
     try {
       const res = await fetch('/api/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.ok) {
-        setInstitutionName(formData.name);
-        router.push('/processes');
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || 'Institution master could not be saved.');
       }
+
+      setExistingInstitution(payload.institution || null);
+      setInstitutionName(payload.institution?.name || formData.name);
+      router.push('/organization');
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : 'Institution master could not be saved.');
     } finally {
       setLoading(false);
     }
@@ -108,6 +146,34 @@ export default function OnboardingPage() {
         <p className="text-xs text-slate-500 mt-1">
           Configure your legal profile, industry classification, operating model, and applicable frameworks once. All assurance activities will dynamically inherit this master data.
         </p>
+
+        {existingInstitution && (
+          <div className="mt-4 flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-black text-emerald-800">
+                <CheckCircle2 className="h-4 w-4" />
+                Live institution master loaded from Cloudflare D1
+              </div>
+              <div className="mt-1 text-[11px] text-emerald-700">
+                {existingInstitution.legalName} · {existingInstitution.city || existingInstitution.country}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push('/organization')}
+              className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-[11px] font-black text-emerald-800 hover:bg-emerald-100"
+            >
+              Open Organization Structure
+            </button>
+          </div>
+        )}
+
+        {saveError && (
+          <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{saveError}</span>
+          </div>
+        )}
 
         {/* Stepper Progress */}
         <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
@@ -183,6 +249,16 @@ export default function OnboardingPage() {
                   type="text"
                   value={formData.shortName}
                   onChange={e => setFormData({ ...formData, shortName: e.target.value })}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Province / State</label>
+                <input
+                  type="text"
+                  value={formData.provinceState}
+                  onChange={e => setFormData({ ...formData, provinceState: e.target.value })}
                   className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
@@ -454,7 +530,7 @@ export default function OnboardingPage() {
               className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm shadow-emerald-500/20 transition-all disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{loading ? 'Activating Tenant...' : 'Complete & Activate Platform'}</span>
+              <span>{loading ? 'Saving Institution...' : existingInstitution ? 'Save & Continue to Organization' : 'Create Institution & Continue'}</span>
             </button>
           )}
         </div>
