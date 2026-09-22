@@ -38,11 +38,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const url = new URL(request.url);
-    const recoverExisting = url.searchParams.get('recover') === '1';
+    // One-time production recovery for the existing bootstrap administrator.
+    // This flag is reverted immediately after the recovery deployment succeeds.
     const result = await provisionBootstrapAdministrator({
       reconcilePendingAdmin: true,
-      resetExistingConfiguredAdmin: recoverExisting
+      resetExistingConfiguredAdmin: true
     });
     return NextResponse.json(
       { ok: true, status: result.status },
