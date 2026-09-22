@@ -1,0 +1,482 @@
+name: Promote Bank Kalbar BPM to operational master
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-bank-kalbar-bpm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-promote-bank-kalbar-bpm
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Promote source-backed BPM hierarchy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/promote_bpm.py <<'PY'
+          import hashlib, json, os, re, subprocess, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          BATCH="BANK_KALBAR_BPM_OPERATIONAL_20260922"
+          ELIGIBLE_TYPES=(
+              "ICOFR_RISK_DETAIL_UPDATE_CANDIDATE",
+              "ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE",
+              "ICOFR_RISK_UPDATE_CANDIDATE",
+              "ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE",
+              "ICOFR_FRAUD_RISK_UPDATE_CANDIDATE",
+              "ICOFR_IT_RISK_UPDATE_CANDIDATE",
+              "ITGC_WALKTHROUGH_UPDATE_CANDIDATE",
+          )
+
+          # Explicit, reviewed taxonomy mapping. It classifies the source process
+          # name but does not invent owner/person, criticality or approval status.
+          PROCESS_MAP={
+            "Dana Pihak Ketiga":("DPK","Dana Pihak Ketiga","CAT-CORE",None),
+            "Kepatuhan-AML":("KPT-AML","Kepatuhan & AML","CAT-GOV","DIV-KEPATUHAN"),
+            "Komitmen, Kontinjensi, dan Bank Garansi":("KKB","Komitmen, Kontinjensi, dan Bank Garansi","CAT-CORE",None),
+            "Kredit":("KRD","Perkreditan","CAT-CORE","DIV-KREDIT"),
+            "Kredit / Hukum / Treasury":("KHT","Kredit / Hukum / Treasury","CAT-CORE",None),
+            "Manajemen Risiko / Akuntansi":("MRA","Manajemen Risiko / Akuntansi","CAT-FIN",None),
+            "Manajemen Risiko Operasional":("MRO","Manajemen Risiko Operasional","CAT-GOV","DIV-MR"),
+            "Otomatisasi Beban Bunga":("OBB","Otomatisasi Beban Bunga","CAT-FIN",None),
+            "Otomatisasi Pendapatan Bunga":("OPB","Otomatisasi Pendapatan Bunga","CAT-FIN",None),
+            "Pelaporan":("PLP","Pelaporan","CAT-FIN",None),
+            "Pengadaan":("PGD","Pengadaan","CAT-PROC",None),
+            "Pengadaan / Akuntansi":("PGA","Pengadaan / Akuntansi","CAT-PROC",None),
+            "Pengelolaan Ekuitas dan Aksi Korporasi":("EQT","Pengelolaan Ekuitas dan Aksi Korporasi","CAT-FIN",None),
+            "Penggajian":("PAY","Penggajian","CAT-HR","DIV-SDM"),
+            "Penggajian / Akuntansi":("PYA","Penggajian / Akuntansi","CAT-HR",None),
+            "Perpajakan":("TAX","Perpajakan","CAT-FIN",None),
+            "Treasury":("TRY","Treasury","CAT-FIN","DIV-TREASURY"),
+            "Unit Usaha Syariah":("UUS","Unit Usaha Syariah","CAT-CORE","DIV-UUS"),
+          }
+          CATEGORY_META={
+            "CAT-GOV":("Governance & Strategy",1,"Governance"),
+            "CAT-CORE":("Core Business Operation",2,"Core"),
+            "CAT-FIN":("Finance & Treasury",3,"Finance"),
+            "CAT-IT":("Information Technology & Cyber",4,"Technology"),
+            "CAT-PROC":("Procurement & Vendor Management",5,"Support"),
+            "CAT-HR":("Human Resources & People",6,"Support"),
+          }
+
+          def wr(args,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(["npx","wrangler",*args],text=True,env=os.environ,capture_output=True)
+                  if p.returncode==0:
+                      return p.stdout
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("WRANGLER_FAILURE",json.dumps({
+                  "returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("WRANGLER_COMMAND_FAILED")
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None) or (dbs[0] if len(dbs)==1 else None)
+          if not db: raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for b in raw for r in (b.get("results") or [])]
+
+          def q(v):
+              return "NULL" if v is None else "'" + str(v).replace("'","''") + "'"
+
+          def hid(*parts):
+              return hashlib.sha256("|".join(map(str,parts)).encode()).hexdigest()[:40]
+
+          def execute_file(path,retries=5):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(
+                      ["npx","wrangler","d1","execute",DB,"--remote","--file",path],
+                      text=True,env=os.environ,capture_output=True
+                  )
+                  if p.returncode==0:
+                      return
+                  last=(p.returncode,p.stdout,p.stderr)
+                  time.sleep(2+attempt*2)
+              print("D1_WRITE_FAILURE",json.dumps({
+                  "path":path,"returncode":last[0],"stdout":last[1][-4000:],"stderr":last[2][-4000:]
+              },ensure_ascii=False))
+              raise RuntimeError("D1_WRITE_FAILED_"+path)
+
+          now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+          promotion_date=now[:10]
+
+          ddl="""
+          CREATE TABLE IF NOT EXISTS ProcessCategory (
+            id TEXT PRIMARY KEY NOT NULL,code TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
+            description TEXT,orderIndex INTEGER NOT NULL DEFAULT 0,createdAt TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS BusinessProcess (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,legalEntityId TEXT,orgUnitId TEXT,
+            categoryId TEXT NOT NULL,processId TEXT NOT NULL,name TEXT NOT NULL,level INTEGER NOT NULL DEFAULT 2,
+            parentProcessId TEXT,description TEXT,ownerName TEXT NOT NULL,ownerEmail TEXT,managerName TEXT,
+            criticality TEXT NOT NULL DEFAULT 'Not Assessed',classification TEXT NOT NULL DEFAULT 'Unclassified',
+            isIcofrRelevant INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'Draft',
+            version TEXT NOT NULL DEFAULT '1.0',effectiveDate TEXT NOT NULL,reviewDate TEXT,tags TEXT,
+            createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_process_institution_process_id
+            ON BusinessProcess(institutionId,processId);
+          CREATE INDEX IF NOT EXISTS idx_process_parent ON BusinessProcess(parentProcessId);
+
+          CREATE TABLE IF NOT EXISTS OperationalSourceRecordLink (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,sourceStructuredRecordId TEXT NOT NULL,
+            module TEXT NOT NULL,operationalTable TEXT NOT NULL,operationalRecordId TEXT NOT NULL,
+            relationType TEXT NOT NULL,batchCode TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_operational_source_link_unique
+            ON OperationalSourceRecordLink(sourceStructuredRecordId,module,operationalRecordId,relationType);
+
+          CREATE TABLE IF NOT EXISTS OperationalDataFeedRun (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT NOT NULL,batchCode TEXT NOT NULL,module TEXT NOT NULL,
+            sourceRole TEXT NOT NULL,sourceReferencesJson TEXT NOT NULL,recordsUpserted INTEGER NOT NULL,
+            status TEXT NOT NULL,summaryJson TEXT,completedAt TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_operational_feed_batch
+            ON OperationalDataFeedRun(institutionId,batchCode);
+
+          CREATE TABLE IF NOT EXISTS AuditLog (
+            id TEXT PRIMARY KEY NOT NULL,institutionId TEXT,userName TEXT NOT NULL,userRole TEXT NOT NULL,
+            action TEXT NOT NULL,entityType TEXT NOT NULL,recordId TEXT NOT NULL,oldValue TEXT,newValue TEXT,
+            reason TEXT,ipAddress TEXT,timestamp TEXT NOT NULL
+          );
+          """
+          Path("/tmp/bpm_ddl.sql").write_text(ddl)
+          execute_file("/tmp/bpm_ddl.sql")
+
+          inst=rows("""
+            SELECT id,name,legalName
+            FROM Institution
+            WHERE lower(name) LIKE '%bank kalbar%'
+               OR lower(legalName) LIKE '%pembangunan daerah kalimantan barat%'
+            ORDER BY createdAt
+          """)
+          if len(inst)!=1: raise RuntimeError("BANK_KALBAR_INSTITUTION_COUNT_"+str(len(inst)))
+          iid=str(inst[0]["id"])
+
+          entity=rows(
+              "SELECT id FROM LegalEntity WHERE institutionId="+q(iid)+" AND code='BANK-KALBAR' LIMIT 1"
+          )
+          if len(entity)!=1: raise RuntimeError("BANK_KALBAR_LEGAL_ENTITY_MISSING")
+          entity_id=str(entity[0]["id"])
+
+          org_rows=rows(
+              "SELECT id,code,name FROM OrganizationUnit WHERE institutionId="+q(iid)+" AND status='Active'"
+          )
+          org_by_code={str(x["code"]):x for x in org_rows}
+
+          # Keep category master consistent with the BPM UI.
+          category_sql=[]
+          for code,(name,order_index,_) in CATEGORY_META.items():
+              category_sql.append(f"""
+                INSERT INTO ProcessCategory(id,code,name,description,orderIndex,createdAt)
+                VALUES({q('ref:'+code)},{q(code)},{q(name)},NULL,{order_index},{q(now)})
+                ON CONFLICT(code) DO UPDATE SET
+                  name=excluded.name,orderIndex=excluded.orderIndex;
+              """)
+          Path("/tmp/bpm_categories.sql").write_text("\n".join(category_sql))
+          execute_file("/tmp/bpm_categories.sql")
+
+          cats=rows("SELECT id,code,name FROM ProcessCategory")
+          cat_by_code={str(x["code"]):x for x in cats}
+          missing_cats=[c for c in CATEGORY_META if c not in cat_by_code]
+          if missing_cats: raise RuntimeError("MISSING_PROCESS_CATEGORIES_"+",".join(missing_cats))
+
+          type_list=",".join(q(x) for x in ELIGIBLE_TYPES)
+          source=rows(f"""
+            SELECT id,sourceDocumentId,recordType,recordKey,recordTitle,normalizationBatch,payloadJson
+            FROM SourceStructuredRecord
+            WHERE institutionId={q(iid)} AND status='Active'
+              AND recordType IN ({type_list})
+            ORDER BY recordType,recordKey
+          """)
+
+          grouped={}
+          for r in source:
+              try:
+                  p=json.loads(r.get("payloadJson") or "{}")
+              except Exception:
+                  continue
+              raw_process=p.get("businessProcess") or p.get("process") or p.get("areaOrProcess")
+              raw_sub=p.get("subprocess") or p.get("subProcess")
+              process=raw_process.strip() if isinstance(raw_process,str) else ""
+              subprocess_name=raw_sub.strip() if isinstance(raw_sub,str) else ""
+              if not process or not subprocess_name:
+                  continue
+              key=(process,subprocess_name)
+              g=grouped.setdefault(key,{
+                  "records":[],"recordTypes":set(),"documents":set(),"batches":set()
+              })
+              g["records"].append(str(r["id"]))
+              g["recordTypes"].add(str(r["recordType"]))
+              g["documents"].add(str(r["sourceDocumentId"]))
+              g["batches"].add(str(r["normalizationBatch"]))
+
+          source_processes=sorted({p for p,_ in grouped})
+          if len(grouped)!=48:
+              raise RuntimeError(f"SOURCE_PROCESS_PAIR_COUNT_{len(grouped)}_48")
+          if set(source_processes)!=set(PROCESS_MAP):
+              print("EXPECTED_PROCESS_NAMES",json.dumps(sorted(PROCESS_MAP),ensure_ascii=False))
+              print("ACTUAL_PROCESS_NAMES",json.dumps(source_processes,ensure_ascii=False))
+              raise RuntimeError("SOURCE_PROCESS_NAME_SET_CHANGED")
+
+          existing_krd=rows(
+              "SELECT * FROM BusinessProcess WHERE institutionId="+q(iid)+" AND processId='KRD' LIMIT 2"
+          )
+          if len(existing_krd)>1: raise RuntimeError("DUPLICATE_EXISTING_KRD")
+          if existing_krd and str(existing_krd[0].get("name") or "")!="Perkreditan":
+              raise RuntimeError("KRD_EXISTING_NAME_REVIEW_REQUIRED")
+
+          # Build parent records. KRD is preserved when it already exists.
+          parent_ids={}
+          parent_source_meta={}
+          for source_process in source_processes:
+              code,display_name,cat_code,owner_org_code=PROCESS_MAP[source_process]
+              meta=parent_source_meta.setdefault(source_process,{
+                  "recordIds":set(),"recordTypes":set(),"documents":set(),"batches":set()
+              })
+              for (pname,_),g in grouped.items():
+                  if pname!=source_process: continue
+                  meta["recordIds"].update(g["records"])
+                  meta["recordTypes"].update(g["recordTypes"])
+                  meta["documents"].update(g["documents"])
+                  meta["batches"].update(g["batches"])
+
+              existing=rows(
+                  "SELECT * FROM BusinessProcess WHERE institutionId="+q(iid)+" AND processId="+q(code)+" LIMIT 2"
+              )
+              if len(existing)>1: raise RuntimeError("DUPLICATE_PROCESS_ID_"+code)
+
+              org=org_by_code.get(owner_org_code) if owner_org_code else None
+              org_id=str(org["id"]) if org else None
+              owner_name=str(org["name"]) if org else ""
+              cat=cat_by_code[cat_code]
+              classification=CATEGORY_META[cat_code][2]
+              description=(
+                  "Source-backed L2 process master derived from active Bank Kalbar ICOFR risk/control records. "
+                  "Process owner and detailed BPM flow remain subject to source/owner validation where not explicitly available."
+              )
+              tags=json.dumps({
+                  "sourceBacked":True,"feedBatch":BATCH,"sourceProcessName":source_process,
+                  "reviewRequired":True,"approvalStatus":"Draft"
+              },ensure_ascii=False,separators=(",",":"))
+
+              if existing:
+                  pid=str(existing[0]["id"])
+                  parent_ids[source_process]=pid
+                  if code=="KRD":
+                      # Preserve the existing process master; attach only confirmed source linkage.
+                      sql=f"""
+                        UPDATE BusinessProcess
+                        SET legalEntityId=COALESCE(legalEntityId,{q(entity_id)}),
+                            orgUnitId=COALESCE(orgUnitId,{q(org_id)}),
+                            isIcofrRelevant=1,
+                            tags=COALESCE(tags,{q(tags)}),
+                            updatedAt={q(now)}
+                        WHERE id={q(pid)};
+                      """
+                  else:
+                      sql=f"""
+                        UPDATE BusinessProcess
+                        SET legalEntityId={q(entity_id)},orgUnitId={q(org_id)},categoryId={q(cat['id'])},
+                            name={q(display_name)},level=2,parentProcessId=NULL,description={q(description)},
+                            ownerName={q(owner_name)},criticality='Not Assessed',
+                            classification={q(classification)},isIcofrRelevant=1,status='Draft',
+                            tags={q(tags)},updatedAt={q(now)}
+                        WHERE id={q(pid)};
+                      """
+              else:
+                  pid=hid(iid,"BPM-L2",code)
+                  parent_ids[source_process]=pid
+                  sql=f"""
+                    INSERT INTO BusinessProcess(
+                      id,institutionId,legalEntityId,orgUnitId,categoryId,processId,name,level,parentProcessId,
+                      description,ownerName,ownerEmail,managerName,criticality,classification,isIcofrRelevant,
+                      status,version,effectiveDate,reviewDate,tags,createdAt,updatedAt
+                    ) VALUES(
+                      {q(pid)},{q(iid)},{q(entity_id)},{q(org_id)},{q(cat['id'])},{q(code)},{q(display_name)},2,NULL,
+                      {q(description)},{q(owner_name)},NULL,NULL,'Not Assessed',{q(classification)},1,
+                      'Draft','1.0',{q(promotion_date)},NULL,{q(tags)},{q(now)},{q(now)}
+                    );
+                  """
+              Path("/tmp/bpm_parent.sql").write_text(sql)
+              execute_file("/tmp/bpm_parent.sql")
+
+          # Create/update source-backed L3 subprocess records.
+          child_rows=[]
+          link_rows=[]
+          for (source_process,subprocess_name),g in sorted(grouped.items()):
+              code,_,cat_code,owner_org_code=PROCESS_MAP[source_process]
+              parent_id=parent_ids[source_process]
+              org=org_by_code.get(owner_org_code) if owner_org_code else None
+              org_id=str(org["id"]) if org else None
+              owner_name=str(org["name"]) if org else ""
+              cat=cat_by_code[cat_code]
+              classification=CATEGORY_META[cat_code][2]
+              suffix=hashlib.sha256((source_process+"|"+subprocess_name).encode()).hexdigest()[:7].upper()
+              child_code=f"{code}-SP-{suffix}"
+              child_id=hid(iid,"BPM-L3",child_code)
+              source_types=sorted(g["recordTypes"])
+              source_docs=sorted(g["documents"])
+              description=(
+                  "Source-backed L3 subprocess identified in active Bank Kalbar ICOFR records. "
+                  f"Evidence records: {len(g['records'])}; source record types: {', '.join(source_types)}."
+              )
+              tags=json.dumps({
+                  "sourceBacked":True,"feedBatch":BATCH,"sourceProcessName":source_process,
+                  "sourceSubprocessName":subprocess_name,"sourceRecordTypes":source_types,
+                  "sourceDocumentIds":source_docs,"reviewRequired":True,"approvalStatus":"Draft"
+              },ensure_ascii=False,separators=(",",":"))
+
+              child_rows.append(f"""
+                INSERT INTO BusinessProcess(
+                  id,institutionId,legalEntityId,orgUnitId,categoryId,processId,name,level,parentProcessId,
+                  description,ownerName,ownerEmail,managerName,criticality,classification,isIcofrRelevant,
+                  status,version,effectiveDate,reviewDate,tags,createdAt,updatedAt
+                ) VALUES(
+                  {q(child_id)},{q(iid)},{q(entity_id)},{q(org_id)},{q(cat['id'])},{q(child_code)},{q(subprocess_name)},3,{q(parent_id)},
+                  {q(description)},{q(owner_name)},NULL,NULL,'Not Assessed',{q(classification)},1,
+                  'Draft','1.0',{q(promotion_date)},NULL,{q(tags)},{q(now)},{q(now)}
+                )
+                ON CONFLICT(institutionId,processId) DO UPDATE SET
+                  legalEntityId=excluded.legalEntityId,orgUnitId=excluded.orgUnitId,categoryId=excluded.categoryId,
+                  name=excluded.name,level=3,parentProcessId=excluded.parentProcessId,description=excluded.description,
+                  ownerName=excluded.ownerName,criticality='Not Assessed',classification=excluded.classification,
+                  isIcofrRelevant=1,status='Draft',tags=excluded.tags,updatedAt=excluded.updatedAt;
+              """)
+
+              for source_record_id in g["records"]:
+                  link_id=hid(iid,BATCH,source_record_id,child_id)
+                  link_rows.append(f"""
+                    INSERT INTO OperationalSourceRecordLink(
+                      id,institutionId,sourceStructuredRecordId,module,operationalTable,operationalRecordId,
+                      relationType,batchCode,createdAt,updatedAt
+                    ) VALUES(
+                      {q(link_id)},{q(iid)},{q(source_record_id)},'BPM','BusinessProcess',{q(child_id)},
+                      'SOURCE_EVIDENCE_FOR_SUBPROCESS',{q(BATCH)},{q(now)},{q(now)}
+                    )
+                    ON CONFLICT(sourceStructuredRecordId,module,operationalRecordId,relationType) DO UPDATE SET
+                      batchCode=excluded.batchCode,updatedAt=excluded.updatedAt;
+                  """)
+
+          Path("/tmp/bpm_children.sql").write_text("\n".join(child_rows))
+          execute_file("/tmp/bpm_children.sql")
+          Path("/tmp/bpm_links.sql").write_text("\n".join(link_rows))
+          execute_file("/tmp/bpm_links.sql")
+
+          # Verification contracts.
+          top_codes=",".join(q(PROCESS_MAP[x][0]) for x in source_processes)
+          top=rows(f"""
+            SELECT processId,name,level,categoryId,orgUnitId,status,criticality,isIcofrRelevant
+            FROM BusinessProcess
+            WHERE institutionId={q(iid)} AND processId IN ({top_codes})
+            ORDER BY processId
+          """)
+          children=rows(f"""
+            SELECT processId,name,level,parentProcessId,status,criticality,isIcofrRelevant
+            FROM BusinessProcess
+            WHERE institutionId={q(iid)}
+              AND json_extract(tags,'$.feedBatch')={q(BATCH)}
+              AND level=3
+            ORDER BY processId
+          """)
+          links=rows(f"""
+            SELECT COUNT(*) records
+            FROM OperationalSourceRecordLink
+            WHERE institutionId={q(iid)} AND module='BPM' AND batchCode={q(BATCH)}
+          """)
+          link_count=int(links[0]["records"] if links else 0)
+          expected_link_count=sum(len(g["records"]) for g in grouped.values())
+
+          if len(top)!=18: raise RuntimeError(f"BPM_L2_COUNT_{len(top)}_18")
+          if len(children)!=48: raise RuntimeError(f"BPM_L3_COUNT_{len(children)}_48")
+          if link_count!=expected_link_count:
+              raise RuntimeError(f"BPM_SOURCE_LINK_COUNT_{link_count}_{expected_link_count}")
+          if any(str(x.get("status"))!="Draft" or str(x.get("criticality"))!="Not Assessed" for x in children):
+              raise RuntimeError("BPM_DRAFT_NOT_ASSESSED_CONTRACT_FAILED")
+
+          summary={
+              "sourceProcessNames":source_processes,
+              "sourcePairs":len(grouped),
+              "l2Processes":len(top),
+              "l3Subprocesses":len(children),
+              "sourceRecordLinks":link_count,
+              "existingKrdPreserved":bool(existing_krd),
+              "referenceOnlyNarrativesPromoted":0,
+              "status":"Draft",
+              "criticality":"Not Assessed"
+          }
+          source_refs=sorted({doc for g in grouped.values() for doc in g["documents"]})
+          feed_id=hid(iid,BATCH)
+          feed_sql=f"""
+            INSERT INTO OperationalDataFeedRun(
+              id,institutionId,batchCode,module,sourceRole,sourceReferencesJson,recordsUpserted,status,summaryJson,completedAt
+            ) VALUES(
+              {q(feed_id)},{q(iid)},{q(BATCH)},'BPM','UPDATE',
+              {q(json.dumps(source_refs,separators=(',',':')))},66,'Completed',
+              {q(json.dumps(summary,ensure_ascii=False,separators=(',',':')))},{q(now)}
+            )
+            ON CONFLICT(institutionId,batchCode) DO UPDATE SET
+              sourceReferencesJson=excluded.sourceReferencesJson,recordsUpserted=66,status='Completed',
+              summaryJson=excluded.summaryJson,completedAt=excluded.completedAt;
+          """
+          Path("/tmp/bpm_feed.sql").write_text(feed_sql)
+          execute_file("/tmp/bpm_feed.sql")
+
+          audit_id=hid(iid,BATCH,"AUDIT")
+          audit_sql=f"""
+            INSERT OR REPLACE INTO AuditLog(
+              id,institutionId,userName,userRole,action,entityType,recordId,oldValue,newValue,reason,ipAddress,timestamp
+            ) VALUES(
+              {q(audit_id)},{q(iid)},'System','System','UPSERT','BusinessProcessFeed',{q(BATCH)},NULL,
+              {q(json.dumps(summary,ensure_ascii=False,separators=(',',':')))},
+              'Source-governed operational promotion of Bank Kalbar BPM from active Seraya ICOFR risk/control records.',
+              NULL,{q(now)}
+            );
+          """
+          Path("/tmp/bpm_audit.sql").write_text(audit_sql)
+          execute_file("/tmp/bpm_audit.sql")
+
+          print("=== BANK KALBAR BPM PROMOTION RESULT ===")
+          print(json.dumps({
+              "institutionId":iid,
+              "l2Count":len(top),
+              "l3Count":len(children),
+              "totalSourceManagedHierarchy":len(top)+len(children),
+              "sourceRecordLinks":link_count,
+              "sourcePairCount":len(grouped),
+              "referenceOnlyNarrativesPromoted":0,
+              "topLevel":top,
+              "sampleSubprocesses":children[:12]
+          },indent=2,ensure_ascii=False))
+          PY
+
+          python /tmp/promote_bpm.py
+          rm -f /tmp/promote_bpm.py /tmp/bpm_*.sql
