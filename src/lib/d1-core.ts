@@ -1632,6 +1632,15 @@ export async function getRcmGovernanceData() {
   const institution = await primaryInstitution(db);
   if (!institution) {
     return {
+      summary: {
+        controls: 0,
+        uusControls: 0,
+        itgcControls: 0,
+        ckpnRequirements: 0,
+        reverseRepoRequirements: 0,
+        elcDraftReferences: 0,
+        integrity: 'PENDING'
+      },
       legacyTotal: 0,
       legacyByCycle: [],
       requirements: [],
@@ -1642,59 +1651,110 @@ export async function getRcmGovernanceData() {
   }
 
   const institutionId = String(institution.id);
-  const [legacyTotalRow, legacyByCycle, requirements, draftReferenceSummary, sourceMetadataSummary, latestIntegrity] =
-    await Promise.all([
-      first<{ count?: number }>(
-        db,
-        'SELECT COUNT(*) AS count FROM RCMLegacyControlRegister WHERE institutionId = ?',
-        [institutionId]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT sourceCycle, reconciliationStatus, COUNT(*) AS controls
-           FROM RCMLegacyControlRegister
-          WHERE institutionId = ?
-          GROUP BY sourceCycle, reconciliationStatus
-          ORDER BY sourceCycle, reconciliationStatus`,
-        [institutionId]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT r.*, p.processId AS enterpriseProcessId, p.name AS processName
-           FROM RCMDesignRequirement r
-           JOIN BusinessProcess p ON p.id = r.processId
-          WHERE r.institutionId = ?
-          ORDER BY r.category, r.requirementCode`,
-        [institutionId]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT referenceType, sourceStatus, COUNT(*) AS records
-           FROM RCMDraftReference
-          WHERE institutionId = ?
-          GROUP BY referenceType, sourceStatus
-          ORDER BY referenceType, sourceStatus`,
-        [institutionId]
-      ),
-      all<Record<string, unknown>>(
-        db,
-        `SELECT sourceRecordType, taxonomyStatus, mappingStatus, validationStatus, COUNT(*) AS controls
-           FROM RCMControlSourceMetadata
-          WHERE institutionId = ?
-          GROUP BY sourceRecordType, taxonomyStatus, mappingStatus, validationStatus
-          ORDER BY sourceRecordType, mappingStatus, validationStatus`,
-        [institutionId]
-      ),
-      first<Record<string, unknown>>(
-        db,
-        `SELECT *
-           FROM RCMIntegrityRun
-          WHERE institutionId = ?
-          ORDER BY runAt DESC
-          LIMIT 1`,
-        [institutionId]
-      )
-    ]);
+  const [
+    controlTotalRow,
+    uusControlTotalRow,
+    itgcControlTotalRow,
+    ckpnRequirementTotalRow,
+    reverseRepoRequirementTotalRow,
+    elcDraftReferenceTotalRow,
+    legacyTotalRow,
+    legacyByCycle,
+    requirements,
+    draftReferenceSummary,
+    sourceMetadataSummary,
+    latestIntegrity
+  ] = await Promise.all([
+    first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId = ?',
+      [institutionId]
+    ),
+    first<{ count?: number }>(
+      db,
+      `SELECT COUNT(DISTINCT c.id) AS count
+         FROM ControlMaster c
+         JOIN RCMControlSourceMetadata sm ON sm.controlId = c.id
+        WHERE c.institutionId = ?
+          AND sm.institutionId = ?
+          AND sm.sourceCycle = 'SYH'`,
+      [institutionId, institutionId]
+    ),
+    first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId = ? AND isItgc = 1',
+      [institutionId]
+    ),
+    first<{ count?: number }>(
+      db,
+      "SELECT COUNT(*) AS count FROM RCMDesignRequirement WHERE institutionId = ? AND category = 'CKPN'",
+      [institutionId]
+    ),
+    first<{ count?: number }>(
+      db,
+      "SELECT COUNT(*) AS count FROM RCMDesignRequirement WHERE institutionId = ? AND category = 'Reverse Repo'",
+      [institutionId]
+    ),
+    first<{ count?: number }>(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM RCMDraftReference
+        WHERE institutionId = ?
+          AND sourceStatus = 'ILLUSTRATIVE_DRAFT'
+          AND referenceType IN ('ELC_PRINCIPLE_TEMPLATE_REFERENCE','ELC_BPM_NARRATIVE_REFERENCE')`,
+      [institutionId]
+    ),
+    first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM RCMLegacyControlRegister WHERE institutionId = ?',
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT sourceCycle, reconciliationStatus, COUNT(*) AS controls
+         FROM RCMLegacyControlRegister
+        WHERE institutionId = ?
+        GROUP BY sourceCycle, reconciliationStatus
+        ORDER BY sourceCycle, reconciliationStatus`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.*, p.processId AS enterpriseProcessId, p.name AS processName
+         FROM RCMDesignRequirement r
+         JOIN BusinessProcess p ON p.id = r.processId
+        WHERE r.institutionId = ?
+        ORDER BY r.category, r.requirementCode`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT referenceType, sourceStatus, COUNT(*) AS records
+         FROM RCMDraftReference
+        WHERE institutionId = ?
+        GROUP BY referenceType, sourceStatus
+        ORDER BY referenceType, sourceStatus`,
+      [institutionId]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT sourceRecordType, taxonomyStatus, mappingStatus, validationStatus, COUNT(*) AS controls
+         FROM RCMControlSourceMetadata
+        WHERE institutionId = ?
+        GROUP BY sourceRecordType, taxonomyStatus, mappingStatus, validationStatus
+        ORDER BY sourceRecordType, mappingStatus, validationStatus`,
+      [institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT *
+         FROM RCMIntegrityRun
+        WHERE institutionId = ?
+        ORDER BY runAt DESC
+        LIMIT 1`,
+      [institutionId]
+    )
+  ]);
 
   let parsedIntegrity: Record<string, unknown> | null = null;
   if (latestIntegrity) {
@@ -1708,7 +1768,18 @@ export async function getRcmGovernanceData() {
     }
   }
 
+  const summary = {
+    controls: Number(controlTotalRow?.count || 0),
+    uusControls: Number(uusControlTotalRow?.count || 0),
+    itgcControls: Number(itgcControlTotalRow?.count || 0),
+    ckpnRequirements: Number(ckpnRequirementTotalRow?.count || 0),
+    reverseRepoRequirements: Number(reverseRepoRequirementTotalRow?.count || 0),
+    elcDraftReferences: Number(elcDraftReferenceTotalRow?.count || 0),
+    integrity: String(parsedIntegrity?.status || 'PENDING')
+  };
+
   return {
+    summary,
     legacyTotal: Number(legacyTotalRow?.count || 0),
     legacyByCycle: legacyByCycle.map(row => ({
       ...row,
