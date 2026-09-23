@@ -99,7 +99,7 @@ if latest_scope:
     summary["applicationScope"]=rows(f"""
 SELECT code,name,inScope,rationale
 FROM ICOFRScopeItem
-WHERE scopeId={q(sid)} AND lower(itemType) LIKE '%application%'
+WHERE scopeId={q(sid)} AND itemType='IT System'
 ORDER BY code,name
 """)
 else:
