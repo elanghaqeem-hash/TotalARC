@@ -64,6 +64,7 @@ export function ControlDomainWorkspace(props: Props) {
   const [institution, setInstitution] = useState<any>(null);
   const [processes, setProcesses] = useState<any[]>([]);
   const [sourceControls, setSourceControls] = useState<any[]>([]);
+  const [candidates, setCandidates] = useState<any[]>([]);
   const [form, setForm] = useState(blank);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -85,6 +86,7 @@ export function ControlDomainWorkspace(props: Props) {
         setInstitution(body.institution || null);
         setProcesses(body.processes || []);
         setSourceControls(body.sourceControls || []);
+        setCandidates(body.candidates || []);
         setError('');
       })
       .catch(err => active && setError(err instanceof Error ? err.message : 'Register unavailable.'))
@@ -253,17 +255,17 @@ export function ControlDomainWorkspace(props: Props) {
             </label>
             <label className="text-xs font-bold text-slate-700">Frequency *
               <select required value={form.frequency} onChange={e=>setForm({...form,frequency:e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                <option value="">Select</option><option>Continuous</option><option>Per Transaction</option><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Semi-Annual</option><option>Annual</option>
+                <option value="">Select</option><option>Continuous</option><option>Per Transaction</option><option>Event Driven</option><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Semi-Annual</option><option>Annual</option><option>Pending Validation</option>
               </select>
             </label>
             <label className="text-xs font-bold text-slate-700">Nature *
               <select required value={form.nature} onChange={e=>setForm({...form,nature:e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                <option value="">Select</option><option>Manual</option><option>IT Dependent Manual</option><option>Automated</option>
+                <option value="">Select</option><option>Manual</option><option>IT Dependent Manual</option><option>Automated</option><option>ITDM-EUC</option><option>ITDM-IPE</option><option>MRC</option><option>Pending Validation</option>
               </select>
             </label>
             <label className="text-xs font-bold text-slate-700">Control type *
               <select required value={form.controlType} onChange={e=>setForm({...form,controlType:e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                <option value="">Select</option><option>Preventive</option><option>Detective</option><option>Preventive & Detective</option>
+                <option value="">Select</option><option>Preventive</option><option>Detective</option><option>Preventive & Detective</option><option>Pending Validation</option>
               </select>
             </label>
             <label className="text-xs font-bold text-slate-700">System / application {props.systemRequired ? '*' : ''}
@@ -340,6 +342,50 @@ export function ControlDomainWorkspace(props: Props) {
           </div>
         )}
       </section>
+
+      {props.category === 'ITAC' && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-sm font-black text-slate-900">Source-backed ITAC candidates</h2>
+              <p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-600">
+                Candidate controls are shown for reconciliation only. They are not promoted into the ITAC register until the
+                application dependency, automated logic, Process Owner confirmation, and walkthrough evidence are validated.
+              </p>
+            </div>
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black text-amber-800">
+              {candidates.length} pending review
+            </span>
+          </div>
+          <div className="mt-4 space-y-2">
+            {candidates.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-amber-200 bg-white/70 p-6 text-center text-xs text-slate-500">
+                No source-backed ITAC candidates are currently identified.
+              </div>
+            ) : candidates.map(candidate => (
+              <div key={candidate.id} className="rounded-xl border border-amber-200 bg-white p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[10px] font-black text-brand-700">{candidate.controlId}</span>
+                  <span className={
+                    `rounded-full px-2 py-0.5 text-[9px] font-black ${
+                      candidate.candidateStatus === 'CONTRADICTORY_SOURCE_CLASSIFICATION'
+                        ? 'bg-rose-50 text-rose-700'
+                        : 'bg-amber-50 text-amber-700'
+                    }`
+                  }>
+                    {String(candidate.candidateStatus || '').replaceAll('_', ' ')}
+                  </span>
+                </div>
+                <div className="mt-1 text-sm font-bold text-slate-900">{candidate.name}</div>
+                <div className="mt-1 text-[10px] text-slate-500">
+                  {[candidate.enterpriseProcessId, candidate.processName, candidate.systemDependency].filter(Boolean).join(' · ')}
+                </div>
+                <div className="mt-2 text-[11px] leading-5 text-slate-600">{candidate.governanceNote}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
