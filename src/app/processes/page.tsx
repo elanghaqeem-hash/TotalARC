@@ -21,6 +21,7 @@ import {
   X
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
+import { DataLoadingState } from '@/components/common/DataLoadingState';
 
 function parseProcessTags(raw: unknown): Record<string, any> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -377,12 +378,6 @@ export default function ProcessesPage() {
         </div>
       )}
 
-      {processLoading && (
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-xs font-semibold text-slate-500 shadow-sm">
-          Loading business processes…
-        </div>
-      )}
-
       {!processLoading && !processLoadError && processes.length === 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-500 shadow-sm">
           No business processes are available for the active institution.
@@ -393,7 +388,10 @@ export default function ProcessesPage() {
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-12">
         {/* Left List: 5 cols */}
         <div className="space-y-4 lg:col-span-5">
-          {filtered.map(proc => {
+          {processLoading ? (
+            <DataLoadingState label="Loading business processes..." variant="list" rows={3} />
+          ) : (
+            filtered.map(proc => {
             const isSelected = selectedProcess?.id === proc.id;
             const processTags = parseProcessTags(proc.tags);
             const detailPending = String(processTags.detailStatus || '').includes('PENDING') ||
@@ -511,12 +509,15 @@ export default function ProcessesPage() {
                 </div>
               </div>
             );
-          })}
+          })
+          )}
         </div>
 
         {/* Right Detail: Process 360 (7 cols) */}
         <div ref={process360Ref} id="process-360-detail" className="scroll-mt-24 lg:col-span-7">
-          {selectedProcess ? (
+          {processLoading ? (
+            <DataLoadingState label="Loading process profile..." variant="profile" className="min-h-[220px]" />
+          ) : selectedProcess ? (
             <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
               {/* Process Title & Metadata */}
               <div className="border-b border-slate-100 pb-4">
