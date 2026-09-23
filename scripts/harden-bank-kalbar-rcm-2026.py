@@ -449,17 +449,17 @@ def upsert_source_risk_and_control(rec,record_type,priority,force_process_code=N
             category="IT Risk" if is_itgc else ("Fraud Risk" if fraud and fraud.lower() not in {"tidak","no","n"} else "Financial Reporting")
             risk_sql=f"""
 INSERT INTO RiskMaster(
- id,institutionId,processId,riskId,name,description,cause,event,impact,category,
+ id,institutionId,processId,activityId,riskId,name,description,cause,event,impact,category,ownerName,
  inherentLikelihood,inherentImpact,inherentScore,inherentRating,residualLikelihood,residualImpact,
- residualScore,residualRating,status,version,createdAt,updatedAt
+ residualScore,residualRating,riskTreatment,status,version,createdAt,updatedAt
 ) VALUES(
- {q(risk_id)},{q(iid)},{q(pid)},{q(risk_enterprise)},{q(risk_statement)},{q(risk_statement)},NULL,
- {q(risk_statement)},{q(impact)},{q(category)},0,0,0,'Not Assessed',0,0,0,'Not Assessed',
- 'Draft','1.0',{q(now)},{q(now)}
+ {q(risk_id)},{q(iid)},{q(pid)},NULL,{q(risk_enterprise)},{q(risk_statement)},{q(risk_statement)},
+ 'Source cause pending Process Owner validation',{q(risk_statement)},{q(impact)},{q(category)},'',
+ 0,0,0,'Not Assessed',0,0,0,'Not Assessed','Not Assessed','Draft','1.0',{q(now)},{q(now)}
 )
 ON CONFLICT(institutionId,riskId) DO UPDATE SET
- processId=excluded.processId,name=excluded.name,description=excluded.description,event=excluded.event,
- impact=excluded.impact,category=excluded.category,status='Draft',updatedAt=excluded.updatedAt;
+ processId=excluded.processId,name=excluded.name,description=excluded.description,cause=excluded.cause,
+ event=excluded.event,impact=excluded.impact,category=excluded.category,status='Draft',updatedAt=excluded.updatedAt;
 """
             execute(risk_sql,"/tmp/rcm_risk_one.sql")
 
