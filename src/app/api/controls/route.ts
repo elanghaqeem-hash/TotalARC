@@ -1,10 +1,43 @@
 import { NextResponse } from 'next/server';
-import { createControl, listControls, listProcessLookups, listRiskLookups } from '@/lib/d1-core';
+import { createControl, getControlDetail, listControls, listControlSummaries, listProcessLookups, listRiskLookups } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const view = url.searchParams.get('view');
+
+    if (view === 'detail') {
+      const id = url.searchParams.get('id')?.trim() || '';
+      if (!id) {
+        return NextResponse.json({ error: 'Control id is required.' }, { status: 400 });
+      }
+      const control = await getControlDetail(id);
+      return NextResponse.json({
+        control,
+        storage: 'cloudflare-d1',
+        view: 'detail'
+      });
+    }
+
+    if (view === 'list') {
+      const [controls, processes, risks] = await Promise.all([
+        listControlSummaries(),
+        listProcessLookups(),
+        listRiskLookups()
+      ]);
+      return NextResponse.json({
+        controls,
+        processes,
+        risks,
+        storage: 'cloudflare-d1',
+        bundledLookups: true,
+        view: 'list',
+        progressive: true
+      });
+    }
+
     const [controls, processes, risks] = await Promise.all([
       listControls(),
       listProcessLookups(),
@@ -18,6 +51,10 @@ export async function GET() {
       bundledLookups: true
     });
   } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'CONTROL_NOT_FOUND') {
+      return NextResponse.json({ error: 'Control was not found.' }, { status: 404 });
+    }
     console.error('Failed to fetch D1 controls:', error);
     return NextResponse.json({ error: 'Failed to fetch controls from persistent database.' }, { status: 503 });
   }

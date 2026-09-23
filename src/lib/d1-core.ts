@@ -972,6 +972,134 @@ export async function listProcessLookups() {
   );
 }
 
+export async function listBusinessProcessSummaries() {
+  const db = await ensureCoreDomainSchema();
+  const [categories, rows, orgUnits, objectiveCounts, activityCounts, sipocs, mappingCounts] =
+    await Promise.all([
+      all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'
+      ),
+      all<Record<string, unknown>>(
+        db,
+        'SELECT * FROM BusinessProcess ORDER BY level ASC, processId ASC'
+      ),
+      all<Record<string, unknown>>(
+        db,
+        "SELECT id, code, name, type FROM OrganizationUnit WHERE status = 'Active' ORDER BY code ASC"
+      ),
+      all<Record<string, unknown>>(
+        db,
+        'SELECT processId, COUNT(*) AS count FROM ProcessObjective GROUP BY processId'
+      ),
+      all<Record<string, unknown>>(
+        db,
+        'SELECT processId, COUNT(*) AS count FROM ProcessActivity GROUP BY processId'
+      ),
+      all<Record<string, unknown>>(
+        db,
+        'SELECT processId FROM SIPOC'
+      ),
+      all<Record<string, unknown>>(
+        db,
+        `SELECT r.processId, COUNT(*) AS count
+           FROM ControlRiskMapping m
+           JOIN RiskMaster r ON r.id = m.riskId
+           JOIN ControlMaster c ON c.id = m.controlId
+          WHERE r.processId = c.processId
+          GROUP BY r.processId`
+      )
+    ]);
+
+  const categoryMap = new Map(categories.map(category => [String(category.id), category]));
+  const orgUnitMap = new Map(orgUnits.map(unit => [String(unit.id), unit]));
+  const objectiveCountByProcess = new Map(
+    objectiveCounts.map(item => [String(item.processId), Number(item.count || 0)])
+  );
+  const activityCountByProcess = new Map(
+    activityCounts.map(item => [String(item.processId), Number(item.count || 0)])
+  );
+  const sipocProcessIds = new Set(sipocs.map(item => String(item.processId || '')));
+  const mappingCountByProcess = new Map(
+    mappingCounts.map(item => [String(item.processId), Number(item.count || 0)])
+  );
+
+  const processes = rows.map(row => {
+    const id = String(row.id);
+    const mappingCount = mappingCountByProcess.get(id) || 0;
+    const missingSections = [
+      typeof row.description === 'string' && row.description.trim() ? null : 'description',
+      (objectiveCountByProcess.get(id) || 0) > 0 ? null : 'objective',
+      (activityCountByProcess.get(id) || 0) > 0 ? null : 'activities',
+      sipocProcessIds.has(id) ? null : 'sipoc'
+    ].filter(Boolean);
+
+    return {
+      ...processRow(row),
+      category: categoryMap.get(String(row.categoryId)) || null,
+      orgUnit: row.orgUnitId ? orgUnitMap.get(String(row.orgUnitId)) || null : null,
+      rcmDraft:
+        mappingCount > 0 && missingSections.length > 0
+          ? {
+              status: 'PENDING_USER_VALIDATION',
+              derivedFrom: 'RCM',
+              missingSections,
+              sourceSummary: { mappingCount }
+            }
+          : null
+    };
+  });
+
+  return { processes, categories };
+}
+
+export async function getBusinessProcessDetail(id: string) {
+  const db = await ensureCoreDomainSchema();
+  const row = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [id]
+  );
+  if (!row) throw new Error('PROCESS_NOT_FOUND');
+
+  const hydrated = await hydrateProcess(db, row);
+  const mappings = await all<Record<string, unknown>>(
+    db,
+    `SELECT m.riskId, m.controlId
+       FROM ControlRiskMapping m
+       JOIN RiskMaster r ON r.id = m.riskId
+       JOIN ControlMaster c ON c.id = m.controlId
+      WHERE r.processId = ? AND c.processId = ?`,
+    [id, id]
+  );
+
+  const mappedRiskIds = new Set(mappings.map(item => String(item.riskId || '')));
+  const mappedControlIds = new Set(mappings.map(item => String(item.controlId || '')));
+  const mappedRisks = (hydrated.risks || []).filter(item =>
+    mappedRiskIds.has(String(item.id || ''))
+  );
+  const mappedControls = (hydrated.controls || []).filter(item =>
+    mappedControlIds.has(String(item.id || ''))
+  );
+
+  const draft = buildRcmDerivedBpmDraft(
+    row,
+    mappedRisks,
+    mappedControls,
+    mappings.length,
+    {
+      objectiveCount: hydrated.objectives?.length || 0,
+      activityCount: hydrated.activities?.length || 0,
+      hasSipoc: Boolean(hydrated.sipoc)
+    }
+  );
+
+  return {
+    ...hydrated,
+    rcmDraft: draft
+  };
+}
+
 export async function listBusinessProcesses() {
   const db = await ensureCoreDomainSchema();
   const [categories, rows, orgUnits, objectives, sipocs, activities, risks, controls, mappings] = await Promise.all([
@@ -1862,6 +1990,79 @@ export async function createRisk(input: Record<string, unknown>) {
     activity: null,
     controls: [],
     issues: []
+  };
+}
+
+export async function listControlSummaries() {
+  const db = await ensureCoreDomainSchema();
+  const rows = await all<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster ORDER BY controlId ASC'
+  );
+  return rows.map(controlRow);
+}
+
+export async function getControlDetail(id: string) {
+  const db = await ensureCoreDomainSchema();
+  const row = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
+    [id]
+  );
+  if (!row) throw new Error('CONTROL_NOT_FOUND');
+
+  const [process, activity, mappings] = await Promise.all([
+    first<Record<string, unknown>>(
+      db,
+      'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess WHERE id = ? LIMIT 1',
+      [row.processId]
+    ),
+    row.activityId
+      ? first<Record<string, unknown>>(
+          db,
+          'SELECT * FROM ProcessActivity WHERE id = ? LIMIT 1',
+          [row.activityId]
+        )
+      : Promise.resolve(null),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.id, m.controlId, m.riskId, m.createdAt,
+              r.riskId AS enterpriseRiskId, r.name AS riskName,
+              r.description AS riskDescription, r.category AS riskCategory,
+              r.inherentScore, r.inherentRating, r.residualScore, r.residualRating
+         FROM ControlRiskMapping m
+         JOIN RiskMaster r ON r.id = m.riskId
+        WHERE m.controlId = ?
+        ORDER BY r.riskId ASC`,
+      [id]
+    )
+  ]);
+
+  return {
+    ...controlRow(row),
+    process,
+    activity,
+    risks: mappings.map(mapping => ({
+      id: mapping.id,
+      controlId: mapping.controlId,
+      riskId: mapping.riskId,
+      createdAt: mapping.createdAt,
+      risk: riskRow({
+        id: mapping.riskId,
+        riskId: mapping.enterpriseRiskId,
+        name: mapping.riskName,
+        description: mapping.riskDescription,
+        category: mapping.riskCategory,
+        inherentScore: mapping.inherentScore,
+        inherentRating: mapping.inherentRating,
+        residualScore: mapping.residualScore,
+        residualRating: mapping.residualRating
+      })
+    })),
+    todTests: [],
+    toeTests: [],
+    monitoringRules: [],
+    certifications: []
   };
 }
 
