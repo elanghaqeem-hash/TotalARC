@@ -16,7 +16,10 @@ import {
   FileCheck2,
   Cpu,
   Eye,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Pencil,
+  Save,
+  X
 } from 'lucide-react';
 import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
 
@@ -53,6 +56,27 @@ export default function RCMWorkspacePage() {
   const [loading, setLoading] = useState(rcmCache === null);
   const [actionBusy, setActionBusy] = useState('');
   const [actionMessage, setActionMessage] = useState('');
+  const [editingDraft, setEditingDraft] = useState<any | null>(null);
+  const [draftEditForm, setDraftEditForm] = useState({
+    processObjective: '',
+    riskName: '',
+    riskDescription: '',
+    riskCause: '',
+    riskEvent: '',
+    riskImpact: '',
+    riskCategory: '',
+    riskOwnerName: '',
+    controlName: '',
+    controlDescription: '',
+    controlObjective: '',
+    controlOwner: '',
+    controlType: 'Preventive',
+    controlNature: 'Manual',
+    controlMethod: 'Validation',
+    controlFrequency: 'Per Transaction',
+    evidenceRequirement: '',
+    systemDependency: ''
+  });
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
@@ -202,6 +226,91 @@ export default function RCMWorkspacePage() {
     } catch (error) {
       setActionMessage(
         error instanceof Error ? error.message : 'Unable to review RCM draft.'
+      );
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+
+  const openDraftUpdate = (row: any) => {
+    setEditingDraft(row);
+    setDraftEditForm({
+      processObjective: row.processObjective || '',
+      riskName: row.riskName || '',
+      riskDescription: row.riskDescription || '',
+      riskCause: row.riskCause || '',
+      riskEvent: row.riskEvent || '',
+      riskImpact: row.riskImpact || '',
+      riskCategory: row.riskCategory || '',
+      riskOwnerName: row.riskOwnerName || row.controlOwner || '',
+      controlName: row.controlName || '',
+      controlDescription: row.controlDescription || '',
+      controlObjective: row.controlObjective || '',
+      controlOwner: row.controlOwner || '',
+      controlType: row.controlType || 'Preventive',
+      controlNature: row.controlNature || 'Manual',
+      controlMethod: row.controlMethod || 'Validation',
+      controlFrequency: row.controlFrequency || 'Per Transaction',
+      evidenceRequirement: row.evidenceRequirement || '',
+      systemDependency: row.systemDependency || ''
+    });
+  };
+
+  const saveDraftUpdate = async () => {
+    if (!editingDraft?.draftReferenceId) return;
+    setActionBusy(String(editingDraft.draftReferenceId));
+    setActionMessage('');
+
+    try {
+      const riskUpdates = editingDraft.riskEditable
+        ? {
+            name: draftEditForm.riskName,
+            description: draftEditForm.riskDescription,
+            cause: draftEditForm.riskCause,
+            event: draftEditForm.riskEvent,
+            impact: draftEditForm.riskImpact,
+            category: draftEditForm.riskCategory,
+            ownerName: draftEditForm.riskOwnerName
+          }
+        : undefined;
+
+      const response = await fetch('/api/rcm', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionType: 'UPDATE_DRAFT',
+          draftReferenceId: editingDraft.draftReferenceId,
+          updates: {
+            processObjective: draftEditForm.processObjective,
+            ...(riskUpdates ? { risk: riskUpdates } : {}),
+            control: {
+              name: draftEditForm.controlName,
+              description: draftEditForm.controlDescription,
+              objective: draftEditForm.controlObjective,
+              controlOwner: draftEditForm.controlOwner,
+              type: draftEditForm.controlType,
+              nature: draftEditForm.controlNature,
+              method: draftEditForm.controlMethod,
+              frequency: draftEditForm.controlFrequency,
+              evidenceRequirement: draftEditForm.evidenceRequirement,
+              systemDependency: draftEditForm.systemDependency
+            }
+          }
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to update RCM draft.');
+
+      setActionMessage(
+        `Draft RCM ${editingDraft.controlId} berhasil di-update dan tetap menunggu validasi user.`
+      );
+      setEditingDraft(null);
+      await refreshRcmData();
+      setFilterType('DRAFT_VALIDATION');
+    } catch (error) {
+      setActionMessage(
+        error instanceof Error ? error.message : 'Unable to update RCM draft.'
       );
     } finally {
       setActionBusy('');
@@ -458,7 +567,16 @@ export default function RCMWorkspacePage() {
                       Owner: {row.controlOwner || 'Pending validation'} · Frequency: {row.controlFrequency}
                     </div>
                   </div>
-                  <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
+                  <div className="mt-3 flex shrink-0 flex-wrap gap-2 sm:mt-0">
+                    <button
+                      type="button"
+                      disabled={actionBusy !== ''}
+                      onClick={() => openDraftUpdate(row)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Update
+                    </button>
                     <button
                       type="button"
                       disabled={actionBusy !== ''}
@@ -482,6 +600,170 @@ export default function RCMWorkspacePage() {
           </div>
         )}
       </section>
+
+
+      {editingDraft && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/40 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[94vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:max-w-5xl sm:rounded-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded bg-violet-100 px-2 py-1 font-mono text-[10px] font-bold text-violet-700">
+                    {editingDraft.processId}
+                  </span>
+                  <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-black text-amber-700">
+                    DRAFT · NOT YET OPERATIONAL
+                  </span>
+                </div>
+                <h2 className="mt-2 text-base font-black text-slate-900">Update RCM Draft</h2>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Perubahan hanya disimpan pada draft. Risk/Control operasional baru berubah setelah Validate & Use.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingDraft(null)}
+                disabled={actionBusy !== ''}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+                aria-label="Close update draft"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-5 p-4 sm:p-6">
+              <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <h3 className="text-xs font-black text-slate-900">BPM Context</h3>
+                <div className="mt-3">
+                  <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    Process Objective
+                  </label>
+                  <textarea
+                    value={draftEditForm.processObjective}
+                    onChange={e => setDraftEditForm(current => ({ ...current, processObjective: e.target.value }))}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+                  />
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-amber-200 bg-amber-50/30 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs font-black text-slate-900">Risk Draft</h3>
+                  {!editingDraft.riskEditable && (
+                    <span className="rounded-full border border-amber-200 bg-white px-2 py-1 text-[9px] font-bold text-amber-700">
+                      Existing RiskMaster · locked
+                    </span>
+                  )}
+                </div>
+                {!editingDraft.riskEditable && (
+                  <p className="mt-2 text-[10px] leading-relaxed text-amber-800">
+                    Risk ini berasal dari RiskMaster yang sudah ada. Koreksi risk dilakukan melalui modul Risk agar
+                    source record tetap konsisten; dari halaman ini Anda tetap dapat meng-update rancangan control.
+                  </p>
+                )}
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {[
+                    ['riskName', 'Risk Name'],
+                    ['riskCategory', 'Risk Category'],
+                    ['riskOwnerName', 'Risk Owner']
+                  ].map(([field, label]) => (
+                    <label key={field} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      {label}
+                      <input
+                        value={(draftEditForm as any)[field]}
+                        disabled={!editingDraft.riskEditable}
+                        onChange={e => setDraftEditForm(current => ({ ...current, [field]: e.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal normal-case tracking-normal text-slate-800 outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-400"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {[
+                    ['riskDescription', 'Risk Description'],
+                    ['riskCause', 'Cause'],
+                    ['riskEvent', 'Risk Event'],
+                    ['riskImpact', 'Impact']
+                  ].map(([field, label]) => (
+                    <label key={field} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      {label}
+                      <textarea
+                        value={(draftEditForm as any)[field]}
+                        disabled={!editingDraft.riskEditable}
+                        onChange={e => setDraftEditForm(current => ({ ...current, [field]: e.target.value }))}
+                        rows={3}
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal normal-case tracking-normal text-slate-800 outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-400"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-sky-200 bg-sky-50/30 p-4">
+                <h3 className="text-xs font-black text-slate-900">Control Draft</h3>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {[
+                    ['controlName', 'Control Name'],
+                    ['controlOwner', 'Control Owner'],
+                    ['controlType', 'Control Type'],
+                    ['controlNature', 'Control Nature'],
+                    ['controlMethod', 'Control Method'],
+                    ['controlFrequency', 'Frequency'],
+                    ['systemDependency', 'System Dependency']
+                  ].map(([field, label]) => (
+                    <label key={field} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      {label}
+                      <input
+                        value={(draftEditForm as any)[field]}
+                        onChange={e => setDraftEditForm(current => ({ ...current, [field]: e.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal normal-case tracking-normal text-slate-800 outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {[
+                    ['controlDescription', 'Control Description'],
+                    ['controlObjective', 'Control Objective'],
+                    ['evidenceRequirement', 'Evidence Requirement']
+                  ].map(([field, label]) => (
+                    <label key={field} className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      {label}
+                      <textarea
+                        value={(draftEditForm as any)[field]}
+                        onChange={e => setDraftEditForm(current => ({ ...current, [field]: e.target.value }))}
+                        rows={3}
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal normal-case tracking-normal text-slate-800 outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <button
+                type="button"
+                disabled={actionBusy !== ''}
+                onClick={() => setEditingDraft(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy !== ''}
+                onClick={saveDraftUpdate}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-sky-800 disabled:bg-slate-300"
+              >
+                <Save className="h-4 w-4" />
+                {actionBusy === String(editingDraft.draftReferenceId) ? 'Saving...' : 'Save Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search & Filter Bar */}
       <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
