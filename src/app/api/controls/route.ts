@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server';
-import { createControl, listControls } from '@/lib/d1-core';
+import { createControl, listControls, listProcessLookups, listRiskLookups } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const controls = await listControls();
-    return NextResponse.json({ controls, storage: 'cloudflare-d1' });
+    const [controls, processes, risks] = await Promise.all([
+      listControls(),
+      listProcessLookups(),
+      listRiskLookups()
+    ]);
+    return NextResponse.json({
+      controls,
+      processes,
+      risks,
+      storage: 'cloudflare-d1',
+      bundledLookups: true
+    });
   } catch (error) {
     console.error('Failed to fetch D1 controls:', error);
     return NextResponse.json({ error: 'Failed to fetch controls from persistent database.' }, { status: 503 });
