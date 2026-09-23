@@ -202,6 +202,16 @@ export default function ProcessesPage() {
     (category: any) => String(category.id) === String(selectedCategory)
   );
 
+  const childProcesses = selectedProcess
+    ? processes
+        .filter((process: any) => String(process.parentProcessId || '') === String(selectedProcess.id || ''))
+        .sort((a: any, b: any) => String(a.processId || '').localeCompare(String(b.processId || '')))
+    : [];
+
+  const selectedTags = String(selectedProcess?.tags || '');
+  const selectedIsSourceBacked = selectedTags.includes('"sourceBacked":true');
+  const selectedSipocUnavailable = selectedTags.includes('"sipocStatus":"NOT_AVAILABLE_IN_SOURCE"');
+
   const filtered = processes.filter(p => {
     const processCategoryId = String(p.categoryId || p.category?.id || '');
     const processCategoryCode = String(p.category?.code || '');
@@ -470,6 +480,45 @@ export default function ProcessesPage() {
                 </p>
               </div>
 
+              {childProcesses.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                      <GitBranch className="w-3.5 h-3.5 text-brand-600" />
+                      <span>L3 / Subprocess Structure</span>
+                    </h3>
+                    <span className="text-[10px] font-semibold text-slate-400">
+                      {childProcesses.length} subprocess
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {childProcesses.map((child: any) => (
+                      <button
+                        type="button"
+                        key={child.id}
+                        onClick={() => setSelectedProcess(child)}
+                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-left hover:border-brand-300 hover:bg-brand-50/40 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[10px] font-bold text-brand-700">
+                            {child.processId}
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400">
+                            {child.activities?.length || 0} activities
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs font-bold text-slate-800">{child.name}</div>
+                        {child.description && (
+                          <div className="mt-1 text-[10px] leading-4 text-slate-500 line-clamp-2">
+                            {child.description}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Objectives & Strategic KPIs (Section 22) */}
               {selectedProcess.objectives?.length > 0 && (
                 <div className="space-y-2">
@@ -533,6 +582,13 @@ export default function ProcessesPage() {
                 </div>
               )}
 
+              {!selectedProcess.sipoc && selectedIsSourceBacked && selectedSipocUnavailable && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-5 text-amber-800">
+                  SIPOC belum tersedia pada source artifact untuk proses ini. Total ARC tidak meng-generate supplier,
+                  input, output, atau customer secara asumsi.
+                </div>
+              )}
+
               {/* Activity Register (Section 26) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -555,8 +611,20 @@ export default function ProcessesPage() {
                         <div>
                           <div className="font-bold text-slate-900">{act.name}</div>
                           <div className="text-[11px] text-slate-500">
-                            Performer: {act.performer} • System: {act.systemUsed}
+                            Performer: {act.performer || 'Not available in source'} • System: {act.systemUsed || 'Not available in source'}
                           </div>
+                          {(act.inputData || act.outputData) && (
+                            <div className="mt-1 grid grid-cols-1 gap-0.5 text-[10px] leading-4 text-slate-500">
+                              <div>
+                                <span className="font-semibold text-slate-600">Input:</span>{' '}
+                                {act.inputData || 'Not available in source'}
+                              </div>
+                              <div>
+                                <span className="font-semibold text-slate-600">Output:</span>{' '}
+                                {act.outputData || 'Not available in source'}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
