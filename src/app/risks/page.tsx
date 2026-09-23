@@ -14,7 +14,8 @@ import {
   CheckCircle2,
   TrendingDown,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  RefreshCw
 } from 'lucide-react';
 import { getRiskBadgeClasses } from '@/lib/utils';
 import { DataLoadingState } from '@/components/common/DataLoadingState';
@@ -30,6 +31,10 @@ export default function RisksPage() {
   const [saveError, setSaveError] = useState('');
   const [riskLoading, setRiskLoading] = useState(true);
   const [riskLoadError, setRiskLoadError] = useState('');
+  const [heatmapAi, setHeatmapAi] = useState<any>(null);
+  const [heatmapAiLoading, setHeatmapAiLoading] = useState(false);
+  const [heatmapAiError, setHeatmapAiError] = useState('');
+  const [heatmapAiKey, setHeatmapAiKey] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -90,6 +95,51 @@ export default function RisksPage() {
   useEffect(() => {
     loadRisks();
   }, []);
+
+  const generateHeatmapAiAnalysis = async (force = false) => {
+    if (activeTab === 'register' || riskLoading) return;
+
+    const mode = activeTab === 'inherent_heatmap' ? 'inherent' : 'residual';
+    const scoreField = mode === 'inherent' ? 'inherentScore' : 'residualScore';
+    const assessedCount = risks.filter((risk: any) => Number(risk[scoreField] || 0) > 0).length;
+    const scoreTotal = risks.reduce(
+      (sum: number, risk: any) => sum + Number(risk[scoreField] || 0),
+      0
+    );
+    const nextKey = `${mode}:${risks.length}:${assessedCount}:${scoreTotal}`;
+
+    if (!force && heatmapAiKey === nextKey && heatmapAi) return;
+
+    setHeatmapAiLoading(true);
+    setHeatmapAiError('');
+
+    try {
+      const response = await fetch('/api/ai/risk-heatmap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to generate AI heatmap analysis.');
+      }
+
+      setHeatmapAi(payload);
+      setHeatmapAiKey(nextKey);
+    } catch (error) {
+      setHeatmapAiError(
+        error instanceof Error ? error.message : 'Unable to generate AI heatmap analysis.'
+      );
+    } finally {
+      setHeatmapAiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'register' && !riskLoading) {
+      void generateHeatmapAiAnalysis();
+    }
+  }, [activeTab, riskLoading, risks]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,70 +489,227 @@ export default function RisksPage() {
       ) : riskLoading ? (
         <DataLoadingState label="Loading risk heatmap..." variant="panel" />
       ) : (
-        /* 5x5 Heatmap Matrix */
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                5×5 {activeTab === 'inherent_heatmap' ? 'Inherent' : 'Residual'} Risk Matrix
-              </h2>
-              <p className="text-xs text-slate-500">
-                Likelihood (Vertical Axis, 1–5) × Impact (Horizontal Axis, 1–5). Only assessed risks are mapped.
-                <span className="ml-1 font-bold text-slate-700">
-                  {risks.filter((risk: any) => Number(risk.inherentScore || 0) === 0).length} risk(s) currently Not Assessed.
-                </span>
-              </p>
+        /* 5x5 Heatmap Matrix + AI Analysis */
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:gap-6">
+          <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 xl:col-span-7">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-slate-900">
+                  5×5 {activeTab === 'inherent_heatmap' ? 'Inherent' : 'Residual'} Risk Matrix
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Likelihood (Vertical Axis, 1–5) × Impact (Horizontal Axis, 1–5). Only assessed risks are mapped.
+                  <span className="ml-1 font-bold text-slate-700">
+                    {risks.filter((risk: any) =>
+                      Number(
+                        activeTab === 'inherent_heatmap'
+                          ? risk.inherentScore || 0
+                          : risk.residualScore || 0
+                      ) === 0
+                    ).length} risk(s) currently Not Assessed.
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
+                <span className="h-3 w-3 rounded border border-emerald-300 bg-emerald-100"></span>
+                <span className="text-slate-500">Low 1–4</span>
+                <span className="h-3 w-3 rounded border border-amber-300 bg-amber-100"></span>
+                <span className="text-slate-500">Medium 5–9</span>
+                <span className="h-3 w-3 rounded border border-rose-300 bg-rose-100"></span>
+                <span className="text-slate-500">High 10–14</span>
+                <span className="h-3 w-3 rounded border border-red-400 bg-red-200"></span>
+                <span className="text-slate-500">Critical 15–25</span>
+              </div>
             </div>
-            <div className="flex items-center space-x-2 text-xs">
-              <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></span>
-              <span className="text-slate-500 text-[11px]">Low (1-4)</span>
-              <span className="w-3 h-3 rounded bg-amber-100 border border-amber-300"></span>
-              <span className="text-slate-500 text-[11px]">Medium (5-9)</span>
-              <span className="w-3 h-3 rounded bg-rose-100 border border-rose-300"></span>
-              <span className="text-slate-500 text-[11px]">High (10-14)</span>
-              <span className="w-3 h-3 rounded bg-red-200 border border-red-400"></span>
-              <span className="text-slate-500 text-[11px]">Critical (15-25)</span>
+
+            <div className="mx-auto w-full max-w-xl py-2 sm:py-4">
+              <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                {[5, 4, 3, 2, 1].map(l =>
+                  [1, 2, 3, 4, 5].map(i => {
+                    const score = l * i;
+                    let bg = 'bg-emerald-50 border-emerald-200 text-emerald-800';
+                    if (score >= 15) bg = 'bg-red-100 border-red-300 text-red-900 font-black';
+                    else if (score >= 10) bg = 'bg-rose-100 border-rose-200 text-rose-800 font-bold';
+                    else if (score >= 5) bg = 'bg-amber-50 border-amber-200 text-amber-800';
+
+                    const count = risks.filter((risk: any) => {
+                      const likelihood =
+                        activeTab === 'inherent_heatmap'
+                          ? risk.inherentLikelihood
+                          : risk.residualLikelihood;
+                      const impact =
+                        activeTab === 'inherent_heatmap'
+                          ? risk.inherentImpact
+                          : risk.residualImpact;
+                      return likelihood === l && impact === i;
+                    }).length;
+
+                    return (
+                      <div
+                        key={`${l}-${i}`}
+                        className={`flex h-[72px] min-w-0 flex-col justify-between rounded-xl border p-1.5 shadow-sm transition hover:scale-[1.02] sm:h-20 sm:p-2 ${bg}`}
+                      >
+                        <div className="flex justify-between text-[9px] opacity-70 sm:text-[10px]">
+                          <span>L{l}</span>
+                          <span>I{i}</span>
+                        </div>
+                        <div className="text-center text-sm font-extrabold">{score}</div>
+                        <div className="truncate text-center text-[8px] opacity-60 sm:text-[9px]">
+                          {count} risk(s)
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="mt-3 flex justify-between gap-4 px-1 text-[10px] font-bold text-slate-500 sm:px-2 sm:text-xs">
+                <span>Impact 1 (Insignificant)</span>
+                <span className="text-right">Impact 5 (Catastrophic)</span>
+              </div>
             </div>
           </div>
 
-          <div className="max-w-xl mx-auto py-4">
-            <div className="grid grid-cols-5 gap-2">
-              {[5, 4, 3, 2, 1].map(l =>
-                [1, 2, 3, 4, 5].map(i => {
-                  const score = l * i;
-                  let bg = 'bg-emerald-50 border-emerald-200 text-emerald-800';
-                  if (score >= 15) bg = 'bg-red-100 border-red-300 text-red-900 font-black';
-                  else if (score >= 10) bg = 'bg-rose-100 border-rose-200 text-rose-800 font-bold';
-                  else if (score >= 5) bg = 'bg-amber-50 border-amber-200 text-amber-800';
+          <aside className="overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-b from-cyan-50/80 to-white shadow-sm xl:col-span-5">
+            <div className="border-b border-cyan-100 px-4 py-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-cyan-700">
+                    <Sparkles className="h-4 w-4" />
+                    ARC AI Risk Analysis
+                  </div>
+                  <h3 className="mt-1 text-base font-black text-slate-900">
+                    Heatmap Interpretation
+                  </h3>
+                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                    AI explains the current {activeTab === 'inherent_heatmap' ? 'inherent' : 'residual'} distribution using persisted Risk Master data only.
+                  </p>
+                </div>
 
+                <button
+                  type="button"
+                  onClick={() => void generateHeatmapAiAnalysis(true)}
+                  disabled={heatmapAiLoading}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-cyan-200 bg-white px-2.5 text-[10px] font-black text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${heatmapAiLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+            </div>
 
-                  return (
-                    <div
-                      key={`${l}-${i}`}
-                      className={`h-20 rounded-xl border p-2 flex flex-col justify-between transition-all hover:scale-105 cursor-pointer shadow-sm ${bg}`}
-                    >
-                      <div className="flex justify-between text-[10px] opacity-70">
-                        <span>L{l}</span>
-                        <span>I{i}</span>
-                      </div>
-                      <div className="text-center font-extrabold text-sm">{score}</div>
-                      <div className="text-center text-[9px] opacity-60">
-                        {risks.filter((risk: any) => {
-                          const likelihood = activeTab === 'inherent_heatmap' ? risk.inherentLikelihood : risk.residualLikelihood;
-                          const impact = activeTab === 'inherent_heatmap' ? risk.inherentImpact : risk.residualImpact;
-                          return likelihood === l && impact === i;
-                        }).length} risk(s)
+            <div className="space-y-4 p-4 sm:p-5">
+              {heatmapAiLoading ? (
+                <DataLoadingState label="ARC AI is analyzing risk distribution..." variant="panel" />
+              ) : heatmapAiError ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] leading-5 text-rose-700">
+                  <strong>AI analysis unavailable.</strong> {heatmapAiError}
+                </div>
+              ) : heatmapAi?.analysis ? (
+                <>
+                  <div className="rounded-xl border border-cyan-100 bg-white p-3.5">
+                    <div className="text-[10px] font-black uppercase tracking-wide text-cyan-700">
+                      Executive readout
+                    </div>
+                    <div className="mt-1 text-sm font-black leading-5 text-slate-900">
+                      {heatmapAi.analysis.headline}
+                    </div>
+                    <p className="mt-2 text-[11px] leading-5 text-slate-600">
+                      {heatmapAi.analysis.executiveSummary}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
+                      <div className="text-[9px] font-black uppercase text-slate-400">Assessed</div>
+                      <div className="mt-1 text-xl font-black text-slate-900">
+                        {heatmapAi.metrics?.assessed ?? 0}
                       </div>
                     </div>
-                  );
-                })
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
+                      <div className="text-[9px] font-black uppercase text-slate-400">Not Assessed</div>
+                      <div className="mt-1 text-xl font-black text-slate-900">
+                        {heatmapAi.metrics?.unassessed ?? 0}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
+                      <div className="text-[9px] font-black uppercase text-slate-400">Coverage</div>
+                      <div className="mt-1 text-xl font-black text-slate-900">
+                        {heatmapAi.metrics?.coveragePct ?? 0}%
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                    <div className="text-[10px] font-black uppercase tracking-wide text-amber-700">
+                      Data quality
+                    </div>
+                    <p className="mt-1 text-[11px] leading-5 text-amber-900">
+                      {heatmapAi.analysis.dataQuality}
+                    </p>
+                  </div>
+
+                  {heatmapAi.analysis.concentrationInsights?.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                        Concentration insights
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {heatmapAi.analysis.concentrationInsights.map((item: string, index: number) => (
+                          <div
+                            key={`insight-${index}`}
+                            className="flex gap-2 rounded-xl border border-slate-200 bg-white p-3 text-[11px] leading-5 text-slate-700"
+                          >
+                            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-100 text-[9px] font-black text-cyan-700">
+                              {index + 1}
+                            </span>
+                            <span>{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {heatmapAi.analysis.managementActions?.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                        Management attention
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {heatmapAi.analysis.managementActions.map((item: string, index: number) => (
+                          <div
+                            key={`action-${index}`}
+                            className="flex gap-2 rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-[11px] leading-5 text-slate-700"
+                          >
+                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                            <span>{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t border-slate-100 pt-3">
+                    <p className="text-[9px] leading-4 text-slate-400">
+                      {heatmapAi.analysis.caution}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[8px] font-bold uppercase tracking-wide text-slate-400">
+                      <span>{heatmapAi.disclaimer}</span>
+                      {heatmapAi.ai?.provider && (
+                        <span>
+                          {heatmapAi.ai.provider} · {heatmapAi.ai.model}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-xl border border-dashed border-cyan-200 bg-white p-5 text-center text-[11px] leading-5 text-slate-500">
+                  ARC AI analysis will appear here after the heatmap data is loaded.
+                </div>
               )}
             </div>
-            <div className="flex justify-between text-xs font-bold text-slate-500 mt-3 px-2">
-              <span>Impact 1 (Insignificant)</span>
-              <span>Impact 5 (Catastrophic)</span>
-            </div>
-          </div>
+          </aside>
         </div>
       )}
 
