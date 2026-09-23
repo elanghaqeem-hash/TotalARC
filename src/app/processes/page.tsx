@@ -49,6 +49,8 @@ export default function ProcessesPage() {
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [processLoadError, setProcessLoadError] = useState('');
+  const [processLoading, setProcessLoading] = useState(true);
   const process360Ref = useRef<HTMLDivElement | null>(null);
 
   // New process form state
@@ -64,6 +66,8 @@ export default function ProcessesPage() {
   });
 
   const loadProcesses = async (preferredProcessId?: string, preferredCategoryId?: string) => {
+    setProcessLoading(true);
+    setProcessLoadError('');
     try {
       const res = await fetch('/api/processes', { cache: 'no-store' });
       if (!res.ok) throw new Error('Unable to load business processes.');
@@ -98,6 +102,11 @@ export default function ProcessesPage() {
       }));
     } catch (error) {
       console.error(error);
+      setProcessLoadError(
+        error instanceof Error ? error.message : 'Unable to load business processes.'
+      );
+    } finally {
+      setProcessLoading(false);
     }
   };
 
@@ -247,30 +256,30 @@ export default function ProcessesPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 pb-2 sm:space-y-6">
       {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 md:flex-row md:items-center">
         <div>
           <div className="flex items-center space-x-2 text-xs font-bold text-brand-600 uppercase tracking-wider">
             <Layers className="w-4 h-4" />
             <span>Process Architecture & BPM (MANAGE)</span>
           </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
+          <h1 className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
             Enterprise Business Process Register
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="mt-1 text-[11px] leading-5 text-slate-500 sm:text-xs">
             Levels 0–5 Hierarchical Process Model. Single source of truth connecting activities, risks, and controls.
           </p>
 
-          <div className="mt-2 text-[11px] text-slate-400">
+          <div className="mt-2 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-2.5 text-[10px] leading-4 text-slate-500 sm:text-[11px]">
             Source-fed processes remain <strong>Draft / Not Assessed</strong> until Process Owner validation is completed.
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="grid w-full grid-cols-2 gap-2.5 md:flex md:w-auto md:items-center">
           <button
             onClick={() => setAiDrawerOpen(true)}
-            className="inline-flex items-center space-x-2 bg-gradient-to-r from-brand-600 to-sky-600 hover:from-brand-700 hover:to-sky-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm shadow-brand-500/20 transition-all hover:scale-[1.02]"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-600 px-3 py-2.5 text-center text-[11px] font-bold text-white shadow-sm shadow-brand-500/20 transition-all hover:from-brand-700 hover:to-sky-700 sm:px-4 sm:text-xs md:w-auto"
           >
             <Sparkles className="w-4 h-4 text-sky-200" />
             <span>AI Process Analysis</span>
@@ -278,7 +287,7 @@ export default function ProcessesPage() {
 
           <button
             onClick={openCreate}
-            className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-center text-[11px] font-bold text-white shadow-sm transition-all hover:bg-slate-800 sm:px-4 sm:text-xs md:w-auto"
           >
             <Plus className="w-4 h-4" />
             <span>Register Process</span>
@@ -287,22 +296,22 @@ export default function ProcessesPage() {
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <div className="relative w-full">
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Filter by Process ID, Name, or Owner..."
-            className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+            className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
           />
         </div>
 
-        <div className="flex items-center space-x-2 overflow-x-auto">
+        <div className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             onClick={() => setSelectedCategory('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+            className={`min-h-10 shrink-0 whitespace-nowrap rounded-xl px-3.5 py-2 text-[11px] font-semibold transition-colors sm:text-xs ${
               selectedCategory === 'ALL'
                 ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -326,10 +335,29 @@ export default function ProcessesPage() {
         </div>
       </div>
 
+      {processLoadError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+          <strong className="font-black">Process data unavailable.</strong>{' '}
+          {processLoadError} Please retry after the database/API connection is available.
+        </div>
+      )}
+
+      {processLoading && (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-xs font-semibold text-slate-500 shadow-sm">
+          Loading business processes…
+        </div>
+      )}
+
+      {!processLoading && !processLoadError && processes.length === 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-500 shadow-sm">
+          No business processes are available for the active institution.
+        </div>
+      )}
+
       {/* Split View: List on Left, Process 360 on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-12">
         {/* Left List: 5 cols */}
-        <div className="lg:col-span-5 space-y-3">
+        <div className="space-y-4 lg:col-span-5">
           {filtered.map(proc => {
             const isSelected = selectedProcess?.id === proc.id;
             const processTags = parseProcessTags(proc.tags);
@@ -339,79 +367,76 @@ export default function ProcessesPage() {
               <div
                 key={proc.id}
                 onClick={() => setSelectedProcess(proc)}
-                className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                className={`cursor-pointer overflow-hidden rounded-2xl border p-4 transition-all sm:p-5 ${
                   isSelected
                     ? 'bg-brand-50/50 border-brand-500 shadow-md ring-1 ring-brand-400'
                     : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono text-xs font-bold text-brand-700 bg-brand-100/70 px-2 py-0.5 rounded">
-                        {proc.processId}
+                <div>
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <span className="rounded-lg bg-brand-100/70 px-2.5 py-1 font-mono text-[11px] font-black text-brand-700">
+                      {proc.processId}
+                    </span>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${
+                        proc.criticality === 'Critical'
+                          ? 'border-red-200 bg-red-50 text-red-700'
+                          : proc.criticality === 'Not Assessed'
+                          ? 'border-slate-200 bg-slate-50 text-slate-600'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {proc.criticality}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-600">
+                      L{proc.level}
+                    </span>
+                    {Boolean(processTags.sourceBacked) && (
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">
+                        Source-backed
                       </span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          proc.criticality === 'Critical'
-                            ? 'bg-red-50 text-red-700 border-red-200'
-                            : proc.criticality === 'Not Assessed'
-                            ? 'bg-slate-50 text-slate-600 border-slate-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}
-                      >
-                        {proc.criticality}
+                    )}
+                    {processTags.icoFrScopingCode && (
+                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700">
+                        {processTags.icoFrScopingCode}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
-                        L{proc.level}
+                    )}
+                    {detailPending && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                        Detail pending
                       </span>
-                      {Boolean(processTags.sourceBacked) && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
-                          Source-backed
-                        </span>
-                      )}
-                      {processTags.icoFrScopingCode && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {processTags.icoFrScopingCode}
-                        </span>
-                      )}
-                      {detailPending && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                          Detail pending
-                        </span>
-                      )}
-                      {proc.isIcofrRelevant && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
-                          ICOFR
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-bold text-sm text-slate-900 mt-1.5">
-                      {proc.name}
-                    </h3>
+                    )}
+                    {proc.isIcofrRelevant && (
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700">
+                        ICOFR
+                      </span>
+                    )}
+                    <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                      {proc.status}
+                    </span>
                   </div>
-
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    {proc.status}
-                  </span>
+                  <h3 className="mt-3 break-words text-[15px] font-black leading-5 text-slate-900 sm:text-sm">
+                    {proc.name}
+                  </h3>
                 </div>
 
-                <p className="text-xs text-slate-500 mt-2 line-clamp-2">
+                <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
                   {proc.description}
                 </p>
 
-                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
                   <span className="min-w-0 truncate">
                     Owner: <strong>{proc.ownerName || proc.orgUnit?.name || 'Not assigned'}</strong>
                   </span>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="grid w-full grid-cols-[40px_40px_minmax(0,1fr)] items-center gap-2 sm:flex sm:w-auto sm:shrink-0">
                     <button
                       type="button"
                       onClick={event => {
                         event.stopPropagation();
                         openEdit(proc);
                       }}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 font-bold text-slate-600 hover:border-brand-200 hover:text-brand-700"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white font-bold text-slate-600 transition hover:border-brand-200 hover:text-brand-700"
                       aria-label={`Update ${proc.name}`}
                     >
                       <Pencil className="w-3 h-3" />
@@ -424,7 +449,7 @@ export default function ProcessesPage() {
                         setDeleteError('');
                         setDeleteTarget(proc);
                       }}
-                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 font-bold text-rose-700 hover:bg-rose-100"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 font-bold text-rose-700 transition hover:bg-rose-100"
                       aria-label={`Delete ${proc.name}`}
                     >
                       <Trash2 className="w-3 h-3" />
@@ -436,7 +461,7 @@ export default function ProcessesPage() {
                         event.stopPropagation();
                         handleInspect360(proc);
                       }}
-                      className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-1 font-bold text-brand-700 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                      className="inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 font-bold text-brand-700 transition hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
                       aria-label={`Inspect 360 degrees for ${proc.name}`}
                     >
                       <span>Inspect 360°</span>
@@ -450,9 +475,9 @@ export default function ProcessesPage() {
         </div>
 
         {/* Right Detail: Process 360 (7 cols) */}
-        <div ref={process360Ref} id="process-360-detail" className="lg:col-span-7 scroll-mt-24">
+        <div ref={process360Ref} id="process-360-detail" className="scroll-mt-24 lg:col-span-7">
           {selectedProcess ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
+            <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
               {/* Process Title & Metadata */}
               <div className="border-b border-slate-100 pb-4">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -596,7 +621,7 @@ export default function ProcessesPage() {
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     SIPOC Model (Section 24)
                   </h3>
-                  <div className="grid grid-cols-5 gap-2 text-xs">
+                  <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-5">
                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
                       <div className="text-[10px] font-bold text-slate-500 uppercase">Supplier</div>
                       <div className="text-[11px] font-medium text-slate-800 mt-1">{selectedProcess.sipoc.suppliers}</div>
@@ -634,7 +659,7 @@ export default function ProcessesPage() {
                   {selectedProcess.activities?.map((act: any) => (
                     <div
                       key={act.id}
-                      className="p-3 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 text-xs flex items-center justify-between"
+                      className="flex flex-col items-start justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs hover:bg-slate-50 sm:flex-row sm:items-center"
                     >
                       <div className="flex items-center space-x-3">
                         <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold text-[10px] flex items-center justify-center">
