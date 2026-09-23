@@ -15,6 +15,7 @@ export async function GET() {
     return NextResponse.json({
       rcm,
       total: rcm.length,
+      summary: governance.summary,
       governance,
       storage: 'cloudflare-d1'
     });
