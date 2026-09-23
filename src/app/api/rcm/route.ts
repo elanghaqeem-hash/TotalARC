@@ -5,7 +5,8 @@ import {
   generateBpmDerivedRcmDrafts,
   listBpmDraftRcmRows,
   listBpmWithoutRcm,
-  reviewBpmDerivedRcmDraft
+  reviewBpmDerivedRcmDraft,
+  updateBpmDerivedRcmDraft
 } from '@/lib/d1-rcm-draft';
 
 export const dynamic = 'force-dynamic';
@@ -90,6 +91,28 @@ export async function PATCH(request: Request) {
     const body = (await request.json()) as Record<string, unknown>;
     const draftReferenceId =
       typeof body.draftReferenceId === 'string' ? body.draftReferenceId.trim() : '';
+    const actionType = typeof body.actionType === 'string' ? body.actionType.trim() : 'REVIEW_DRAFT';
+
+    if (actionType === 'UPDATE_DRAFT') {
+      if (!draftReferenceId || !body.updates || typeof body.updates !== 'object') {
+        return NextResponse.json(
+          { error: 'draftReferenceId and draft updates are required.' },
+          { status: 400 }
+        );
+      }
+
+      const result = await updateBpmDerivedRcmDraft({
+        draftReferenceId,
+        updates: body.updates as {
+          processObjective?: string | null;
+          risk?: Record<string, unknown>;
+          control?: Record<string, unknown>;
+        },
+        updatedBy: typeof body.updatedBy === 'string' ? body.updatedBy.trim() : null
+      });
+      return NextResponse.json(result);
+    }
+
     const decision =
       body.decision === 'APPROVE' || body.decision === 'REJECT'
         ? body.decision
@@ -119,6 +142,18 @@ export async function PATCH(request: Request) {
       return NextResponse.json(
         { error: 'This RCM draft has already been reviewed.' },
         { status: 409 }
+      );
+    }
+    if (code === 'EXISTING_RISK_LOCKED') {
+      return NextResponse.json(
+        { error: 'This draft references an existing validated risk. Update the control draft only, or update the source risk through the Risk module.' },
+        { status: 409 }
+      );
+    }
+    if (code === 'DRAFT_REQUIRED_FIELD_MISSING') {
+      return NextResponse.json(
+        { error: 'Complete the required risk and control fields before saving the draft update.' },
+        { status: 400 }
       );
     }
     if (code === 'INVALID_DRAFT_DECISION' || code === 'INVALID_DRAFT_PAYLOAD') {
