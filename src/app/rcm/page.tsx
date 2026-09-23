@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
 
-let rcmCache: any[] | null = null;
-let rcmRequest: Promise<any[]> | null = null;
+let rcmCache: { rows: any[]; governance: any } | null = null;
+let rcmRequest: Promise<{ rows: any[]; governance: any }> | null = null;
 
 function fetchRcmRows() {
   if (!rcmRequest) {
@@ -31,9 +31,12 @@ function fetchRcmRows() {
         return res.json();
       })
       .then(payload => {
-        const rows = Array.isArray(payload.rcm) ? payload.rcm : [];
-        rcmCache = rows;
-        return rows;
+        const result = {
+          rows: Array.isArray(payload.rcm) ? payload.rcm : [],
+          governance: payload.governance || null
+        };
+        rcmCache = result;
+        return result;
       })
       .finally(() => {
         rcmRequest = null;
@@ -43,7 +46,8 @@ function fetchRcmRows() {
 }
 
 export default function RCMWorkspacePage() {
-  const [rcmRows, setRcmRows] = useState<any[]>(rcmCache || []);
+  const [rcmRows, setRcmRows] = useState<any[]>(rcmCache?.rows || []);
+  const [governance, setGovernance] = useState<any>(rcmCache?.governance || null);
   const [loading, setLoading] = useState(rcmCache === null);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('ALL');
@@ -53,13 +57,17 @@ export default function RCMWorkspacePage() {
     let active = true;
 
     if (rcmCache !== null) {
-      setRcmRows(rcmCache);
+      setRcmRows(rcmCache.rows);
+      setGovernance(rcmCache.governance);
       setLoading(false);
     }
 
     fetchRcmRows()
-      .then(rows => {
-        if (active) setRcmRows(rows);
+      .then(result => {
+        if (active) {
+          setRcmRows(result.rows);
+          setGovernance(result.governance);
+        }
       })
       .catch(err => {
         console.error(err);
@@ -82,9 +90,36 @@ export default function RCMWorkspacePage() {
 
     if (filterType === 'KEY_ONLY') return matchSearch && row.isKeyControl;
     if (filterType === 'ICOFR_ONLY') return matchSearch && row.isIcofrKey;
+    if (filterType === 'PENDING_MAPPING') {
+      return matchSearch && String(row.mappingStatus || '').startsWith('PENDING');
+    }
     if (filterType === 'ISSUES_ONLY') return matchSearch && row.issueId;
     return matchSearch;
   });
+
+  const uniqueControlCount = new Set(rcmRows.map(row => row.controlId)).size;
+  const uusDraftCount = new Set(
+    rcmRows.filter(row => row.sourceCycle === 'SYH').map(row => row.controlId)
+  ).size;
+  const itgcCount = new Set(
+    rcmRows.filter(row => row.isItgc).map(row => row.controlId)
+  ).size;
+  const pendingMappingCount = new Set(
+    rcmRows
+      .filter(row => String(row.mappingStatus || '').startsWith('PENDING'))
+      .map(row => row.controlId)
+  ).size;
+  const ckpnRequirementCount = Array.isArray(governance?.requirements)
+    ? governance.requirements.filter((item: any) => item.category === 'CKPN').length
+    : 0;
+  const reverseRepoRequirementCount = Array.isArray(governance?.requirements)
+    ? governance.requirements.filter((item: any) => item.category === 'Reverse Repo').length
+    : 0;
+  const elcReferenceCount = Array.isArray(governance?.draftReferenceSummary)
+    ? governance.draftReferenceSummary
+        .filter((item: any) => item.sourceStatus === 'ILLUSTRATIVE_DRAFT')
+        .reduce((sum: number, item: any) => sum + Number(item.records || 0), 0)
+    : 0;
 
   // Client CSV Export
   const exportToCSV = () => {
@@ -105,6 +140,8 @@ export default function RCMWorkspacePage() {
       'Control Nature',
       'Frequency',
       'Key Control',
+      'Mapping Status',
+      'Validation Status',
       'ToE Conclusion',
       'Residual Score',
       'Issue ID',
@@ -128,6 +165,8 @@ export default function RCMWorkspacePage() {
       `"${r.controlNature}"`,
       `"${r.controlFrequency}"`,
       r.isKeyControl ? 'Yes' : 'No',
+      `"${r.mappingStatus || ''}"`,
+      `"${r.validationStatus || ''}"`,
       `"${r.toeConclusion}"`,
       `"${r.residualScore} (${r.residualRating})"`,
       r.issueId || 'None',
@@ -189,6 +228,55 @@ export default function RCMWorkspacePage() {
         </div>
       </div>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.12em] text-brand-700">
+              <Shield className="h-3.5 w-3.5" />
+              Source & Integrity Governance
+            </div>
+            <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-slate-500">
+              RCM distinguishes operational Draft controls from legacy source values, design requirements,
+              and illustrative ELC references. Pending evidence is shown explicitly rather than inferred.
+            </p>
+          </div>
+          <span className={`w-fit rounded-full border px-2.5 py-1 text-[10px] font-black ${
+            governance?.latestIntegrity?.status === 'PASS'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-amber-200 bg-amber-50 text-amber-700'
+          }`}>
+            Integrity {governance?.latestIntegrity?.status || 'Pending'}
+          </span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          {[
+            ['Operational Draft', uniqueControlCount, 'ControlMaster'],
+            ['Legacy Register', Number(governance?.legacyTotal || 0), 'reconciled source'],
+            ['UUS Draft', uusDraftCount, 'walkthrough pending'],
+            ['ITGC', itgcCount, '4 domains'],
+            ['CKPN / Rev Repo', ckpnRequirementCount + reverseRepoRequirementCount, 'design requirements'],
+            ['ELC Reference', elcReferenceCount, 'illustrative only']
+          ].map(([label, value, note]) => (
+            <div key={String(label)} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">{label}</div>
+              <div className="mt-1 text-xl font-black text-slate-900">{Number(value)}</div>
+              <div className="mt-0.5 truncate text-[9px] text-slate-400">{note}</div>
+            </div>
+          ))}
+        </div>
+
+        {pendingMappingCount > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <strong>{pendingMappingCount} control</strong> masih memiliki risk mapping pending.
+              Control tetap terlihat untuk cleansing, tetapi belum diperlakukan sebagai RCM lengkap untuk testing.
+            </span>
+          </div>
+        )}
+      </section>
+
       {/* Search & Filter Bar */}
       <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
         <div className="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.72fr)] 2xl:items-stretch">
@@ -209,7 +297,7 @@ export default function RCMWorkspacePage() {
               Filter view
             </div>
 
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
               {[
                 {
                   key: 'ALL',
@@ -228,6 +316,12 @@ export default function RCMWorkspacePage() {
                   label: 'ICOFR Scope',
                   count: rcmRows.filter(row => row.isIcofrKey).length,
                   icon: FileCheck2
+                },
+                {
+                  key: 'PENDING_MAPPING',
+                  label: 'Risk Mapping Pending',
+                  count: pendingMappingCount,
+                  icon: AlertTriangle
                 },
                 {
                   key: 'ISSUES_ONLY',
@@ -366,7 +460,22 @@ export default function RCMWorkspacePage() {
                           )}
                         </div>
                         <div className="font-bold text-slate-900 mt-1">{row.controlName}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">Owner: {row.controlOwner}</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-bold text-slate-500">
+                            {row.controlStatus || 'Draft'}
+                          </span>
+                          {String(row.mappingStatus || '').startsWith('PENDING') && (
+                            <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                              Risk mapping pending
+                            </span>
+                          )}
+                          {row.validationStatus && (
+                            <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">
+                              {String(row.validationStatus).replaceAll('_', ' ')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-1">Owner: {row.controlOwner || 'Pending validation'}</div>
                       </td>
 
                       {/* Type & Nature */}
