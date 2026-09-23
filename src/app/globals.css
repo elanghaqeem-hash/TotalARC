@@ -8,6 +8,11 @@
   --background-end-rgb: 248, 250, 252;
 }
 
+html,
+body {
+  overflow-x: hidden;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background: #f8fafc;
