@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureIcofrScopeSchema, getIcofrScopingData } from '@/lib/d1-icofr';
 import {
   ensureIcofrDomainSchema,
@@ -30,8 +31,218 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+type D1DatabaseLike = {
+  prepare: (sql: string) => {
+    bind: (...values: unknown[]) => {
+      first: <T = Record<string, unknown>>() => Promise<T | null>;
+      all: <T = Record<string, unknown>>() => Promise<{ results?: T[] }>;
+    };
+    first: <T = Record<string, unknown>>() => Promise<T | null>;
+    all: <T = Record<string, unknown>>() => Promise<{ results?: T[] }>;
+  };
+};
+
+async function getDb(): Promise<D1DatabaseLike> {
+  const { env } = await getCloudflareContext({ async: true });
+  const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
+  if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
+  return db;
+}
+
+async function first<T = Record<string, unknown>>(
+  db: D1DatabaseLike,
+  sql: string,
+  values: unknown[] = []
+): Promise<T | null> {
+  const statement = db.prepare(sql);
+  return values.length
+    ? statement.bind(...values).first<T>()
+    : statement.first<T>();
+}
+
+async function all<T = Record<string, unknown>>(
+  db: D1DatabaseLike,
+  sql: string,
+  values: unknown[] = []
+): Promise<T[]> {
+  const statement = db.prepare(sql);
+  const result = values.length
+    ? await statement.bind(...values).all<T>()
+    : await statement.all<T>();
+  return result.results || [];
+}
+
+async function count(
+  db: D1DatabaseLike,
+  sql: string,
+  values: unknown[] = []
+) {
+  const row = await first<{ count?: number }>(db, sql, values);
+  return Number(row?.count || 0);
+}
+
+export async function GET(request: Request) {
   try {
+    const view = new URL(request.url).searchParams.get('view');
+
+    if (view === 'summary') {
+      await ensureIcofrScopeSchema();
+      await ensureIcofrDomainSchema();
+      await ensureIcofrTestingPlanSchema();
+      await ensureIcofrCertificationSchema();
+      await ensureIcofrExecutiveReportingSchema();
+
+      const db = await getDb();
+      const institution = await first<Record<string, unknown>>(
+        db,
+        'SELECT id, name, legalName, shortName FROM Institution ORDER BY createdAt ASC LIMIT 1'
+      );
+
+      if (!institution) {
+        return NextResponse.json({
+          institution: null,
+          latestScope: null,
+          counts: {
+            scopes: 0,
+            financialItems: 0,
+            significantFinancialItems: 0,
+            controls: 0,
+            keyControls: 0,
+            elc: 0,
+            plc: 0,
+            itgc: 0,
+            itac: 0,
+            informationArtifacts: 0,
+            deficiencies: 0,
+            testingPlanItems: 0,
+            attestations: 0,
+            evidencePacks: 0,
+            pbcRequests: 0
+          },
+          storage: 'cloudflare-d1',
+          view: 'summary',
+          progressive: true
+        });
+      }
+
+      const institutionId = String(institution.id);
+      const [
+        latestScope,
+        scopeCount,
+        financialCount,
+        significantFinancialCount,
+        controlSummary,
+        informationCount,
+        deficiencyCount,
+        testingPlanCount,
+        attestationCount,
+        evidencePackCount,
+        pbcRequestCount
+      ] = await Promise.all([
+        first<Record<string, unknown>>(
+          db,
+          `SELECT *
+             FROM ICOFRScope
+            WHERE institutionId = ?
+            ORDER BY fiscalYear DESC, updatedAt DESC
+            LIMIT 1`,
+          [institutionId]
+        ),
+        count(db, 'SELECT COUNT(*) AS count FROM ICOFRScope WHERE institutionId = ?', [institutionId]),
+        count(db, 'SELECT COUNT(*) AS count FROM ICOFRFinancialItem WHERE institutionId = ?', [institutionId]),
+        count(
+          db,
+          'SELECT COUNT(*) AS count FROM ICOFRFinancialItem WHERE institutionId = ? AND significant = 1',
+          [institutionId]
+        ),
+        all<Record<string, unknown>>(
+          db,
+          `SELECT category,
+                  COUNT(*) AS controls,
+                  SUM(CASE WHEN keyControl = 1 THEN 1 ELSE 0 END) AS keyControls
+             FROM ICOFRControlDomain
+            WHERE institutionId = ?
+            GROUP BY category`,
+          [institutionId]
+        ),
+        count(db, 'SELECT COUNT(*) AS count FROM ICOFRInformationRegister WHERE institutionId = ?', [institutionId]),
+        count(db, 'SELECT COUNT(*) AS count FROM ICOFRDeficiency WHERE institutionId = ?', [institutionId]),
+        count(
+          db,
+          `SELECT COUNT(*) AS count
+             FROM ICOFRTestingPlanItem p
+             JOIN ICOFRTestingCycle c ON c.id = p.cycleId
+            WHERE c.institutionId = ?`,
+          [institutionId]
+        ),
+        count(db, 'SELECT COUNT(*) AS count FROM ICOFRManagementAttestation WHERE institutionId = ?', [institutionId]),
+        count(db, 'SELECT COUNT(*) AS count FROM ICOFREvidencePack WHERE institutionId = ?', [institutionId]),
+        count(db, 'SELECT COUNT(*) AS count FROM ICOFRPBCRequest WHERE institutionId = ?', [institutionId])
+      ]);
+
+      const categoryCounts = new Map(
+        controlSummary.map(row => [
+          String(row.category || '').toUpperCase(),
+          {
+            controls: Number(row.controls || 0),
+            keyControls: Number(row.keyControls || 0)
+          }
+        ])
+      );
+      const categoryControlCount = (category: string) =>
+        categoryCounts.get(category)?.controls || 0;
+      const totalControls = controlSummary.reduce(
+        (sum, row) => sum + Number(row.controls || 0),
+        0
+      );
+      const totalKeyControls = controlSummary.reduce(
+        (sum, row) => sum + Number(row.keyControls || 0),
+        0
+      );
+
+      return NextResponse.json({
+        institution,
+        latestScope,
+        counts: {
+          scopes: scopeCount,
+          financialItems: financialCount,
+          significantFinancialItems: significantFinancialCount,
+          controls: totalControls,
+          keyControls: totalKeyControls,
+          elc: categoryControlCount('ELC'),
+          plc: categoryControlCount('PLC'),
+          itgc: categoryControlCount('ITGC'),
+          itac: categoryControlCount('ITAC'),
+          informationArtifacts: informationCount,
+          deficiencies: deficiencyCount,
+          testingPlanItems: testingPlanCount,
+          attestations: attestationCount,
+          evidencePacks: evidencePackCount,
+          pbcRequests: pbcRequestCount
+        },
+        storage: 'cloudflare-d1',
+        view: 'summary',
+        progressive: true
+      });
+    }
+
+    if (view === 'metrics') {
+      await ensureIcofrTraceabilitySchema();
+      await ensureIcofrCoverageSchema();
+
+      const [traceability, coverage] = await Promise.all([
+        getTraceabilityData(),
+        getIcofrCoverageData()
+      ]);
+
+      return NextResponse.json({
+        traceabilityMetrics: traceability.metrics || {},
+        coverageMetrics: coverage.metrics || {},
+        storage: 'cloudflare-d1',
+        view: 'metrics',
+        progressive: true
+      });
+    }
     // Runtime DDL must complete deterministically before the hub fans out
     // into parallel read queries. Each ensure* call is memoized per Worker.
     await ensureIcofrScopeSchema();
