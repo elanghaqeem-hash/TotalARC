@@ -28,5 +28,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Validate RCM hardening script syntax
+        run: python -m py_compile scripts/harden-bank-kalbar-rcm-2026.py
       - name: Audit current production RCM
         run: python scripts/audit-bank-kalbar-rcm-2026.py
