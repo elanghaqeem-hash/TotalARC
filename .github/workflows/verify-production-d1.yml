@@ -207,8 +207,19 @@ jobs:
           check_json "rcm" "/api/rcm" '
             .storage == "cloudflare-d1" and
             (.rcm | type) == "array" and
-            (.total | type) == "number"
+            (.total | type) == "number" and
+            ([.rcm[] | select(has("inherentAssessmentStatus"))] | length) > 0
           '
+
+          echo "RCM inherent assessment evidence:"
+          jq '{
+            sourceRatedRows: ([.rcm[] | select((.inherentSourceRating // "") != "")] | length),
+            validatedNumericRows: ([.rcm[] | select(.inherentAssessmentStatus == "ASSESSED_1_5")] | length),
+            pendingNumericRows: ([.rcm[] | select(.inherentAssessmentStatus == "SOURCE_RATING_PENDING_1_5_VALIDATION")] | length),
+            examples: ([.rcm[] | select(.riskId == "R-018" or .riskId == "R-019")
+              | {riskId, inherentLikelihood, inherentImpact, inherentScore, inherentRating,
+                 inherentSourceRating, inherentAssessmentStatus}] | unique_by(.riskId))
+          }' /tmp/totalarc-smoke-rcm.json
 
           check_json "dashboard" "/api/dashboard" '
             .storage == "cloudflare-d1" and
