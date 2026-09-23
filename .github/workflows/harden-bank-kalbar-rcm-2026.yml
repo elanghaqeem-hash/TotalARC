@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/harden-bank-kalbar-rcm-2026.py'
+      - 'src/lib/d1-core.ts'
+      - 'src/app/api/rcm/route.ts'
       - '.github/workflows/harden-bank-kalbar-rcm-2026.yml'
   workflow_dispatch:
 
