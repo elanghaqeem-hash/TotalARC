@@ -176,8 +176,95 @@ WHERE institutionId={q(iid)} AND status='Active'
 GROUP BY recordType
 ORDER BY records DESC,recordType
 """)
+    summary["rcmSourceReadiness"]=rows(f"""
+SELECT recordType,
+       COUNT(*) records,
+       COUNT(DISTINCT json_extract(payloadJson,'$.businessProcess')) businessProcesses
+FROM SourceStructuredRecord
+WHERE institutionId={q(iid)} AND status='Active'
+  AND recordType IN (
+    'RCM_TLC_UPDATE_CANDIDATE',
+    'ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE',
+    'ITGC_CONTROL_UPDATE_CANDIDATE',
+    'ELC_PRINCIPLE_TEMPLATE_REFERENCE',
+    'ELC_BPM_NARRATIVE_REFERENCE'
+  )
+GROUP BY recordType
+ORDER BY recordType
+""")
+    expected_source_counts={
+        "RCM_TLC_UPDATE_CANDIDATE":65,
+        "ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE":15,
+        "ITGC_CONTROL_UPDATE_CANDIDATE":10,
+        "ELC_PRINCIPLE_TEMPLATE_REFERENCE":17,
+    }
+    actual={str(x["recordType"]):int(x["records"]) for x in summary["rcmSourceReadiness"]}
+    for record_type,expected in expected_source_counts.items():
+        if actual.get(record_type)!=expected:
+            raise RuntimeError(f"SOURCE_READINESS_{record_type}_{actual.get(record_type)}_{expected}")
+
+    summary["tlcSourceProcesses"]=rows(f"""
+SELECT json_extract(payloadJson,'$.businessProcess') businessProcess,COUNT(*) records
+FROM SourceStructuredRecord
+WHERE institutionId={q(iid)} AND status='Active'
+  AND recordType='RCM_TLC_UPDATE_CANDIDATE'
+GROUP BY json_extract(payloadJson,'$.businessProcess')
+ORDER BY businessProcess
+""")
 else:
     summary["sourceControlCandidates"]="TABLE_NOT_PRESENT"
+    raise RuntimeError("SOURCE_STRUCTURED_RECORD_TABLE_MISSING")
+
+if "SourceDocument" not in tables or "SourceTextChunk" not in tables:
+    raise RuntimeError("SOURCE_DOCUMENT_TABLES_MISSING")
+
+gap_docs=rows(f"""
+SELECT id,title
+FROM SourceDocument
+WHERE institutionId={q(iid)} AND status='Active'
+  AND lower(title) LIKE '%dokumen 3 gap_analysis_bpm_rcm%'
+ORDER BY sourceModifiedAt DESC
+""")
+if not gap_docs:
+    raise RuntimeError("GAP_ANALYSIS_SOURCE_NOT_FOUND")
+gap_id=str(gap_docs[0]["id"])
+gap_chunks=rows(
+    "SELECT textContent FROM SourceTextChunk WHERE documentId="+q(gap_id)+" ORDER BY chunkIndex"
+)
+gap_text="".join(str(x.get("textContent") or "")+"\n" for x in gap_chunks)
+gap_lines=[line for line in gap_text.splitlines() if line.strip()]
+header_index=next(
+    (i for i,line in enumerate(gap_lines) if "Berkas RCM" in line and "Nama Aktivitas Pengendalian" in line),
+    None
+)
+if header_index is None:
+    raise RuntimeError("LEGACY_RCM_HEADER_NOT_FOUND")
+header=gap_lines[header_index].split("\t")
+try:
+    no_idx=header.index("No")
+    cycle_idx=header.index("Berkas RCM")
+except ValueError as exc:
+    raise RuntimeError("LEGACY_RCM_REQUIRED_HEADER_MISSING") from exc
+cycles={
+    "DPK","KRD","Pengadaan Barang dn Jasa","Treasury","SYH","Kep-AML",
+    "Otomatisasi Pengakuan Beban Bunga","Otomatisasi Pengakuan Pendapatan Bunga",
+    "Pajak","Pelaporan","Penggajian"
+}
+legacy_rows=[]
+for line in gap_lines[header_index+1:]:
+    parts=line.split("\t")
+    if len(parts)<=max(no_idx,cycle_idx):
+        continue
+    if not re.fullmatch(r"\d+",str(parts[no_idx]).strip()):
+        continue
+    if str(parts[cycle_idx]).strip() in cycles:
+        legacy_rows.append(parts)
+if len(legacy_rows)!=124:
+    raise RuntimeError(f"LEGACY_RCM_READINESS_{len(legacy_rows)}_124")
+summary["legacySourceReadiness"]={
+    "documentId":gap_id,
+    "rows":len(legacy_rows)
+}
 
 print("=== BANK KALBAR RCM LIVE AUDIT ===")
 print(json.dumps({
