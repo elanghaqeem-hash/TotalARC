@@ -26,9 +26,12 @@ export async function POST(request: Request) {
     const nature = typeof body.nature === 'string' ? body.nature.trim() : '';
     const frequency = typeof body.frequency === 'string' ? body.frequency.trim() : '';
 
-    if (!name || !description || !objective || !processId || !controlOwner || !type || !nature || !frequency) {
+    if (!name || !description || !objective || !processId || !riskId || !controlOwner || !type || !nature || !frequency) {
       return NextResponse.json(
-        { error: 'Complete control definition, ownership, type, nature, and frequency are required.' },
+        {
+          error:
+            'Complete control definition, ownership, type, nature, frequency, and a Related Risk are required. A new Control Master must persist a risk-control mapping.'
+        },
         { status: 400 }
       );
     }
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
       description,
       objective,
       processId,
-      riskId: riskId || null,
+      riskId,
       controlOwner,
       type,
       nature,
