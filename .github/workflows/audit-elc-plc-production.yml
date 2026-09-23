@@ -1,0 +1,197 @@
+name: Audit ELC PLC production
+
+on:
+  push:
+    branches:
+      - audit/elc-plc-production-20260923
+    paths:
+      - '.github/workflows/audit-elc-plc-production.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Read-only ELC PLC audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/audit_elc_plc.py <<'PY'
+          import json, os, re, subprocess, time
+
+          LEGAL_NAME="PT. Bank Pembangunan Daerah Kalimantan Barat"
+
+          def wr(args, retries=4):
+              last=None
+              for attempt in range(retries):
+                  p=subprocess.run(["npx","wrangler",*args],text=True,env=os.environ,capture_output=True)
+                  if p.returncode==0:
+                      return p.stdout
+                  last=p
+                  time.sleep(2+attempt)
+              print((last.stdout if last else "")[-3000:])
+              print((last.stderr if last else "")[-3000:])
+              raise RuntimeError("WRANGLER_FAILED")
+
+          dbs=json.loads(wr(["d1","list","--json"]))
+          db=next((x for x in dbs if re.search(r"total.?arc",x["name"],re.I)),None)
+          if not db:
+              db=dbs[0] if len(dbs)==1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB=db["name"]
+
+          def q(v):
+              return "'" + str(v).replace("'","''") + "'"
+
+          def rows(sql):
+              raw=json.loads(wr(["d1","execute",DB,"--remote","--json","--command",sql]))
+              raw=raw if isinstance(raw,list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          def scalar(sql,key="n"):
+              rr=rows(sql)
+              return int(rr[0].get(key) or 0) if rr else 0
+
+          inst=rows("SELECT id,name,legalName FROM Institution WHERE legalName="+q(LEGAL_NAME)+" LIMIT 1")
+          if len(inst)!=1:
+              raise RuntimeError("BANK_KALBAR_NOT_FOUND")
+          iid=str(inst[0]["id"])
+
+          tables={r["name"] for r in rows("SELECT name FROM sqlite_master WHERE type='table'")}
+          domain_exists="ICOFRControlDomain" in tables
+
+          elc_domain=[]
+          plc_domain=[]
+          domain_status=[]
+          invalid_source_links=0
+          duplicate_domain_source_links=0
+          if domain_exists:
+              elc_domain=rows("SELECT * FROM ICOFRControlDomain WHERE institutionId="+q(iid)+" AND category='ELC' ORDER BY controlCode")
+              plc_domain=rows("SELECT * FROM ICOFRControlDomain WHERE institutionId="+q(iid)+" AND category='PLC' ORDER BY controlCode")
+              domain_status=rows(
+                  "SELECT category,status,COUNT(*) n FROM ICOFRControlDomain WHERE institutionId="+q(iid)+
+                  " AND category IN ('ELC','PLC') GROUP BY category,status ORDER BY category,status"
+              )
+              invalid_source_links=scalar("""
+                SELECT COUNT(*) n
+                FROM ICOFRControlDomain d
+                LEFT JOIN ControlMaster c ON c.id=d.sourceControlId
+                WHERE d.institutionId="""+q(iid)+""" AND d.category IN ('ELC','PLC')
+                  AND d.sourceControlId IS NOT NULL AND trim(d.sourceControlId)<>''
+                  AND c.id IS NULL
+              """)
+              duplicate_domain_source_links=scalar("""
+                SELECT COUNT(*) n FROM (
+                  SELECT category,sourceControlId,COUNT(*) c
+                  FROM ICOFRControlDomain
+                  WHERE institutionId="""+q(iid)+""" AND category IN ('ELC','PLC')
+                    AND sourceControlId IS NOT NULL AND trim(sourceControlId)<>''
+                  GROUP BY category,sourceControlId HAVING COUNT(*)>1
+                )
+              """)
+
+          controls=scalar("SELECT COUNT(*) n FROM ControlMaster WHERE institutionId="+q(iid))
+          itgc=scalar("SELECT COUNT(*) n FROM ControlMaster WHERE institutionId="+q(iid)+" AND isItgc=1")
+          plc_candidates=scalar(
+              "SELECT COUNT(*) n FROM ControlMaster WHERE institutionId="+q(iid)+" AND COALESCE(isItgc,0)=0 AND controlId NOT LIKE 'ELC-%'"
+          )
+          plc_candidate_key=scalar(
+              "SELECT COUNT(*) n FROM ControlMaster WHERE institutionId="+q(iid)+" AND COALESCE(isItgc,0)=0 AND controlId NOT LIKE 'ELC-%' AND isKeyControl=1"
+          )
+          plc_candidate_icofr_key=scalar(
+              "SELECT COUNT(*) n FROM ControlMaster WHERE institutionId="+q(iid)+" AND COALESCE(isItgc,0)=0 AND controlId NOT LIKE 'ELC-%' AND isIcofrKey=1"
+          )
+          plc_linked=0
+          plc_unlinked=plc_candidates
+          if domain_exists:
+              plc_linked=scalar("""
+                SELECT COUNT(DISTINCT c.id) n
+                FROM ControlMaster c
+                JOIN ICOFRControlDomain d ON d.sourceControlId=c.id
+                WHERE c.institutionId="""+q(iid)+""" AND d.institutionId="""+q(iid)+"""
+                  AND d.category='PLC' AND COALESCE(c.isItgc,0)=0 AND c.controlId NOT LIKE 'ELC-%'
+              """)
+              plc_unlinked=max(0,plc_candidates-plc_linked)
+
+          elc_active=scalar("SELECT COUNT(*) n FROM ControlMaster WHERE institutionId="+q(iid)+" AND controlId LIKE 'ELC-%'")
+          elc_refs=0
+          elc_ref_types=[]
+          if "RCMDraftReference" in tables:
+              elc_refs=scalar(
+                  "SELECT COUNT(*) n FROM RCMDraftReference WHERE institutionId="+q(iid)+
+                  " AND sourceStatus='ILLUSTRATIVE_DRAFT' AND referenceType IN ('ELC_PRINCIPLE_TEMPLATE_REFERENCE','ELC_BPM_NARRATIVE_REFERENCE')"
+              )
+              elc_ref_types=rows(
+                  "SELECT referenceType,COUNT(*) n FROM RCMDraftReference WHERE institutionId="+q(iid)+
+                  " AND sourceStatus='ILLUSTRATIVE_DRAFT' GROUP BY referenceType ORDER BY referenceType"
+              )
+
+          invalid_plc_process=scalar("""
+            SELECT COUNT(*) n
+            FROM ControlMaster c
+            LEFT JOIN BusinessProcess p ON p.id=c.processId
+            WHERE c.institutionId="""+q(iid)+""" AND COALESCE(c.isItgc,0)=0 AND c.controlId NOT LIKE 'ELC-%'
+              AND p.id IS NULL
+          """)
+
+          rcm_integrity=None
+          if "RCMIntegrityRun" in tables:
+              latest=rows(
+                  "SELECT status,runAt,summaryJson FROM RCMIntegrityRun WHERE institutionId="+q(iid)+
+                  " ORDER BY runAt DESC LIMIT 1"
+              )
+              if latest:
+                  rcm_integrity={"status":latest[0].get("status"),"runAt":latest[0].get("runAt")}
+                  try:
+                      summary=json.loads(latest[0].get("summaryJson") or "{}")
+                      rcm_integrity["summary"]=summary
+                  except Exception:
+                      pass
+
+          result={
+              "institution":inst[0],
+              "domainTableExists":domain_exists,
+              "ELC":{
+                  "domainRows":len(elc_domain),
+                  "domainLinkedToControlMaster":sum(1 for x in elc_domain if str(x.get("sourceControlId") or "").strip()),
+                  "illustrativeDraftReferences":elc_refs,
+                  "referenceTypes":elc_ref_types,
+                  "activeControlMasterELC":elc_active,
+                  "policyCheck":"PASS" if elc_active==0 and elc_refs>=17 else "REVIEW"
+              },
+              "PLC":{
+                  "domainRows":len(plc_domain),
+                  "domainLinkedToControlMaster":plc_linked,
+                  "eligibleProcessControlsInControlMaster":plc_candidates,
+                  "eligibleKeyControls":plc_candidate_key,
+                  "eligibleIcofrKeyControls":plc_candidate_icofr_key,
+                  "eligibleControlsNotRepresentedInPLCRegister":plc_unlinked,
+                  "invalidProcessLinks":invalid_plc_process,
+                  "coveragePercent":round((plc_linked/plc_candidates*100),2) if plc_candidates else 0
+              },
+              "domainStatus":domain_status,
+              "invalidDomainSourceLinks":invalid_source_links,
+              "duplicateDomainSourceLinks":duplicate_domain_source_links,
+              "controlMaster":{"total":controls,"itgc":itgc},
+              "latestRCMIntegrity":rcm_integrity
+          }
+          print("=== TOTAL ARC ELC PLC PRODUCTION AUDIT ===")
+          print(json.dumps(result,indent=2,ensure_ascii=False))
+          PY
+          python /tmp/audit_elc_plc.py
+          rm -f /tmp/audit_elc_plc.py
