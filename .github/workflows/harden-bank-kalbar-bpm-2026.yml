@@ -1,0 +1,120 @@
+name: Harden Bank Kalbar BPM 2026
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/harden-bank-kalbar-bpm-2026.py'
+      - '.github/workflows/harden-bank-kalbar-bpm-2026.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-bank-kalbar-bpm-hardening-2026
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+      TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Harden source-backed BPM hierarchy
+        run: python scripts/harden-bank-kalbar-bpm-2026.py
+
+      - name: Verify production BPM and ICOFR linkage
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is required."
+            exit 1
+          fi
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+
+          fetch_json() {
+            local name="$1"
+            local path="$2"
+            local output="/tmp/totalarc-bpm-${name}.json"
+            local code
+            code="$(curl --silent --show-error --location --max-time 25               --output "$output"               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$BASE_URL$path" || true)"
+            if [ "$code" != "200" ]; then
+              echo "::error::$name returned HTTP ${code:-unknown}."
+              cat "$output" 2>/dev/null || true
+              exit 1
+            fi
+            cat "$output"
+          }
+
+          PROCESS_JSON="$(fetch_json processes /api/processes)"
+          SCOPE_JSON="$(fetch_json scoping /api/icofr/scoping)"
+
+          CKPN_ID="$(printf '%s' "$PROCESS_JSON" | jq -r '
+            [.processes[] | select(
+              .processId == "CKPN" and
+              .name == "Cadangan Kerugian Penurunan Nilai (CKPN/ECL)" and
+              .level == 2 and
+              .status == "Draft" and
+              .isIcofrRelevant == true
+            )][0].id // empty
+          ')"
+          [ -n "$CKPN_ID" ] || { echo "::error::Canonical CKPN L2 process is missing."; exit 1; }
+
+          TRY_ID="$(printf '%s' "$PROCESS_JSON" | jq -r '
+            [.processes[] | select(.processId == "TRY" and .level == 2)][0].id // empty
+          ')"
+          [ -n "$TRY_ID" ] || { echo "::error::Treasury L2 process is missing."; exit 1; }
+
+          printf '%s' "$PROCESS_JSON" | jq -e --arg ckpn "$CKPN_ID" --arg try "$TRY_ID" '
+            ([.processes[] | select(
+              .processId == "MRA-SP-2EFA79E" and
+              .name == "Perhitungan Expected Credit Loss" and
+              .level == 3 and
+              .parentProcessId == $ckpn
+            )] | length) == 1 and
+            ([.processes[] | select(
+              .processId == "TRY-SP-REVREPO" and
+              .name == "Transaksi Reverse Repo (Efek Dibeli dengan Janji Dijual Kembali)" and
+              .level == 3 and
+              .parentProcessId == $try and
+              .status == "Draft" and
+              .criticality == "Not Assessed"
+            )] | length) == 1 and
+            ([.processes[] | select(
+              .processId == "TRY-SP-REVREPO" and
+              (.activities | length) == 0 and
+              (.objectives | length) == 0 and
+              .sipoc == null
+            )] | length) == 1
+          ' >/dev/null
+
+          printf '%s' "$SCOPE_JSON" | jq -e --arg ckpn "$CKPN_ID" '
+            ([.scopes[] | select(
+              .fiscalYear == 2026 and
+              .scopeName == "Bank Kalbar ICOFR Tahun Buku 2026" and
+              ([.items[] | select(
+                .itemType == "Business Process" and
+                .code == "P-05" and
+                .sourceId == $ckpn
+              )] | length) == 1
+            )] | length) == 1
+          ' >/dev/null
+
+          echo "bpm-hardening: healthy"
