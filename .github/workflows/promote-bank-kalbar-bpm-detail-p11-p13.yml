@@ -1,0 +1,107 @@
+name: Promote Bank Kalbar BPM detail P11 P13
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/promote-bank-kalbar-bpm-detail-p11-p13.py'
+      - 'src/app/processes/page.tsx'
+      - '.github/workflows/promote-bank-kalbar-bpm-detail-p11-p13.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-bank-kalbar-bpm-detail-p11-p13
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Promote source-backed P11 and P13 BPM detail
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/promote-bank-kalbar-bpm-detail-p11-p13.py
+
+      - name: Verify production BPM detail
+        env:
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is required."
+            exit 1
+          fi
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          OUT=/tmp/processes.json
+          CODE="$(curl --silent --show-error --location --max-time 30 \
+            --output "$OUT" --write-out "%{http_code}" \
+            --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" \
+            "$BASE_URL/api/processes" || true)"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::processes API returned HTTP ${CODE:-unknown}."
+            cat "$OUT" || true
+            exit 1
+          fi
+
+          jq -e '
+            .storage == "cloudflare-d1" and
+            ([.processes[] | select(.processId | startswith("JLN-"))] | length) == 6 and
+            ([.processes[] | select(.processId | startswith("ITGC-"))] | length) == 4 and
+            ([.processes[] | select(.processId | startswith("JLN-")) | .activities[]] | length) == 26 and
+            ([.processes[] | select(.processId | startswith("ITGC-")) | .activities[]] | length) == 24 and
+            ([.processes[] | select(.processId | startswith("JLN-")) | .activities[] |
+              select(
+                ((.performer // "") | length) > 0 or
+                ((.systemUsed // "") | length) > 0 or
+                ((.inputData // "") | length) > 0 or
+                ((.outputData // "") | length) > 0
+              )
+            ] | length) == 0 and
+            ([.processes[] | select(.processId | startswith("ITGC-")) | .activities[] |
+              select(
+                ((.performer // "") | length) > 0 and
+                ((.inputData // "") | length) > 0 and
+                ((.outputData // "") | length) > 0
+              )
+            ] | length) == 24 and
+            ([.processes[] | select(
+              .processId == "JLN-DPK-SERVICE" and
+              ([.activities[] | select(.name == "Penyambutan & Identifikasi Kebutuhan Nasabah")] | length) == 1 and
+              ([.activities[] | select(.name == "Layanan Pengelolaan Keluhan DPK")] | length) == 1
+            )] | length) == 1 and
+            ([.processes[] | select(
+              .processId == "ITGC-APD" and
+              ([.activities[] | select(
+                .name == "Pengajuan Permintaan Akses/User ID" and
+                .performer == "Business Unit" and
+                .inputData == "Formulir Permintaan User ID" and
+                .outputData == "Formulir Permintaan User ID (terisi & disetujui atasan)"
+              )] | length) == 1
+            )] | length) == 1 and
+            ([.processes[] | select(
+              .processId == "ITGC-CO" and
+              ([.activities[] | select(
+                .name == "Eksekusi dan Pencatatan Backup End of Day" and
+                .nature == "Automated" and
+                (.systemUsed | contains("Backend/Frontend Olibs 724"))
+              )] | length) == 1
+            )] | length) == 1 and
+            ([.processes[] | select(.processId == "JLN" or .processId == "ITGC") | select(.sipoc != null)] | length) == 0
+          ' "$OUT" >/dev/null
+
+          echo "bank-kalbar-bpm-p11-p13: healthy"
