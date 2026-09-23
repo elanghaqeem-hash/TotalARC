@@ -88,6 +88,8 @@ export async function GET(request: Request) {
     if (view === 'summary') {
       await ensureIcofrScopeSchema();
       await ensureIcofrDomainSchema();
+      await ensureIcofrTraceabilitySchema();
+      await ensureIcofrCoverageSchema();
       await ensureIcofrTestingPlanSchema();
       await ensureIcofrCertificationSchema();
       await ensureIcofrExecutiveReportingSchema();
