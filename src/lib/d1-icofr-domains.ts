@@ -245,6 +245,58 @@ export async function listIcofrControls(category: IcofrControlCategory) {
   };
 }
 
+export async function listIcofrControlCandidates(category: IcofrControlCategory) {
+  const db = await ensureIcofrDomainSchema();
+  const institution = await primaryInstitution(db);
+  if (!institution || category !== 'ITAC') return [];
+
+  const sourceMetadataReady = await first<{ count?: number }>(
+    db,
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='RCMControlSourceMetadata'"
+  );
+  if (!Number(sourceMetadataReady?.count || 0)) return [];
+
+  const rows = await all<Record<string, unknown>>(
+    db,
+    `SELECT c.id,c.controlId,c.name,c.nature,c.type,c.method,c.frequency,c.systemDependency,c.status,
+            bp.processId AS enterpriseProcessId,bp.name AS processName,
+            sm.sourceRawNature,sm.sourceRawType,sm.sourceRawApplication,
+            sm.validationStatus,sm.taxonomyStatus
+       FROM ControlMaster c
+       JOIN BusinessProcess bp ON bp.id=c.processId
+       LEFT JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id
+      WHERE c.institutionId=?
+        AND c.isItgc=0
+        AND c.status='Draft'
+        AND (
+          lower(COALESCE(c.nature,'')) LIKE '%automat%'
+          OR lower(COALESCE(c.nature,'')) LIKE '%otomatis%'
+          OR lower(COALESCE(c.method,'')) LIKE '%automat%'
+          OR lower(COALESCE(c.method,'')) LIKE '%interface%'
+        )
+      ORDER BY c.controlId ASC`,
+    [institution.id]
+  );
+
+  return rows.map(row => {
+    const systemDependency = String(row.systemDependency || '');
+    const contradiction =
+      systemDependency.toLowerCase().includes('tidak berlaku') ||
+      systemDependency.toLowerCase().includes('pengendalian manual');
+
+    return {
+      ...row,
+      candidateStatus: contradiction
+        ? 'CONTRADICTORY_SOURCE_CLASSIFICATION'
+        : 'PROCESS_OWNER_REVIEW_PENDING',
+      promotionEligible: false,
+      governanceNote: contradiction
+        ? 'Source classifies this control as automated while its application field says manual/not applicable. Reconcile the source before ITAC promotion.'
+        : 'Source-backed automated-control candidate. Process Owner and walkthrough validation are required before ITAC promotion.'
+    };
+  });
+}
+
 export async function saveIcofrControl(input: Record<string, unknown>) {
   const db = await ensureIcofrDomainSchema();
   const institution = await primaryInstitution(db);

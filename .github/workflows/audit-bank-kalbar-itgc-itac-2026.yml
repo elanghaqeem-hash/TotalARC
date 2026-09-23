@@ -1,0 +1,31 @@
+name: Audit Bank Kalbar ITGC ITAC 2026
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/audit-bank-kalbar-itgc-itac-2026.py'
+      - '.github/workflows/audit-bank-kalbar-itgc-itac-2026.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Validate audit script syntax
+        run: python -m py_compile scripts/audit-bank-kalbar-itgc-itac-2026.py
+      - name: Audit production ITGC and ITAC
+        run: python scripts/audit-bank-kalbar-itgc-itac-2026.py

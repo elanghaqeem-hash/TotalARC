@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { ICOFR_CONTROL_CATEGORIES, listIcofrControls, saveIcofrControl, type IcofrControlCategory } from '@/lib/d1-icofr-domains';
+import { ICOFR_CONTROL_CATEGORIES, listIcofrControlCandidates, listIcofrControls, saveIcofrControl, type IcofrControlCategory } from '@/lib/d1-icofr-domains';
 import { listBusinessProcesses, listControls } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
@@ -13,16 +13,18 @@ export async function GET(request: Request) {
   try {
     const category = categoryFrom(new URL(request.url).searchParams.get('category'));
     if (!category) return NextResponse.json({ error: 'Valid ICOFR control category is required.' }, { status: 400 });
-    const [data, processData, sourceControls] = await Promise.all([
+    const [data, processData, sourceControls, candidates] = await Promise.all([
       listIcofrControls(category),
       listBusinessProcesses(),
-      listControls()
+      listControls(),
+      listIcofrControlCandidates(category)
     ]);
     return NextResponse.json({
       ...data,
       category,
       processes: processData.processes,
       sourceControls,
+      candidates,
       storage: 'cloudflare-d1'
     });
   } catch (error) {
