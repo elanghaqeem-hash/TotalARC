@@ -53,19 +53,14 @@ export default function RisksPage() {
   const loadRisks = () => {
     setRiskLoading(true);
     setRiskLoadError('');
-    Promise.all([
-      fetch('/api/risks').then(res => {
+    fetch('/api/risks')
+      .then(res => {
         if (!res.ok) throw new Error('Unable to load risks.');
         return res.json();
-      }),
-      fetch('/api/processes?view=lookup').then(res => {
-        if (!res.ok) throw new Error('Unable to load processes.');
-        return res.json();
       })
-    ])
-      .then(([riskData, processData]) => {
+      .then(riskData => {
         const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
-        const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
+        const nextProcesses = Array.isArray(riskData.processes) ? riskData.processes : [];
         setRisks(nextRisks);
         setProcesses(nextProcesses);
 
