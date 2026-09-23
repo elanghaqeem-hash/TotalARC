@@ -2012,8 +2012,13 @@ export async function listRcmRows() {
         r.impact AS riskImpact,
         r.category AS riskCategory,
         r.activityId,
+        r.inherentLikelihood,
+        r.inherentImpact,
         r.inherentScore,
         r.inherentRating,
+        orm.sourceRiskRating AS inherentSourceRating,
+        orm.sourceStatus AS inherentSourceStatus,
+        orm.reviewRequired AS inherentReviewRequired,
         r.residualScore,
         r.residualRating,
         (SELECT objective
@@ -2060,6 +2065,7 @@ export async function listRcmRows() {
       LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
       LEFT JOIN ControlRiskMapping m ON m.controlId = c.id
       LEFT JOIN RiskMaster r ON r.id = m.riskId
+      LEFT JOIN OperationalRiskMetadata orm ON orm.riskId = r.id
       LEFT JOIN RCMControlSourceMetadata sm ON sm.controlId = c.id
       ORDER BY p.processId ASC, COALESCE(r.riskId, 'ZZZ') ASC, c.controlId ASC`
   );
@@ -2080,8 +2086,23 @@ export async function listRcmRows() {
       riskEvent: mapped ? row.riskEvent : 'Source-backed control is not yet linked to a validated RiskMaster record.',
       riskImpact: mapped ? row.riskImpact : null,
       riskCategory: mapped ? row.riskCategory : 'Pending',
+      inherentLikelihood: mapped ? Number(row.inherentLikelihood || 0) : 0,
+      inherentImpact: mapped ? Number(row.inherentImpact || 0) : 0,
       inherentScore: mapped ? Number(row.inherentScore || 0) : 0,
       inherentRating: mapped ? row.inherentRating || 'Not Assessed' : 'Not Assessed',
+      inherentSourceRating: mapped && row.inherentSourceRating ? String(row.inherentSourceRating) : null,
+      inherentSourceStatus: mapped && row.inherentSourceStatus ? String(row.inherentSourceStatus) : null,
+      inherentReviewRequired: mapped ? bool(row.inherentReviewRequired) : false,
+      inherentAssessmentStatus: !mapped
+        ? 'RISK_MAPPING_PENDING'
+        : Number(row.inherentLikelihood || 0) >= 1 &&
+            Number(row.inherentLikelihood || 0) <= 5 &&
+            Number(row.inherentImpact || 0) >= 1 &&
+            Number(row.inherentImpact || 0) <= 5
+          ? 'ASSESSED_1_5'
+          : row.inherentSourceRating
+            ? 'SOURCE_RATING_PENDING_1_5_VALIDATION'
+            : 'PENDING_1_5_ASSESSMENT',
       residualScore: mapped ? Number(row.residualScore || 0) : 0,
       residualRating: mapped ? row.residualRating || 'Not Assessed' : 'Not Assessed',
       controlId: row.enterpriseControlId,
