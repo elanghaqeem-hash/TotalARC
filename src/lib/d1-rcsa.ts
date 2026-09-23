@@ -62,6 +62,17 @@ async function executeSchemaScript(db: D1DatabaseLike, script: string) {
   }
 }
 
+async function rcsaSchemaIsCurrent(db: D1DatabaseLike) {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+         FROM sqlite_master
+        WHERE type = 'table' AND name IN ('AssessmentCampaign','AssessmentScope','AssessmentResponse','AssuranceTask')`
+    )
+    .first<{ count?: number }>();
+  return Number(row?.count || 0) === 4;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -96,6 +107,10 @@ export async function ensureRcsaSchema() {
 
   rcsaSchemaReady = (async () => {
     const db = await getDb();
+
+    if (await rcsaSchemaIsCurrent(db)) {
+      return db;
+    }
 
     await executeSchemaScript(db, `
       CREATE TABLE IF NOT EXISTS AssessmentCampaign (
