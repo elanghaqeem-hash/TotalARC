@@ -1,0 +1,42 @@
+name: Harden Bank Kalbar RCM 2026
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/harden-bank-kalbar-rcm-2026.py'
+      - '.github/workflows/harden-bank-kalbar-rcm-2026.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-bank-kalbar-rcm-hardening-2026
+  cancel-in-progress: false
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Validate RCM hardening script syntax
+        run: python -m py_compile scripts/harden-bank-kalbar-rcm-2026.py
+
+      - name: Promote and harden source-governed RCM
+        run: python scripts/harden-bank-kalbar-rcm-2026.py
+
+      - name: Audit post-hardening D1 RCM
+        run: python scripts/audit-bank-kalbar-rcm-2026.py
