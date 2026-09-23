@@ -14,7 +14,6 @@ import {
   Link2,
   RefreshCw,
   Save,
-  ShieldCheck,
   Trash2,
   Upload
 } from 'lucide-react';
@@ -819,17 +818,6 @@ export default function EvidenceRepositoryPage() {
             </section>
           )}
 
-          <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-[10px] leading-4 text-cyan-900">
-            <div className="flex items-start gap-2">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-              <div>
-                <strong>Current storage architecture:</strong> real file bytes are chunked and persisted in Cloudflare D1, with SHA-256 checked before download.
-                This is functional for controlled evidence files up to {formatBytes(Number(data?.limits?.maxFileBytes || 0))} per version.
-                For high-volume enterprise production, an R2 object-storage binding should replace binary chunks while retaining the same D1 metadata,
-                hashes, links, retention and version model.
-              </div>
-            </div>
-          </section>
         </>
       )}
     </div>
