@@ -525,6 +525,9 @@ export async function listBpmDraftRcmRows() {
       draftReferenceId: String(ref.id),
       isDraftRcm: true,
       userValidationRequired: true,
+      riskEditable: !risk.existingRiskId,
+      lastEditedAt: payload.lastEditedAt || null,
+      lastEditedBy: payload.lastEditedBy || null,
       processId: process.processId || String(ref.sourceReference || '').replace(/^BPM:/, ''),
       processName: process.name || 'BPM-derived draft',
       processCategory: process.categoryName || 'Uncategorized',
@@ -585,6 +588,146 @@ export async function listBpmDraftRcmRows() {
       retestResult: null
     };
   });
+}
+
+
+export async function updateBpmDerivedRcmDraft(input: {
+  draftReferenceId: string;
+  updates: {
+    processObjective?: string | null;
+    risk?: Record<string, unknown>;
+    control?: Record<string, unknown>;
+  };
+  updatedBy?: string | null;
+}) {
+  const db = await getDb();
+  const updatedBy = String(input.updatedBy || 'User').trim() || 'User';
+  const draft = await first<Record<string, unknown>>(
+    db,
+    `SELECT *
+       FROM RCMDraftReference
+      WHERE id = ?
+        AND referenceType = 'BPM_RCM_DRAFT'
+      LIMIT 1`,
+    [input.draftReferenceId]
+  );
+
+  if (!draft) throw new Error('DRAFT_NOT_FOUND');
+  if (String(draft.sourceStatus) !== 'DRAFT_PENDING_VALIDATION' || !bool(draft.validationRequired)) {
+    throw new Error('DRAFT_ALREADY_REVIEWED');
+  }
+
+  let payload: any;
+  try {
+    payload = JSON.parse(String(draft.payloadJson || '{}'));
+  } catch {
+    throw new Error('INVALID_DRAFT_PAYLOAD');
+  }
+
+  const updates = input.updates || {};
+  const riskUpdates = updates.risk && typeof updates.risk === 'object' ? updates.risk : {};
+  const controlUpdates = updates.control && typeof updates.control === 'object' ? updates.control : {};
+  const riskEditable = !payload?.risk?.existingRiskId;
+
+  const riskFields = ['name', 'description', 'cause', 'event', 'impact', 'category', 'ownerName'];
+  const controlFields = [
+    'name',
+    'description',
+    'objective',
+    'controlOwner',
+    'type',
+    'nature',
+    'method',
+    'frequency',
+    'evidenceRequirement',
+    'systemDependency'
+  ];
+
+  if (!riskEditable && riskFields.some(field => Object.prototype.hasOwnProperty.call(riskUpdates, field))) {
+    throw new Error('EXISTING_RISK_LOCKED');
+  }
+
+  const cleanText = (value: unknown, allowNull = false) => {
+    if (value === null && allowNull) return null;
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed || (allowNull ? null : undefined);
+  };
+
+  const oldPayload = JSON.parse(JSON.stringify(payload));
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'processObjective')) {
+    const objective = cleanText(updates.processObjective, true);
+    if (objective !== undefined) payload.processObjective = objective;
+  }
+
+  payload.risk = payload.risk || {};
+  if (riskEditable) {
+    for (const field of riskFields) {
+      if (!Object.prototype.hasOwnProperty.call(riskUpdates, field)) continue;
+      const value = cleanText(riskUpdates[field], field === 'description');
+      if (value !== undefined) payload.risk[field] = value;
+    }
+  }
+
+  payload.control = payload.control || {};
+  for (const field of controlFields) {
+    if (!Object.prototype.hasOwnProperty.call(controlUpdates, field)) continue;
+    const allowNull = field === 'systemDependency';
+    const value = cleanText(controlUpdates[field], allowNull);
+    if (value !== undefined) payload.control[field] = value;
+  }
+
+  const requiredRiskFields = riskEditable ? ['name', 'cause', 'event', 'impact', 'category', 'ownerName'] : [];
+  const requiredControlFields = [
+    'name',
+    'description',
+    'objective',
+    'controlOwner',
+    'type',
+    'nature',
+    'method',
+    'frequency',
+    'evidenceRequirement'
+  ];
+
+  if (
+    requiredRiskFields.some(field => !String(payload.risk?.[field] || '').trim()) ||
+    requiredControlFields.some(field => !String(payload.control?.[field] || '').trim())
+  ) {
+    throw new Error('DRAFT_REQUIRED_FIELD_MISSING');
+  }
+
+  payload.lastEditedAt = nowIso();
+  payload.lastEditedBy = updatedBy;
+  payload.validationRequired = true;
+
+  await run(
+    db,
+    `UPDATE RCMDraftReference
+        SET payloadJson = ?,
+            updatedAt = ?
+      WHERE id = ?`,
+    [JSON.stringify(payload), payload.lastEditedAt, draft.id]
+  );
+
+  await writeAudit(db, {
+    institutionId: String(draft.institutionId),
+    userName: updatedBy,
+    action: 'UPDATE_DRAFT',
+    recordId: String(draft.id),
+    oldValue: oldPayload,
+    newValue: payload,
+    reason: 'User updated BPM-derived RCM draft before validation.'
+  });
+
+  return {
+    draftReferenceId: String(draft.id),
+    status: 'DRAFT_UPDATED',
+    validationStatus: 'PENDING_USER_VALIDATION',
+    updatedAt: payload.lastEditedAt,
+    updatedBy
+  };
 }
 
 export async function reviewBpmDerivedRcmDraft(input: {
