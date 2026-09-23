@@ -1,0 +1,32 @@
+name: Audit Bank Kalbar RCM 2026
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/audit-bank-kalbar-rcm-2026.py'
+      - '.github/workflows/audit-bank-kalbar-rcm-2026.yml'
+      - 'scripts/harden-bank-kalbar-rcm-2026.py'
+      - 'src/app/api/rcm/route.ts'
+      - 'src/app/rcm/page.tsx'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Audit current production RCM
+        run: python scripts/audit-bank-kalbar-rcm-2026.py
