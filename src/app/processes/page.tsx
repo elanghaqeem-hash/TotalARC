@@ -769,6 +769,9 @@ export default function ProcessesPage() {
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
                     <option value="Core">Core</option>
+                    <option value="Finance">Finance</option>
+                    <option value="Technology">Technology</option>
+                    <option value="Governance">Governance</option>
                     <option value="Support">Support</option>
                     <option value="Management">Management</option>
                   </select>
