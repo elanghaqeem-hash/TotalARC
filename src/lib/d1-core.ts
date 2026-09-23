@@ -113,15 +113,17 @@ async function coreDomainSchemaIsCurrent(db: D1DatabaseLike) {
     'AuditLog'
   ];
   const tableList = tableNames.map(name => `'${name}'`).join(',');
+  const tableRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+         FROM sqlite_master
+        WHERE type = 'table' AND name IN (${tableList})`
+    )
+    .first<{ count?: number }>();
 
-  const [tableRow, processColumns, riskColumns, controlColumns, categoryRow] = await Promise.all([
-    db
-      .prepare(
-        `SELECT COUNT(*) AS count
-           FROM sqlite_master
-          WHERE type = 'table' AND name IN (${tableList})`
-      )
-      .first<{ count?: number }>(),
+  if (Number(tableRow?.count || 0) !== tableNames.length) return false;
+
+  const [processColumns, riskColumns, controlColumns, categoryRow] = await Promise.all([
     db.prepare('PRAGMA table_info(BusinessProcess)').all<{ name?: string }>(),
     db.prepare('PRAGMA table_info(RiskMaster)').all<{ name?: string }>(),
     db.prepare('PRAGMA table_info(ControlMaster)').all<{ name?: string }>(),
@@ -134,7 +136,6 @@ async function coreDomainSchemaIsCurrent(db: D1DatabaseLike) {
       .first<{ count?: number }>()
   ]);
 
-  if (Number(tableRow?.count || 0) !== tableNames.length) return false;
   if (Number(categoryRow?.count || 0) !== PROCESS_CATEGORIES.length) return false;
 
   const processColumnNames = new Set(
