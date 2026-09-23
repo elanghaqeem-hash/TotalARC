@@ -1,0 +1,77 @@
+name: Verify Bank Kalbar RCM production
+
+on:
+  workflow_run:
+    workflows: ["Deploy Total ARC to Cloudflare"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+      TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+    steps:
+      - name: Verify governed RCM through production API
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is required."
+            exit 1
+          fi
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          OUTPUT=/tmp/totalarc-rcm.json
+
+          healthy=false
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            code="$(curl --silent --show-error --location --max-time 25               --output "$OUTPUT"               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$BASE_URL/api/rcm" || true)"
+
+            if [ "$code" = "200" ] && jq -e '
+              (.governance.legacyTotal == 124) and
+              ((.governance.requirements | length) == 10) and
+              (.governance.latestIntegrity.status == "PASS") and
+              (([.rcm[] | select(.sourceCycle == "SYH") | .controlId] | unique | length) == 42) and
+              (([.rcm[] | select(.isItgc == true) | .controlId] | unique | length) == 10) and
+              (([.rcm[] | select((.controlId | startswith("ELC-")))] | length) == 0) and
+              (([.governance.draftReferenceSummary[]
+                  | select(.sourceStatus == "ILLUSTRATIVE_DRAFT")
+                  | (.records // 0)] | add // 0) >= 17)
+            ' "$OUTPUT" >/dev/null 2>&1; then
+              healthy=true
+              break
+            fi
+
+            echo "RCM governance not converged yet (attempt $attempt/10, HTTP ${code:-unknown})."
+            sleep 15
+          done
+
+          if [ "$healthy" != "true" ]; then
+            echo "::error::Production RCM governance verification failed."
+            cat "$OUTPUT" | jq '{
+              total,
+              governance,
+              uus: ([.rcm[] | select(.sourceCycle == "SYH") | .controlId] | unique | length),
+              itgc: ([.rcm[] | select(.isItgc == true) | .controlId] | unique | length)
+            }' || cat "$OUTPUT"
+            exit 1
+          fi
+
+          jq '{
+            totalRows: .total,
+            uniqueControls: ([.rcm[].controlId] | unique | length),
+            legacyControls: .governance.legacyTotal,
+            designRequirements: (.governance.requirements | length),
+            uusDraftControls: ([.rcm[] | select(.sourceCycle == "SYH") | .controlId] | unique | length),
+            itgcControls: ([.rcm[] | select(.isItgc == true) | .controlId] | unique | length),
+            pendingRiskMappings: ([.rcm[] | select((.mappingStatus // "") | startswith("PENDING")) | .controlId] | unique | length),
+            integrity: .governance.latestIntegrity.status
+          }' "$OUTPUT"

@@ -1,17 +1,21 @@
 import { NextResponse } from 'next/server';
-import { listRcmRows } from '@/lib/d1-core';
+import { getRcmGovernanceData, listRcmRows } from '@/lib/d1-core';
 import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const baseRows = await listRcmRows();
+    const [baseRows, governance] = await Promise.all([
+      listRcmRows(),
+      getRcmGovernanceData()
+    ]);
     const rcm = await enrichRcmWithAssurance(baseRows);
 
     return NextResponse.json({
       rcm,
       total: rcm.length,
+      governance,
       storage: 'cloudflare-d1'
     });
   } catch (error) {
