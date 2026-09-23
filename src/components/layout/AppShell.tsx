@@ -319,7 +319,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 lg:hidden"
               aria-label="Open navigation"
             >
               <Menu className="h-5 w-5" />
@@ -336,7 +336,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <img
                 src="/brand/total-arc-logo.svg"
                 alt="Total ARC"
-                className="h-[42px] w-auto max-w-[122px] object-contain sm:h-[48px] sm:max-w-[150px] md:max-w-[165px]"
+                className="h-[42px] w-auto max-w-[132px] object-contain sm:h-[48px] sm:max-w-[150px] md:max-w-[165px]"
               />
             </Link>
           </div>
@@ -344,7 +344,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={() => setAiDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-2.5 py-2.5 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:px-3 sm:text-[11px]"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-2xl bg-gradient-to-r from-brand-600 to-sky-500 px-3 py-2.5 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:px-3.5 sm:text-[11px]"
             >
               <Sparkles className="h-3.5 w-3.5" />
               <span>ARC AI</span>
@@ -467,7 +467,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </aside>
         </div>
 
-        <main className="min-w-0 flex-1 pb-20 lg:pb-6">{children}</main>
+        <main className="min-w-0 flex-1 pb-24 lg:pb-6">{children}</main>
       </div>
 
       {mobileMenuOpen && (
@@ -497,27 +497,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex justify-around border-t border-slate-200 bg-white/95 px-2 py-2 shadow-[0_-8px_30px_-20px_rgba(15,23,42,0.45)] backdrop-blur lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 flex justify-around border-t border-slate-200 bg-white/95 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_-20px_rgba(15,23,42,0.45)] backdrop-blur lg:hidden">
         {mobileItems.map(item => {
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex min-w-[56px] flex-col items-center rounded-xl px-2 py-1 text-[9px] font-bold ${
+              className={`flex min-h-[54px] min-w-[58px] flex-col items-center justify-center rounded-2xl px-2 py-1.5 text-[10px] font-bold ${
                 pathname === item.href ? 'bg-brand-50 text-brand-700' : 'text-slate-500'
               }`}
             >
-              <Icon className="h-[18px] w-[18px]" />
+              <Icon className="h-5 w-5" />
               <span className="mt-0.5">{item.label}</span>
             </Link>
           );
         })}
         <button
           onClick={() => setMobileMenuOpen(true)}
-          className="flex min-w-[56px] flex-col items-center rounded-xl px-2 py-1 text-[9px] font-bold text-slate-500"
+          className="flex min-h-[54px] min-w-[58px] flex-col items-center justify-center rounded-2xl px-2 py-1.5 text-[10px] font-bold text-slate-500"
         >
-          <Menu className="h-[18px] w-[18px]" />
+          <Menu className="h-5 w-5" />
           <span className="mt-0.5">More</span>
         </button>
       </nav>
