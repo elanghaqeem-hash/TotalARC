@@ -32,7 +32,10 @@ export default function ControlsPage() {
   const [saveError, setSaveError] = useState('');
   const [controlLoading, setControlLoading] = useState(true);
   const [controlLoadError, setControlLoadError] = useState('');
+  const [controlDetailLoading, setControlDetailLoading] = useState(true);
+  const [controlDetailError, setControlDetailError] = useState('');
   const control360Ref = useRef<HTMLDivElement | null>(null);
+  const controlDetailRequestRef = useRef(0);
   const [creatingRelatedRisk, setCreatingRelatedRisk] = useState(false);
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaveError, setRiskSaveError] = useState('');
@@ -63,10 +66,54 @@ export default function ControlsPage() {
     isIcofrKey: false
   });
 
+  const loadControlDetail = async (control: any, scrollToDetail = false) => {
+    if (!control?.id) {
+      setSelectedControl(null);
+      setControlDetailLoading(false);
+      return;
+    }
+
+    const requestId = controlDetailRequestRef.current + 1;
+    controlDetailRequestRef.current = requestId;
+    setSelectedControl(control);
+    setControlDetailLoading(true);
+    setControlDetailError('');
+
+    if (scrollToDetail) {
+      window.requestAnimationFrame(() => {
+        control360Ref.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      });
+    }
+
+    try {
+      const res = await fetch(
+        `/api/controls?view=detail&id=${encodeURIComponent(String(control.id))}`,
+        { cache: 'no-store' }
+      );
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Unable to load control profile.');
+      if (controlDetailRequestRef.current !== requestId) return;
+      setSelectedControl(payload.control || control);
+    } catch (error) {
+      if (controlDetailRequestRef.current !== requestId) return;
+      console.error(error);
+      setControlDetailError(
+        error instanceof Error ? error.message : 'Unable to load control profile.'
+      );
+    } finally {
+      if (controlDetailRequestRef.current === requestId) {
+        setControlDetailLoading(false);
+      }
+    }
+  };
+
   const loadControls = () => {
     setControlLoading(true);
     setControlLoadError('');
-    fetch('/api/controls')
+    fetch('/api/controls?view=list', { cache: 'no-store' })
       .then(res => {
         if (!res.ok) throw new Error('Unable to load controls.');
         return res.json();
@@ -80,8 +127,16 @@ export default function ControlsPage() {
         setProcesses(nextProcesses);
         setRisks(nextRisks);
 
-        if (nextControls.length > 0 && !selectedControl) {
-          setSelectedControl(nextControls[0]);
+        const nextSelected =
+          nextControls.find((control: any) => control.id === selectedControl?.id) ||
+          nextControls[0] ||
+          null;
+        setSelectedControl(nextSelected);
+
+        if (nextSelected) {
+          void loadControlDetail(nextSelected);
+        } else {
+          setControlDetailLoading(false);
         }
 
         setFormData(prev => {
@@ -105,6 +160,7 @@ export default function ControlsPage() {
         setControlLoadError(
           error instanceof Error ? error.message : 'Unable to load control data.'
         );
+        setControlDetailLoading(false);
       })
       .finally(() => {
         setControlLoading(false);
@@ -139,6 +195,8 @@ export default function ControlsPage() {
         [...current, payload].sort((a, b) => String(a.controlId).localeCompare(String(b.controlId)))
       );
       setSelectedControl(payload);
+      setControlDetailLoading(false);
+      setControlDetailError('');
       setFormData({
         controlId: '',
         name: '',
@@ -174,14 +232,7 @@ export default function ControlsPage() {
   const availableRisks = risks.filter(risk => risk.processId === formData.processId);
 
   const openControl360 = (control: any) => {
-    setSelectedControl(control);
-
-    window.requestAnimationFrame(() => {
-      control360Ref.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start'
-      });
-    });
+    void loadControlDetail(control, true);
   };
 
   const handleCreateRelatedRisk = async () => {
@@ -299,7 +350,7 @@ export default function ControlsPage() {
             return (
               <div
                 key={c.id}
-                onClick={() => setSelectedControl(c)}
+                onClick={() => void loadControlDetail(c)}
                 className={`p-4 rounded-xl border transition-all cursor-pointer ${
                   isSelected
                     ? 'bg-brand-50/50 border-brand-500 shadow-md ring-1 ring-brand-400'
@@ -363,8 +414,13 @@ export default function ControlsPage() {
 
         {/* Right Detail: Control 360 (7 cols) */}
         <div ref={control360Ref} className="scroll-mt-24 lg:col-span-7">
-          {controlLoading ? (
+          {controlLoading || controlDetailLoading ? (
             <DataLoadingState label="Loading control profile..." variant="profile" className="min-h-[220px]" />
+          ) : controlDetailError ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-xs text-rose-700">
+              <strong className="font-black">Control profile unavailable.</strong>{' '}
+              {controlDetailError}
+            </div>
           ) : selectedControl ? (
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
               <div className="border-b border-slate-100 pb-4">
