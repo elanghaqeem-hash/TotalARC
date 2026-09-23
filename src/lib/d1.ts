@@ -67,12 +67,36 @@ async function executeSchemaScript(db: D1DatabaseLike, script: string) {
   }
 }
 
+async function institutionSchemaIsCurrent(db: D1DatabaseLike) {
+  const [tableRow, institutionColumns] = await Promise.all([
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('Institution','AuditLog')"
+      )
+      .first<{ count?: number }>(),
+    db.prepare('PRAGMA table_info(Institution)').all<{ name?: string }>()
+  ]);
+
+  const columns = new Set(
+    (institutionColumns.results || []).map(column => String(column.name || ''))
+  );
+
+  return (
+    Number(tableRow?.count || 0) === 2 &&
+    ['legalName', 'institutionType', 'businessModel', 'operatingModel', 'updatedAt'].every(name =>
+      columns.has(name)
+    )
+  );
+}
+
 let institutionSchemaReady: Promise<void> | null = null;
 
 async function ensureSchema(db: D1DatabaseLike) {
   if (institutionSchemaReady) return institutionSchemaReady;
 
-  institutionSchemaReady = executeSchemaScript(db, `
+  institutionSchemaReady = (async () => {
+    if (await institutionSchemaIsCurrent(db)) return;
+    await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS Institution (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -119,7 +143,8 @@ async function ensureSchema(db: D1DatabaseLike) {
     );
     CREATE INDEX IF NOT EXISTS idx_audit_institution ON AuditLog(institutionId);
     CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON AuditLog(timestamp);
-  `).catch(error => {
+  `);
+  })().catch(error => {
     institutionSchemaReady = null;
     throw error;
   });
