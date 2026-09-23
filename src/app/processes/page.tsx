@@ -22,6 +22,19 @@ import {
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 
+function parseProcessTags(raw: unknown): Record<string, any> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, any>;
+  }
+  if (typeof raw !== 'string' || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function ProcessesPage() {
   const [processes, setProcesses] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -224,6 +237,15 @@ export default function ProcessesPage() {
     return matchCat && matchSearch;
   });
 
+  const selectedProcessTags = parseProcessTags(selectedProcess?.tags);
+  const selectedParent = selectedProcess?.parentProcessId
+    ? processes.find(process => process.id === selectedProcess.parentProcessId)
+    : null;
+  const selectedDetailStatus = String(selectedProcessTags.detailStatus || '');
+  const selectedScopeCode = String(
+    selectedProcessTags.icoFrScopingCode || selectedProcessTags.relatedIcofrScopingCode || ''
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -310,6 +332,9 @@ export default function ProcessesPage() {
         <div className="lg:col-span-5 space-y-3">
           {filtered.map(proc => {
             const isSelected = selectedProcess?.id === proc.id;
+            const processTags = parseProcessTags(proc.tags);
+            const detailPending = String(processTags.detailStatus || '').includes('PENDING') ||
+              String(processTags.scopeMappingStatus || '').includes('REVIEW_REQUIRED');
             return (
               <div
                 key={proc.id}
@@ -340,9 +365,19 @@ export default function ProcessesPage() {
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
                         L{proc.level}
                       </span>
-                      {String(proc.tags || '').includes('"sourceBacked":true') && (
+                      {Boolean(processTags.sourceBacked) && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
                           Source-backed
+                        </span>
+                      )}
+                      {processTags.icoFrScopingCode && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {processTags.icoFrScopingCode}
+                        </span>
+                      )}
+                      {detailPending && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                          Detail pending
                         </span>
                       )}
                       {proc.isIcofrRelevant && (
@@ -468,6 +503,59 @@ export default function ProcessesPage() {
                 <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                   {selectedProcess.description}
                 </p>
+
+                {(selectedProcessTags.sourceBacked || selectedScopeCode || selectedDetailStatus) && (
+                  <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/50 p-3.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-violet-700">
+                        Source Governance
+                      </span>
+                      {selectedScopeCode && (
+                        <span className="rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-black text-indigo-700">
+                          Scope {selectedScopeCode}
+                        </span>
+                      )}
+                      {selectedDetailStatus && (
+                        <span className={
+                          `rounded-full border px-2 py-0.5 text-[10px] font-black ${
+                            selectedDetailStatus.includes('PENDING')
+                              ? 'border-amber-200 bg-amber-50 text-amber-700'
+                              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          }`
+                        }>
+                          {selectedDetailStatus.replaceAll('_', ' ')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] text-slate-600 sm:grid-cols-2">
+                      <div>
+                        <span className="font-bold text-slate-500">Hierarchy:</span>{' '}
+                        {selectedParent
+                          ? `${selectedParent.processId} · ${selectedParent.name}`
+                          : selectedProcess.level === 2
+                          ? 'Canonical L2 / top process'
+                          : 'Parent not assigned'}
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-500">Source request:</span>{' '}
+                        {selectedProcessTags.sourceRequestNo
+                          ? `#${selectedProcessTags.sourceRequestNo} · ${String(selectedProcessTags.sourceRequestStatus || 'tracked').replaceAll('_', ' ')}`
+                          : 'No open source request recorded in this BPM tag'}
+                      </div>
+                    </div>
+                    {selectedProcessTags.scopeSourceName && (
+                      <div className="mt-2 text-[11px] leading-relaxed text-slate-600">
+                        <span className="font-bold text-slate-500">FY2026 source scope:</span>{' '}
+                        {selectedProcessTags.scopeSourceName}
+                      </div>
+                    )}
+                    {selectedProcessTags.sourceReference && (
+                      <div className="mt-1 break-all text-[10px] text-slate-400">
+                        {selectedProcessTags.sourceReference}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Objectives & Strategic KPIs (Section 22) */}
