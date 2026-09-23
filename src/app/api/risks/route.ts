@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createRisk, listRiskLookups, listRisks } from '@/lib/d1-core';
+import { createRisk, listProcessLookups, listRiskLookups, listRisks } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,8 +11,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ risks, storage: 'cloudflare-d1', view: 'lookup' });
     }
 
-    const risks = await listRisks();
-    return NextResponse.json({ risks, storage: 'cloudflare-d1' });
+    const [risks, processes] = await Promise.all([
+      listRisks(),
+      listProcessLookups()
+    ]);
+    return NextResponse.json({
+      risks,
+      processes,
+      storage: 'cloudflare-d1',
+      bundledLookups: true
+    });
   } catch (error) {
     console.error('Failed to fetch D1 risks:', error);
     return NextResponse.json({ error: 'Failed to fetch risks from persistent database.' }, { status: 503 });
