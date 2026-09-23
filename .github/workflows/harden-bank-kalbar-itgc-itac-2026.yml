@@ -1,0 +1,64 @@
+name: Harden Bank Kalbar ITGC ITAC 2026
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/harden-bank-kalbar-itgc-itac-2026.py'
+      - '.github/workflows/harden-bank-kalbar-itgc-itac-2026.yml'
+      - 'src/lib/d1-icofr-domains.ts'
+      - 'src/app/api/icofr/controls/route.ts'
+      - 'src/components/icofr/ControlDomainWorkspace.tsx'
+      - 'src/app/icofr/itgc/page.tsx'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+      TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Harden ITGC register and ITAC governance
+        run: python scripts/harden-bank-kalbar-itgc-itac-2026.py
+      - name: Verify production ITGC and ITAC API
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ] || { echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN required"; exit 1; }
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          fetch_json() {
+            local name="$1"; local path="$2"; local output="/tmp/${name}.json"; local code
+            code="$(curl --silent --show-error --location --max-time 25 --output "$output" --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" "$BASE_URL$path" || true)"
+            [ "$code" = "200" ] || { echo "::error::$name HTTP $code"; cat "$output" || true; exit 1; }
+            cat "$output"
+          }
+          ITGC="$(fetch_json itgc '/api/icofr/controls?category=ITGC')"
+          ITAC="$(fetch_json itac '/api/icofr/controls?category=ITAC')"
+          printf '%s' "$ITGC" | jq -e '
+            (.records | length) == 10 and
+            ([.records[].sourceControlId] | unique | length) == 10 and
+            ([.records[] | .subcategory] | group_by(.) | map({k:.[0],v:length}) | from_entries) ==
+              {"Access to Program and Data":4,"Computer Operations":4,"Program Changes":1,"Program Development":1} and
+            ([.records[] | select(.status == "Under Review")] | length) == 10
+          ' >/dev/null
+          printf '%s' "$ITAC" | jq -e '
+            (.records | length) == 0 and
+            (.candidates | length) == 4 and
+            ([.candidates[] | select(.candidateStatus == "CONTRADICTORY_SOURCE_CLASSIFICATION")] | length) == 2 and
+            ([.candidates[] | select(.candidateStatus == "PROCESS_OWNER_REVIEW_PENDING")] | length) == 2
+          ' >/dev/null
+          echo "itgc-itac-production: healthy"
