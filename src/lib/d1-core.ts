@@ -648,8 +648,7 @@ function buildRcmDerivedBpmDraft(
     hasSipoc: boolean;
   }
 ) {
-  const hasRcmContext =
-    mappingCount > 0 || (risks.length > 0 && controls.length > 0);
+  const hasRcmContext = mappingCount > 0;
   if (!hasRcmContext) return null;
 
   const missingSections: string[] = [];
@@ -912,7 +911,9 @@ export async function listBusinessProcesses() {
     all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC'),
     all<Record<string, unknown>>(
       db,
-      `SELECT m.id, r.processId AS riskProcessId, c.processId AS controlProcessId
+      `SELECT m.id, m.riskId, m.controlId,
+              r.processId AS riskProcessId,
+              c.processId AS controlProcessId
          FROM ControlRiskMapping m
          JOIN RiskMaster r ON r.id = m.riskId
          JOIN ControlMaster c ON c.id = m.controlId`
@@ -938,19 +939,39 @@ export async function listBusinessProcesses() {
   const activitiesByProcess = groupByProcess(activities);
   const risksByProcess = groupByProcess(risks);
   const controlsByProcess = groupByProcess(controls);
-  const mappingsByProcess = new Map<string, number>();
+  const mappingsByProcess = new Map<
+    string,
+    { count: number; riskIds: Set<string>; controlIds: Set<string> }
+  >();
   for (const mapping of mappings) {
     const riskProcessId = String(mapping.riskProcessId || '');
     const controlProcessId = String(mapping.controlProcessId || '');
     if (!riskProcessId || riskProcessId !== controlProcessId) continue;
-    mappingsByProcess.set(
-      riskProcessId,
-      (mappingsByProcess.get(riskProcessId) || 0) + 1
-    );
+
+    const current =
+      mappingsByProcess.get(riskProcessId) || {
+        count: 0,
+        riskIds: new Set<string>(),
+        controlIds: new Set<string>()
+      };
+    current.count += 1;
+    current.riskIds.add(String(mapping.riskId || ''));
+    current.controlIds.add(String(mapping.controlId || ''));
+    mappingsByProcess.set(riskProcessId, current);
   }
 
   const processes = rows.map(row => {
     const id = String(row.id);
+    const processMapping = mappingsByProcess.get(id);
+    const processRisks = risksByProcess.get(id) || [];
+    const processControls = controlsByProcess.get(id) || [];
+    const mappedRisks = processMapping
+      ? processRisks.filter(item => processMapping.riskIds.has(String(item.id)))
+      : [];
+    const mappedControls = processMapping
+      ? processControls.filter(item => processMapping.controlIds.has(String(item.id)))
+      : [];
+
     return {
       ...processRow(row),
       id,
@@ -971,9 +992,9 @@ export async function listBusinessProcesses() {
       controls: (controlsByProcess.get(id) || []).map(controlRow),
       rcmDraft: buildRcmDerivedBpmDraft(
         row,
-        risksByProcess.get(id) || [],
-        controlsByProcess.get(id) || [],
-        mappingsByProcess.get(id) || 0,
+        mappedRisks,
+        mappedControls,
+        processMapping?.count || 0,
         {
           objectiveCount: (objectivesByProcess.get(id) || []).length,
           activityCount: (activitiesByProcess.get(id) || []).length,
@@ -1002,13 +1023,23 @@ export async function applyRcmDerivedBpmDraft(
     await Promise.all([
       all<Record<string, unknown>>(
         db,
-        'SELECT * FROM RiskMaster WHERE processId = ? ORDER BY riskId ASC',
-        [processId]
+        `SELECT DISTINCT r.*
+           FROM ControlRiskMapping m
+           JOIN RiskMaster r ON r.id = m.riskId
+           JOIN ControlMaster c ON c.id = m.controlId
+          WHERE r.processId = ? AND c.processId = ?
+          ORDER BY r.riskId ASC`,
+        [processId, processId]
       ),
       all<Record<string, unknown>>(
         db,
-        'SELECT * FROM ControlMaster WHERE processId = ? ORDER BY controlId ASC',
-        [processId]
+        `SELECT DISTINCT c.*
+           FROM ControlRiskMapping m
+           JOIN RiskMaster r ON r.id = m.riskId
+           JOIN ControlMaster c ON c.id = m.controlId
+          WHERE r.processId = ? AND c.processId = ?
+          ORDER BY c.controlId ASC`,
+        [processId, processId]
       ),
       first<{ count?: number }>(
         db,
