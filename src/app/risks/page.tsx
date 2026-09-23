@@ -17,6 +17,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { getRiskBadgeClasses } from '@/lib/utils';
+import { DataLoadingState } from '@/components/common/DataLoadingState';
 
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
@@ -27,6 +28,8 @@ export default function RisksPage() {
   const [newRiskModal, setNewRiskModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [riskLoading, setRiskLoading] = useState(true);
+  const [riskLoadError, setRiskLoadError] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -43,6 +46,8 @@ export default function RisksPage() {
   });
 
   const loadRisks = () => {
+    setRiskLoading(true);
+    setRiskLoadError('');
     Promise.all([
       fetch('/api/risks').then(res => {
         if (!res.ok) throw new Error('Unable to load risks.');
@@ -71,7 +76,15 @@ export default function RisksPage() {
               : nextProcesses[0]?.id || ''
         }));
       })
-      .catch(console.error);
+      .catch(error => {
+        console.error(error);
+        setRiskLoadError(
+          error instanceof Error ? error.message : 'Unable to load risk data.'
+        );
+      })
+      .finally(() => {
+        setRiskLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -178,7 +191,7 @@ export default function RisksPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Risk Register ({risks.length})
+            Risk Register ({riskLoading ? '…' : risks.length})
           </button>
           <button
             onClick={() => setActiveTab('inherent_heatmap')}
@@ -203,12 +216,22 @@ export default function RisksPage() {
         </div>
       </div>
 
+      {riskLoadError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+          <strong className="font-black">Risk data unavailable.</strong>{' '}
+          {riskLoadError} Please retry after the database/API connection is available.
+        </div>
+      )}
+
       {/* Main Content Area */}
       {activeTab === 'register' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left: Risk List (5 cols) */}
           <div className="lg:col-span-5 space-y-3">
-            {filtered.map(r => {
+            {riskLoading ? (
+              <DataLoadingState label="Loading risks..." variant="list" rows={4} />
+            ) : (
+              filtered.map(r => {
               const isSelected = selectedRisk?.id === r.id;
               const badge = getRiskBadgeClasses(r.inherentRating);
               return (
@@ -269,12 +292,15 @@ export default function RisksPage() {
                   </div>
                 </div>
               );
-            })}
+            })
+            )}
           </div>
 
           {/* Right: Risk 360 View (7 cols) */}
           <div className="lg:col-span-7">
-            {selectedRisk ? (
+            {riskLoading ? (
+              <DataLoadingState label="Loading risk profile..." variant="profile" className="min-h-[220px]" />
+            ) : selectedRisk ? (
               <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
                 <div className="border-b border-slate-100 pb-4">
                   <div className="flex items-center justify-between">
@@ -410,6 +436,8 @@ export default function RisksPage() {
             )}
           </div>
         </div>
+      ) : riskLoading ? (
+        <DataLoadingState label="Loading risk heatmap..." variant="panel" />
       ) : (
         /* 5x5 Heatmap Matrix */
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
