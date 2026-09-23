@@ -258,6 +258,18 @@ jobs:
             (.actionPlans | type) == "array"
           '
 
+          check_json "assurance-calendar" "/api/assurance?sections=calendar" '
+            .storage == "cloudflare-d1" and
+            (.calendarEvents | type) == "array" and
+            (.campaigns | type) == "array" and
+            (.testingPlanItems | type) == "array" and
+            (.toeTests | type) == "array" and
+            (.actionPlans | type) == "array" and
+            (.retests | type) == "array" and
+            (.attestations | type) == "array" and
+            (.tasks | type) == "array"
+          '
+
           check_json "icofr-hub" "/api/icofr/hub" '
             .storage == "cloudflare-d1" and
             (.counts | type) == "object" and
