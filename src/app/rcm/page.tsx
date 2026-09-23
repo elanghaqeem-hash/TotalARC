@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { getRiskBadgeClasses, getHealthBadgeClasses } from '@/lib/utils';
 
-let rcmCache: { rows: any[]; governance: any } | null = null;
-let rcmRequest: Promise<{ rows: any[]; governance: any }> | null = null;
+let rcmCache: { rows: any[]; governance: any; bpmCoverage: any[] } | null = null;
+let rcmRequest: Promise<{ rows: any[]; governance: any; bpmCoverage: any[] }> | null = null;
 
 function fetchRcmRows() {
   if (!rcmRequest) {
@@ -33,7 +33,8 @@ function fetchRcmRows() {
       .then(payload => {
         const result = {
           rows: Array.isArray(payload.rcm) ? payload.rcm : [],
-          governance: payload.governance || null
+          governance: payload.governance || null,
+          bpmCoverage: Array.isArray(payload.bpmCoverage) ? payload.bpmCoverage : []
         };
         rcmCache = result;
         return result;
@@ -48,7 +49,10 @@ function fetchRcmRows() {
 export default function RCMWorkspacePage() {
   const [rcmRows, setRcmRows] = useState<any[]>(rcmCache?.rows || []);
   const [governance, setGovernance] = useState<any>(rcmCache?.governance || null);
+  const [bpmCoverage, setBpmCoverage] = useState<any[]>(rcmCache?.bpmCoverage || []);
   const [loading, setLoading] = useState(rcmCache === null);
+  const [actionBusy, setActionBusy] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
@@ -59,6 +63,7 @@ export default function RCMWorkspacePage() {
     if (rcmCache !== null) {
       setRcmRows(rcmCache.rows);
       setGovernance(rcmCache.governance);
+      setBpmCoverage(rcmCache.bpmCoverage);
       setLoading(false);
     }
 
@@ -67,6 +72,7 @@ export default function RCMWorkspacePage() {
         if (active) {
           setRcmRows(result.rows);
           setGovernance(result.governance);
+          setBpmCoverage(result.bpmCoverage);
         }
       })
       .catch(err => {
@@ -93,11 +99,22 @@ export default function RCMWorkspacePage() {
     if (filterType === 'PENDING_MAPPING') {
       return matchSearch && String(row.mappingStatus || '').startsWith('PENDING');
     }
+    if (filterType === 'DRAFT_VALIDATION') {
+      return matchSearch && row.validationStatus === 'PENDING_USER_VALIDATION';
+    }
     if (filterType === 'ISSUES_ONLY') return matchSearch && row.issueId;
     return matchSearch;
   });
 
-  const uniqueControlCount = new Set(rcmRows.map(row => row.controlId)).size;
+  const operationalRows = rcmRows.filter(row => !row.isDraftRcm);
+  const uniqueControlCount = new Set(operationalRows.map(row => row.controlId)).size;
+  const draftValidationRows = rcmRows.filter(
+    row => row.validationStatus === 'PENDING_USER_VALIDATION'
+  );
+  const buildReadyBpm = bpmCoverage.filter(row => row.generationEligible);
+  const mappingReviewBpm = bpmCoverage.filter(
+    row => row.coverageStatus === 'MAPPING_REVIEW_REQUIRED'
+  );
   const uusDraftCount = new Set(
     rcmRows.filter(row => row.sourceCycle === 'SYH').map(row => row.controlId)
   ).size;
@@ -120,6 +137,76 @@ export default function RCMWorkspacePage() {
         .filter((item: any) => item.sourceStatus === 'ILLUSTRATIVE_DRAFT')
         .reduce((sum: number, item: any) => sum + Number(item.records || 0), 0)
     : 0;
+
+  const refreshRcmData = async () => {
+    const result = await fetchRcmRows();
+    setRcmRows(result.rows);
+    setGovernance(result.governance);
+    setBpmCoverage(result.bpmCoverage);
+  };
+
+  const generateMissingRcmDrafts = async () => {
+    if (buildReadyBpm.length === 0) return;
+    setActionBusy('generate');
+    setActionMessage('');
+
+    try {
+      const response = await fetch('/api/rcm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionType: 'GENERATE_BPM_DRAFTS',
+          processIds: buildReadyBpm.map(row => row.id)
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to generate RCM drafts.');
+
+      setActionMessage(
+        `${Number(payload.generated || 0)} draft RCM berhasil disusun dari BPM dan menunggu validasi user.`
+      );
+      await refreshRcmData();
+      setFilterType('DRAFT_VALIDATION');
+    } catch (error) {
+      setActionMessage(
+        error instanceof Error ? error.message : 'Unable to generate RCM drafts.'
+      );
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+  const reviewDraft = async (row: any, decision: 'APPROVE' | 'REJECT') => {
+    if (!row.draftReferenceId) return;
+    setActionBusy(String(row.draftReferenceId));
+    setActionMessage('');
+
+    try {
+      const response = await fetch('/api/rcm', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draftReferenceId: row.draftReferenceId,
+          decision
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to review RCM draft.');
+
+      setActionMessage(
+        decision === 'APPROVE'
+          ? `Draft RCM ${row.controlId} tervalidasi dan dipromosikan menjadi RCM operasional.`
+          : `Draft RCM ${row.controlId} ditolak dan tidak digunakan sebagai RCM operasional.`
+      );
+      await refreshRcmData();
+    } catch (error) {
+      setActionMessage(
+        error instanceof Error ? error.message : 'Unable to review RCM draft.'
+      );
+    } finally {
+      setActionBusy('');
+    }
+  };
 
   // Client CSV Export
   const exportToCSV = () => {
@@ -277,6 +364,125 @@ export default function RCMWorkspacePage() {
         )}
       </section>
 
+
+      <section className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.12em] text-violet-700">
+              <FileCheck2 className="h-3.5 w-3.5" />
+              BPM → RCM Draft Coverage
+            </div>
+            <h2 className="mt-1 text-base font-black text-slate-900">
+              Susun RCM draft untuk BPM yang belum memiliki RCM
+            </h2>
+            <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-slate-600">
+              Total ARC hanya menyusun draft dari konteks BPM yang tersimpan. Draft tidak masuk Risk/Control
+              operasional dan tidak dapat digunakan untuk testing sampai user melakukan validasi.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={generateMissingRcmDrafts}
+            disabled={actionBusy !== '' || buildReadyBpm.length === 0}
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {actionBusy === 'generate'
+              ? 'Menyusun Draft...'
+              : `Susun Draft RCM (${buildReadyBpm.length} BPM)`}
+          </button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            ['BPM tanpa RCM', bpmCoverage.length],
+            ['Siap dibuat draft', buildReadyBpm.length],
+            ['Menunggu validasi', draftValidationRows.length],
+            ['Perlu mapping review', mappingReviewBpm.length]
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-xl border border-violet-100 bg-white p-3">
+              <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">{label}</div>
+              <div className="mt-1 text-xl font-black text-slate-900">{Number(value)}</div>
+            </div>
+          ))}
+        </div>
+
+        {mappingReviewBpm.length > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <strong>{mappingReviewBpm.length} BPM</strong> sudah memiliki control tetapi belum memiliki
+              risk-control mapping lengkap. Total ARC tidak membuat mapping secara spekulatif dan meminta
+              review mapping terlebih dahulu.
+            </span>
+          </div>
+        )}
+
+        {actionMessage && (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-700">
+            {actionMessage}
+          </div>
+        )}
+
+        {draftValidationRows.length > 0 && (
+          <div className="mt-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-xs font-black text-slate-900">Validation Queue</h3>
+              <span className="rounded-full bg-violet-100 px-2 py-1 text-[9px] font-black text-violet-700">
+                {draftValidationRows.length} draft
+              </span>
+            </div>
+            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+              {draftValidationRows.map(row => (
+                <div
+                  key={row.id}
+                  className="rounded-xl border border-violet-100 bg-white p-3 sm:flex sm:items-start sm:justify-between sm:gap-4"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="rounded bg-violet-100 px-1.5 py-0.5 font-mono text-[9px] font-bold text-violet-700">
+                        {row.processId}
+                      </span>
+                      <span className="rounded border border-violet-200 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">
+                        DRAFT · USER VALIDATION REQUIRED
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs font-black text-slate-900">{row.processName}</div>
+                    <div className="mt-1 text-[11px] text-slate-600">
+                      <strong>Risk:</strong> {row.riskName}
+                    </div>
+                    <div className="text-[11px] text-slate-600">
+                      <strong>Control:</strong> {row.controlName}
+                    </div>
+                    <div className="mt-1 text-[10px] text-slate-400">
+                      Owner: {row.controlOwner || 'Pending validation'} · Frequency: {row.controlFrequency}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
+                    <button
+                      type="button"
+                      disabled={actionBusy !== ''}
+                      onClick={() => reviewDraft(row, 'REJECT')}
+                      className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionBusy !== ''}
+                      onClick={() => reviewDraft(row, 'APPROVE')}
+                      className="rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      Validate & Use
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Search & Filter Bar */}
       <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4">
         <div className="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.72fr)] 2xl:items-stretch">
@@ -297,7 +503,7 @@ export default function RCMWorkspacePage() {
               Filter view
             </div>
 
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
               {[
                 {
                   key: 'ALL',
@@ -322,6 +528,12 @@ export default function RCMWorkspacePage() {
                   label: 'Risk Mapping Pending',
                   count: pendingMappingCount,
                   icon: AlertTriangle
+                },
+                {
+                  key: 'DRAFT_VALIDATION',
+                  label: 'Draft Validation',
+                  count: draftValidationRows.length,
+                  icon: FileCheck2
                 },
                 {
                   key: 'ISSUES_ONLY',
