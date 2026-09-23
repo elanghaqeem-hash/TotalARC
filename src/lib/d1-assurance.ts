@@ -63,6 +63,17 @@ async function executeSchemaScript(db: D1DatabaseLike, script: string) {
   }
 }
 
+async function assuranceSchemaIsCurrent(db: D1DatabaseLike) {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+         FROM sqlite_master
+        WHERE type = 'table' AND name IN ('ToETest','TestSample','TestingException','ControlDeficiency','RootCauseAnalysis','Issue','ManagementActionPlan','MAPMilestone','RetestRecord','MonitoringRule','MonitoringRun','CCMException')`
+    )
+    .first<{ count?: number }>();
+  return Number(row?.count || 0) === 12;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -78,6 +89,10 @@ export async function ensureAssuranceSchema() {
 
   assuranceSchemaReady = (async () => {
     const db = await getDb();
+
+    if (await assuranceSchemaIsCurrent(db)) {
+      return db;
+    }
 
     await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS ToETest (
