@@ -1,17 +1,42 @@
 import { NextResponse } from 'next/server';
-import { createBusinessProcess, deleteBusinessProcess, listBusinessProcesses, listProcessLookups, updateBusinessProcess } from '@/lib/d1-core';
+import { createBusinessProcess, deleteBusinessProcess, getBusinessProcessDetail, listBusinessProcesses, listBusinessProcessSummaries, listProcessLookups, updateBusinessProcess } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
-    const view = new URL(request.url).searchParams.get('view');
+    const url = new URL(request.url);
+    const view = url.searchParams.get('view');
     if (view === 'lookup') {
       const processes = await listProcessLookups();
       return NextResponse.json({
         processes,
         storage: 'cloudflare-d1',
         view: 'lookup'
+      });
+    }
+
+    if (view === 'list') {
+      const { processes, categories } = await listBusinessProcessSummaries();
+      return NextResponse.json({
+        processes,
+        categories,
+        storage: 'cloudflare-d1',
+        view: 'list',
+        progressive: true
+      });
+    }
+
+    if (view === 'detail') {
+      const id = url.searchParams.get('id')?.trim() || '';
+      if (!id) {
+        return NextResponse.json({ error: 'Process id is required.' }, { status: 400 });
+      }
+      const process = await getBusinessProcessDetail(id);
+      return NextResponse.json({
+        process,
+        storage: 'cloudflare-d1',
+        view: 'detail'
       });
     }
 
@@ -22,6 +47,10 @@ export async function GET(request: Request) {
       storage: 'cloudflare-d1'
     });
   } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'PROCESS_NOT_FOUND') {
+      return NextResponse.json({ error: 'Business process was not found.' }, { status: 404 });
+    }
     console.error('Failed to fetch D1 processes:', error);
     return NextResponse.json({ error: 'Failed to fetch processes from persistent database.' }, { status: 503 });
   }
