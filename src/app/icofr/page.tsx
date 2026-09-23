@@ -52,18 +52,38 @@ export default function ICOFRPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [metricsLoading, setMetricsLoading] = useState(false);
+
+  const loadMetrics = async () => {
+    setMetricsLoading(true);
+    try {
+      const response = await fetch('/api/icofr/hub?view=metrics', { cache: 'no-store' });
+      const body = await response.json();
+      if (!response.ok) return;
+      setData((current: any) => ({
+        ...(current || {}),
+        traceabilityMetrics: body.traceabilityMetrics || {},
+        coverageMetrics: body.coverageMetrics || {}
+      }));
+    } catch (err) {
+      console.error('ICOFR background metrics unavailable:', err);
+    } finally {
+      setMetricsLoading(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/icofr/hub', { cache: 'no-store' });
+      const response = await fetch('/api/icofr/hub?view=summary', { cache: 'no-store' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'ICOFR program data unavailable.');
       setData(body);
+      setLoading(false);
+      void loadMetrics();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ICOFR program data unavailable.');
-    } finally {
       setLoading(false);
     }
   };
@@ -91,10 +111,12 @@ export default function ICOFRPage() {
   const moduleValue = (module: any) => {
     if (module.countKey) return data?.counts?.[module.countKey] ?? 0;
     if (module.metricKey === 'traceability') {
-      return data?.traceabilityMetrics?.completeChains ?? data?.traceabilityMetrics?.complete ?? 0;
+      if (!data?.traceabilityMetrics) return null;
+      return data.traceabilityMetrics.completeChains ?? data.traceabilityMetrics.complete ?? 0;
     }
     if (module.metricKey === 'coverage') {
-      return data?.coverageMetrics?.coveragePercent ?? data?.coverageMetrics?.coverage ?? 0;
+      if (!data?.coverageMetrics) return null;
+      return data.coverageMetrics.coveragePercent ?? data.coverageMetrics.coverage ?? 0;
     }
     return null;
   };
@@ -116,7 +138,7 @@ export default function ICOFRPage() {
             type="button"
             onClick={() => void load()}
             className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:text-brand-700"
-            title="Refresh ICOFR program data"
+            title={metricsLoading ? 'Refreshing ICOFR metrics...' : 'Refresh ICOFR program data'}
           >
             <RefreshCcw className="h-4 w-4" />
           </button>
