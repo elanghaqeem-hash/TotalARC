@@ -328,7 +328,12 @@ export default function RCMWorkspacePage() {
       'Risk Name',
       'Risk Cause',
       'Risk Impact',
+      'Inherent Likelihood',
+      'Inherent Impact',
       'Inherent Score',
+      'Inherent Rating',
+      'Source Risk Rating',
+      'Inherent Assessment Status',
       'Control ID',
       'Control Name',
       'Control Owner',
@@ -353,7 +358,12 @@ export default function RCMWorkspacePage() {
       `"${r.riskName?.replace(/"/g, '""')}"`,
       `"${r.riskCause?.replace(/"/g, '""')}"`,
       `"${r.riskImpact?.replace(/"/g, '""')}"`,
-      `"${r.inherentScore} (${r.inherentRating})"`,
+      r.inherentLikelihood || 0,
+      r.inherentImpact || 0,
+      r.inherentScore || 0,
+      `"${r.inherentRating || 'Not Assessed'}"`,
+      `"${String(r.inherentSourceRating || '').replace(/"/g, '""')}"`,
+      `"${r.inherentAssessmentStatus || ''}"`,
       `"${r.controlId}"`,
       `"${r.controlName?.replace(/"/g, '""')}"`,
       `"${r.controlOwner}"`,
@@ -894,7 +904,7 @@ export default function RCMWorkspacePage() {
                   <th className="py-3 px-4 min-w-[140px] border-r border-slate-200 bg-slate-100">Process (L2)</th>
                   <th className="py-3 px-4 min-w-[180px] border-r border-slate-200">Process Objective</th>
                   <th className="py-3 px-4 min-w-[200px] border-r border-slate-200 bg-amber-50/50">Risk (Event & Impact)</th>
-                  <th className="py-3 px-3 min-w-[100px] text-center border-r border-slate-200">Inherent</th>
+                  <th className="py-3 px-3 min-w-[150px] text-center border-r border-slate-200">Inherent Risk</th>
                   <th className="py-3 px-4 min-w-[220px] border-r border-slate-200 bg-sky-50/50">Control Master</th>
                   <th className="py-3 px-3 min-w-[100px] border-r border-slate-200">Type & Nature</th>
                   <th className="py-3 px-3 min-w-[110px] text-center border-r border-slate-200">ToE Testing</th>
@@ -906,6 +916,15 @@ export default function RCMWorkspacePage() {
                 {filtered.map(row => {
                   const riskBadge = getRiskBadgeClasses(row.inherentRating);
                   const resBadge = getRiskBadgeClasses(row.residualRating);
+                  const inherentLikelihood = Number(row.inherentLikelihood || 0);
+                  const inherentImpact = Number(row.inherentImpact || 0);
+                  const hasValidatedInherent =
+                    inherentLikelihood >= 1 &&
+                    inherentLikelihood <= 5 &&
+                    inherentImpact >= 1 &&
+                    inherentImpact <= 5 &&
+                    Number(row.inherentScore || 0) > 0;
+                  const sourceRiskRating = String(row.inherentSourceRating || '').trim();
                   return (
                     <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-3 text-center font-mono text-slate-400 border-r border-slate-200">
@@ -932,13 +951,42 @@ export default function RCMWorkspacePage() {
                         </div>
                       </td>
 
-                      {/* Inherent Score */}
+                      {/* Inherent Risk */}
                       <td className="py-3 px-3 text-center border-r border-slate-200">
-                        <span
-                          className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border ${riskBadge.bg} ${riskBadge.text} ${riskBadge.border}`}
-                        >
-                          {row.inherentScore} ({row.inherentRating})
-                        </span>
+                        {hasValidatedInherent ? (
+                          <div className="space-y-1">
+                            <span
+                              className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold ${riskBadge.bg} ${riskBadge.text} ${riskBadge.border}`}
+                            >
+                              {row.inherentScore} ({row.inherentRating})
+                            </span>
+                            <div className="text-[9px] font-semibold text-slate-500">
+                              L{inherentLikelihood} × I{inherentImpact}
+                            </div>
+                            <div className="text-[9px] font-bold text-emerald-700">Validated 1–5 assessment</div>
+                          </div>
+                        ) : sourceRiskRating ? (
+                          <div className="space-y-1">
+                            <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                              {sourceRiskRating}
+                            </span>
+                            <div className="text-[9px] font-black uppercase tracking-wide text-violet-600">
+                              Source rating
+                            </div>
+                            <div className="text-[9px] leading-3 text-slate-500">
+                              Likelihood × Impact 1–5 pending validation
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <span className="inline-block rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                              Pending assessment
+                            </span>
+                            <div className="text-[9px] leading-3 text-slate-500">
+                              Validated Likelihood × Impact 1–5 not yet available
+                            </div>
+                          </div>
+                        )}
                       </td>
 
                       {/* Control */}
@@ -1033,62 +1081,93 @@ export default function RCMWorkspacePage() {
       ) : (
         /* CARD VIEW (Section 10 & 39 Mobile Architecture) */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filtered.map(row => (
-            <div
-              key={row.id}
-              className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4 hover:border-slate-300 transition-all"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                <div>
-                  <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
-                    {row.processId}
-                  </span>
-                  <h3 className="font-bold text-sm text-slate-900 mt-1">{row.processName}</h3>
-                </div>
-                <span className="text-xs font-bold text-slate-400 font-mono">#{row.rowNumber}</span>
-              </div>
+          {filtered.map(row => {
+            const inherentLikelihood = Number(row.inherentLikelihood || 0);
+            const inherentImpact = Number(row.inherentImpact || 0);
+            const hasValidatedInherent =
+              inherentLikelihood >= 1 &&
+              inherentLikelihood <= 5 &&
+              inherentImpact >= 1 &&
+              inherentImpact <= 5 &&
+              Number(row.inherentScore || 0) > 0;
+            const sourceRiskRating = String(row.inherentSourceRating || '').trim();
 
-              {/* Risk Segment */}
-              <div className="p-3 bg-amber-50/50 rounded-lg border border-amber-200 text-xs space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] font-bold text-amber-800">{row.riskId}</span>
-                  <span className="text-[10px] font-bold text-rose-700">Inherent: {row.inherentScore}</span>
-                </div>
-                <div className="font-bold text-slate-900">{row.riskName}</div>
-                <div className="text-slate-600 text-[11px]">{row.riskImpact}</div>
-              </div>
-
-              {/* Control Segment */}
-              <div className="p-3 bg-sky-50/50 rounded-lg border border-sky-200 text-xs space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] font-bold text-sky-800">{row.controlId}</span>
-                  {row.isKeyControl && (
-                    <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
-                      KEY CONTROL
+            return (
+              <div
+                key={row.id}
+                className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4 hover:border-slate-300 transition-all"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div>
+                    <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                      {row.processId}
                     </span>
-                  )}
+                    <h3 className="font-bold text-sm text-slate-900 mt-1">{row.processName}</h3>
+                  </div>
+                  <span className="text-xs font-bold text-slate-400 font-mono">#{row.rowNumber}</span>
                 </div>
-                <div className="font-bold text-slate-900">{row.controlName}</div>
-                <div className="text-slate-600 text-[11px]">Owner: {row.controlOwner} • {row.controlType}</div>
-              </div>
 
-              {/* Assurance & Testing Footer */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <div>
-                  <span className="text-slate-400 text-[10px]">Testing:</span>
-                  <div className="font-bold text-amber-700">{row.toeConclusion}</div>
+                {/* Risk Segment */}
+                <div className="p-3 bg-amber-50/50 rounded-lg border border-amber-200 text-xs space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-[10px] font-bold text-amber-800">{row.riskId}</span>
+                    {hasValidatedInherent ? (
+                      <span className="text-right text-[10px] font-bold text-rose-700">
+                        Inherent: {row.inherentScore} ({row.inherentRating})
+                      </span>
+                    ) : sourceRiskRating ? (
+                      <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">
+                        Source: {sourceRiskRating}
+                      </span>
+                    ) : (
+                      <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                        Inherent pending
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-bold text-slate-900">{row.riskName}</div>
+                  <div className="text-slate-600 text-[11px]">{row.riskImpact}</div>
+                  <div className="pt-1 text-[9px] leading-3 text-slate-500">
+                    {hasValidatedInherent
+                      ? `Likelihood ${inherentLikelihood} × Impact ${inherentImpact} · validated`
+                      : sourceRiskRating
+                        ? 'Source rating available · numeric 1–5 assessment pending validation'
+                        : 'Likelihood × Impact 1–5 assessment pending validation'}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-400 text-[10px]">Remediation:</span>
-                  <div className="font-bold text-emerald-700">{row.mapStatus || 'No MAP'}</div>
+
+                {/* Control Segment */}
+                <div className="p-3 bg-sky-50/50 rounded-lg border border-sky-200 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold text-sky-800">{row.controlId}</span>
+                    {row.isKeyControl && (
+                      <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                        KEY CONTROL
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-bold text-slate-900">{row.controlName}</div>
+                  <div className="text-slate-600 text-[11px]">Owner: {row.controlOwner} • {row.controlType}</div>
                 </div>
-                <div>
-                  <span className="text-slate-400 text-[10px]">Residual:</span>
-                  <div className="font-bold text-emerald-700">{row.residualScore} ({row.residualRating})</div>
+
+                {/* Assurance & Testing Footer */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-slate-400 text-[10px]">Testing:</span>
+                    <div className="font-bold text-amber-700">{row.toeConclusion}</div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px]">Remediation:</span>
+                    <div className="font-bold text-emerald-700">{row.mapStatus || 'No MAP'}</div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[10px]">Residual:</span>
+                    <div className="font-bold text-emerald-700">{row.residualScore} ({row.residualRating})</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
