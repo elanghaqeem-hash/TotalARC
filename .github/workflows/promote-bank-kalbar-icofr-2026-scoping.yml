@@ -88,8 +88,8 @@ jobs:
               .performanceMaterialityAmount == 15952466667 and
               .clearlyTrivialPercent == 5 and
               .clearlyTrivialAmount == 797623333 and
-              .status == "Under Review" and
-              ([.parameters[] | select(.parameterCode == "OM_AMOUNT" and .status == "UNDER_REVIEW_DRAFT_WORKPAPER")] | length) == 1 and
+              .status == "Approved" and
+              ([.parameters[] | select(.parameterCode == "OM_AMOUNT" and .status == "FINAL_APPROVED")] | length) == 1 and
               ([.parameters[] | select(.parameterCode == "REQUEST_TRACKER_OM_ALTERNATE" and .numericValue == 33669050000 and .status == "SOURCE_CONFLICT_NOT_ACTIVE")] | length) == 1 and
               ([.populationSummaries[] | select(
                 .populationType == "FSLI" and
@@ -124,7 +124,9 @@ jobs:
               ([.items[] | select(.itemType == "IT System" and .sourceMetadata.sourceConclusion == "Signifikan")] | length) == 31 and
               ([.items[] | select(.code == "SC-ELC" and .inScope == true)] | length) == 1 and
               ([.items[] | select(.code == "SC-CUSTOMER-SERVICE")] | length) == 0 and
-              ([.issues[] | select(.status == "OPEN")] | length) == 7 and
+              ([.issues[] | select(.status == "OPEN")] | length) == 6 and
+              ([.issues[] | select(.status == "CLOSED")] | length) == 2 and
+              ([.issues[] | select(.issueCode == "MAT-OM-SOURCE-CONFLICT" and .status == "CLOSED")] | length) == 1 and
               ([.issues[] | select(.issueCode == "PROCESS-MASTER-LINK-GAP" and .status == "OPEN")] | length) == 1 and
               ([.issues[] | select(.issueCode == "FSLI-BORDERLINE" and .status == "OPEN")] | length) == 1 and
               ([.issues[] | select(.issueCode == "CSA-ILLUSTRATIVE-NOT-SOURCE" and .status == "CLOSED")] | length) == 1 and

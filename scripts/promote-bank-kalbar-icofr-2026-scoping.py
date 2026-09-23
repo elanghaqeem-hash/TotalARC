@@ -59,6 +59,8 @@ POPS = META["populations"]
 ISSUES = META["issues"]
 SOURCE_FILES = META["sources"]
 SOURCE_REFERENCE = "USER_UPLOAD_6_FILES_20260923"
+APPROVAL_REFERENCE = "USER_CONFIRMATION:2026-09-23:OM_PM_LATEST_DATA_APPROVED"
+APPROVAL_STATUS = "FINAL_APPROVED"
 now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -345,7 +347,9 @@ notes = (
     "Workbook materialitas v9 menjadi sumber aktif OM/PM: normalized PBT 3 tahun, "
     "OM Rp31.904.933.333 dan PM Rp15.952.466.667. Nilai OM Rp33.669.050.000 pada tracker permintaan data "
     "dipertahankan sebagai source conflict, bukan sebagai nilai aktif. Populasi proses lengkap 16/16. "
-    "Aplikasi tetap Under Review/Revalidation karena daftar formal dan volume/nilai transaksi aktual belum diterima."
+    "Aplikasi tetap Under Review/Revalidation karena daftar formal dan volume/nilai transaksi aktual belum diterima. "
+    "OM/PM dan parameter materialitas terbaru telah dikonfirmasi disahkan pada 23-09-2026; "
+    "pengesahan ini tidak mengubah nilai scoping lain."
 )
 
 scope_sql = f"""
@@ -362,9 +366,9 @@ INSERT INTO ICOFRScope(
  {pm_pct},{pm_amt},{trivial_pct},{trivial_amt},NULL,
  'Top-down risk-based',{q(quant_criteria)},{q(qual_criteria)},
  {q("Tidak ada proses dari daftar P-01 s.d. P-16 yang dikeluarkan. Aplikasi berstatus source Tidak Signifikan tetap out-of-scope kecuali provisional in-scope yang telah ditetapkan pada artefak scoping sebelumnya; seluruh pengecualian aplikasi direview melalui issue register.")},
- 'Under Review',{q(MAT.get('preparedBy') or 'Task Force ICOFR Bank Kalbar')},
+ 'Approved',{q(MAT.get('preparedBy') or 'Task Force ICOFR Bank Kalbar')},
  {q(' / '.join(x for x in [MAT.get('reviewer1'), MAT.get('reviewer2')] if x))},
- NULL,{q(notes)},{q(created_at)},{q(now)}
+ {q(MAT.get('approver') or 'Approved by authorized Bank Kalbar authority')},{q(notes)},{q(created_at)},{q(now)}
 )
 ON CONFLICT(id) DO UPDATE SET
  scopeName=excluded.scopeName,fiscalYear=2026,reportingPeriod='Annual',currency='IDR',
@@ -378,8 +382,8 @@ ON CONFLICT(id) DO UPDATE SET
  clearlyTrivialAmount=excluded.clearlyTrivialAmount,
  scopeApproach=excluded.scopeApproach,quantitativeCriteria=excluded.quantitativeCriteria,
  qualitativeCriteria=excluded.qualitativeCriteria,exclusions=excluded.exclusions,
- status='Under Review',preparedBy=excluded.preparedBy,reviewedBy=excluded.reviewedBy,
- approvedBy=NULL,notes=excluded.notes,updatedAt=excluded.updatedAt;
+ status='Approved',preparedBy=excluded.preparedBy,reviewedBy=excluded.reviewedBy,
+ approvedBy=excluded.approvedBy,notes=excluded.notes,updatedAt=excluded.updatedAt;
 """
 execute(scope_sql, "/tmp/icofr_scope.sql")
 
@@ -600,32 +604,32 @@ execute("\n".join(link_sql), "/tmp/icofr_scope_links.sql")
 
 params = [
     ("PBT_NORMALIZED_3Y", "Normalized PBT 3-year average (2023-2025)", benchmark, None, None,
-     "Profit Before Tax - normalized 3-year average", "UNDER_REVIEW_DRAFT_WORKPAPER",
+     "Profit Before Tax - normalized 3-year average", "FINAL_APPROVED",
      "USER_UPLOAD:Kertas Kerja Penentuan Materialitas ICoFR - Bank Buku 2 (Bank Kalbar) v9 - revisian brhw-kalbar.xlsx",
-     "Active benchmark used by the dedicated materiality workpaper."),
+     "Active benchmark from the dedicated materiality workpaper; approved for FY2026 ICOFR use on 23-09-2026."),
     ("PBT_2025", "Profit Before Tax TB 2025", int(MAT["currentYearPbt"]), None, None,
      "Audited TB 2025", "SOURCE_CONTEXT",
      "USER_UPLOAD:Kertas Kerja Penentuan Materialitas ICoFR - Bank Buku 2 (Bank Kalbar) v9 - revisian brhw-kalbar.xlsx",
      "Current-year PBT is context; active OM uses normalized 3-year PBT."),
     ("OM_PERCENT", "Overall Materiality percentage", None, om_pct, "Normalized PBT × 5%",
-     "Normalized PBT 3-year average", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE,
-     "Source-confirmed workpaper percentage."),
+     "Normalized PBT 3-year average", "FINAL_APPROVED", SOURCE_REFERENCE,
+     "Source-confirmed workpaper percentage; approved for FY2026 ICOFR use on 23-09-2026."),
     ("OM_AMOUNT", "Overall Materiality", om_amt, None, "Normalized PBT × 5%",
-     "Normalized PBT 3-year average", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE, "Active workpaper OM."),
+     "Normalized PBT 3-year average", "FINAL_APPROVED", SOURCE_REFERENCE, "Active and approved FY2026 Overall Materiality."),
     ("PM_FACTOR", "Performance Materiality factor", None, pm_pct, "OM × 50%",
-     "Overall Materiality", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE, "Active workpaper PM factor."),
+     "Overall Materiality", "FINAL_APPROVED", SOURCE_REFERENCE, "Active and approved FY2026 Performance Materiality factor."),
     ("PM_AMOUNT", "Performance Materiality", pm_amt, None, "OM × 50%",
-     "Overall Materiality", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE, "Active workpaper PM."),
+     "Overall Materiality", "FINAL_APPROVED", SOURCE_REFERENCE, "Active and approved FY2026 Performance Materiality."),
     ("TOLERANCE_HAIRCUT", "Tolerable-threshold haircut", None, tolerance_haircut, "PM × (100% - 17.5%)",
-     "Performance Materiality", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE,
+     "Performance Materiality", "FINAL_APPROVED", SOURCE_REFERENCE,
      "Haircut risk category: " + str(MAT.get("haircutRiskCategory")) + "."),
     ("TOLERABLE_THRESHOLD", "Tolerable threshold", tolerable, None, "PM × 82.5%",
-     "Performance Materiality", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE,
-     "Account/process evaluation threshold."),
+     "Performance Materiality", "FINAL_APPROVED", SOURCE_REFERENCE,
+     "Approved account/process evaluation threshold for FY2026 ICOFR."),
     ("CLEARLY_TRIVIAL_PERCENT", "Clearly trivial percentage", None, trivial_pct, "PM × 5%",
-     "Performance Materiality", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE, "Percentage is based on PM."),
+     "Performance Materiality", "FINAL_APPROVED", SOURCE_REFERENCE, "Percentage is based on PM."),
     ("CLEARLY_TRIVIAL_AMOUNT", "Clearly trivial amount", trivial_amt, None, "PM × 5%",
-     "Performance Materiality", "UNDER_REVIEW_DRAFT_WORKPAPER", SOURCE_REFERENCE, "Source-confirmed workpaper threshold."),
+     "Performance Materiality", "FINAL_APPROVED", SOURCE_REFERENCE, "Approved clearly-trivial threshold for FY2026 ICOFR."),
     ("REQUEST_TRACKER_OM_ALTERNATE", "OM in Fase-1 request tracker", 33669050000, None, "PBT 2025 × 5%",
      "Single-year PBT 2025", "SOURCE_CONFLICT_NOT_ACTIVE", "USER_UPLOAD:Daftar_Permintaan_Data_Fase1.xlsx",
      "Conflicts with the dedicated materiality workpaper; retained for reconciliation and not used as active OM."),
@@ -695,7 +699,18 @@ process_matches.sort(key=lambda x: str(x.get("sourceCode") or ""))
 matched_process_count = sum(1 for x in process_matches if x.get("matchedBusinessProcess"))
 unmatched_processes = [x for x in process_matches if not x.get("matchedBusinessProcess")]
 
-effective_issues = list(ISSUES)
+effective_issues = []
+for issue in ISSUES:
+    item = dict(issue)
+    if item.get("code") == "MAT-OM-SOURCE-CONFLICT":
+        item["status"] = "CLOSED"
+        item["activeDecision"] = (
+            "Closed by approval of the latest materiality workpaper values on 23-09-2026: "
+            "normalized 3-year PBT benchmark, OM Rp31,904,933,333 and PM Rp15,952,466,667. "
+            "The request-tracker OM remains retained as historical non-active source evidence."
+        )
+        item["approvalReference"] = APPROVAL_REFERENCE
+    effective_issues.append(item)
 if unmatched_processes:
     effective_issues.append({
         "code": "PROCESS-MASTER-LINK-GAP",
@@ -815,7 +830,9 @@ summary = {
     "materiality": {
         "benchmark": benchmark, "omPercent": om_pct, "omAmount": om_amt, "pmPercent": pm_pct,
         "pmAmount": pm_amt, "toleranceHaircutPercent": tolerance_haircut,
-        "tolerableThreshold": tolerable, "clearlyTrivial": trivial_amt, "status": MAT.get("workpaperStatus"),
+        "tolerableThreshold": tolerable, "clearlyTrivial": trivial_amt,
+        "status": APPROVAL_STATUS, "sourceWorkpaperStatus": MAT.get("workpaperStatus"),
+        "approvedBy": MAT.get("approver"), "approvalReference": APPROVAL_REFERENCE,
     },
     "financialItems": {"assessed": 52, "sourceSignificant": 37, "borderline": 1, "inScope": 38, "notSignificant": 14},
     "businessProcesses": {
@@ -852,7 +869,7 @@ INSERT OR REPLACE INTO AuditLog(id,institutionId,userName,userRole,action,entity
 reason,ipAddress,timestamp)
 VALUES({q(audit_id)},{q(iid)},'System','System','UPSERT','ICOFRScope',{q(scope_id)},NULL,
 {q(json.dumps(summary,ensure_ascii=False,separators=(',',':')))},
-'Complete Bank Kalbar FY2026 ICOFR scoping only from six user-uploaded workbooks and prior scoping artefacts; no CSA/RCM/ToD/ToE operational data promoted.',
+'Approve the latest Bank Kalbar FY2026 OM/PM and materiality parameters based on user-confirmed authorization; source values unchanged and no CSA/RCM/ToD/ToE operational data promoted.',
 NULL,{q(now)});
 """, "/tmp/icofr_audit.sql")
 
