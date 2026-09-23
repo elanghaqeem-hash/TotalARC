@@ -762,10 +762,20 @@ fv = fin_counts[0] if fin_counts else {}
 if int(fv.get("total") or 0) != 52 or int(fv.get("significant") or 0) != 37 or int(fv.get("borderline") or 0) != 1:
     raise RuntimeError(f"FINANCIAL_ITEM_VERIFY_FAILED_{fv}")
 
-matched_process_count = sum(
-    1 for m in metadata
-    if m.get("sourceKey") in process_item_ids and json.loads(m["payloadJson"]).get("matchedBusinessProcess")
-)
+process_matches = []
+for m in metadata:
+    if m.get("sourceKey") not in process_item_ids:
+        continue
+    payload = json.loads(m["payloadJson"])
+    process_matches.append({
+        "sourceCode": m.get("sourceKey"),
+        "sourceName": payload.get("name") or payload.get("processName"),
+        "matchedBusinessProcess": payload.get("matchedBusinessProcess"),
+    })
+process_matches.sort(key=lambda x: str(x.get("sourceCode") or ""))
+matched_process_count = sum(1 for x in process_matches if x.get("matchedBusinessProcess"))
+unmatched_processes = [x for x in process_matches if not x.get("matchedBusinessProcess")]
+
 app_source_sig = sum(1 for a in APPLICATIONS if bool(a.get("sourceSignificant")))
 app_scope_in = sum(1 for a in APPLICATIONS if bool(a.get("sourceSignificant")) or bool(a.get("previousArtifactProvisionalInScope")))
 if app_source_sig != 31 or app_scope_in < 31:
@@ -779,7 +789,12 @@ summary = {
         "tolerableThreshold": tolerable, "clearlyTrivial": trivial_amt, "status": MAT.get("workpaperStatus"),
     },
     "financialItems": {"assessed": 52, "sourceSignificant": 37, "borderline": 1, "inScope": 38, "notSignificant": 14},
-    "businessProcesses": {"complete": True, "assessed": 16, "inScope": 16, "matchedToExistingMaster": matched_process_count},
+    "businessProcesses": {
+        "complete": True, "assessed": 16, "inScope": 16,
+        "matchedToExistingMaster": matched_process_count,
+        "unmatchedToExistingMaster": len(unmatched_processes),
+        "matches": process_matches,
+    },
     "applications": {
         "assessed": 62, "sourceSignificant": 31,
         "provisionalInScopeFromPreviousArtifact": sum(1 for a in APPLICATIONS if bool(a.get("previousArtifactProvisionalInScope")) and not bool(a.get("sourceSignificant"))),
