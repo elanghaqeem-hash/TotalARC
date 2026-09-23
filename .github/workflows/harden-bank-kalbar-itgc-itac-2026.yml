@@ -46,19 +46,32 @@ jobs:
             [ "$code" = "200" ] || { echo "::error::$name HTTP $code"; cat "$output" || true; exit 1; }
             cat "$output"
           }
-          ITGC="$(fetch_json itgc '/api/icofr/controls?category=ITGC')"
-          ITAC="$(fetch_json itac '/api/icofr/controls?category=ITAC')"
-          printf '%s' "$ITGC" | jq -e '
-            (.records | length) == 10 and
-            ([.records[].sourceControlId] | unique | length) == 10 and
-            ([.records[] | .subcategory] | group_by(.) | map({k:.[0],v:length}) | from_entries) ==
-              {"Access to Program and Data":4,"Computer Operations":4,"Program Changes":1,"Program Development":1} and
-            ([.records[] | select(.status == "Under Review")] | length) == 10
-          ' >/dev/null
-          printf '%s' "$ITAC" | jq -e '
-            (.records | length) == 0 and
-            (.candidates | length) == 4 and
-            ([.candidates[] | select(.candidateStatus == "CONTRADICTORY_SOURCE_CLASSIFICATION")] | length) == 2 and
-            ([.candidates[] | select(.candidateStatus == "PROCESS_OWNER_REVIEW_PENDING")] | length) == 2
-          ' >/dev/null
+          verified=0
+          for attempt in $(seq 1 12); do
+            ITGC="$(fetch_json itgc '/api/icofr/controls?category=ITGC')"
+            ITAC="$(fetch_json itac '/api/icofr/controls?category=ITAC')"
+            if printf '%s' "$ITGC" | jq -e '
+              (.records | length) == 10 and
+              ([.records[].sourceControlId] | unique | length) == 10 and
+              ([.records[] | .subcategory] | sort | group_by(.) | map({key:.[0],value:length}) | from_entries) ==
+                {"Access to Program and Data":4,"Computer Operations":4,"Program Changes":1,"Program Development":1} and
+              ([.records[] | select(.status == "Under Review")] | length) == 10
+            ' >/dev/null 2>&1 &&
+            printf '%s' "$ITAC" | jq -e '
+              (.records | length) == 0 and
+              (.candidates | length) == 4 and
+              ([.candidates[] | select(.candidateStatus == "CONTRADICTORY_SOURCE_CLASSIFICATION")] | length) == 2 and
+              ([.candidates[] | select(.candidateStatus == "PROCESS_OWNER_REVIEW_PENDING")] | length) == 2
+            ' >/dev/null 2>&1; then
+              verified=1
+              break
+            fi
+            sleep 10
+          done
+          [ "$verified" = "1" ] || {
+            echo "::error::ITGC/ITAC production API did not reach the expected deployed state."
+            printf '%s\n' "$ITGC" | jq '{itgcRecords:(.records|length),subcategories:[.records[].subcategory]}'
+            printf '%s\n' "$ITAC" | jq '{itacRecords:(.records|length),candidateCount:(.candidates|length)}'
+            exit 1
+          }
           echo "itgc-itac-production: healthy"
