@@ -822,10 +822,17 @@ SELECT COUNT(*) n FROM (
 """)
 ungoverned_unmapped=int(ungoverned_rows[0]["n"] if ungoverned_rows else 0)
 
+ckpn_req_count=int(rows("SELECT COUNT(*) n FROM RCMDesignRequirement WHERE institutionId="+q(iid)+" AND category='CKPN'")[0]["n"])
+reverse_repo_req_count=int(rows("SELECT COUNT(*) n FROM RCMDesignRequirement WHERE institutionId="+q(iid)+" AND category='Reverse Repo'")[0]["n"])
+
+if control_count!=132: raise RuntimeError("VERIFY_CONTROLMASTER_132_FAILED_"+str(control_count))
 if legacy_count!=124: raise RuntimeError("VERIFY_LEGACY_124_FAILED")
 if uus_count!=42: raise RuntimeError("VERIFY_UUS_42_FAILED_"+str(uus_count))
 if itgc_count!=10: raise RuntimeError("VERIFY_ITGC_10_FAILED_"+str(itgc_count))
+if ckpn_req_count!=9: raise RuntimeError("VERIFY_CKPN_REQUIREMENTS_9_FAILED_"+str(ckpn_req_count))
+if reverse_repo_req_count!=1: raise RuntimeError("VERIFY_REVERSE_REPO_REQUIREMENT_1_FAILED_"+str(reverse_repo_req_count))
 if req_count!=10: raise RuntimeError("VERIFY_REQUIREMENTS_10_FAILED_"+str(req_count))
+if elc_refs!=63: raise RuntimeError("VERIFY_ELC_DRAFT_REFERENCES_63_FAILED_"+str(elc_refs))
 if elc_active!=0: raise RuntimeError("ELC_ILLUSTRATIVE_PROMOTED_ACTIVE")
 if invalid_process or invalid_mapping or cross_process or false_effective or ungoverned_unmapped:
     raise RuntimeError("RCM_INTEGRITY_FAILED_"+json.dumps({
@@ -865,8 +872,8 @@ summary={
   "tlc2026ProcessMappingPending":pending_tlc,
   "detail2026Promoted":promoted_detail,
   "itgcControls":itgc_count,
-  "ckpnRequirements":len(CKPN_REQUIREMENTS),
-  "reverseRepoRequirements":len(REVERSE_REPO_REQUIREMENTS),
+  "ckpnRequirements":ckpn_req_count,
+  "reverseRepoRequirements":reverse_repo_req_count,
   "elcIllustrativeReferences":elc_refs,
   "elcIllustrativeActiveControls":elc_active,
   "mappingStats":mapping_stats,
