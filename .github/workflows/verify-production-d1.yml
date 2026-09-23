@@ -260,25 +260,31 @@ jobs:
             ([.scopes[] | select(
               .fiscalYear == 2026 and
               .scopeName == "Bank Kalbar ICOFR Tahun Buku 2026" and
-              .benchmarkType == "Profit Before Tax" and
-              .benchmarkAmount == 673381000000 and
+              .benchmarkType == "Profit Before Tax - normalized 3-year average" and
+              .benchmarkAmount == 638098666667 and
               .overallMaterialityPercent == 5 and
-              .overallMaterialityAmount == 31904900000 and
+              .overallMaterialityAmount == 31904933333 and
               .performanceMaterialityPercent == 50 and
-              .performanceMaterialityAmount == 15952500000 and
+              .performanceMaterialityAmount == 15952466667 and
               .clearlyTrivialPercent == 5 and
-              .clearlyTrivialAmount == 797620000 and
-              .status == "Under Review" and
-              (.parameters | type) == "array" and
-              ([.parameters[] | select(.parameterCode == "OM_AMOUNT" and .status == "UNDER_REVIEW_RECONCILIATION")] | length) == 1 and
-              ([.parameters[] | select(.parameterCode == "PM_AMOUNT" and .status == "PROVISIONAL")] | length) == 1 and
+              .clearlyTrivialAmount == 797623333 and
+              .status == "Approved" and
+              (.approvedBy != null and (.approvedBy | length) > 0) and
+              ([.parameters[] | select(.parameterCode == "OM_AMOUNT" and .status == "FINAL_APPROVED")] | length) == 1 and
+              ([.parameters[] | select(.parameterCode == "PM_AMOUNT" and .status == "FINAL_APPROVED")] | length) == 1 and
+              ([.parameters[] | select(.parameterCode == "REQUEST_TRACKER_OM_ALTERNATE" and .numericValue == 33669050000 and .status == "SOURCE_CONFLICT_NOT_ACTIVE")] | length) == 1 and
               ([.populationSummaries[] | select(
                 .populationType == "FSLI" and
                 .assessedCount == 52 and
-                .significantCount == 38 and
+                .significantCount == 37 and
                 .quantitativeSignificantCount == 36 and
-                .qualitativeOnlyCount == 2 and
+                .qualitativeOnlyCount == 1 and
                 .notSignificantCount == 14
+              )] | length) == 1 and
+              ([.populationSummaries[] | select(
+                .populationType == "BUSINESS_PROCESS" and
+                .assessedCount == 16 and
+                .significantCount == 16
               )] | length) == 1 and
               ([.populationSummaries[] | select(
                 .populationType == "APPLICATION" and
@@ -286,9 +292,11 @@ jobs:
                 .significantCount == 31 and
                 .sourceStatus == "REVALIDATION_REQUIRED"
               )] | length) == 1 and
-              ([.items[] | select(.code == "SC-ELC" and .inScope == true)] | length) == 1 and
-              ([.items[] | select(.code == "SC-ITGC" and .inScope == true)] | length) == 1 and
-              ([.items[] | select(.code == "SC-CUSTOMER-SERVICE" and .inScope == false)] | length) == 1
+              ([.items[] | select(.itemType == "Financial Account")] | length) == 52 and
+              ([.items[] | select(.itemType == "Financial Account" and .inScope == true)] | length) == 38 and
+              ([.items[] | select(.itemType == "Business Process")] | length) == 16 and
+              ([.items[] | select(.itemType == "Business Process" and .inScope == true)] | length) == 16 and
+              ([.issues[] | select(.issueCode == "MAT-OM-SOURCE-CONFLICT" and .status == "CLOSED")] | length) == 1
             )] | length) == 1
           '
 
