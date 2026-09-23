@@ -117,11 +117,15 @@ jobs:
               ([.items[] | select(.itemType == "Financial Account" and .inScope == true)] | length) == 38 and
               ([.items[] | select(.itemType == "Business Process")] | length) == 16 and
               ([.items[] | select(.itemType == "Business Process" and .inScope == true)] | length) == 16 and
+              ([.items[] | select(.itemType == "Business Process" and .sourceId != null)] | length) == 14 and
+              ([.items[] | select(.code == "P-11" and .sourceId == null)] | length) == 1 and
+              ([.items[] | select(.code == "P-13" and .sourceId == null)] | length) == 1 and
               ([.items[] | select(.itemType == "IT System")] | length) == 62 and
               ([.items[] | select(.itemType == "IT System" and .sourceMetadata.sourceConclusion == "Signifikan")] | length) == 31 and
               ([.items[] | select(.code == "SC-ELC" and .inScope == true)] | length) == 1 and
               ([.items[] | select(.code == "SC-CUSTOMER-SERVICE")] | length) == 0 and
-              ([.issues[] | select(.status == "OPEN")] | length) == 6 and
+              ([.issues[] | select(.status == "OPEN")] | length) == 7 and
+              ([.issues[] | select(.issueCode == "PROCESS-MASTER-LINK-GAP" and .status == "OPEN")] | length) == 1 and
               ([.issues[] | select(.issueCode == "FSLI-BORDERLINE" and .status == "OPEN")] | length) == 1 and
               ([.issues[] | select(.issueCode == "CSA-ILLUSTRATIVE-NOT-SOURCE" and .status == "CLOSED")] | length) == 1 and
               ([.links[] | select(.relationType == "FSLI_TO_PROCESS")] | length) > 0 and

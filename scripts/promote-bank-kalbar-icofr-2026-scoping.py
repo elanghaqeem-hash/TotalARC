@@ -427,6 +427,11 @@ def best_process(process):
     if not scored:
         return None
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    # Never create a sourceId linkage from weak token overlap alone.
+    # Scoping population may be complete even when the operational BPM master
+    # has not yet been created for a newly scoped process.
+    if scored[0][0] < 80:
+        return None
     return scored[0][2]
 
 
@@ -676,8 +681,44 @@ updatedAt=excluded.updatedAt;
 """)
 execute("\n".join(pop_sql), "/tmp/icofr_scope_population.sql")
 
+process_matches = []
+for m in metadata:
+    if m.get("sourceKey") not in process_item_ids:
+        continue
+    payload = json.loads(m["payloadJson"])
+    process_matches.append({
+        "sourceCode": m.get("sourceKey"),
+        "sourceName": payload.get("name") or payload.get("processName"),
+        "matchedBusinessProcess": payload.get("matchedBusinessProcess"),
+    })
+process_matches.sort(key=lambda x: str(x.get("sourceCode") or ""))
+matched_process_count = sum(1 for x in process_matches if x.get("matchedBusinessProcess"))
+unmatched_processes = [x for x in process_matches if not x.get("matchedBusinessProcess")]
+
+effective_issues = list(ISSUES)
+if unmatched_processes:
+    effective_issues.append({
+        "code": "PROCESS-MASTER-LINK-GAP",
+        "category": "Business Process",
+        "severity": "MEDIUM",
+        "status": "OPEN",
+        "description": (
+            "The FY2026 ICOFR source population is complete at 16/16 processes, but "
+            + str(len(unmatched_processes))
+            + " scoped process(es) have no defensible existing BusinessProcess master linkage."
+        ),
+        "activeDecision": (
+            "Keep the source-confirmed process in ICOFR scope with sourceId null. "
+            "Do not create or alter BPM master records from this scoping-only feed."
+        ),
+        "affectedProcesses": [
+            {"code": x.get("sourceCode"), "name": x.get("sourceName")}
+            for x in unmatched_processes
+        ],
+    })
+
 issue_sql = []
-for issue in ISSUES:
+for issue in effective_issues:
     issue_code = issue["code"]
     affected = {k: v for k, v in issue.items() if k not in {
         "code", "category", "severity", "status", "description", "activeDecision"
@@ -752,7 +793,9 @@ if db_link_map.get("FSLI_TO_APPLICATION") != app_link_count:
 
 issue_counts = rows("SELECT status,COUNT(*) n FROM ICOFRScopingIssue WHERE scopeId=" + q(scope_id) + " GROUP BY status")
 issue_map = {str(r["status"]): int(r["n"]) for r in issue_counts}
-if issue_map.get("OPEN") != 6 or issue_map.get("CLOSED") != 1:
+expected_open_issues = sum(1 for x in effective_issues if x.get("status") == "OPEN")
+expected_closed_issues = sum(1 for x in effective_issues if x.get("status") == "CLOSED")
+if issue_map.get("OPEN") != expected_open_issues or issue_map.get("CLOSED") != expected_closed_issues:
     raise RuntimeError(f"ISSUE_COUNT_VERIFY_FAILED_{issue_map}")
 
 fin_counts = rows("SELECT COUNT(*) total,SUM(CASE WHEN significant=1 THEN 1 ELSE 0 END) significant,"
@@ -761,20 +804,6 @@ fin_counts = rows("SELECT COUNT(*) total,SUM(CASE WHEN significant=1 THEN 1 ELSE
 fv = fin_counts[0] if fin_counts else {}
 if int(fv.get("total") or 0) != 52 or int(fv.get("significant") or 0) != 37 or int(fv.get("borderline") or 0) != 1:
     raise RuntimeError(f"FINANCIAL_ITEM_VERIFY_FAILED_{fv}")
-
-process_matches = []
-for m in metadata:
-    if m.get("sourceKey") not in process_item_ids:
-        continue
-    payload = json.loads(m["payloadJson"])
-    process_matches.append({
-        "sourceCode": m.get("sourceKey"),
-        "sourceName": payload.get("name") or payload.get("processName"),
-        "matchedBusinessProcess": payload.get("matchedBusinessProcess"),
-    })
-process_matches.sort(key=lambda x: str(x.get("sourceCode") or ""))
-matched_process_count = sum(1 for x in process_matches if x.get("matchedBusinessProcess"))
-unmatched_processes = [x for x in process_matches if not x.get("matchedBusinessProcess")]
 
 app_source_sig = sum(1 for a in APPLICATIONS if bool(a.get("sourceSignificant")))
 app_scope_in = sum(1 for a in APPLICATIONS if bool(a.get("sourceSignificant")) or bool(a.get("previousArtifactProvisionalInScope")))
@@ -811,7 +840,7 @@ INSERT INTO OperationalDataFeedRun(id,institutionId,batchCode,module,sourceRole,
 status,summaryJson,completedAt)
 VALUES({q(feed_id)},{q(iid)},{q(BATCH)},'ICOFR Scoping','USER_UPLOAD_6_FILES',
 {q(json.dumps(SOURCE_FILES,ensure_ascii=False,separators=(',',':')))},
-{len(scope_items)+len(metadata)+len(links)+len(params)+len(populations)+len(ISSUES)+52},
+{len(scope_items)+len(metadata)+len(links)+len(params)+len(populations)+len(effective_issues)+52},
 'Completed',{q(json.dumps(summary,ensure_ascii=False,separators=(',',':')))},{q(now)})
 ON CONFLICT(institutionId,batchCode) DO UPDATE SET sourceReferencesJson=excluded.sourceReferencesJson,
 recordsUpserted=excluded.recordsUpserted,status='Completed',summaryJson=excluded.summaryJson,completedAt=excluded.completedAt;
