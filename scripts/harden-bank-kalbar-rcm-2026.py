@@ -546,8 +546,28 @@ promoted_tlc=0
 pending_tlc=0
 for rec in tlc_source:
     cid,status=upsert_source_risk_and_control(rec,"RCM_TLC_UPDATE_CANDIDATE",30)
-    if cid: promoted_tlc+=1
-    else: pending_tlc+=1
+    if cid:
+        promoted_tlc+=1
+    else:
+        pending_tlc+=1
+        p=json.loads(rec.get("payloadJson") or "{}")
+        ref=clean(p.get("controlReference")) or clean(rec.get("recordTitle"))
+        draft_sql=f"""
+INSERT INTO RCMDraftReference(
+ id,institutionId,referenceType,referenceCode,title,payloadJson,sourceRecordId,sourceDocumentId,
+ sourceReference,sourceStatus,validationRequired,operationalControlId,updatedAt
+) VALUES(
+ {q(hid(iid,'RCM-DRAFT-REF','RCM_TLC_UPDATE_CANDIDATE',ref))},{q(iid)},
+ 'RCM_TLC_UPDATE_CANDIDATE',{q(ref)},{q(rec.get('recordTitle'))},{q(rec.get('payloadJson') or '{}')},
+ {q(rec['id'])},{q(rec['sourceDocumentId'])},{q('SERAYA:'+str(rec.get('recordKey') or ref))},
+ 'PROCESS_MAPPING_PENDING',1,NULL,{q(now)}
+)
+ON CONFLICT(institutionId,referenceType,referenceCode) DO UPDATE SET
+ title=excluded.title,payloadJson=excluded.payloadJson,sourceRecordId=excluded.sourceRecordId,
+ sourceDocumentId=excluded.sourceDocumentId,sourceReference=excluded.sourceReference,
+ sourceStatus='PROCESS_MAPPING_PENDING',validationRequired=1,operationalControlId=NULL,updatedAt=excluded.updatedAt;
+"""
+        execute(draft_sql,"/tmp/rcm_tlc_pending_one.sql")
 
 # 15 higher-priority detailed controls. Exact linked R-risk is already operational.
 detail_source=rows(f"""
@@ -570,26 +590,19 @@ for rec in detail_source:
     risk=rows("SELECT id,processId FROM RiskMaster WHERE institutionId="+q(iid)+" AND riskId="+q(linked_ref)+" LIMIT 2")
     if len(risk)!=1:
         continue
-    # Only use an existing risk where process hierarchy is exactly aligned.
-    if str(risk[0]["processId"])!=pid:
-        # Risk is often linked to a source-backed L3 subprocess. Resolve child by exact source subprocess.
-        sub=clean(p.get("subprocess"))
-        candidates=[
-          x for x in process_rows
-          if int(x.get("level") or 0)==3 and clean(x.get("name"))==sub and str(x.get("parentProcessId") or "")==pid
-        ]
-        if len(candidates)==1:
-            # source control belongs on the same L3 process as its already-promoted exact risk
-            if str(risk[0]["processId"])==str(candidates[0]["id"]):
-                force_pid=str(candidates[0]["id"])
-            else:
-                force_pid=None
-        else:
-            force_pid=None
-    else:
-        force_pid=pid
-    if force_pid is None:
+    risk_pid=str(risk[0]["processId"])
+    risk_process=next((x for x in process_rows if str(x.get("id"))==risk_pid),None)
+    if not risk_process:
         continue
+    # Keep the control on exactly the same process as the existing source-backed risk.
+    # Accept either the mapped canonical L2 or one of its direct L3 children.
+    hierarchy_aligned = (
+        risk_pid==pid or
+        (int(risk_process.get("level") or 0)==3 and str(risk_process.get("parentProcessId") or "")==pid)
+    )
+    if not hierarchy_aligned:
+        continue
+    force_pid=risk_pid
 
     cid=hid(iid,"RCM-SOURCE-CONTROL","ICOFR_CONTROL_DETAIL_UPDATE_CANDIDATE",ref)
     name=clean(p.get("controlActivity")) or ref
@@ -643,6 +656,9 @@ ON CONFLICT(controlId,riskId) DO NOTHING;
 """
     execute(sql,"/tmp/rcm_detail_one.sql")
     promoted_detail+=1
+
+if promoted_detail!=15:
+    raise RuntimeError("DETAIL_CONTROL_PROMOTION_COUNT_"+str(promoted_detail)+"_15")
 
 # ---------------------------------------------------------------------------
 # 3) ITGC: promote exact 10 source rows as Draft in four standard domains.
@@ -792,15 +808,19 @@ WHERE institutionId="""+q(iid)+""" AND status='Draft'
   AND (designAssessment NOT IN ('Not Assessed','') OR operatingStatus NOT IN ('Not Assessed','')
        OR overallHealth NOT IN ('Not Assessed',''))
 """)[0]["n"])
-ungoverned_unmapped=int(rows("""
-SELECT COUNT(*) n
-FROM ControlMaster c
-LEFT JOIN ControlRiskMapping m ON m.controlId=c.id
-LEFT JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id
-WHERE c.institutionId="""+q(iid)+"""
-GROUP BY c.id
-HAVING COUNT(m.riskId)=0 AND (sm.mappingStatus IS NULL OR sm.mappingStatus NOT LIKE 'PENDING%')
-""")[0]["n"]) if control_count else 0
+ungoverned_rows=rows("""
+SELECT COUNT(*) n FROM (
+  SELECT c.id
+  FROM ControlMaster c
+  LEFT JOIN ControlRiskMapping m ON m.controlId=c.id
+  LEFT JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id
+  WHERE c.institutionId="""+q(iid)+"""
+  GROUP BY c.id
+  HAVING COUNT(m.riskId)=0
+     AND (MAX(sm.mappingStatus) IS NULL OR MAX(sm.mappingStatus) NOT LIKE 'PENDING%')
+)
+""")
+ungoverned_unmapped=int(ungoverned_rows[0]["n"] if ungoverned_rows else 0)
 
 if legacy_count!=124: raise RuntimeError("VERIFY_LEGACY_124_FAILED")
 if uus_count!=42: raise RuntimeError("VERIFY_UUS_42_FAILED_"+str(uus_count))
