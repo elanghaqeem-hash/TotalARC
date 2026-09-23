@@ -68,10 +68,10 @@ async function assuranceSchemaIsCurrent(db: D1DatabaseLike) {
     .prepare(
       `SELECT COUNT(*) AS count
          FROM sqlite_master
-        WHERE type = 'table' AND name IN ('ToETest','TestSample','TestingException','ControlDeficiency','RootCauseAnalysis','Issue','ManagementActionPlan','MAPMilestone','RetestRecord','MonitoringRule','MonitoringRun','CCMException')`
+        WHERE type = 'table' AND name IN ('ToETest','TestSample','TestingException','ControlDeficiency','RootCauseAnalysis','Issue','ManagementActionPlan','MAPMilestone','RetestRecord','MonitoringRule','MonitoringRun','CCMException','AssuranceCalendarEvent')`
     )
     .first<{ count?: number }>();
-  return Number(row?.count || 0) === 12;
+  return Number(row?.count || 0) === 13;
 }
 
 function nowIso() {
@@ -289,6 +289,32 @@ export async function ensureAssuranceSchema() {
       detectedAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ccm_exception_run ON CCMException(runId);
+
+    CREATE TABLE IF NOT EXISTS AssuranceCalendarEvent (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      eventCode TEXT NOT NULL,
+      title TEXT NOT NULL,
+      type TEXT NOT NULL,
+      startDate TEXT NOT NULL,
+      dueDate TEXT NOT NULL,
+      ownerName TEXT NOT NULL,
+      reviewerName TEXT,
+      priority TEXT NOT NULL DEFAULT 'Medium',
+      status TEXT NOT NULL DEFAULT 'Planned',
+      sourceType TEXT NOT NULL DEFAULT 'MANUAL',
+      sourceId TEXT,
+      link TEXT,
+      notes TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_assurance_calendar_code
+      ON AssuranceCalendarEvent(institutionId, eventCode);
+    CREATE INDEX IF NOT EXISTS idx_assurance_calendar_dates
+      ON AssuranceCalendarEvent(institutionId, dueDate, startDate);
+    CREATE INDEX IF NOT EXISTS idx_assurance_calendar_status
+      ON AssuranceCalendarEvent(institutionId, status);
     `);
 
     return db;
@@ -1620,4 +1646,237 @@ export async function enrichRcmWithAssurance(rows: Array<Record<string, unknown>
       retestResult: retest?.result || null
     };
   });
+}
+
+
+function validCalendarDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z'));
+}
+
+function normalizeCalendarLink(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.startsWith('/') && !trimmed.startsWith('//') ? trimmed : null;
+}
+
+async function primaryAssuranceInstitution(db: D1DatabaseLike) {
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1'
+  );
+}
+
+async function auditAssuranceCalendar(
+  db: D1DatabaseLike,
+  institutionId: string,
+  action: string,
+  recordId: string,
+  newValue: unknown,
+  oldValue?: unknown
+) {
+  await run(
+    db,
+    `INSERT INTO AuditLog (
+      id, institutionId, userName, userRole, action, entityType, recordId,
+      oldValue, newValue, reason, ipAddress, timestamp
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      institutionId,
+      'System',
+      'System',
+      action,
+      'AssuranceCalendarEvent',
+      recordId,
+      oldValue === undefined ? null : JSON.stringify(oldValue),
+      newValue === undefined ? null : JSON.stringify(newValue),
+      'Enterprise assurance schedule maintained in Total ARC.',
+      null,
+      nowIso()
+    ]
+  );
+}
+
+export async function listAssuranceCalendarEvents() {
+  const db = await ensureAssuranceSchema();
+  const institution = await primaryAssuranceInstitution(db);
+  if (!institution) return [];
+
+  return all<Record<string, unknown>>(
+    db,
+    `SELECT *
+       FROM AssuranceCalendarEvent
+      WHERE institutionId = ?
+      ORDER BY dueDate ASC, startDate ASC, eventCode ASC`,
+    [institution.id]
+  );
+}
+
+export async function saveAssuranceCalendarEvent(input: Record<string, unknown>) {
+  const db = await ensureAssuranceSchema();
+  const institution = await primaryAssuranceInstitution(db);
+  if (!institution) throw new Error('INSTITUTION_REQUIRED');
+
+  const id = typeof input.id === 'string' && input.id.trim()
+    ? input.id.trim()
+    : crypto.randomUUID();
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AssuranceCalendarEvent WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institution.id]
+  );
+
+  const title = String(input.title || '').trim();
+  const type = String(input.type || '').trim();
+  const startDate = String(input.startDate || '').trim();
+  const dueDate = String(input.dueDate || '').trim();
+  const ownerName = String(input.ownerName || '').trim();
+  const reviewerName = typeof input.reviewerName === 'string' && input.reviewerName.trim()
+    ? input.reviewerName.trim()
+    : null;
+  const priority = String(input.priority || 'Medium').trim();
+  const status = String(input.status || 'Planned').trim();
+  const notes = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim() : null;
+  const link = normalizeCalendarLink(input.link);
+  const sourceType = existing ? String(existing.sourceType || 'MANUAL') : 'MANUAL';
+  const sourceId = existing?.sourceId || null;
+
+  if (!title || !type || !startDate || !dueDate || !ownerName) {
+    throw new Error('CALENDAR_REQUIRED');
+  }
+  if (!validCalendarDate(startDate) || !validCalendarDate(dueDate)) {
+    throw new Error('INVALID_CALENDAR_DATE');
+  }
+  if (dueDate < startDate) throw new Error('INVALID_CALENDAR_DATES');
+  if (!['Low','Medium','High','Critical'].includes(priority)) {
+    throw new Error('INVALID_CALENDAR_PRIORITY');
+  }
+  if (!['Planned','In Progress','Completed','Cancelled','On Hold'].includes(status)) {
+    throw new Error('INVALID_CALENDAR_STATUS');
+  }
+
+  const now = nowIso();
+  const eventCode =
+    existing?.eventCode ||
+    ('CAL-' + new Date().getUTCFullYear() + '-' + crypto.randomUUID().slice(0, 8).toUpperCase());
+
+  const duplicate = await first<Record<string, unknown>>(
+    db,
+    `SELECT id FROM AssuranceCalendarEvent
+      WHERE institutionId = ? AND eventCode = ? AND id <> ? LIMIT 1`,
+    [institution.id, eventCode, id]
+  );
+  if (duplicate) throw new Error('CALENDAR_EVENT_CONFLICT');
+
+  const record = {
+    id,
+    institutionId: String(institution.id),
+    eventCode,
+    title,
+    type,
+    startDate,
+    dueDate,
+    ownerName,
+    reviewerName,
+    priority,
+    status,
+    sourceType,
+    sourceId,
+    link,
+    notes,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now
+  };
+
+  if (existing) {
+    await run(
+      db,
+      `UPDATE AssuranceCalendarEvent SET
+        title = ?, type = ?, startDate = ?, dueDate = ?, ownerName = ?, reviewerName = ?,
+        priority = ?, status = ?, link = ?, notes = ?, updatedAt = ?
+       WHERE id = ? AND institutionId = ?`,
+      [
+        title,
+        type,
+        startDate,
+        dueDate,
+        ownerName,
+        reviewerName,
+        priority,
+        status,
+        link,
+        notes,
+        now,
+        id,
+        institution.id
+      ]
+    );
+    await auditAssuranceCalendar(db, String(institution.id), 'UPDATE', id, record, existing);
+  } else {
+    await run(
+      db,
+      `INSERT INTO AssuranceCalendarEvent (
+        id, institutionId, eventCode, title, type, startDate, dueDate, ownerName, reviewerName,
+        priority, status, sourceType, sourceId, link, notes, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.id,
+        record.institutionId,
+        record.eventCode,
+        record.title,
+        record.type,
+        record.startDate,
+        record.dueDate,
+        record.ownerName,
+        record.reviewerName,
+        record.priority,
+        record.status,
+        record.sourceType,
+        record.sourceId,
+        record.link,
+        record.notes,
+        record.createdAt,
+        record.updatedAt
+      ]
+    );
+    await auditAssuranceCalendar(db, String(institution.id), 'CREATE', id, record);
+  }
+
+  return record;
+}
+
+export async function deleteAssuranceCalendarEvent(id: string) {
+  const db = await ensureAssuranceSchema();
+  const institution = await primaryAssuranceInstitution(db);
+  if (!institution) throw new Error('INSTITUTION_REQUIRED');
+
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM AssuranceCalendarEvent WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, institution.id]
+  );
+  if (!existing) throw new Error('CALENDAR_EVENT_NOT_FOUND');
+  if (String(existing.sourceType || 'MANUAL') !== 'MANUAL') {
+    throw new Error('CALENDAR_SOURCE_EVENT_LOCKED');
+  }
+
+  await run(
+    db,
+    'DELETE FROM AssuranceCalendarEvent WHERE id = ? AND institutionId = ?',
+    [id, institution.id]
+  );
+  await auditAssuranceCalendar(
+    db,
+    String(institution.id),
+    'DELETE',
+    id,
+    { deleted: true, eventCode: existing.eventCode },
+    existing
+  );
+
+  return {
+    id,
+    eventCode: existing.eventCode,
+    deleted: true
+  };
 }
