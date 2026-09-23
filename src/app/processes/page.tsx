@@ -51,6 +51,8 @@ export default function ProcessesPage() {
   const [deleteError, setDeleteError] = useState('');
   const [processLoadError, setProcessLoadError] = useState('');
   const [processLoading, setProcessLoading] = useState(true);
+  const [draftApplying, setDraftApplying] = useState(false);
+  const [draftApplyError, setDraftApplyError] = useState('');
   const process360Ref = useRef<HTMLDivElement | null>(null);
 
   // New process form state
@@ -220,6 +222,38 @@ export default function ProcessesPage() {
     }
   };
 
+  const handleApplyRcmDraft = async () => {
+    const draft = selectedProcess?.rcmDraft;
+    const processId = selectedProcess?.id;
+    const sourceFingerprint = draft?.sourceFingerprint;
+
+    if (!processId || !sourceFingerprint) return;
+
+    setDraftApplying(true);
+    setDraftApplyError('');
+    try {
+      const res = await fetch('/api/processes/rcm-drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processId, sourceFingerprint })
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || 'Unable to validate and apply the RCM-derived BPM draft.');
+      }
+
+      await loadProcesses(processId);
+    } catch (error) {
+      setDraftApplyError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to validate and apply the RCM-derived BPM draft.'
+      );
+    } finally {
+      setDraftApplying(false);
+    }
+  };
+
   const selectedCategoryRecord = categories.find(
     (category: any) => String(category.id) === String(selectedCategory)
   );
@@ -254,6 +288,7 @@ export default function ProcessesPage() {
   const selectedScopeCode = String(
     selectedProcessTags.icoFrScopingCode || selectedProcessTags.relatedIcofrScopingCode || ''
   );
+  const selectedRcmDraft = selectedProcess?.rcmDraft || null;
 
   return (
     <div className="space-y-4 pb-2 sm:space-y-6">
@@ -405,6 +440,11 @@ export default function ProcessesPage() {
                     {detailPending && (
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
                         Detail pending
+                      </span>
+                    )}
+                    {proc.rcmDraft?.status === 'PENDING_USER_VALIDATION' && (
+                      <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[10px] font-bold text-cyan-800">
+                        RCM draft pending
                       </span>
                     )}
                     {proc.isIcofrRelevant && (
@@ -582,6 +622,162 @@ export default function ProcessesPage() {
                   </div>
                 )}
               </div>
+
+              {selectedRcmDraft?.status === 'PENDING_USER_VALIDATION' && (
+                <div className="space-y-4 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4 sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-cyan-200 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-800">
+                          RCM-derived BPM draft
+                        </span>
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-800">
+                          User validation required
+                        </span>
+                      </div>
+                      <h3 className="mt-2 text-sm font-black text-slate-900">
+                        Draft BPM tersedia dari konteks RCM
+                      </h3>
+                      <p className="mt-1 text-[11px] leading-5 text-slate-600">
+                        Draft ini belum mengubah Process Objective, Activity Register, maupun SIPOC operasional.
+                        Review isi di bawah ini terlebih dahulu. Hanya klik <strong>Validate &amp; Apply</strong>{' '}
+                        bila scope, urutan, role, system, input/output, dan control-point sudah dianggap memadai
+                        untuk digunakan.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center text-[10px] sm:min-w-[240px]">
+                      <div className="rounded-xl border border-cyan-100 bg-white p-2">
+                        <div className="font-black text-slate-900">
+                          {selectedRcmDraft.sourceSummary?.riskCount || 0}
+                        </div>
+                        <div className="text-slate-500">Risks</div>
+                      </div>
+                      <div className="rounded-xl border border-cyan-100 bg-white p-2">
+                        <div className="font-black text-slate-900">
+                          {selectedRcmDraft.sourceSummary?.controlCount || 0}
+                        </div>
+                        <div className="text-slate-500">Controls</div>
+                      </div>
+                      <div className="rounded-xl border border-cyan-100 bg-white p-2">
+                        <div className="font-black text-slate-900">
+                          {selectedRcmDraft.sourceSummary?.mappingCount || 0}
+                        </div>
+                        <div className="text-slate-500">Mappings</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      Draft Process Narrative
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-700">
+                      {selectedRcmDraft.narrative}
+                    </p>
+                  </div>
+
+                  {selectedRcmDraft.missingSections?.includes('objective') && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        Draft Objective
+                      </div>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-slate-800">
+                        {selectedRcmDraft.objective}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedRcmDraft.missingSections?.includes('activities') &&
+                    selectedRcmDraft.activities?.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            Draft Activity / Control-point Sequence
+                          </div>
+                          <div className="text-[10px] text-amber-700">
+                            Sequence belum source-confirmed
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {selectedRcmDraft.activities.map((activity: any) => (
+                            <div
+                              key={activity.activityId}
+                              className="rounded-xl border border-slate-200 bg-white p-3"
+                            >
+                              <div className="flex items-start gap-2">
+                                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-100 text-[9px] font-black text-cyan-800">
+                                  {activity.orderIndex}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-black text-slate-900">
+                                    {activity.name}
+                                  </div>
+                                  <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                                    {activity.description}
+                                  </div>
+                                  <div className="mt-1 text-[10px] text-slate-400">
+                                    Performer: {activity.performer || 'To be validated'} · Nature:{' '}
+                                    {activity.nature} · Frequency: {activity.frequency}
+                                    {activity.systemUsed ? ` · System: ${activity.systemUsed}` : ''}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {selectedRcmDraft.missingSections?.includes('sipoc') && selectedRcmDraft.sipoc && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        Draft SIPOC
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 text-[10px] sm:grid-cols-5">
+                        {[
+                          ['Supplier', selectedRcmDraft.sipoc.suppliers],
+                          ['Input', selectedRcmDraft.sipoc.inputs],
+                          ['Process', selectedRcmDraft.sipoc.processSteps],
+                          ['Output', selectedRcmDraft.sipoc.outputs],
+                          ['Customer', selectedRcmDraft.sipoc.customers]
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-white p-2.5">
+                            <div className="font-black uppercase text-slate-400">{label}</div>
+                            <div className="mt-1 break-words leading-4 text-slate-700">{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-4 text-amber-800">
+                    <strong>Validation gate:</strong> Draft ini tidak dipakai sebagai BPM operasional sebelum
+                    user melakukan Validate &amp; Apply. Setelah diterapkan, perubahan RCM berikutnya tetap harus
+                    direview karena dapat membuat draft sebelumnya tidak lagi relevan.
+                  </div>
+
+                  {draftApplyError && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                      {draftApplyError}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-[10px] leading-4 text-slate-500">
+                      Missing sections: {selectedRcmDraft.missingSections?.join(', ')}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={draftApplying}
+                      onClick={handleApplyRcmDraft}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>{draftApplying ? 'Applying validated draft…' : 'Validate & Apply Draft'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Objectives & Strategic KPIs (Section 22) */}
               {selectedProcess.objectives?.length > 0 && (
