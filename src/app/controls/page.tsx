@@ -19,6 +19,7 @@ import {
   Activity
 } from 'lucide-react';
 import { getHealthBadgeClasses } from '@/lib/utils';
+import { DataLoadingState } from '@/components/common/DataLoadingState';
 
 export default function ControlsPage() {
   const [controls, setControls] = useState<any[]>([]);
@@ -29,6 +30,8 @@ export default function ControlsPage() {
   const [newControlModal, setNewControlModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [controlLoading, setControlLoading] = useState(true);
+  const [controlLoadError, setControlLoadError] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -47,6 +50,8 @@ export default function ControlsPage() {
   });
 
   const loadControls = () => {
+    setControlLoading(true);
+    setControlLoadError('');
     Promise.all([
       fetch('/api/controls').then(res => {
         if (!res.ok) throw new Error('Unable to load controls.');
@@ -90,7 +95,15 @@ export default function ControlsPage() {
           };
         });
       })
-      .catch(console.error);
+      .catch(error => {
+        console.error(error);
+        setControlLoadError(
+          error instanceof Error ? error.message : 'Unable to load control data.'
+        );
+      })
+      .finally(() => {
+        setControlLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -186,15 +199,25 @@ export default function ControlsPage() {
         </div>
 
         <div className="text-xs text-slate-500 font-semibold">
-          Showing {filtered.length} Enterprise Controls
+          {controlLoading ? 'Loading Enterprise Controls...' : `Showing ${filtered.length} Enterprise Controls`}
         </div>
       </div>
+
+      {controlLoadError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+          <strong className="font-black">Control data unavailable.</strong>{' '}
+          {controlLoadError} Please retry after the database/API connection is available.
+        </div>
+      )}
 
       {/* Split View: Left List, Right Control 360 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left List (5 cols) */}
         <div className="lg:col-span-5 space-y-3">
-          {filtered.map(c => {
+          {controlLoading ? (
+            <DataLoadingState label="Loading controls..." variant="list" rows={3} />
+          ) : (
+            filtered.map(c => {
             const isSelected = selectedControl?.id === c.id;
             const health = getHealthBadgeClasses(c.overallHealth);
             return (
@@ -250,12 +273,15 @@ export default function ControlsPage() {
                 </div>
               </div>
             );
-          })}
+          })
+          )}
         </div>
 
         {/* Right Detail: Control 360 (7 cols) */}
         <div className="lg:col-span-7">
-          {selectedControl ? (
+          {controlLoading ? (
+            <DataLoadingState label="Loading control profile..." variant="profile" className="min-h-[220px]" />
+          ) : selectedControl ? (
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <div className="flex items-center justify-between">
