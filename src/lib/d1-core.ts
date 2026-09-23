@@ -91,6 +91,76 @@ async function executeSchemaScript(db: D1DatabaseLike, script: string) {
   }
 }
 
+async function coreDomainSchemaIsCurrent(db: D1DatabaseLike) {
+  const tableNames = [
+    'Institution',
+    'LegalEntity',
+    'OrganizationUnit',
+    'ProcessCategory',
+    'BusinessProcess',
+    'ProcessObjective',
+    'SIPOC',
+    'ProcessActivity',
+    'RiskMaster',
+    'OperationalRiskMetadata',
+    'ControlMaster',
+    'ControlRiskMapping',
+    'RCMControlSourceMetadata',
+    'RCMLegacyControlRegister',
+    'RCMDesignRequirement',
+    'RCMDraftReference',
+    'RCMIntegrityRun',
+    'AuditLog'
+  ];
+  const tableList = tableNames.map(name => `'${name}'`).join(',');
+  const tableRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+         FROM sqlite_master
+        WHERE type = 'table' AND name IN (${tableList})`
+    )
+    .first<{ count?: number }>();
+
+  if (Number(tableRow?.count || 0) !== tableNames.length) return false;
+
+  const [processColumns, riskColumns, controlColumns, categoryRow] = await Promise.all([
+    db.prepare('PRAGMA table_info(BusinessProcess)').all<{ name?: string }>(),
+    db.prepare('PRAGMA table_info(RiskMaster)').all<{ name?: string }>(),
+    db.prepare('PRAGMA table_info(ControlMaster)').all<{ name?: string }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS count
+           FROM ProcessCategory
+          WHERE code IN ('CAT-GOV','CAT-CORE','CAT-FIN','CAT-IT','CAT-PROC','CAT-HR')`
+      )
+      .first<{ count?: number }>()
+  ]);
+
+  if (Number(categoryRow?.count || 0) !== PROCESS_CATEGORIES.length) return false;
+
+  const processColumnNames = new Set(
+    (processColumns.results || []).map(column => String(column.name || ''))
+  );
+  const riskColumnNames = new Set(
+    (riskColumns.results || []).map(column => String(column.name || ''))
+  );
+  const controlColumnNames = new Set(
+    (controlColumns.results || []).map(column => String(column.name || ''))
+  );
+
+  return (
+    ['level', 'parentProcessId', 'tags', 'updatedAt'].every(name =>
+      processColumnNames.has(name)
+    ) &&
+    ['inherentScore', 'residualScore', 'riskTreatment', 'updatedAt'].every(name =>
+      riskColumnNames.has(name)
+    ) &&
+    ['isItgc', 'frameworkMapping', 'overallHealth', 'updatedAt'].every(name =>
+      controlColumnNames.has(name)
+    )
+  );
+}
+
 function bool(value: unknown): boolean {
   return value === true || value === 1 || value === '1';
 }
@@ -118,6 +188,10 @@ export async function ensureCoreDomainSchema() {
 
   coreDomainSchemaReady = (async () => {
     const db = await getDb();
+
+    if (await coreDomainSchemaIsCurrent(db)) {
+      return db;
+    }
 
     await executeSchemaScript(db, `
     CREATE TABLE IF NOT EXISTS Institution (

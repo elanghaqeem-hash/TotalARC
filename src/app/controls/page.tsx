@@ -66,24 +66,15 @@ export default function ControlsPage() {
   const loadControls = () => {
     setControlLoading(true);
     setControlLoadError('');
-    Promise.all([
-      fetch('/api/controls').then(res => {
+    fetch('/api/controls')
+      .then(res => {
         if (!res.ok) throw new Error('Unable to load controls.');
         return res.json();
-      }),
-      fetch('/api/processes?view=lookup').then(res => {
-        if (!res.ok) throw new Error('Unable to load processes.');
-        return res.json();
-      }),
-      fetch('/api/risks?view=lookup').then(res => {
-        if (!res.ok) throw new Error('Unable to load risks.');
-        return res.json();
       })
-    ])
-      .then(([controlData, processData, riskData]) => {
+      .then(controlData => {
         const nextControls = Array.isArray(controlData.controls) ? controlData.controls : [];
-        const nextProcesses = Array.isArray(processData.processes) ? processData.processes : [];
-        const nextRisks = Array.isArray(riskData.risks) ? riskData.risks : [];
+        const nextProcesses = Array.isArray(controlData.processes) ? controlData.processes : [];
+        const nextRisks = Array.isArray(controlData.risks) ? controlData.risks : [];
 
         setControls(nextControls);
         setProcesses(nextProcesses);
