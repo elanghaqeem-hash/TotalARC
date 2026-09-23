@@ -32,6 +32,19 @@ export default function ControlsPage() {
   const [saveError, setSaveError] = useState('');
   const [controlLoading, setControlLoading] = useState(true);
   const [controlLoadError, setControlLoadError] = useState('');
+  const [creatingRelatedRisk, setCreatingRelatedRisk] = useState(false);
+  const [riskSaving, setRiskSaving] = useState(false);
+  const [riskSaveError, setRiskSaveError] = useState('');
+  const [riskDraft, setRiskDraft] = useState({
+    name: '',
+    category: 'Financial Reporting',
+    ownerName: '',
+    cause: '',
+    event: '',
+    impact: '',
+    inherentLikelihood: 0,
+    inherentImpact: 0
+  });
 
   // Form State
   const [formData, setFormData] = useState({
@@ -115,6 +128,12 @@ export default function ControlsPage() {
     setSaving(true);
     setSaveError('');
 
+    if (!formData.riskId) {
+      setSaveError('Select or create a Related Risk before saving the Control Master so the RCM risk-control mapping is persisted.');
+      setSaving(false);
+      return;
+    }
+
     try {
       const res = await fetch('/api/controls', {
         method: 'POST',
@@ -143,6 +162,8 @@ export default function ControlsPage() {
         isIcofrKey: false
       });
       setNewControlModal(false);
+      setCreatingRelatedRisk(false);
+      setRiskSaveError('');
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Unable to save control.');
     } finally {
@@ -159,6 +180,58 @@ export default function ControlsPage() {
   });
 
   const availableRisks = risks.filter(risk => risk.processId === formData.processId);
+
+  const handleCreateRelatedRisk = async () => {
+    if (!formData.processId) {
+      setRiskSaveError('Select a Business Process before creating a Related Risk.');
+      return;
+    }
+
+    setRiskSaving(true);
+    setRiskSaveError('');
+
+    try {
+      const response = await fetch('/api/risks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          processId: formData.processId,
+          name: riskDraft.name,
+          category: riskDraft.category,
+          ownerName: riskDraft.ownerName,
+          cause: riskDraft.cause,
+          event: riskDraft.event,
+          impact: riskDraft.impact,
+          inherentLikelihood: riskDraft.inherentLikelihood,
+          inherentImpact: riskDraft.inherentImpact
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to create related risk.');
+
+      setRisks(current =>
+        [...current, payload].sort((a, b) => String(a.riskId).localeCompare(String(b.riskId)))
+      );
+      setFormData(current => ({ ...current, riskId: payload.id }));
+      setRiskDraft({
+        name: '',
+        category: 'Financial Reporting',
+        ownerName: '',
+        cause: '',
+        event: '',
+        impact: '',
+        inherentLikelihood: 0,
+        inherentImpact: 0
+      });
+      setCreatingRelatedRisk(false);
+    } catch (error) {
+      setRiskSaveError(
+        error instanceof Error ? error.message : 'Unable to create related risk.'
+      );
+    } finally {
+      setRiskSaving(false);
+    }
+  };
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-6 overflow-x-hidden">
@@ -351,6 +424,38 @@ export default function ControlsPage() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Related Risk Mapping
+                </h3>
+                {selectedControl.risks?.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedControl.risks.map((mapping: any) => (
+                      <div
+                        key={mapping.id || mapping.riskId}
+                        className="rounded-xl border border-brand-100 bg-brand-50/40 p-3.5 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-md border border-brand-200 bg-white px-2 py-0.5 font-mono text-[10px] font-black text-brand-700">
+                            {mapping.risk?.riskId || 'Risk'}
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {mapping.risk?.name || 'Related risk'}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          Persisted in ControlRiskMapping · {mapping.risk?.category || 'Category not recorded'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800">
+                    No related risk is mapped to this control. This control is not yet a complete RCM relationship.
+                  </div>
+                )}
+              </div>
+
               {/* Control Health 360 Evaluation (Section 90 & 107) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -442,9 +547,11 @@ export default function ControlsPage() {
                 <select
                   required
                   value={formData.processId}
-                  onChange={e =>
-                    setFormData({ ...formData, processId: e.target.value, riskId: '' })
-                  }
+                  onChange={e => {
+                    setFormData({ ...formData, processId: e.target.value, riskId: '' });
+                    setCreatingRelatedRisk(false);
+                    setRiskSaveError('');
+                  }}
                   className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 >
                   {processes.length === 0 ? (
@@ -459,23 +566,184 @@ export default function ControlsPage() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1.5">Related Risk</label>
+              <div className="space-y-2">
+                <label className="block text-slate-700 font-bold">
+                  Related Risk <span className="text-rose-600">*</span>
+                </label>
                 <select
+                  required
                   value={formData.riskId}
                   onChange={e => setFormData({ ...formData, riskId: e.target.value })}
-                  className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                  className="h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
                 >
-                  <option value="">No risk mapping yet</option>
+                  <option value="" disabled>
+                    {availableRisks.length > 0
+                      ? 'Select a related risk'
+                      : 'No risk registered for this process'}
+                  </option>
                   {availableRisks.map(risk => (
                     <option key={risk.id} value={risk.id}>
                       {risk.riskId} — {risk.name}
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-[10px] text-slate-500">
-                  Select a risk to create the persisted RCM relationship at the same time.
-                </p>
+
+                <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold text-slate-700">
+                      Risk mapping is required for a new Control Master.
+                    </p>
+                    <p className="mt-0.5 text-[10px] leading-4 text-slate-500">
+                      Saving the control will persist the ControlRiskMapping record and make it available in RCM.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreatingRelatedRisk(current => !current);
+                      setRiskSaveError('');
+                    }}
+                    className="h-9 shrink-0 rounded-lg border border-brand-200 bg-white px-3 text-[10px] font-black text-brand-700 transition hover:bg-brand-50"
+                  >
+                    {creatingRelatedRisk ? 'Close Risk Form' : 'Create Related Risk'}
+                  </button>
+                </div>
+
+                {creatingRelatedRisk && (
+                  <div className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/40 p-3.5">
+                    <div>
+                      <div className="text-[11px] font-black text-slate-900">Quick Related Risk</div>
+                      <div className="mt-0.5 text-[10px] leading-4 text-slate-500">
+                        The risk is registered against the selected Business Process and automatically selected for this control.
+                      </div>
+                    </div>
+
+                    {riskSaveError && (
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[10px] text-rose-700">
+                        {riskSaveError}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold text-slate-600">Risk Name *</label>
+                        <input
+                          type="text"
+                          value={riskDraft.name}
+                          onChange={e => setRiskDraft({ ...riskDraft, name: e.target.value })}
+                          placeholder="Describe the risk event"
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold text-slate-600">Risk Category *</label>
+                        <select
+                          value={riskDraft.category}
+                          onChange={e => setRiskDraft({ ...riskDraft, category: e.target.value })}
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                        >
+                          <option value="Financial Reporting">Financial Reporting</option>
+                          <option value="Operational">Operational</option>
+                          <option value="Compliance">Compliance</option>
+                          <option value="Technology">Technology</option>
+                          <option value="Cybersecurity">Cybersecurity</option>
+                          <option value="Strategic">Strategic</option>
+                          <option value="Fraud">Fraud</option>
+                          <option value="Third Party">Third Party</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold text-slate-600">Risk Owner *</label>
+                      <input
+                        type="text"
+                        value={riskDraft.ownerName}
+                        onChange={e => setRiskDraft({ ...riskDraft, ownerName: e.target.value })}
+                        placeholder="Accountable risk owner"
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold text-slate-600">Cause *</label>
+                      <textarea
+                        rows={2}
+                        value={riskDraft.cause}
+                        onChange={e => setRiskDraft({ ...riskDraft, cause: e.target.value })}
+                        placeholder="Primary cause or condition"
+                        className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs leading-4 outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold text-slate-600">Risk Event *</label>
+                      <textarea
+                        rows={2}
+                        value={riskDraft.event}
+                        onChange={e => setRiskDraft({ ...riskDraft, event: e.target.value })}
+                        placeholder="What could go wrong?"
+                        className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs leading-4 outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold text-slate-600">Impact *</label>
+                      <textarea
+                        rows={2}
+                        value={riskDraft.impact}
+                        onChange={e => setRiskDraft({ ...riskDraft, impact: e.target.value })}
+                        placeholder="Potential consequence"
+                        className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs leading-4 outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold text-slate-600">Likelihood</label>
+                        <select
+                          value={riskDraft.inherentLikelihood}
+                          onChange={e => setRiskDraft({ ...riskDraft, inherentLikelihood: Number(e.target.value) })}
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-brand-400"
+                        >
+                          <option value={0}>Not Assessed</option>
+                          {[1, 2, 3, 4, 5].map(value => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold text-slate-600">Impact Rating</label>
+                        <select
+                          value={riskDraft.inherentImpact}
+                          onChange={e => setRiskDraft({ ...riskDraft, inherentImpact: Number(e.target.value) })}
+                          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none focus:border-brand-400"
+                        >
+                          <option value={0}>Not Assessed</option>
+                          {[1, 2, 3, 4, 5].map(value => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={
+                        riskSaving ||
+                        !riskDraft.name.trim() ||
+                        !riskDraft.ownerName.trim() ||
+                        !riskDraft.cause.trim() ||
+                        !riskDraft.event.trim() ||
+                        !riskDraft.impact.trim()
+                      }
+                      onClick={handleCreateRelatedRisk}
+                      className="h-10 w-full rounded-xl bg-brand-600 px-4 text-xs font-black text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {riskSaving ? 'Creating Related Risk…' : 'Create & Select Related Risk'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
