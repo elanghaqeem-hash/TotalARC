@@ -40,7 +40,7 @@ function ratingBand(score: number) {
 
 export async function POST(request: Request) {
   try {
-    const guarded = await guardAiPost(request, 'AI_RISK_HEATMAP_RATE_LIMIT');
+    const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
     if (!guarded.ok) return guarded.response;
 
     const mode: HeatmapMode =
