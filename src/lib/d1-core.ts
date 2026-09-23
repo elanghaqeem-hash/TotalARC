@@ -42,6 +42,7 @@ export type D1BusinessProcess = Record<string, unknown> & {
   activities: Record<string, unknown>[];
   risks: Array<Record<string, unknown>>;
   controls: Array<Record<string, unknown>>;
+  rcmDraft?: Record<string, unknown> | null;
 };
 
 async function getDb(): Promise<D1DatabaseLike> {
@@ -599,6 +600,225 @@ function controlRow(row: Record<string, unknown>) {
   };
 }
 
+function uniqueText(values: unknown[], limit = 8) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function parseJsonObject(value: unknown): Record<string, any> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, any>;
+  }
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, any>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function compactFingerprint(value: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function buildRcmDerivedBpmDraft(
+  process: Record<string, unknown>,
+  risks: Array<Record<string, unknown>>,
+  controls: Array<Record<string, unknown>>,
+  mappingCount: number,
+  existing: {
+    objectiveCount: number;
+    activityCount: number;
+    hasSipoc: boolean;
+  }
+) {
+  const hasRcmContext = mappingCount > 0;
+  if (!hasRcmContext) return null;
+
+  const missingSections: string[] = [];
+  const currentDescription =
+    typeof process.description === 'string' ? process.description.trim() : '';
+  if (!currentDescription) missingSections.push('description');
+  if (existing.objectiveCount === 0) missingSections.push('objective');
+  if (existing.activityCount === 0) missingSections.push('activities');
+  if (!existing.hasSipoc) missingSections.push('sipoc');
+  if (missingSections.length === 0) return null;
+
+  const processName = String(process.name || process.processId || 'Business Process');
+  const riskIds = uniqueText(risks.map(item => item.riskId), 200);
+  const controlIds = uniqueText(controls.map(item => item.controlId), 300);
+  const riskNames = uniqueText(risks.map(item => item.name), 5);
+  const controlNames = uniqueText(controls.map(item => item.name), 8);
+  const controlObjectives = uniqueText(controls.map(item => item.objective), 4);
+  const systems = uniqueText(controls.map(item => item.systemDependency), 6);
+  const evidence = uniqueText(controls.map(item => item.evidenceRequirement), 6);
+  const performers = uniqueText(
+    controls.flatMap(item => [item.performer, item.controlOwner]),
+    6
+  );
+  const reviewers = uniqueText(
+    controls.flatMap(item => [item.reviewer, item.controlOwner, process.ownerName]),
+    6
+  );
+
+  const activities =
+    controls.length > 0
+      ? controls.map((control, index) => {
+          const controlId = String(control.controlId || `CTRL-${index + 1}`);
+          const controlName = String(control.name || controlId);
+          const description = [
+            `Kandidat aktivitas BPM berbasis titik kontrol RCM ${controlId}.`,
+            typeof control.description === 'string' && control.description.trim()
+              ? control.description.trim()
+              : '',
+            'Urutan operasional belum dikonfirmasi dan wajib divalidasi user/Process Owner.'
+          ]
+            .filter(Boolean)
+            .join(' ');
+          return {
+            activityId: `RCM-DRAFT-${String(index + 1).padStart(3, '0')}`,
+            name: controlName,
+            description,
+            performer:
+              String(control.performer || control.controlOwner || process.ownerName || '').trim() ||
+              null,
+            nature: String(control.nature || 'Manual'),
+            frequency: String(control.frequency || 'Per Transaction'),
+            inputData: control.systemDependency
+              ? `Data/transaksi dari ${String(control.systemDependency)}`
+              : null,
+            outputData: control.evidenceRequirement
+              ? String(control.evidenceRequirement)
+              : null,
+            systemUsed: control.systemDependency
+              ? String(control.systemDependency)
+              : null,
+            sla: null,
+            orderIndex: index + 1,
+            sourceControlId: controlId
+          };
+        })
+      : risks.map((risk, index) => ({
+          activityId: `RCM-DRAFT-RISK-${String(index + 1).padStart(3, '0')}`,
+          name: `Risk checkpoint — ${String(risk.name || risk.riskId || index + 1)}`,
+          description:
+            'Kandidat checkpoint proses diturunkan dari RCM risk karena detail control-point belum tersedia. Urutan dan aktivitas aktual wajib divalidasi user/Process Owner.',
+          performer: String(risk.ownerName || process.ownerName || '').trim() || null,
+          nature: 'Manual',
+          frequency: 'To be validated',
+          inputData: null,
+          outputData: null,
+          systemUsed: null,
+          sla: null,
+          orderIndex: index + 1,
+          sourceRiskId: String(risk.riskId || '')
+        }));
+
+  const objectiveRiskText =
+    riskNames.length > 0
+      ? ` dengan fokus pada mitigasi risiko utama: ${riskNames.join('; ')}`
+      : '';
+  const objectiveControlText =
+    controlObjectives.length > 0
+      ? ` serta tujuan kontrol yang tercatat pada RCM: ${controlObjectives.join('; ')}`
+      : '';
+  const objective =
+    `Memastikan proses ${processName} dilaksanakan secara terkendali, lengkap, akurat, tepat waktu, dan sesuai kewenangan${objectiveRiskText}${objectiveControlText}.`;
+
+  const narrative = [
+    `Draft BPM untuk ${processName} disusun dari konteks RCM yang tersedia (${risks.length} risk, ${controls.length} control, ${mappingCount} risk-control mapping).`,
+    riskNames.length > 0 ? `Risiko acuan: ${riskNames.join('; ')}.` : '',
+    controlNames.length > 0 ? `Titik kontrol acuan: ${controlNames.join('; ')}.` : '',
+    'Draft ini bukan process flow yang telah dikonfirmasi; batas proses, sequence, role, input/output, dan system dependency harus divalidasi user sebelum digunakan sebagai BPM operasional.'
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const sipoc = {
+    suppliers:
+      performers.length > 0
+        ? `Kandidat dari RCM: ${performers.join('; ')}`
+        : 'Kandidat supplier/pihak pemberi input — perlu validasi user.',
+    inputs:
+      systems.length > 0
+        ? `Data/transaksi dari sistem RCM: ${systems.join('; ')}`
+        : 'Data/transaksi/dokumen sumber proses — perlu validasi user.',
+    processSteps:
+      activities.length > 0
+        ? activities
+            .slice(0, 12)
+            .map(item => item.name)
+            .join(' → ')
+        : 'Sequence proses belum cukup didukung oleh RCM.',
+    outputs:
+      evidence.length > 0
+        ? `Kandidat output/evidence: ${evidence.join('; ')}`
+        : 'Bukti pelaksanaan kontrol dan output proses — perlu validasi user.',
+    customers:
+      reviewers.length > 0
+        ? `Kandidat penerima/reviewer dari RCM: ${reviewers.join('; ')}`
+        : 'Process Owner/downstream stakeholder — perlu validasi user.'
+  };
+
+  const fingerprintSource = JSON.stringify({
+    processId: process.id,
+    processUpdatedAt: process.updatedAt || '',
+    mappings: mappingCount,
+    risks: risks.map(item => [
+      item.riskId || '',
+      item.updatedAt || '',
+      item.name || ''
+    ]),
+    controls: controls.map(item => [
+      item.controlId || '',
+      item.updatedAt || '',
+      item.name || '',
+      item.objective || ''
+    ])
+  });
+
+  return {
+    status: 'PENDING_USER_VALIDATION',
+    derivedFrom: 'RCM',
+    sourceFingerprint: compactFingerprint(fingerprintSource),
+    notOperationalUntilValidated: true,
+    missingSections,
+    sourceSummary: {
+      riskCount: risks.length,
+      controlCount: controls.length,
+      mappingCount,
+      riskIds,
+      controlIds
+    },
+    narrative,
+    objective,
+    activities,
+    sipoc,
+    validationNotes: [
+      'Draft dibentuk hanya dari konteks RCM yang tersedia.',
+      'Urutan aktivitas mengikuti urutan referensi control ID, bukan bukti sequence operasional.',
+      'Draft tidak ditulis ke ProcessObjective, ProcessActivity, atau SIPOC sampai user melakukan Validate & Apply.',
+      'User/Process Owner harus memeriksa scope, sequence, role, system, input/output, frekuensi, dan evidence sebelum digunakan.'
+    ]
+  };
+}
+
 async function hydrateProcess(
   db: D1DatabaseLike,
   row: Record<string, unknown>,
@@ -680,7 +900,7 @@ export async function listProcessLookups() {
 
 export async function listBusinessProcesses() {
   const db = await ensureCoreDomainSchema();
-  const [categories, rows, orgUnits, objectives, sipocs, activities, risks, controls] = await Promise.all([
+  const [categories, rows, orgUnits, objectives, sipocs, activities, risks, controls, mappings] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY level ASC, processId ASC'),
     all<Record<string, unknown>>(db, "SELECT * FROM OrganizationUnit WHERE status = 'Active' ORDER BY code ASC"),
@@ -688,7 +908,16 @@ export async function listBusinessProcesses() {
     all<Record<string, unknown>>(db, 'SELECT * FROM SIPOC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity ORDER BY orderIndex ASC, createdAt ASC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM RiskMaster ORDER BY riskId ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC')
+    all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.id, m.riskId, m.controlId,
+              r.processId AS riskProcessId,
+              c.processId AS controlProcessId
+         FROM ControlRiskMapping m
+         JOIN RiskMaster r ON r.id = m.riskId
+         JOIN ControlMaster c ON c.id = m.controlId`
+    )
   ]);
 
   const categoryMap = new Map(categories.map(category => [String(category.id), category]));
@@ -710,9 +939,39 @@ export async function listBusinessProcesses() {
   const activitiesByProcess = groupByProcess(activities);
   const risksByProcess = groupByProcess(risks);
   const controlsByProcess = groupByProcess(controls);
+  const mappingsByProcess = new Map<
+    string,
+    { count: number; riskIds: Set<string>; controlIds: Set<string> }
+  >();
+  for (const mapping of mappings) {
+    const riskProcessId = String(mapping.riskProcessId || '');
+    const controlProcessId = String(mapping.controlProcessId || '');
+    if (!riskProcessId || riskProcessId !== controlProcessId) continue;
+
+    const current =
+      mappingsByProcess.get(riskProcessId) || {
+        count: 0,
+        riskIds: new Set<string>(),
+        controlIds: new Set<string>()
+      };
+    current.count += 1;
+    current.riskIds.add(String(mapping.riskId || ''));
+    current.controlIds.add(String(mapping.controlId || ''));
+    mappingsByProcess.set(riskProcessId, current);
+  }
 
   const processes = rows.map(row => {
     const id = String(row.id);
+    const processMapping = mappingsByProcess.get(id);
+    const processRisks = risksByProcess.get(id) || [];
+    const processControls = controlsByProcess.get(id) || [];
+    const mappedRisks = processMapping
+      ? processRisks.filter(item => processMapping.riskIds.has(String(item.id)))
+      : [];
+    const mappedControls = processMapping
+      ? processControls.filter(item => processMapping.controlIds.has(String(item.id)))
+      : [];
+
     return {
       ...processRow(row),
       id,
@@ -730,11 +989,255 @@ export async function listBusinessProcesses() {
       sipoc: sipocMap.get(id) || null,
       activities: activitiesByProcess.get(id) || [],
       risks: (risksByProcess.get(id) || []).map(riskRow),
-      controls: (controlsByProcess.get(id) || []).map(controlRow)
+      controls: (controlsByProcess.get(id) || []).map(controlRow),
+      rcmDraft: buildRcmDerivedBpmDraft(
+        row,
+        mappedRisks,
+        mappedControls,
+        processMapping?.count || 0,
+        {
+          objectiveCount: (objectivesByProcess.get(id) || []).length,
+          activityCount: (activitiesByProcess.get(id) || []).length,
+          hasSipoc: Boolean(sipocMap.get(id))
+        }
+      )
     } as D1BusinessProcess;
   });
 
   return { processes, categories };
+}
+
+export async function applyRcmDerivedBpmDraft(
+  processId: string,
+  expectedFingerprint?: string
+) {
+  const db = await ensureCoreDomainSchema();
+  const process = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [processId]
+  );
+  if (!process) throw new Error('PROCESS_NOT_FOUND');
+
+  const [risks, controls, mappingRow, objectiveRow, activityRow, sipoc] =
+    await Promise.all([
+      all<Record<string, unknown>>(
+        db,
+        `SELECT DISTINCT r.*
+           FROM ControlRiskMapping m
+           JOIN RiskMaster r ON r.id = m.riskId
+           JOIN ControlMaster c ON c.id = m.controlId
+          WHERE r.processId = ? AND c.processId = ?
+          ORDER BY r.riskId ASC`,
+        [processId, processId]
+      ),
+      all<Record<string, unknown>>(
+        db,
+        `SELECT DISTINCT c.*
+           FROM ControlRiskMapping m
+           JOIN RiskMaster r ON r.id = m.riskId
+           JOIN ControlMaster c ON c.id = m.controlId
+          WHERE r.processId = ? AND c.processId = ?
+          ORDER BY c.controlId ASC`,
+        [processId, processId]
+      ),
+      first<{ count?: number }>(
+        db,
+        `SELECT COUNT(*) AS count
+           FROM ControlRiskMapping m
+           JOIN RiskMaster r ON r.id = m.riskId
+           JOIN ControlMaster c ON c.id = m.controlId
+          WHERE r.processId = ? AND c.processId = ?`,
+        [processId, processId]
+      ),
+      first<{ count?: number }>(
+        db,
+        'SELECT COUNT(*) AS count FROM ProcessObjective WHERE processId = ?',
+        [processId]
+      ),
+      first<{ count?: number }>(
+        db,
+        'SELECT COUNT(*) AS count FROM ProcessActivity WHERE processId = ?',
+        [processId]
+      ),
+      first<Record<string, unknown>>(
+        db,
+        'SELECT * FROM SIPOC WHERE processId = ? LIMIT 1',
+        [processId]
+      )
+    ]);
+
+  const draft = buildRcmDerivedBpmDraft(
+    process,
+    risks,
+    controls,
+    Number(mappingRow?.count || 0),
+    {
+      objectiveCount: Number(objectiveRow?.count || 0),
+      activityCount: Number(activityRow?.count || 0),
+      hasSipoc: Boolean(sipoc)
+    }
+  ) as Record<string, any> | null;
+
+  if (!draft) throw new Error('RCM_BPM_DRAFT_NOT_AVAILABLE');
+  if (
+    expectedFingerprint &&
+    expectedFingerprint !== String(draft.sourceFingerprint || '')
+  ) {
+    throw new Error('RCM_BPM_DRAFT_STALE');
+  }
+
+  const now = nowIso();
+  const appliedSections: string[] = [];
+  const missingSections = Array.isArray(draft.missingSections)
+    ? draft.missingSections.map((item: unknown) => String(item))
+    : [];
+
+  if (missingSections.includes('description')) {
+    await run(
+      db,
+      `UPDATE BusinessProcess
+          SET description = ?, updatedAt = ?
+        WHERE id = ? AND (description IS NULL OR trim(description) = '')`,
+      [String(draft.narrative || ''), now, processId]
+    );
+    appliedSections.push('description');
+  }
+
+  if (missingSections.includes('objective')) {
+    const current = await first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM ProcessObjective WHERE processId = ?',
+      [processId]
+    );
+    if (Number(current?.count || 0) === 0) {
+      await run(
+        db,
+        `INSERT INTO ProcessObjective (
+          id, processId, objective, strategicGoal, expectedOutcome, kpi, kri, sla, createdAt
+        ) VALUES (?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?)`,
+        [crypto.randomUUID(), processId, String(draft.objective || ''), now]
+      );
+      appliedSections.push('objective');
+    }
+  }
+
+  if (missingSections.includes('activities')) {
+    const current = await first<{ count?: number }>(
+      db,
+      'SELECT COUNT(*) AS count FROM ProcessActivity WHERE processId = ?',
+      [processId]
+    );
+    if (Number(current?.count || 0) === 0 && Array.isArray(draft.activities)) {
+      for (const activity of draft.activities) {
+        await run(
+          db,
+          `INSERT INTO ProcessActivity (
+            id, processId, activityId, name, description, performer, nature,
+            frequency, inputData, outputData, systemUsed, sla, orderIndex, createdAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            crypto.randomUUID(),
+            processId,
+            String(activity.activityId || ''),
+            String(activity.name || ''),
+            nullable(activity.description),
+            nullable(activity.performer),
+            String(activity.nature || 'Manual'),
+            String(activity.frequency || 'Per Transaction'),
+            nullable(activity.inputData),
+            nullable(activity.outputData),
+            nullable(activity.systemUsed),
+            nullable(activity.sla),
+            Number(activity.orderIndex || 0),
+            now
+          ]
+        );
+      }
+      appliedSections.push('activities');
+    }
+  }
+
+  if (missingSections.includes('sipoc')) {
+    const current = await first<Record<string, unknown>>(
+      db,
+      'SELECT id FROM SIPOC WHERE processId = ? LIMIT 1',
+      [processId]
+    );
+    if (!current && draft.sipoc) {
+      await run(
+        db,
+        `INSERT INTO SIPOC (
+          id, processId, suppliers, inputs, processSteps, outputs, customers, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          crypto.randomUUID(),
+          processId,
+          nullable(draft.sipoc.suppliers),
+          nullable(draft.sipoc.inputs),
+          nullable(draft.sipoc.processSteps),
+          nullable(draft.sipoc.outputs),
+          nullable(draft.sipoc.customers),
+          now,
+          now
+        ]
+      );
+      appliedSections.push('sipoc');
+    }
+  }
+
+  const refreshed = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [processId]
+  );
+  if (!refreshed) throw new Error('PROCESS_NOT_FOUND');
+
+  const tags = parseJsonObject(refreshed.tags);
+  tags.rcmDerivedBpm = {
+    status: 'VALIDATED_APPLIED',
+    derivedFrom: 'RCM',
+    sourceFingerprint: draft.sourceFingerprint,
+    sourceRiskIds: draft.sourceSummary?.riskIds || [],
+    sourceControlIds: draft.sourceSummary?.controlIds || [],
+    appliedSections,
+    validatedAt: now,
+    validationActor: 'Interactive user (authenticated identity unavailable in current BPM flow)'
+  };
+
+  await run(
+    db,
+    'UPDATE BusinessProcess SET tags = ?, updatedAt = ? WHERE id = ?',
+    [JSON.stringify(tags), now, processId]
+  );
+
+  await writeAudit(db, {
+    institutionId: String(process.institutionId),
+    userName: 'Interactive User',
+    userRole: 'Unverified session',
+    action: 'VALIDATE_APPLY',
+    entityType: 'Process',
+    recordId: processId,
+    oldValue: {
+      rcmDraftStatus: 'PENDING_USER_VALIDATION',
+      sourceFingerprint: draft.sourceFingerprint
+    },
+    newValue: {
+      rcmDraftStatus: 'VALIDATED_APPLIED',
+      sourceFingerprint: draft.sourceFingerprint,
+      appliedSections
+    },
+    reason:
+      'User explicitly validated and applied an RCM-derived BPM draft. Draft content was not operational before this action.'
+  });
+
+  const updated = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
+    [processId]
+  );
+  if (!updated) throw new Error('PROCESS_NOT_FOUND');
+  return hydrateProcess(db, updated);
 }
 
 export async function findBusinessProcessForAi(identifier: {
