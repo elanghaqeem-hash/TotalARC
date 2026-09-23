@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   Shield,
@@ -32,6 +32,7 @@ export default function ControlsPage() {
   const [saveError, setSaveError] = useState('');
   const [controlLoading, setControlLoading] = useState(true);
   const [controlLoadError, setControlLoadError] = useState('');
+  const control360Ref = useRef<HTMLDivElement | null>(null);
   const [creatingRelatedRisk, setCreatingRelatedRisk] = useState(false);
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaveError, setRiskSaveError] = useState('');
@@ -180,6 +181,17 @@ export default function ControlsPage() {
   });
 
   const availableRisks = risks.filter(risk => risk.processId === formData.processId);
+
+  const openControl360 = (control: any) => {
+    setSelectedControl(control);
+
+    window.requestAnimationFrame(() => {
+      control360Ref.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    });
+  };
 
   const handleCreateRelatedRisk = async () => {
     if (!formData.processId) {
@@ -339,10 +351,18 @@ export default function ControlsPage() {
 
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
                   <span>Type: <strong>{c.type}</strong> ({c.nature})</span>
-                  <span className="text-brand-600 font-bold flex items-center space-x-1">
+                  <button
+                    type="button"
+                    onClick={event => {
+                      event.stopPropagation();
+                      openControl360(c);
+                    }}
+                    aria-label={`Open Control 360 for ${c.controlId}`}
+                    className="inline-flex min-h-9 items-center space-x-1 rounded-lg px-2 font-bold text-brand-600 transition hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 active:scale-[0.98]"
+                  >
                     <span>Control 360°</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
@@ -351,7 +371,7 @@ export default function ControlsPage() {
         </div>
 
         {/* Right Detail: Control 360 (7 cols) */}
-        <div className="lg:col-span-7">
+        <div ref={control360Ref} className="scroll-mt-24 lg:col-span-7">
           {controlLoading ? (
             <DataLoadingState label="Loading control profile..." variant="profile" className="min-h-[220px]" />
           ) : selectedControl ? (
