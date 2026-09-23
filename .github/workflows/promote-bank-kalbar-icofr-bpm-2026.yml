@@ -1,0 +1,109 @@
+name: Complete Bank Kalbar ICOFR BPM 2026
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/promote-bank-kalbar-icofr-bpm-2026.py'
+      - 'scripts/promote-bank-kalbar-icofr-2026-scoping.py'
+      - '.github/workflows/promote-bank-kalbar-icofr-bpm-2026.yml'
+      - '.github/workflows/promote-bank-kalbar-icofr-2026-scoping.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-bank-kalbar-icofr-bpm-2026
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Complete P-11 and P-13 BPM masters
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/promote-bank-kalbar-icofr-bpm-2026.py
+
+      - name: Refresh ICOFR scoping BPM links
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/promote-bank-kalbar-icofr-2026-scoping.py
+
+      - name: Verify production BPM and scoping linkage
+        env:
+          TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+          TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is required."
+            exit 1
+          fi
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+
+          fetch_json() {
+            local name="$1"
+            local path="$2"
+            local output="/tmp/totalarc-${name}.json"
+            local code
+            code="$(curl --silent --show-error --location --max-time 30 \
+              --output "$output" --write-out "%{http_code}" \
+              --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" \
+              "$BASE_URL$path" || true)"
+            if [ "$code" != "200" ]; then
+              echo "::error::$name returned HTTP ${code:-unknown}."
+              cat "$output" 2>/dev/null || true
+              exit 1
+            fi
+            echo "$output"
+          }
+
+          PROCESS_JSON="$(fetch_json processes /api/processes)"
+          jq -e '
+            .storage == "cloudflare-d1" and
+            ([.processes[] | select(
+              .processId == "JLN" and
+              .name == "Jasa dan Layanan Nasabah (Pendapatan Berbasis Komisi)" and
+              .isIcofrRelevant == true and
+              .status == "Draft" and
+              .level == 2
+            )] | length) == 1 and
+            ([.processes[] | select(
+              .processId == "ITGC" and
+              .name == "Teknologi Informasi (Information Technology General Control)" and
+              .isIcofrRelevant == true and
+              .status == "Draft" and
+              .level == 2
+            )] | length) == 1
+          ' "$PROCESS_JSON" >/dev/null
+          echo "processes: healthy"
+
+          SCOPE_JSON="$(fetch_json icofr-scoping /api/icofr/scoping)"
+          jq -e '
+            .storage == "cloudflare-d1" and
+            ([.scopes[] | select(
+              .fiscalYear == 2026 and
+              .scopeName == "Bank Kalbar ICOFR Tahun Buku 2026" and
+              ([.items[] | select(.itemType == "Business Process")] | length) == 16 and
+              ([.items[] | select(.itemType == "Business Process" and .inScope == true)] | length) == 16 and
+              ([.items[] | select(.itemType == "Business Process" and .sourceId != null)] | length) == 16 and
+              ([.items[] | select(.code == "P-11" and .sourceId != null)] | length) == 1 and
+              ([.items[] | select(.code == "P-13" and .sourceId != null)] | length) == 1 and
+              ([.issues[] | select(.issueCode == "PROCESS-MASTER-LINK-GAP")] | length) == 0
+            )] | length) == 1
+          ' "$SCOPE_JSON" >/dev/null
+          echo "icofr-bpm-linkage: healthy"
