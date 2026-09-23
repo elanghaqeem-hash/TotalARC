@@ -2,7 +2,14 @@ import { NextResponse } from 'next/server';
 import { getOrganizationStructure } from '@/lib/d1-organization';
 import { listDesignAssessments } from '@/lib/d1-icofr-traceability';
 import { listPbcTasks } from '@/lib/d1-icofr-executive-reporting';
-import { listToeTests, listRemediationData, listMonitoringRules } from '@/lib/d1-assurance';
+import {
+  deleteAssuranceCalendarEvent,
+  listAssuranceCalendarEvents,
+  listToeTests,
+  listRemediationData,
+  listMonitoringRules,
+  saveAssuranceCalendarEvent
+} from '@/lib/d1-assurance';
 import { getCertificationData } from '@/lib/d1-icofr-certification';
 import { listFinancialItems, listInformationRegister } from '@/lib/d1-icofr-domains';
 import { getTestingPlanData } from '@/lib/d1-icofr-testing-plan';
@@ -71,6 +78,7 @@ export async function GET(request: Request) {
   const needRemediation = wants('remediation', 'integration', 'health', 'tasks', 'calendar', 'reports');
   const needCcm = wants('ccm', 'health');
   const needCertification = wants('certification', 'calendar');
+  const needCalendar = wants('calendar');
   const needFinancial = wants('financial');
   const needInformation = wants('information');
   const needTesting = wants('testing', 'integration', 'tasks', 'calendar');
@@ -85,6 +93,7 @@ export async function GET(request: Request) {
     remediationResult,
     monitoringResult,
     certificationResult,
+    calendarResult,
     financialResult,
     informationResult,
     testingResult,
@@ -118,6 +127,7 @@ export async function GET(request: Request) {
       getCertificationData,
       { subCertifications: [], attestations: [], evidencePacks: [] } as any
     ),
+    loadModule('calendar-events', needCalendar, listAssuranceCalendarEvents, [] as any[]),
     loadModule('financial-items', needFinancial, listFinancialItems, { records: [] } as any),
     loadModule('information-register', needInformation, listInformationRegister, { records: [] } as any),
     loadModule(
@@ -142,6 +152,7 @@ export async function GET(request: Request) {
   const remediation = remediationResult.value as any;
   const monitoringRules = monitoringResult.value as any[];
   const certification = certificationResult.value as any;
+  const calendarEvents = calendarResult.value as any[];
   const financialItems = financialResult.value as any;
   const informationRegister = informationResult.value as any;
   const testingPlan = testingResult.value as any;
@@ -156,6 +167,7 @@ export async function GET(request: Request) {
     remediationResult.issue,
     monitoringResult.issue,
     certificationResult.issue,
+    calendarResult.issue,
     financialResult.issue,
     informationResult.issue,
     testingResult.issue,
@@ -321,6 +333,7 @@ export async function GET(request: Request) {
     certifications: certification.subCertifications || [],
     attestations: certification.attestations || [],
     evidencePacks: certification.evidencePacks || [],
+    calendarEvents,
     toeTests,
     actionPlans: remediation.maps || [],
     issues: remediation.issues || [],
@@ -351,6 +364,32 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = textValue(body, 'actionType');
+
+    if (actionType === 'SAVE_CALENDAR_EVENT') {
+      const event = await saveAssuranceCalendarEvent({
+        id: textValue(body, 'id') || undefined,
+        title: textValue(body, 'title'),
+        type: textValue(body, 'type'),
+        startDate: textValue(body, 'startDate'),
+        dueDate: textValue(body, 'dueDate'),
+        ownerName: textValue(body, 'ownerName'),
+        reviewerName: textValue(body, 'reviewerName') || null,
+        priority: textValue(body, 'priority') || 'Medium',
+        status: textValue(body, 'status') || 'Planned',
+        link: textValue(body, 'link') || null,
+        notes: textValue(body, 'notes') || null
+      });
+      return NextResponse.json(event, { status: textValue(body, 'id') ? 200 : 201 });
+    }
+
+    if (actionType === 'DELETE_CALENDAR_EVENT') {
+      const id = textValue(body, 'id');
+      if (!id) {
+        return NextResponse.json({ error: 'id is required.' }, { status: 400 });
+      }
+      const deleted = await deleteAssuranceCalendarEvent(id);
+      return NextResponse.json(deleted);
+    }
 
     if (actionType === 'CREATE_CAMPAIGN') {
       const name = textValue(body, 'name');
@@ -537,7 +576,8 @@ export async function POST(request: Request) {
       ASSESSMENT_RESPONSE_NOT_FOUND: 'Assessment response not found.',
       PROCESS_NOT_FOUND: 'Business process not found.',
       RISK_NOT_FOUND: 'Risk not found.',
-      CONTROL_NOT_FOUND: 'Control not found.'
+      CONTROL_NOT_FOUND: 'Control not found.',
+      CALENDAR_EVENT_NOT_FOUND: 'Assurance calendar event not found.'
     };
     if (notFound[code]) {
       return NextResponse.json({ error: notFound[code] }, { status: 404 });
@@ -546,7 +586,9 @@ export async function POST(request: Request) {
     const conflicts: Record<string, string> = {
       CAMPAIGN_CODE_CONFLICT: 'Campaign code already exists.',
       ASSESSMENT_SCOPE_CONFLICT: 'The same process/risk/control is already in this campaign.',
-      CAMPAIGN_CLOSED: 'This campaign is closed and cannot be changed.'
+      CAMPAIGN_CLOSED: 'This campaign is closed and cannot be changed.',
+      CALENDAR_EVENT_CONFLICT: 'Assurance calendar event code already exists.',
+      CALENDAR_SOURCE_EVENT_LOCKED: 'Source-derived calendar events must be changed in their originating module.'
     };
     if (conflicts[code]) {
       return NextResponse.json({ error: conflicts[code] }, { status: 409 });
@@ -558,7 +600,12 @@ export async function POST(request: Request) {
       CONTROL_PROCESS_MISMATCH: 'Selected control does not belong to the selected process.',
       EVIDENCE_REQUIRED: 'Evidence reference is required by this campaign.',
       ACTION_FIELDS_REQUIRED: 'Action owner and action due date are required when remediation is needed.',
-      INVALID_RESIDUAL_RATING: 'Residual likelihood and impact must be integer values from 1 to 5.'
+      INVALID_RESIDUAL_RATING: 'Residual likelihood and impact must be integer values from 1 to 5.',
+      CALENDAR_REQUIRED: 'Title, type, start date, due date, and owner are required.',
+      INVALID_CALENDAR_DATE: 'Calendar dates must use a valid YYYY-MM-DD value.',
+      INVALID_CALENDAR_DATES: 'Calendar due date must be on or after the start date.',
+      INVALID_CALENDAR_PRIORITY: 'Calendar priority must be Low, Medium, High, or Critical.',
+      INVALID_CALENDAR_STATUS: 'Calendar status is not supported.'
     };
     if (badRequest[code]) {
       return NextResponse.json({ error: badRequest[code] }, { status: 400 });
