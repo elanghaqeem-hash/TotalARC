@@ -195,7 +195,7 @@ jobs:
 
           BASE_URL="${DEPLOYMENT_URL:-${FALLBACK_URL:-https://totalarc.elang-haqeem.workers.dev}}"
           BASE_URL="${BASE_URL%/}"
-          URL="$BASE_URL/api/auth/bootstrap?recover=1"
+          URL="$BASE_URL/api/auth/bootstrap"
 
           success=false
           for attempt in $(seq 1 12); do
