@@ -1532,58 +1532,92 @@ export async function getAssuranceDashboardMetrics() {
 }
 
 export async function enrichRcmWithAssurance(rows: Array<Record<string, unknown>>) {
+  if (rows.length === 0) return rows;
+
   const db = await ensureAssuranceSchema();
+  const [controls, toes, issues, maps, retests] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      'SELECT id, controlId FROM ControlMaster'
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT controlId, finalConclusion, passCount, sampleSize, testedAt
+         FROM ToETest
+        ORDER BY testedAt DESC`
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, controlId, issueId, title, severity, status, createdAt
+         FROM Issue
+        ORDER BY createdAt DESC`
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, issueId, mapId, agreedAction, status, progressPercent, createdAt
+         FROM ManagementActionPlan
+        ORDER BY createdAt DESC`
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT mapId, result, retestedAt
+         FROM RetestRecord
+        ORDER BY retestedAt DESC`
+    )
+  ]);
 
-  return Promise.all(
-    rows.map(async row => {
-      const control = await first<Record<string, unknown>>(
-        db,
-        'SELECT * FROM ControlMaster WHERE controlId = ? LIMIT 1',
-        [row.controlId]
-      );
-      if (!control) return row;
-
-      const toe = await first<Record<string, unknown>>(
-        db,
-        'SELECT * FROM ToETest WHERE controlId = ? ORDER BY testedAt DESC LIMIT 1',
-        [control.id]
-      );
-      const issue = await first<Record<string, unknown>>(
-        db,
-        'SELECT * FROM Issue WHERE controlId = ? ORDER BY createdAt DESC LIMIT 1',
-        [control.id]
-      );
-      const map = issue
-        ? await first<Record<string, unknown>>(
-            db,
-            'SELECT * FROM ManagementActionPlan WHERE issueId = ? ORDER BY createdAt DESC LIMIT 1',
-            [issue.id]
-          )
-        : null;
-      const retest = map
-        ? await first<Record<string, unknown>>(
-            db,
-            'SELECT * FROM RetestRecord WHERE mapId = ? ORDER BY retestedAt DESC LIMIT 1',
-            [map.id]
-          )
-        : null;
-
-      return {
-        ...row,
-        toeConclusion: toe?.finalConclusion || 'Not Tested',
-        toePassRatio: toe
-          ? `${Number(toe.passCount || 0)}/${Number(toe.sampleSize || 0)} Pass`
-          : 'Not Tested',
-        issueId: issue?.issueId || null,
-        issueTitle: issue?.title || null,
-        issueSeverity: issue?.severity || null,
-        issueStatus: issue?.status || 'No Issue',
-        mapId: map?.mapId || null,
-        mapAgreedAction: map?.agreedAction || null,
-        mapStatus: map?.status || null,
-        mapProgress: map ? `${Number(map.progressPercent || 0)}%` : null,
-        retestResult: retest?.result || null
-      };
-    })
+  const controlByEnterpriseId = new Map(
+    controls.map(control => [String(control.controlId || ''), String(control.id || '')])
   );
+
+  const latestToeByControl = new Map<string, Record<string, unknown>>();
+  for (const toe of toes) {
+    const key = String(toe.controlId || '');
+    if (key && !latestToeByControl.has(key)) latestToeByControl.set(key, toe);
+  }
+
+  const latestIssueByControl = new Map<string, Record<string, unknown>>();
+  for (const issue of issues) {
+    const key = String(issue.controlId || '');
+    if (key && !latestIssueByControl.has(key)) latestIssueByControl.set(key, issue);
+  }
+
+  const latestMapByIssue = new Map<string, Record<string, unknown>>();
+  for (const map of maps) {
+    const key = String(map.issueId || '');
+    if (key && !latestMapByIssue.has(key)) latestMapByIssue.set(key, map);
+  }
+
+  const latestRetestByMap = new Map<string, Record<string, unknown>>();
+  for (const retest of retests) {
+    const key = String(retest.mapId || '');
+    if (key && !latestRetestByMap.has(key)) latestRetestByMap.set(key, retest);
+  }
+
+  return rows.map(row => {
+    const internalControlId = controlByEnterpriseId.get(String(row.controlId || '')) || '';
+    const toe = internalControlId ? latestToeByControl.get(internalControlId) || null : null;
+    const issue = internalControlId
+      ? latestIssueByControl.get(internalControlId) || null
+      : null;
+    const map = issue ? latestMapByIssue.get(String(issue.id || '')) || null : null;
+    const retest = map ? latestRetestByMap.get(String(map.id || '')) || null : null;
+
+    return {
+      ...row,
+      toeConclusion: toe?.finalConclusion || 'Not Tested',
+      toePassRatio: toe
+        ? `${Number(toe.passCount || 0)}/${Number(toe.sampleSize || 0)} Pass`
+        : 'Not Tested',
+      issueId: issue?.issueId || null,
+      issueTitle: issue?.title || null,
+      issueSeverity: issue?.severity || null,
+      issueStatus: issue?.status || 'No Issue',
+      mapId: map?.mapId || null,
+      mapAgreedAction: map?.agreedAction || null,
+      mapStatus: map?.status || null,
+      mapProgress: map ? `${Number(map.progressPercent || 0)}%` : null,
+      retestResult: retest?.result || null
+    };
+  });
 }
