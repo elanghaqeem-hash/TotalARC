@@ -52,9 +52,12 @@ export default function ProcessesPage() {
   const [deleteError, setDeleteError] = useState('');
   const [processLoadError, setProcessLoadError] = useState('');
   const [processLoading, setProcessLoading] = useState(true);
+  const [processDetailLoading, setProcessDetailLoading] = useState(true);
+  const [processDetailError, setProcessDetailError] = useState('');
   const [draftApplying, setDraftApplying] = useState(false);
   const [draftApplyError, setDraftApplyError] = useState('');
   const process360Ref = useRef<HTMLDivElement | null>(null);
+  const processDetailRequestRef = useRef(0);
 
   // New process form state
   const [formData, setFormData] = useState({
@@ -68,11 +71,57 @@ export default function ProcessesPage() {
     description: ''
   });
 
+  const loadProcessDetail = async (process: any, scrollToDetail = false) => {
+    if (!process?.id) {
+      setSelectedProcess(null);
+      setProcessDetailLoading(false);
+      return;
+    }
+
+    const requestId = processDetailRequestRef.current + 1;
+    processDetailRequestRef.current = requestId;
+    setSelectedProcess(process);
+    setProcessDetailLoading(true);
+    setProcessDetailError('');
+
+    if (scrollToDetail) {
+      window.requestAnimationFrame(() => {
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+          process360Ref.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
+        }
+      });
+    }
+
+    try {
+      const res = await fetch(
+        `/api/processes?view=detail&id=${encodeURIComponent(String(process.id))}`,
+        { cache: 'no-store' }
+      );
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Unable to load process profile.');
+      if (processDetailRequestRef.current !== requestId) return;
+      setSelectedProcess(payload.process || process);
+    } catch (error) {
+      if (processDetailRequestRef.current !== requestId) return;
+      console.error(error);
+      setProcessDetailError(
+        error instanceof Error ? error.message : 'Unable to load process profile.'
+      );
+    } finally {
+      if (processDetailRequestRef.current === requestId) {
+        setProcessDetailLoading(false);
+      }
+    }
+  };
+
   const loadProcesses = async (preferredProcessId?: string, preferredCategoryId?: string) => {
     setProcessLoading(true);
     setProcessLoadError('');
     try {
-      const res = await fetch('/api/processes', { cache: 'no-store' });
+      const res = await fetch('/api/processes?view=list', { cache: 'no-store' });
       if (!res.ok) throw new Error('Unable to load business processes.');
       const data = await res.json();
 
@@ -87,6 +136,12 @@ export default function ProcessesPage() {
         nextProcesses[0] ||
         null;
       setSelectedProcess(nextSelected);
+
+      if (nextSelected) {
+        void loadProcessDetail(nextSelected);
+      } else {
+        setProcessDetailLoading(false);
+      }
 
       if (
         preferredCategoryId &&
@@ -108,6 +163,7 @@ export default function ProcessesPage() {
       setProcessLoadError(
         error instanceof Error ? error.message : 'Unable to load business processes.'
       );
+      setProcessDetailLoading(false);
     } finally {
       setProcessLoading(false);
     }
@@ -185,16 +241,7 @@ export default function ProcessesPage() {
   };
 
   const handleInspect360 = (process: any) => {
-    setSelectedProcess(process);
-
-    requestAnimationFrame(() => {
-      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-        process360Ref.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start'
-        });
-      }
-    });
+    void loadProcessDetail(process, true);
   };
 
   const handleDelete = async () => {
@@ -213,7 +260,9 @@ export default function ProcessesPage() {
       const remaining = processes.filter(process => process.id !== deleteTarget.id);
       setProcesses(remaining);
       if (selectedProcess?.id === deleteTarget.id) {
-        setSelectedProcess(remaining[0] || null);
+        const nextSelected = remaining[0] || null;
+        setSelectedProcess(nextSelected);
+        if (nextSelected) void loadProcessDetail(nextSelected);
       }
       setDeleteTarget(null);
     } catch (err) {
@@ -399,7 +448,7 @@ export default function ProcessesPage() {
             return (
               <div
                 key={proc.id}
-                onClick={() => setSelectedProcess(proc)}
+                onClick={() => void loadProcessDetail(proc)}
                 className={`cursor-pointer overflow-hidden rounded-2xl border p-4 transition-all sm:p-5 ${
                   isSelected
                     ? 'bg-brand-50/50 border-brand-500 shadow-md ring-1 ring-brand-400'
@@ -515,8 +564,13 @@ export default function ProcessesPage() {
 
         {/* Right Detail: Process 360 (7 cols) */}
         <div ref={process360Ref} id="process-360-detail" className="scroll-mt-24 lg:col-span-7">
-          {processLoading ? (
+          {processLoading || processDetailLoading ? (
             <DataLoadingState label="Loading process profile..." variant="profile" className="min-h-[220px]" />
+          ) : processDetailError ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-xs text-rose-700">
+              <strong className="font-black">Process profile unavailable.</strong>{' '}
+              {processDetailError}
+            </div>
           ) : selectedProcess ? (
             <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
               {/* Process Title & Metadata */}
