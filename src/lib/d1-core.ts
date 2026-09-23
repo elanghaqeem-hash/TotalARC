@@ -370,6 +370,117 @@ export async function ensureCoreDomainSchema() {
     CREATE INDEX IF NOT EXISTS idx_mapping_control ON ControlRiskMapping(controlId);
     CREATE INDEX IF NOT EXISTS idx_mapping_risk ON ControlRiskMapping(riskId);
 
+    CREATE TABLE IF NOT EXISTS RCMControlSourceMetadata (
+      controlId TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceRecordId TEXT,
+      sourceDocumentId TEXT,
+      sourceRecordType TEXT NOT NULL,
+      sourceReference TEXT,
+      sourceCycle TEXT,
+      sourceProcess TEXT,
+      sourceSubprocess TEXT,
+      sourceLocation TEXT,
+      sourceRawKey TEXT,
+      sourceRawType TEXT,
+      sourceRawNature TEXT,
+      sourceRawFrequency TEXT,
+      sourceRawApplication TEXT,
+      sourceRawFunction TEXT,
+      sourceRawPerformer TEXT,
+      taxonomyStatus TEXT NOT NULL,
+      mappingStatus TEXT NOT NULL,
+      validationStatus TEXT NOT NULL,
+      sourcePriority INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      feedBatch TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_rcm_source_meta_institution
+      ON RCMControlSourceMetadata(institutionId);
+    CREATE INDEX IF NOT EXISTS idx_rcm_source_meta_status
+      ON RCMControlSourceMetadata(mappingStatus, validationStatus);
+
+    CREATE TABLE IF NOT EXISTS RCMLegacyControlRegister (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceNo INTEGER NOT NULL,
+      sourceCycle TEXT NOT NULL,
+      processCode TEXT NOT NULL,
+      businessProcess TEXT,
+      subprocess TEXT,
+      location TEXT,
+      controlActivity TEXT NOT NULL,
+      sourceKey TEXT,
+      sourceType TEXT,
+      sourceNature TEXT,
+      sourceFrequency TEXT,
+      sourceApplication TEXT,
+      sourceFunction TEXT,
+      sourcePerformer TEXT,
+      fraudRiskMissing INTEGER NOT NULL DEFAULT 0,
+      riskRatingMissing INTEGER NOT NULL DEFAULT 0,
+      evidenceMissing INTEGER NOT NULL DEFAULT 0,
+      brokenLanguage INTEGER NOT NULL DEFAULT 0,
+      applicationPlaceholder INTEGER NOT NULL DEFAULT 0,
+      functionPlaceholder INTEGER NOT NULL DEFAULT 0,
+      repairFlagCount INTEGER NOT NULL DEFAULT 0,
+      reconciliationStatus TEXT NOT NULL,
+      operationalControlId TEXT,
+      sourceReference TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rcm_legacy_source_no
+      ON RCMLegacyControlRegister(institutionId, sourceNo);
+    CREATE INDEX IF NOT EXISTS idx_rcm_legacy_cycle
+      ON RCMLegacyControlRegister(sourceCycle, reconciliationStatus);
+
+    CREATE TABLE IF NOT EXISTS RCMDesignRequirement (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      requirementCode TEXT NOT NULL,
+      processId TEXT NOT NULL,
+      category TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      sourceReference TEXT NOT NULL,
+      sourceStatus TEXT NOT NULL,
+      validationStatus TEXT NOT NULL,
+      status TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rcm_requirement_code
+      ON RCMDesignRequirement(institutionId, requirementCode);
+
+    CREATE TABLE IF NOT EXISTS RCMDraftReference (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      referenceType TEXT NOT NULL,
+      referenceCode TEXT NOT NULL,
+      title TEXT,
+      payloadJson TEXT NOT NULL,
+      sourceRecordId TEXT,
+      sourceDocumentId TEXT,
+      sourceReference TEXT NOT NULL,
+      sourceStatus TEXT NOT NULL,
+      validationRequired INTEGER NOT NULL DEFAULT 1,
+      operationalControlId TEXT,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rcm_draft_ref
+      ON RCMDraftReference(institutionId, referenceType, referenceCode);
+
+    CREATE TABLE IF NOT EXISTS RCMIntegrityRun (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      batchCode TEXT NOT NULL,
+      runAt TEXT NOT NULL,
+      status TEXT NOT NULL,
+      summaryJson TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rcm_integrity_batch
+      ON RCMIntegrityRun(institutionId, batchCode);
+
     CREATE TABLE IF NOT EXISTS AuditLog (
       id TEXT PRIMARY KEY NOT NULL,
       institutionId TEXT,
@@ -1417,69 +1528,203 @@ export async function listRcmRows() {
         c.description AS controlDescription,
         c.objective AS controlObjective,
         c.controlOwner,
+        c.performer,
+        c.reviewer,
         c.type AS controlType,
         c.nature AS controlNature,
+        c.method AS controlMethod,
         c.frequency AS controlFrequency,
         c.evidenceRequirement,
+        c.systemDependency,
+        c.frameworkMapping,
+        c.designAssessment,
+        c.operatingStatus,
+        c.status AS controlStatus,
         c.isKeyControl,
         c.isIcofrKey,
-        c.overallHealth
-      FROM ControlRiskMapping m
-      JOIN RiskMaster r ON r.id = m.riskId
-      JOIN BusinessProcess p ON p.id = r.processId
+        c.isItgc,
+        c.overallHealth,
+        sm.sourceRecordType,
+        sm.sourceReference,
+        sm.sourceCycle,
+        sm.taxonomyStatus,
+        sm.mappingStatus,
+        sm.validationStatus,
+        sm.sourcePriority,
+        sm.notes AS sourceNotes
+      FROM ControlMaster c
+      JOIN BusinessProcess p ON p.id = c.processId
       LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
-      JOIN ControlMaster c ON c.id = m.controlId
-      ORDER BY p.processId ASC, r.riskId ASC, c.controlId ASC`
+      LEFT JOIN ControlRiskMapping m ON m.controlId = c.id
+      LEFT JOIN RiskMaster r ON r.id = m.riskId
+      LEFT JOIN RCMControlSourceMetadata sm ON sm.controlId = c.id
+      ORDER BY p.processId ASC, COALESCE(r.riskId, 'ZZZ') ASC, c.controlId ASC`
   );
 
-  const rcm = rows.map((row, index) => {
+  return rows.map((row, index) => {
+    const mapped = Boolean(row.internalRiskId);
     return {
-        id: row.mappingId,
-        rowNumber: index + 1,
-        processId: row.enterpriseProcessId,
-        processName: row.processName,
-        processCategory: row.processCategory || 'Uncategorized',
-        activityName: row.activityName || 'Process-level risk',
-        processObjective: row.processObjective || 'Not provided',
-        riskId: row.enterpriseRiskId,
-        riskName: row.riskName,
-        riskCause: row.riskCause,
-        riskEvent: row.riskEvent,
-        riskImpact: row.riskImpact,
-        riskCategory: row.riskCategory,
-        inherentScore: Number(row.inherentScore || 0),
-        inherentRating: row.inherentRating,
-        residualScore: Number(row.residualScore || 0),
-        residualRating: row.residualRating,
-        controlId: row.enterpriseControlId,
-        controlName: row.controlName,
-        controlDescription: row.controlDescription,
-        controlObjective: row.controlObjective,
-        controlOwner: row.controlOwner,
-        controlType: row.controlType,
-        controlNature: row.controlNature,
-        controlFrequency: row.controlFrequency,
-        evidenceRequirement: row.evidenceRequirement || 'Not provided',
-        isKeyControl: bool(row.isKeyControl),
-        isIcofrKey: bool(row.isIcofrKey),
-        csaStatus: 'Not Assessed',
-        todConclusion: 'Not Assessed',
-        toeConclusion: 'Not Tested',
-        toePassRatio: 'Not Tested',
-        controlHealth: row.overallHealth || 'Not Assessed',
-        issueId: null,
-        issueTitle: null,
-        issueSeverity: null,
-        issueStatus: 'No Issue',
-        mapId: null,
-        mapAgreedAction: null,
-        mapStatus: null,
-        mapProgress: null,
-        retestResult: null
+      id: row.mappingId || `unmapped:${String(row.internalControlId)}`,
+      rowNumber: index + 1,
+      processId: row.enterpriseProcessId,
+      processName: row.processName,
+      processCategory: row.processCategory || 'Uncategorized',
+      activityName: mapped ? row.activityName || 'Process-level risk' : 'Risk mapping pending',
+      processObjective: row.processObjective || 'Not provided',
+      riskId: mapped ? row.enterpriseRiskId : 'PENDING',
+      riskName: mapped ? row.riskName : 'Risk mapping pending',
+      riskCause: mapped ? row.riskCause : null,
+      riskEvent: mapped ? row.riskEvent : 'Source-backed control is not yet linked to a validated RiskMaster record.',
+      riskImpact: mapped ? row.riskImpact : null,
+      riskCategory: mapped ? row.riskCategory : 'Pending',
+      inherentScore: mapped ? Number(row.inherentScore || 0) : 0,
+      inherentRating: mapped ? row.inherentRating || 'Not Assessed' : 'Not Assessed',
+      residualScore: mapped ? Number(row.residualScore || 0) : 0,
+      residualRating: mapped ? row.residualRating || 'Not Assessed' : 'Not Assessed',
+      controlId: row.enterpriseControlId,
+      controlName: row.controlName,
+      controlDescription: row.controlDescription,
+      controlObjective: row.controlObjective,
+      controlOwner: row.controlOwner,
+      performer: row.performer,
+      reviewer: row.reviewer,
+      controlType: row.controlType,
+      controlNature: row.controlNature,
+      controlMethod: row.controlMethod,
+      controlFrequency: row.controlFrequency,
+      evidenceRequirement: row.evidenceRequirement || 'Not provided',
+      systemDependency: row.systemDependency || null,
+      frameworkMapping: row.frameworkMapping || null,
+      designAssessment: row.designAssessment || 'Not Assessed',
+      operatingStatus: row.operatingStatus || 'Not Assessed',
+      controlStatus: row.controlStatus || 'Draft',
+      isKeyControl: bool(row.isKeyControl),
+      isIcofrKey: bool(row.isIcofrKey),
+      isItgc: bool(row.isItgc),
+      sourceRecordType: row.sourceRecordType || null,
+      sourceReference: row.sourceReference || null,
+      sourceCycle: row.sourceCycle || null,
+      taxonomyStatus: row.taxonomyStatus || null,
+      mappingStatus: row.mappingStatus || (mapped ? 'MAPPED' : 'PENDING_RISK_MAPPING'),
+      validationStatus: row.validationStatus || null,
+      sourcePriority: Number(row.sourcePriority || 0),
+      sourceNotes: row.sourceNotes || null,
+      csaStatus: 'Not Assessed',
+      todConclusion: row.designAssessment || 'Not Assessed',
+      toeConclusion: 'Not Tested',
+      toePassRatio: 'Not Tested',
+      controlHealth: row.overallHealth || 'Not Assessed',
+      issueId: null,
+      issueTitle: null,
+      issueSeverity: null,
+      issueStatus: 'No Issue',
+      mapId: null,
+      mapAgreedAction: null,
+      mapStatus: null,
+      mapProgress: null,
+      retestResult: null
     };
   });
+}
 
-  return rcm;
+export async function getRcmGovernanceData() {
+  const db = await ensureCoreDomainSchema();
+  const institution = await primaryInstitution(db);
+  if (!institution) {
+    return {
+      legacyTotal: 0,
+      legacyByCycle: [],
+      requirements: [],
+      draftReferenceSummary: [],
+      sourceMetadataSummary: [],
+      latestIntegrity: null
+    };
+  }
+
+  const institutionId = String(institution.id);
+  const [legacyTotalRow, legacyByCycle, requirements, draftReferenceSummary, sourceMetadataSummary, latestIntegrity] =
+    await Promise.all([
+      first<{ count?: number }>(
+        db,
+        'SELECT COUNT(*) AS count FROM RCMLegacyControlRegister WHERE institutionId = ?',
+        [institutionId]
+      ),
+      all<Record<string, unknown>>(
+        db,
+        `SELECT sourceCycle, reconciliationStatus, COUNT(*) AS controls
+           FROM RCMLegacyControlRegister
+          WHERE institutionId = ?
+          GROUP BY sourceCycle, reconciliationStatus
+          ORDER BY sourceCycle, reconciliationStatus`,
+        [institutionId]
+      ),
+      all<Record<string, unknown>>(
+        db,
+        `SELECT r.*, p.processId AS enterpriseProcessId, p.name AS processName
+           FROM RCMDesignRequirement r
+           JOIN BusinessProcess p ON p.id = r.processId
+          WHERE r.institutionId = ?
+          ORDER BY r.category, r.requirementCode`,
+        [institutionId]
+      ),
+      all<Record<string, unknown>>(
+        db,
+        `SELECT referenceType, sourceStatus, COUNT(*) AS records
+           FROM RCMDraftReference
+          WHERE institutionId = ?
+          GROUP BY referenceType, sourceStatus
+          ORDER BY referenceType, sourceStatus`,
+        [institutionId]
+      ),
+      all<Record<string, unknown>>(
+        db,
+        `SELECT sourceRecordType, taxonomyStatus, mappingStatus, validationStatus, COUNT(*) AS controls
+           FROM RCMControlSourceMetadata
+          WHERE institutionId = ?
+          GROUP BY sourceRecordType, taxonomyStatus, mappingStatus, validationStatus
+          ORDER BY sourceRecordType, mappingStatus, validationStatus`,
+        [institutionId]
+      ),
+      first<Record<string, unknown>>(
+        db,
+        `SELECT *
+           FROM RCMIntegrityRun
+          WHERE institutionId = ?
+          ORDER BY runAt DESC
+          LIMIT 1`,
+        [institutionId]
+      )
+    ]);
+
+  let parsedIntegrity: Record<string, unknown> | null = null;
+  if (latestIntegrity) {
+    try {
+      parsedIntegrity = {
+        ...latestIntegrity,
+        summary: JSON.parse(String(latestIntegrity.summaryJson || '{}'))
+      };
+    } catch {
+      parsedIntegrity = { ...latestIntegrity, summary: null };
+    }
+  }
+
+  return {
+    legacyTotal: Number(legacyTotalRow?.count || 0),
+    legacyByCycle: legacyByCycle.map(row => ({
+      ...row,
+      controls: Number(row.controls || 0)
+    })),
+    requirements,
+    draftReferenceSummary: draftReferenceSummary.map(row => ({
+      ...row,
+      records: Number(row.records || 0)
+    })),
+    sourceMetadataSummary: sourceMetadataSummary.map(row => ({
+      ...row,
+      controls: Number(row.controls || 0)
+    })),
+    latestIntegrity: parsedIntegrity
+  };
 }
 
 async function count(
