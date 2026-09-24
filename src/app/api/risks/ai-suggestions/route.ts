@@ -171,17 +171,17 @@ export async function GET(request: Request) {
   try {
     const context = await activeContext(request);
     if (!context) {
-      return noStore({ error: 'Active institution is required.' }, { status: 409 });
+      return noStore({ error: 'Institusi aktif wajib dipilih.' }, { status: 409 });
     }
 
     const processId = new URL(request.url).searchParams.get('processId')?.trim() || '';
     if (!processId) {
-      return noStore({ error: 'Select a Business Process first.' }, { status: 400 });
+      return noStore({ error: 'Pilih Proses Bisnis terlebih dahulu.' }, { status: 400 });
     }
 
     const process = await findBusinessProcessForAi({ processId }, context.institution!.id) as Record<string, any> | null;
     if (!process) {
-      return noStore({ error: 'Selected Business Process was not found in the active institution.' }, { status: 404 });
+      return noStore({ error: 'Proses Bisnis terpilih tidak ditemukan pada institusi aktif.' }, { status: 404 });
     }
 
     const bpmContext = buildBpmRiskContext(process);
@@ -199,8 +199,8 @@ export async function GET(request: Request) {
       workflow: 'select-bpm-generate-review-select-create-draft'
     });
   } catch (error) {
-    console.error('Failed to load AI risk suggestion history:', error);
-    return noStore({ error: 'Unable to load AI risk suggestion history.' }, { status: 503 });
+    console.error('Gagal memuat riwayat usulan risiko AI:', error);
+    return noStore({ error: 'Tidak dapat memuat riwayat usulan risiko AI.' }, { status: 503 });
   }
 }
 
@@ -208,7 +208,7 @@ export async function POST(request: Request) {
   try {
     const context = await activeContext(request);
     if (!context) {
-      return noStore({ error: 'Active institution is required.' }, { status: 409 });
+      return noStore({ error: 'Institusi aktif wajib dipilih.' }, { status: 409 });
     }
 
     const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
     if (!processId) {
       return noStore(
         {
-          error: 'Select a Business Process before pressing Generate AI Risks.',
+          error: 'Pilih Proses Bisnis sebelum menekan tombol Buat Risiko dengan AI.',
           code: 'BPM_SELECTION_REQUIRED'
         },
         { status: 400 }
@@ -227,7 +227,7 @@ export async function POST(request: Request) {
 
     const process = await findBusinessProcessForAi({ processId }, context.institution!.id) as Record<string, any> | null;
     if (!process) {
-      return noStore({ error: 'Selected Business Process was not found in the active institution.' }, { status: 404 });
+      return noStore({ error: 'Proses Bisnis terpilih tidak ditemukan pada institusi aktif.' }, { status: 404 });
     }
 
     const bpmContext = buildBpmRiskContext(process);
@@ -241,7 +241,7 @@ export async function POST(request: Request) {
       return noStore(
         {
           error:
-            'The selected BPM does not yet contain enough process information. Complete the BPM description, objective, SIPOC, or Activity Register first.'
+            'BPM terpilih belum memiliki informasi proses yang memadai. Lengkapi deskripsi BPM, tujuan proses, SIPOC, atau Register Aktivitas terlebih dahulu.'
         },
         { status: 409 }
       );
@@ -250,26 +250,26 @@ export async function POST(request: Request) {
     const fingerprint = await fingerprintAiRiskContext(fingerprintSource(bpmContext));
 
     const systemPrompt = [
-      'You are Total ARC AI creating a draft Risk Register from one registered Business Process.',
-      'The user has already selected the BPM. Analyze only that BPM context.',
-      'Use Cause -> Event -> Impact syntax for every suggested risk.',
-      'Do not invent regulations, thresholds, systems, roles, incidents, control failures, products, vendors, channels, or process steps that are not supported by the BPM.',
-      'Do not duplicate an existing risk already present in existingRisks.',
-      'Use only these risk categories: Operational, Financial Reporting, Compliance, Technology, Cybersecurity, Strategic, Fraud, Third Party.',
-      'Propose multiple relevant risk types when the BPM evidence supports them. Aim for 5-12 useful suggestions and at least 2 categories when supported, but never add an irrelevant category merely for diversity.',
-      'A process activity can support more than one risk when the risk events are materially different.',
-      'sourceActivityIds must contain only exact activity id values supplied in the BPM context. Use an empty array when the risk is supported by process-level context rather than a specific activity.',
-      'Confidence reflects how directly the BPM supports the suggestion, not the risk severity.',
-      'Do not assign likelihood, impact scores, inherent rating, residual rating, or treatment. Those require human assessment after creation.',
-      'The output is advisory and must remain selectable by the user before any Risk Register record is created.',
-      'Return JSON only with this shape: {"analysisSummary":"string","suggestions":[{"category":"Operational|Financial Reporting|Compliance|Technology|Cybersecurity|Strategic|Fraud|Third Party","name":"string","cause":"string","event":"string","impact":"string","rationale":"string","sourceActivityIds":["exact-activity-id"],"confidence":"High|Medium|Low"}]}.'
+      'Anda adalah AI Total ARC yang menyusun draf Register Risiko dari satu Proses Bisnis yang terdaftar.',
+      'Pengguna telah memilih BPM. Analisis hanya konteks BPM tersebut.',
+      'Gunakan struktur Penyebab -> Kejadian -> Dampak untuk setiap usulan risiko.',
+      'Jangan mengarang regulasi, batasan, sistem, peran, insiden, kegagalan kontrol, produk, vendor, kanal, atau langkah proses yang tidak didukung oleh BPM.',
+      'Jangan menduplikasi risiko yang sudah terdapat pada existingRisks.',
+      'Gunakan hanya kategori risiko internal berikut: Operational, Financial Reporting, Compliance, Technology, Cybersecurity, Strategic, Fraud, Third Party. Nilai field category harus tetap memakai token Inggris tersebut untuk kompatibilitas sistem.',
+      'Usulkan beberapa jenis risiko yang relevan bila didukung bukti BPM. Targetkan 5-12 usulan yang bermanfaat dan minimal 2 kategori bila memang didukung, tetapi jangan menambahkan kategori yang tidak relevan hanya demi variasi.',
+      'Satu aktivitas proses dapat mendukung lebih dari satu risiko apabila kejadian risikonya berbeda secara material.',
+      'sourceActivityIds hanya boleh berisi nilai activity id persis seperti yang diberikan dalam konteks BPM. Gunakan array kosong bila risiko didukung konteks proses secara umum, bukan aktivitas tertentu.',
+      'Confidence menunjukkan seberapa langsung BPM mendukung usulan, bukan tingkat keparahan risiko.',
+      'Jangan menetapkan likelihood, impact score, inherent rating, residual rating, atau treatment. Penilaian tersebut memerlukan asesmen manusia setelah risiko dibuat.',
+      'Output bersifat advisory dan harus tetap dipilih oleh pengguna sebelum data Register Risiko dibuat.',
+      'Semua teks yang dibaca pengguna—analysisSummary, name, cause, event, impact, dan rationale—WAJIB menggunakan Bahasa Indonesia yang profesional dan ringkas. Return JSON only with this shape: {"analysisSummary":"string","suggestions":[{"category":"Operational|Financial Reporting|Compliance|Technology|Cybersecurity|Strategic|Fraud|Third Party","name":"string","cause":"string","event":"string","impact":"string","rationale":"string","sourceActivityIds":["exact-activity-id"],"confidence":"High|Medium|Low"}]}.'
     ].join(' ');
 
     const result = await runAiGateway({
       task: 'risk_identification',
       sensitivity: 'confidential',
       systemPrompt,
-      prompt: 'Generate selectable risk-register suggestions from this BPM:\n' + JSON.stringify(bpmContext),
+      prompt: 'Buat usulan Register Risiko yang dapat dipilih pengguna dari BPM berikut, seluruh teks naratif harus dalam Bahasa Indonesia:\n' + JSON.stringify(bpmContext),
       temperature: 0.12,
       maxOutputTokens: 6000,
       requireJson: true
@@ -281,7 +281,7 @@ export async function POST(request: Request) {
       return noStore(
         {
           error:
-            'ARC AI could not produce evidence-grounded risk suggestions from this BPM. No Risk Register data was changed.'
+            'ARC AI tidak dapat menghasilkan usulan risiko berbasis bukti dari BPM ini. Tidak ada data Register Risiko yang diubah.'
         },
         { status: 422 }
       );
@@ -289,7 +289,7 @@ export async function POST(request: Request) {
 
     const analysisSummary =
       clean(parsed.analysisSummary, 1800) ||
-      'ARC AI identified draft risk scenarios from the selected BPM. Human selection and assessment are required.';
+      'ARC AI mengidentifikasi skenario risiko draf dari BPM terpilih. Pilihan dan asesmen manusia tetap diperlukan.';
 
     const batch = await saveAiRiskSuggestionBatch({
       institutionId: context.institution!.id,
@@ -310,8 +310,8 @@ export async function POST(request: Request) {
         process: bpmContext.process,
         batch,
         categories: AI_RISK_CATEGORIES,
-        disclaimer: 'AI Suggested — User Selection & Human Assessment Required',
-        nextAction: 'Select one or more proposed risks, provide/confirm Risk Owner, then create them as Draft / Not Assessed.'
+        disclaimer: 'Usulan AI — Memerlukan Pilihan Pengguna & Asesmen Manusia',
+        nextAction: 'Pilih satu atau beberapa usulan risiko, konfirmasi Pemilik Risiko, lalu buat sebagai Draf / Belum Dinilai.'
       },
       { status: 201 }
     );
@@ -319,13 +319,13 @@ export async function POST(request: Request) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'AI_RISK_RESPONSE_INVALID') {
       return noStore(
-        { error: 'ARC AI returned an invalid risk suggestion structure. No Risk Register data was changed.' },
+        { error: 'ARC AI mengembalikan struktur usulan risiko yang tidak valid. Tidak ada data Register Risiko yang diubah.' },
         { status: 502 }
       );
     }
-    console.error('AI BPM risk identification failed:', error);
+    console.error('Identifikasi risiko AI berbasis BPM gagal:', error);
     return noStore(
-      { error: 'Unable to generate BPM-based risk suggestions with the configured AI provider.' },
+      { error: 'Tidak dapat membuat usulan risiko berbasis BPM menggunakan penyedia AI yang dikonfigurasi.' },
       { status: 503 }
     );
   }
@@ -335,7 +335,7 @@ export async function PATCH(request: Request) {
   try {
     const context = await activeContext(request);
     if (!context) {
-      return noStore({ error: 'Active institution is required.' }, { status: 409 });
+      return noStore({ error: 'Institusi aktif wajib dipilih.' }, { status: 409 });
     }
 
     const body = (await request.json()) as Record<string, unknown>;
@@ -348,25 +348,25 @@ export async function PATCH(request: Request) {
 
     if (!processId || !batchId || !selectedSuggestionIds.length) {
       return noStore(
-        { error: 'BPM, AI suggestion batch, and at least one selected risk are required.' },
+        { error: 'BPM, batch usulan AI, dan minimal satu risiko terpilih wajib tersedia.' },
         { status: 400 }
       );
     }
     if (!ownerName) {
       return noStore(
-        { error: 'Confirm the accountable Risk Owner before creating selected risks.' },
+        { error: 'Konfirmasi Pemilik Risiko yang bertanggung jawab sebelum membuat risiko terpilih.' },
         { status: 400 }
       );
     }
 
     const process = await findBusinessProcessForAi({ processId }, context.institution!.id) as Record<string, any> | null;
     if (!process) {
-      return noStore({ error: 'Selected Business Process was not found in the active institution.' }, { status: 404 });
+      return noStore({ error: 'Proses Bisnis terpilih tidak ditemukan pada institusi aktif.' }, { status: 404 });
     }
 
     const batch = await getAiRiskSuggestionBatch(batchId, String(process.id), context.institution!.id);
     if (!batch) {
-      return noStore({ error: 'AI risk suggestion batch was not found for the selected BPM.' }, { status: 404 });
+      return noStore({ error: 'Batch usulan risiko AI tidak ditemukan untuk BPM terpilih.' }, { status: 404 });
     }
 
     const bpmContext = buildBpmRiskContext(process);
@@ -375,7 +375,7 @@ export async function PATCH(request: Request) {
       return noStore(
         {
           error:
-            'The selected BPM has changed since these risks were generated. Generate a new AI risk batch before creating Risk Register entries.',
+            'BPM terpilih telah berubah sejak usulan risiko dibuat. Buat batch risiko AI baru sebelum membuat data Register Risiko.',
           code: 'AI_RISK_BATCH_STALE'
         },
         { status: 409 }
@@ -395,24 +395,24 @@ export async function PATCH(request: Request) {
       result,
       message:
         result.created.length > 0
-          ? result.created.length + ' selected AI risk(s) created as Draft / Not Assessed.'
-          : 'No new risks were created. Selected suggestions were already applied or matched existing risks.',
+          ? result.created.length + ' risiko AI terpilih dibuat sebagai Draf / Belum Dinilai.'
+          : 'Tidak ada risiko baru yang dibuat. Usulan terpilih sudah pernah diterapkan atau cocok dengan risiko yang sudah ada.',
       humanAssessmentRequired: true
     });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const known: Record<string, [string, number]> = {
-      PROCESS_NOT_FOUND: ['Selected Business Process was not found in the active institution.', 404],
-      AI_RISK_BATCH_NOT_FOUND: ['AI risk suggestion batch was not found.', 404],
-      AI_RISK_SELECTION_REQUIRED: ['Select at least one AI risk suggestion.', 400],
-      AI_RISK_SELECTION_INVALID: ['One or more selected risks are not part of this saved AI batch.', 400],
-      RISK_OWNER_REQUIRED: ['Confirm the accountable Risk Owner before creating risks.', 400]
+      PROCESS_NOT_FOUND: ['Proses Bisnis terpilih tidak ditemukan pada institusi aktif.', 404],
+      AI_RISK_BATCH_NOT_FOUND: ['Batch usulan risiko AI tidak ditemukan.', 404],
+      AI_RISK_SELECTION_REQUIRED: ['Pilih minimal satu usulan risiko AI.', 400],
+      AI_RISK_SELECTION_INVALID: ['Satu atau beberapa risiko terpilih bukan bagian dari batch AI tersimpan ini.', 400],
+      RISK_OWNER_REQUIRED: ['Konfirmasi Pemilik Risiko yang bertanggung jawab sebelum membuat risiko.', 400]
     };
     if (known[code]) {
       return noStore({ error: known[code][0] }, { status: known[code][1] });
     }
 
-    console.error('Failed to create selected AI BPM risks:', error);
-    return noStore({ error: 'Unable to create selected AI risks in the Risk Register.' }, { status: 500 });
+    console.error('Gagal membuat risiko AI BPM terpilih:', error);
+    return noStore({ error: 'Tidak dapat membuat risiko AI terpilih pada Register Risiko.' }, { status: 500 });
   }
 }

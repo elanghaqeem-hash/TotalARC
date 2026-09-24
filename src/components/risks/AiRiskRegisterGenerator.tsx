@@ -56,6 +56,23 @@ const CATEGORY_ORDER = [
   'Third Party'
 ];
 
+const CATEGORY_LABEL_ID: Record<string, string> = {
+  Operational: 'Operasional',
+  'Financial Reporting': 'Pelaporan Keuangan',
+  Compliance: 'Kepatuhan',
+  Technology: 'Teknologi',
+  Cybersecurity: 'Keamanan Siber',
+  Strategic: 'Strategis',
+  Fraud: 'Fraud',
+  'Third Party': 'Pihak Ketiga'
+};
+
+const CONFIDENCE_LABEL_ID: Record<string, string> = {
+  High: 'Tinggi',
+  Medium: 'Sedang',
+  Low: 'Rendah'
+};
+
 function confidenceTone(value: string) {
   if (value === 'High') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (value === 'Low') return 'border-slate-200 bg-slate-50 text-slate-500';
@@ -148,10 +165,10 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
         { cache: 'no-store' }
       );
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to load saved AI risk suggestions.');
+      if (!response.ok) throw new Error(payload.error || 'Tidak dapat memuat usulan risiko AI yang tersimpan.');
       setHistory(Array.isArray(payload.batches) ? payload.batches : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load saved AI risk suggestions.');
+      setError(err instanceof Error ? err.message : 'Tidak dapat memuat usulan risiko AI yang tersimpan.');
       setHistory([]);
     } finally {
       setLoadingHistory(false);
@@ -181,19 +198,19 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
         body: JSON.stringify({ processId })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to generate AI risk suggestions.');
+      if (!response.ok) throw new Error(payload.error || 'Tidak dapat membuat usulan risiko AI.');
 
       setBatch(payload.batch);
       setSelected(new Set());
       setMessage(
-        'ARC AI generated selectable risk suggestions from the selected BPM. No Risk Register entry has been created yet.'
+        'ARC AI telah membuat usulan risiko yang dapat dipilih dari BPM terpilih. Belum ada data yang dibuat pada Register Risiko.'
       );
       setHistory(current => [
         payload.batch,
         ...current.filter(item => item.id !== payload.batch?.id)
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to generate AI risk suggestions.');
+      setError(err instanceof Error ? err.message : 'Tidak dapat membuat usulan risiko AI.');
     } finally {
       setGenerating(false);
     }
@@ -201,13 +218,13 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
 
   const useSavedBatch = (item: Batch) => {
     if (item.stale) {
-      setError('This saved suggestion batch is outdated because the BPM has changed. Generate a new batch.');
+      setError('Batch usulan tersimpan ini sudah tidak mutakhir karena BPM berubah. Buat batch baru.');
       return;
     }
     setBatch(item);
     setSelected(new Set());
     setError('');
-    setMessage('Saved AI suggestions loaded without running AI again.');
+    setMessage('Usulan AI tersimpan dimuat tanpa menjalankan AI kembali.');
   };
 
   const toggle = (id: string) => {
@@ -236,7 +253,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
   const createSelected = async () => {
     if (!batch || !selected.size || !processId || creating) return;
     if (!ownerName.trim()) {
-      setError('Confirm the accountable Risk Owner before creating selected risks.');
+      setError('Konfirmasi Pemilik Risiko yang bertanggung jawab sebelum membuat risiko terpilih.');
       return;
     }
 
@@ -255,7 +272,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
         })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to create selected risks.');
+      if (!response.ok) throw new Error(payload.error || 'Tidak dapat membuat risiko terpilih.');
 
       const createdCount = Number(payload.result?.created?.length || 0);
       const duplicateCount = Number(payload.result?.duplicates?.length || 0);
@@ -271,13 +288,13 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
       setSelected(new Set());
       setMessage(
         createdCount +
-          ' risk(s) created as Draft / Not Assessed.' +
-          (duplicateCount ? ' ' + duplicateCount + ' duplicate suggestion(s) were skipped.' : '')
+          ' risiko dibuat sebagai Draf / Belum Dinilai.' +
+          (duplicateCount ? ' ' + duplicateCount + ' usulan duplikat dilewati.' : '')
       );
       await onCreated();
       await loadHistory(processId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create selected risks.');
+      setError(err instanceof Error ? err.message : 'Tidak dapat membuat risiko terpilih.');
     } finally {
       setCreating(false);
     }
@@ -291,7 +308,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 text-xs font-black text-white shadow-sm shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600"
       >
         <Sparkles className="h-4 w-4" />
-        <span>AI Create Risk Register</span>
+        <span>AI Buat Register Risiko</span>
       </button>
 
       {open && (
@@ -301,21 +318,20 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
               <div>
                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
                   <Sparkles className="h-4 w-4" />
-                  ARC AI · BPM to Risk Register
+                  ARC AI · BPM ke Register Risiko
                 </div>
                 <h2 className="mt-1 text-lg font-black text-slate-900 sm:text-xl">
-                  Create Risk Register from Business Process
+                  Buat Register Risiko dari Proses Bisnis
                 </h2>
                 <p className="mt-1 max-w-2xl text-[10px] leading-4 text-slate-500 sm:text-[11px]">
-                  Pilih BPM terlebih dahulu. AI hanya membuat usulan; user memilih risiko yang relevan
-                  sebelum dibuat sebagai Draft / Not Assessed.
+                  Pilih BPM terlebih dahulu. AI hanya membuat usulan; pengguna memilih risiko yang relevan sebelum dibuat sebagai Draf / Belum Dinilai.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 className="ml-3 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
-                aria-label="Close AI Risk Register generator"
+                aria-label="Tutup generator Register Risiko AI"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -340,14 +356,14 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-[9px] font-black text-white">
                     1
                   </span>
-                  <h3 className="text-xs font-black text-slate-900">Select Business Process</h3>
+                  <h3 className="text-xs font-black text-slate-900">Pilih Proses Bisnis</h3>
                 </div>
                 <select
                   value={processId}
                   onChange={event => changeProcess(event.target.value)}
                   className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-700 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
                 >
-                  <option value="">— Select BPM before generating AI risks —</option>
+                  <option value="">— Pilih BPM sebelum membuat risiko dengan AI —</option>
                   {processes.map(process => (
                     <option key={process.id} value={process.id}>
                       {process.processId} — {process.name}
@@ -358,15 +374,15 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                 {selectedProcess && (
                   <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3">
                     <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
-                      Selected BPM
+                      BPM Terpilih
                     </div>
                     <div className="mt-1 text-xs font-black text-slate-900">
                       {selectedProcess.processId} · {selectedProcess.name}
                     </div>
                     <div className="mt-1 text-[9px] text-slate-500">
-                      {selectedProcess.classification || 'Classification not provided'} ·{' '}
-                      {selectedProcess.criticality || 'Criticality not assessed'}
-                      {selectedProcess.ownerName ? ' · Owner: ' + selectedProcess.ownerName : ''}
+                      {selectedProcess.classification || 'Klasifikasi belum tersedia'} ·{' '}
+                      {selectedProcess.criticality || 'Kritikalitas belum dinilai'}
+                      {selectedProcess.ownerName ? ' · Pemilik: ' + selectedProcess.ownerName : ''}
                     </div>
                   </div>
                 )}
@@ -375,7 +391,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                   <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50/50 p-2.5">
                     <div className="mb-2 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wide text-sky-700">
                       <History className="h-3.5 w-3.5" />
-                      Saved AI suggestion batches
+                      Batch usulan AI tersimpan
                     </div>
                     <div className="space-y-1.5">
                       {history.slice(0, 3).map(item => (
@@ -388,7 +404,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                         >
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-[9px] font-black text-slate-700">
-                              {item.suggestions?.length || 0} suggestions ·{' '}
+                              {item.suggestions?.length || 0} usulan ·{' '}
                               {new Date(item.createdAt).toLocaleString('id-ID', {
                                 dateStyle: 'medium',
                                 timeStyle: 'short'
@@ -396,10 +412,10 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                             </div>
                             <div className="mt-0.5 text-[8px] text-slate-400">
                               {item.stale
-                                ? 'BPM changed — regenerate required'
+                                ? 'BPM berubah — perlu dibuat ulang'
                                 : item.status === 'SELECTION_APPLIED'
-                                  ? 'Some suggestions already created'
-                                  : 'Reusable without AI'}
+                                  ? 'Sebagian usulan sudah dibuat'
+                                  : 'Dapat digunakan kembali tanpa AI'}
                             </div>
                           </div>
                           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -418,12 +434,11 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                         2
                       </span>
                       <h3 className="text-xs font-black text-slate-900">
-                        Generate Relevant Risk Types
+                        Buat Jenis Risiko yang Relevan
                       </h3>
                     </div>
                     <p className="mt-1.5 pl-8 text-[9px] leading-4 text-slate-500">
-                      AI membaca BPM terpilih dan hanya mengusulkan jenis risiko yang didukung konteks
-                      process, objective, SIPOC, dan Activity Register.
+                      AI membaca BPM terpilih dan hanya mengusulkan jenis risiko yang didukung konteks proses, tujuan, SIPOC, dan Register Aktivitas.
                     </p>
                   </div>
                   <button
@@ -437,7 +452,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                     ) : (
                       <Sparkles className="h-4 w-4" />
                     )}
-                    {generating ? 'Analyzing BPM…' : 'Generate AI Risks'}
+                    {generating ? 'Menganalisis BPM…' : 'Buat Risiko dengan AI'}
                   </button>
                 </div>
               </section>
@@ -450,7 +465,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                     </span>
                     <div className="min-w-0 flex-1">
                       <h3 className="text-xs font-black text-slate-900">
-                        Select Risks to Create
+                        Pilih Risiko yang Akan Dibuat
                       </h3>
                       <p className="mt-0.5 text-[9px] leading-4 text-slate-500">
                         {batch.analysisSummary}
@@ -464,7 +479,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                         key={category}
                         className={`rounded-full border px-2 py-1 text-[8px] font-black ${categoryTone(category)}`}
                       >
-                        {category} · {items.length}
+                        {CATEGORY_LABEL_ID[category] || category} · {items.length}
                       </span>
                     ))}
                   </div>
@@ -480,10 +495,10 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                           <div className="flex items-center justify-between bg-slate-50 px-3 py-2.5">
                             <div className="flex items-center gap-2">
                               <span className={`rounded-full border px-2 py-1 text-[8px] font-black ${categoryTone(category)}`}>
-                                {category}
+                                {CATEGORY_LABEL_ID[category] || category}
                               </span>
                               <span className="text-[8px] font-bold text-slate-400">
-                                {items.length} proposed risk{items.length === 1 ? '' : 's'}
+                                {items.length} usulan risiko
                               </span>
                             </div>
                             {available.length > 0 && (
@@ -492,7 +507,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                                 onClick={() => toggleCategory(items)}
                                 className="text-[8px] font-black text-brand-600"
                               >
-                                {allSelected ? 'Clear category' : 'Select all'}
+                                {allSelected ? 'Bersihkan kategori' : 'Pilih semua'}
                               </button>
                             )}
                           </div>
@@ -534,39 +549,39 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                                           {item.name}
                                         </div>
                                         <span className={`rounded-full border px-1.5 py-0.5 text-[7px] font-black ${confidenceTone(item.confidence)}`}>
-                                          {item.confidence} confidence
+                                          Keyakinan {CONFIDENCE_LABEL_ID[item.confidence] || item.confidence}
                                         </span>
                                         {isApplied && (
                                           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[7px] font-black text-emerald-700">
-                                            CREATED
+                                            SUDAH DIBUAT
                                           </span>
                                         )}
                                       </div>
 
                                       <div className="mt-2 grid gap-1.5 text-[8px] leading-3.5 sm:grid-cols-3">
                                         <div className="rounded-lg bg-slate-50 p-2 text-slate-600">
-                                          <strong className="text-slate-500">Cause</strong>
+                                          <strong className="text-slate-500">Penyebab</strong>
                                           <br />
                                           {item.cause}
                                         </div>
                                         <div className="rounded-lg bg-amber-50 p-2 text-amber-900">
-                                          <strong className="text-amber-700">Event</strong>
+                                          <strong className="text-amber-700">Kejadian</strong>
                                           <br />
                                           {item.event}
                                         </div>
                                         <div className="rounded-lg bg-rose-50 p-2 text-rose-900">
-                                          <strong className="text-rose-700">Impact</strong>
+                                          <strong className="text-rose-700">Dampak</strong>
                                           <br />
                                           {item.impact}
                                         </div>
                                       </div>
 
                                       <p className="mt-2 text-[8px] leading-3.5 text-slate-500">
-                                        <strong>Why relevant:</strong> {item.rationale}
+                                        <strong>Alasan relevan:</strong> {item.rationale}
                                       </p>
                                       {item.sourceActivityNames?.length > 0 && (
                                         <p className="mt-1 text-[8px] leading-3.5 text-slate-400">
-                                          <strong>BPM activity:</strong> {item.sourceActivityNames.join(' · ')}
+                                          <strong>Aktivitas BPM:</strong> {item.sourceActivityNames.join(' · ')}
                                         </p>
                                       )}
                                     </div>
@@ -582,21 +597,20 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
 
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                     <div className="text-[9px] font-black text-amber-900">
-                      Human assessment remains mandatory
+                      Asesmen manusia tetap wajib
                     </div>
                     <p className="mt-1 text-[8px] leading-3.5 text-amber-800">
-                      ARC AI tidak menetapkan likelihood, impact score, inherent rating, residual
-                      rating, atau treatment. Risiko yang dipilih dibuat sebagai Draft / Not Assessed.
+                      ARC AI tidak menetapkan kemungkinan, skor dampak, peringkat inheren, peringkat residual, atau perlakuan risiko. Risiko yang dipilih dibuat sebagai Draf / Belum Dinilai.
                     </p>
                   </div>
 
                   <label className="block text-[9px] font-black text-slate-700">
-                    Risk Owner *
+                    Pemilik Risiko *
                     <input
                       type="text"
                       value={ownerName}
                       onChange={event => setOwnerName(event.target.value)}
-                      placeholder="Confirm accountable Risk Owner"
+                      placeholder="Konfirmasi Pemilik Risiko yang bertanggung jawab"
                       className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-normal focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
                     />
                   </label>
@@ -604,7 +618,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                   <div className="sticky bottom-0 -mx-3.5 -mb-3.5 border-t border-slate-100 bg-white/95 p-3.5 backdrop-blur sm:-mx-4 sm:-mb-4 sm:p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-[9px] font-bold text-slate-500">
-                        {selected.size} selected · {selectableCount} available
+                        {selected.size} dipilih · {selectableCount} tersedia
                       </div>
                       <button
                         type="button"
@@ -618,8 +632,8 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                           <CheckCircle2 className="h-4 w-4" />
                         )}
                         {creating
-                          ? 'Creating Draft Risks…'
-                          : 'Create ' + selected.size + ' Selected Risk' + (selected.size === 1 ? '' : 's')}
+                          ? 'Membuat Risiko Draf…'
+                          : 'Buat ' + selected.size + ' Risiko Terpilih'}
                       </button>
                     </div>
                   </div>
@@ -630,20 +644,19 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-7 text-center">
                   <Sparkles className="mx-auto h-6 w-6 text-brand-500" />
                   <div className="mt-2 text-xs font-black text-slate-800">
-                    BPM selected — ready for risk identification
+                    BPM terpilih — siap untuk identifikasi risiko
                   </div>
                   <p className="mx-auto mt-1 max-w-lg text-[9px] leading-4 text-slate-500">
-                    Tekan Generate AI Risks untuk membuat beberapa usulan jenis risiko yang relevan.
-                    Tidak ada data Risk Register yang dibuat sampai Anda memilih usulannya.
+                    Tekan Buat Risiko dengan AI untuk menghasilkan beberapa usulan jenis risiko yang relevan. Tidak ada data Register Risiko yang dibuat sampai Anda memilih usulannya.
                   </p>
                 </div>
               )}
 
               {!processId && (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-7 text-center">
-                  <div className="text-xs font-black text-slate-800">Select a BPM first</div>
+                  <div className="text-xs font-black text-slate-800">Pilih BPM terlebih dahulu</div>
                   <p className="mx-auto mt-1 max-w-lg text-[9px] leading-4 text-slate-500">
-                    Tombol Generate AI Risks tetap nonaktif sampai user memilih Business Process.
+                    Tombol Buat Risiko dengan AI tetap nonaktif sampai pengguna memilih Proses Bisnis.
                   </p>
                 </div>
               )}

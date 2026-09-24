@@ -21,9 +21,10 @@ requireText(route, "sensitivity: 'confidential'", 'Confidential BPM processing')
 requireText(route, 'AI_RISK_CATEGORIES', 'Controlled risk category universe');
 requireText(route, 'existingRisks', 'Existing-risk deduplication context');
 requireText(route, 'sourceActivityIds', 'Activity traceability');
-requireText(route, 'Do not assign likelihood, impact scores', 'No AI risk scoring');
+requireText(route, 'Jangan menetapkan likelihood, impact score', 'No AI risk scoring');
 requireText(route, 'selectedSuggestionIds', 'Explicit user selection');
 requireText(route, 'AI_RISK_BATCH_STALE', 'BPM change protection');
+requireText(route, 'WAJIB menggunakan Bahasa Indonesia', 'AI narrative output language');
 
 const persistence = 'src/lib/d1-ai-risk-register.ts';
 requireText(persistence, 'CREATE TABLE IF NOT EXISTS AIRiskSuggestionBatch', 'Persistent AI suggestion batch');
@@ -38,15 +39,17 @@ requireText(persistence, "action: 'CREATE_AI_SELECTED'", 'Risk creation audit');
 requireText(persistence, "action: 'APPLY_SELECTION'", 'Selection audit');
 
 const ui = 'src/components/risks/AiRiskRegisterGenerator.tsx';
-requireText(ui, 'AI Create Risk Register', 'AI risk entry point');
-requireText(ui, '— Select BPM before generating AI risks —', 'Empty BPM selection');
+requireText(ui, "Operational: 'Operasional'", 'Risk category localization');
+requireText(ui, "High: 'Tinggi'", 'Confidence localization');
+requireText(ui, 'AI Buat Register Risiko', 'AI risk entry point');
+requireText(ui, '— Pilih BPM sebelum membuat risiko dengan AI —', 'Empty BPM selection');
 requireText(ui, 'disabled={!processId || generating}', 'Generate disabled before BPM selection');
-requireText(ui, 'Generate AI Risks', 'Generate action');
-requireText(ui, 'Select all', 'Category-level selection');
-requireText(ui, 'Create ', 'Selected risk creation action');
-requireText(ui, 'Draft / Not Assessed', 'Human assessment state');
-requireText(ui, 'Saved AI suggestion batches', 'Reusable saved AI suggestions');
-requireText(ui, 'Reusable without AI', 'No repeated AI requirement');
+requireText(ui, 'Buat Risiko dengan AI', 'Generate action');
+requireText(ui, 'Pilih semua', 'Category-level selection');
+requireText(ui, "'Buat ' + selected.size + ' Risiko Terpilih'", 'Selected risk creation action');
+requireText(ui, 'Draf / Belum Dinilai', 'Human assessment state');
+requireText(ui, 'Batch usulan AI tersimpan', 'Reusable saved AI suggestions');
+requireText(ui, 'Dapat digunakan kembali tanpa AI', 'No repeated AI requirement');
 
 const page = 'src/app/risks/page.tsx';
 requireText(page, '<AiRiskRegisterGenerator processes={processes} onCreated={loadRisks} />', 'Risk Universe integration');
