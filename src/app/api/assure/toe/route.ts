@@ -6,12 +6,20 @@ import {
   listToeTests,
   updateToeSample
 } from '@/lib/d1-assurance';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const tests = await listToeTests();
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const tests = await listToeTests(context.institution.id);
     return NextResponse.json({ tests, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 ToE tests:', error);
@@ -24,6 +32,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
     const actionType =
       typeof body.actionType === 'string' ? body.actionType : 'UPDATE_SAMPLE';
@@ -68,7 +84,7 @@ export async function POST(request: Request) {
         populationSource,
         samplingMethod,
         notes: typeof body.notes === 'string' ? body.notes.trim() : null
-      });
+      }, institutionId);
 
       return NextResponse.json(test, { status: 201 });
     }
@@ -95,7 +111,7 @@ export async function POST(request: Request) {
         sampleId,
         severity,
         description
-      });
+      }, institutionId);
 
       return NextResponse.json(exception, { status: 201 });
     }
@@ -132,7 +148,7 @@ export async function POST(request: Request) {
           typeof body.attributesTested === 'string' ? body.attributesTested.trim() : null,
         evidenceRef:
           typeof body.evidenceRef === 'string' ? body.evidenceRef.trim() : null
-      });
+      }, institutionId);
 
       return NextResponse.json(sample, { status: 201 });
     }
@@ -153,10 +169,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const updated = await updateToeSample({ sampleId, result, failureReason });
+    const updated = await updateToeSample({ sampleId, result, failureReason }, institutionId);
     return NextResponse.json(updated);
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    if (code === 'TENANT_RECORD_NOT_FOUND') {
+      return NextResponse.json({ error: 'ToE record not found in the active institution.' }, { status: 404 });
+    }
     if (code === 'CONTROL_NOT_FOUND') {
       return NextResponse.json({ error: 'Control not found.' }, { status: 404 });
     }
