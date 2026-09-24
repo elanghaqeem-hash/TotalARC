@@ -607,6 +607,16 @@ async function primaryInstitution(db: D1DatabaseLike) {
   );
 }
 
+async function institutionById(db: D1DatabaseLike, institutionId?: string | null) {
+  const id = String(institutionId || '').trim();
+  if (!id) return null;
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
 async function writeAudit(
   db: D1DatabaseLike,
   input: {
@@ -961,19 +971,23 @@ async function hydrateProcess(
   } as D1BusinessProcess;
 }
 
-export async function listProcessLookups() {
+export async function listProcessLookups(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   return all<Record<string, unknown>>(
     db,
     `SELECT id, institutionId, categoryId, processId, name, criticality,
             classification, isIcofrRelevant, status
        FROM BusinessProcess
-      ORDER BY processId ASC`
+      ${tenantId ? 'WHERE institutionId = ?' : ''}
+      ORDER BY processId ASC`,
+    tenantId ? [tenantId] : []
   );
 }
 
-export async function listBusinessProcessSummaries() {
+export async function listBusinessProcessSummaries(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const [categories, rows, orgUnits, objectiveCounts, activityCounts, sipocs, mappingCounts] =
     await Promise.all([
       all<Record<string, unknown>>(
@@ -982,11 +996,13 @@ export async function listBusinessProcessSummaries() {
       ),
       all<Record<string, unknown>>(
         db,
-        'SELECT * FROM BusinessProcess ORDER BY level ASC, processId ASC'
+        `SELECT * FROM BusinessProcess ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY level ASC, processId ASC`,
+        tenantId ? [tenantId] : []
       ),
       all<Record<string, unknown>>(
         db,
-        "SELECT id, code, name, type FROM OrganizationUnit WHERE status = 'Active' ORDER BY code ASC"
+        `SELECT id, code, name, type FROM OrganizationUnit WHERE status = 'Active'${tenantId ? ' AND institutionId = ?' : ''} ORDER BY code ASC`,
+        tenantId ? [tenantId] : []
       ),
       all<Record<string, unknown>>(
         db,
@@ -1053,12 +1069,13 @@ export async function listBusinessProcessSummaries() {
   return { processes, categories };
 }
 
-export async function getBusinessProcessDetail(id: string) {
+export async function getBusinessProcessDetail(id: string, institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const row = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [id]
+    `SELECT * FROM BusinessProcess WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [id, tenantId] : [id]
   );
   if (!row) throw new Error('PROCESS_NOT_FOUND');
 
@@ -1100,17 +1117,18 @@ export async function getBusinessProcessDetail(id: string) {
   };
 }
 
-export async function listBusinessProcesses() {
+export async function listBusinessProcesses(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const [categories, rows, orgUnits, objectives, sipocs, activities, risks, controls, mappings] = await Promise.all([
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM BusinessProcess ORDER BY level ASC, processId ASC'),
-    all<Record<string, unknown>>(db, "SELECT * FROM OrganizationUnit WHERE status = 'Active' ORDER BY code ASC"),
+    all<Record<string, unknown>>(db, `SELECT * FROM BusinessProcess ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY level ASC, processId ASC`, tenantId ? [tenantId] : []),
+    all<Record<string, unknown>>(db, `SELECT * FROM OrganizationUnit WHERE status = 'Active'${tenantId ? ' AND institutionId = ?' : ''} ORDER BY code ASC`, tenantId ? [tenantId] : []),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessObjective ORDER BY createdAt ASC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM SIPOC'),
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity ORDER BY orderIndex ASC, createdAt ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM RiskMaster ORDER BY riskId ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC'),
+    all<Record<string, unknown>>(db, `SELECT * FROM RiskMaster ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY riskId ASC`, tenantId ? [tenantId] : []),
+    all<Record<string, unknown>>(db, `SELECT * FROM ControlMaster ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY controlId ASC`, tenantId ? [tenantId] : []),
     all<Record<string, unknown>>(
       db,
       `SELECT m.id, m.riskId, m.controlId,
@@ -1211,13 +1229,15 @@ export async function listBusinessProcesses() {
 
 export async function applyRcmDerivedBpmDraft(
   processId: string,
-  expectedFingerprint?: string
+  expectedFingerprint?: string,
+  institutionId?: string | null
 ) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [processId]
+    `SELECT * FROM BusinessProcess WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [processId, tenantId] : [processId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -1468,9 +1488,11 @@ export async function findBusinessProcessForAi(identifier: {
   return row ? hydrateProcess(db, row) : null;
 }
 
-export async function createBusinessProcess(input: Record<string, unknown>) {
+export async function createBusinessProcess(input: Record<string, unknown>, institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
-  const institution = await primaryInstitution(db);
+  const institution = institutionId
+    ? await institutionById(db, institutionId)
+    : await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const category = await first<Record<string, unknown>>(
@@ -1579,12 +1601,13 @@ export async function createBusinessProcess(input: Record<string, unknown>) {
 }
 
 
-export async function updateBusinessProcess(id: string, input: Record<string, unknown>) {
+export async function updateBusinessProcess(id: string, input: Record<string, unknown>, institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const existing = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [id]
+    `SELECT * FROM BusinessProcess WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [id, tenantId] : [id]
   );
   if (!existing) throw new Error('PROCESS_NOT_FOUND');
 
@@ -1685,12 +1708,84 @@ export async function updateBusinessProcess(id: string, input: Record<string, un
   return hydrateProcess(db, updated, new Map([[String(category.id), category]]));
 }
 
-export async function deleteBusinessProcess(id: string) {
+export async function reviewSourceBackedBusinessProcessDraft(input: {
+  processId: string;
+  institutionId: string;
+  decision: 'APPROVE' | 'REJECT';
+  reviewedBy?: string | null;
+}) {
   const db = await ensureCoreDomainSchema();
+  const process = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+    [input.processId, input.institutionId]
+  );
+  if (!process) throw new Error('PROCESS_NOT_FOUND');
+
+  const tags = parseJsonObject(process.tags);
+  if (!tags.sourceBacked || String(tags.sourceValidationStatus || '') !== 'PENDING_USER_VALIDATION') {
+    throw new Error('SOURCE_BPM_DRAFT_NOT_PENDING');
+  }
+
+  const reviewedBy = String(input.reviewedBy || 'Authenticated user').trim() || 'Authenticated user';
+  const now = nowIso();
+  const oldStatus = process.status || 'Draft';
+  const oldValidation = tags.sourceValidationStatus;
+
+  if (input.decision === 'REJECT') {
+    tags.sourceValidationStatus = 'REJECTED_BY_USER';
+    tags.sourceValidatedAt = now;
+    tags.sourceValidatedBy = reviewedBy;
+    await run(
+      db,
+      'UPDATE BusinessProcess SET status = ?, tags = ?, updatedAt = ? WHERE id = ? AND institutionId = ?',
+      ['Rejected', JSON.stringify(tags), now, input.processId, input.institutionId]
+    );
+    await writeAudit(db, {
+      institutionId: input.institutionId,
+      userName: reviewedBy,
+      userRole: 'Process Owner / Reviewer',
+      action: 'REJECT_SOURCE_DRAFT',
+      entityType: 'Process',
+      recordId: input.processId,
+      oldValue: { status: oldStatus, sourceValidationStatus: oldValidation },
+      newValue: { status: 'Rejected', sourceValidationStatus: 'REJECTED_BY_USER' },
+      reason: 'Source-backed BPM draft rejected by user before operational use.'
+    });
+    return { processId: input.processId, status: 'REJECTED_BY_USER' };
+  }
+
+  if (input.decision !== 'APPROVE') throw new Error('INVALID_DRAFT_DECISION');
+
+  tags.sourceValidationStatus = 'USER_VALIDATED';
+  tags.sourceValidatedAt = now;
+  tags.sourceValidatedBy = reviewedBy;
+  await run(
+    db,
+    'UPDATE BusinessProcess SET status = ?, tags = ?, updatedAt = ? WHERE id = ? AND institutionId = ?',
+    ['Approved', JSON.stringify(tags), now, input.processId, input.institutionId]
+  );
+  await writeAudit(db, {
+    institutionId: input.institutionId,
+    userName: reviewedBy,
+    userRole: 'Process Owner / Reviewer',
+    action: 'APPROVE_SOURCE_DRAFT',
+    entityType: 'Process',
+    recordId: input.processId,
+    oldValue: { status: oldStatus, sourceValidationStatus: oldValidation },
+    newValue: { status: 'Approved', sourceValidationStatus: 'USER_VALIDATED' },
+    reason: 'Source-backed BPM draft validated for operational BPM use. RCM draft validation remains separate.'
+  });
+  return { processId: input.processId, status: 'USER_VALIDATED' };
+}
+
+export async function deleteBusinessProcess(id: string, institutionId?: string | null) {
+  const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const existing = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [id]
+    `SELECT * FROM BusinessProcess WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [id, tenantId] : [id]
   );
   if (!existing) throw new Error('PROCESS_NOT_FOUND');
 
@@ -2269,8 +2364,9 @@ export async function createControl(input: Record<string, unknown>) {
   };
 }
 
-export async function listRcmRows() {
+export async function listRcmRows(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const rows = await all<Record<string, unknown>>(
     db,
     `SELECT
@@ -2342,7 +2438,9 @@ export async function listRcmRows() {
       LEFT JOIN RiskMaster r ON r.id = m.riskId
       LEFT JOIN OperationalRiskMetadata orm ON orm.riskId = r.id
       LEFT JOIN RCMControlSourceMetadata sm ON sm.controlId = c.id
-      ORDER BY p.processId ASC, COALESCE(r.riskId, 'ZZZ') ASC, c.controlId ASC`
+      ${tenantId ? 'WHERE c.institutionId = ?' : ''}
+      ORDER BY p.processId ASC, COALESCE(r.riskId, 'ZZZ') ASC, c.controlId ASC`,
+    tenantId ? [tenantId] : []
   );
 
   return rows.map((row, index) => {
@@ -2426,9 +2524,11 @@ export async function listRcmRows() {
   });
 }
 
-export async function getRcmGovernanceData() {
+export async function getRcmGovernanceData(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
-  const institution = await primaryInstitution(db);
+  const institution = institutionId
+    ? await institutionById(db, institutionId)
+    : await primaryInstitution(db);
   if (!institution) {
     return {
       summary: {
