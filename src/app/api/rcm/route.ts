@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRcmGovernanceData, listRcmRows } from '@/lib/d1-core';
-import { getAuthenticatedProfile } from '@/lib/auth';
-import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
 import {
   generateBpmDerivedRcmDrafts,
@@ -13,16 +12,15 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-function tokenFromRequest(request: Request) {
-  const cookie = request.headers.get('cookie') || '';
-  const match = cookie.match(new RegExp('(?:^|;\\s*)' + AUTH_COOKIE_NAME + '=([^;]+)'));
-  return match ? decodeURIComponent(match[1]) : '';
-}
-
 async function requireProfile(request: Request) {
-  const token = tokenFromRequest(request);
-  if (!token) return null;
-  return getAuthenticatedProfile(token);
+  const context = await resolveInstitutionAccess(request);
+  if (!context) return null;
+  if (!context.institution) return context.profile;
+  return {
+    ...context.profile,
+    institutionId: context.institution.id,
+    institutionName: context.institution.name
+  };
 }
 
 export async function GET(request: Request) {
