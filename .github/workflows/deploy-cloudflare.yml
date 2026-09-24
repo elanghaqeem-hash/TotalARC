@@ -131,6 +131,9 @@ jobs:
       - name: Verify multi-institution isolation
         run: npm run verify:tenant-isolation
 
+      - name: Verify saved process flow persistence
+        run: npm run verify:process-flow
+
       - name: Build OpenNext Worker
         run: npm run build
 
