@@ -119,10 +119,10 @@ export async function GET(request: Request, routeContext: RouteContext) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return noStore({ error: 'Business process was not found in the active institution.' }, { status: 404 });
+      return noStore({ error: 'Proses bisnis tidak ditemukan pada institusi aktif.' }, { status: 404 });
     }
     console.error('Failed to load process flow workspace:', error);
-    return noStore({ error: 'Failed to load saved process flow.' }, { status: 503 });
+    return noStore({ error: 'Gagal memuat alur proses tersimpan.' }, { status: 503 });
   }
 }
 
@@ -152,26 +152,26 @@ export async function POST(request: Request, routeContext: RouteContext) {
     if (!source.activities.length) {
       return noStore(
         {
-          error: 'Activity Register is empty. Add or validate process activities before generating a flow.'
+          error: 'Register Aktivitas masih kosong. Tambahkan atau validasi aktivitas proses sebelum membuat alur.'
         },
         { status: 409 }
       );
     }
 
     const systemPrompt = [
-      'You are Total ARC AI preparing structured business-process content for the Total ARC deterministic flow renderer.',
+      'Anda adalah AI Total ARC yang menyiapkan konten proses bisnis terstruktur untuk renderer alur deterministik Total ARC.',
       'Return structured JSON only; never draw SVG, HTML, Mermaid, ASCII diagrams, coordinates, colors, typography, or layout instructions.',
-      'Use only the supplied Activity Register source data.',
-      'Do not invent steps, roles, systems, controls, approvals, thresholds, regulations, events, branches, exceptions, or missing facts.',
-      'Preserve the exact number and order of source activities.',
-      'For every step, return the exact sourceActivityId from the input.',
-      'Keep each step title concise and mobile-friendly: preferably 3-9 words and never more than 90 characters; shorten wording only when meaning is preserved.',
-      'Classify kind as decision only when the source wording clearly represents a decision, approval, authorization, validation, or conditional check; otherwise use task.',
-      'Keep note concise: one plain-language sentence grounded only in the source activity, preferably under 140 characters. Use an empty string when the source does not support a useful note.',
-      'Do not repeat performer, system, status, sequence number, or process name inside title or note because Total ARC renders those fields separately.',
-      'If a source value is missing, leave it missing; do not replace it with assumptions.',
-      'The renderer will enforce dynamic card height, separate status chips, safe text wrapping, non-overlapping connectors, and mobile spacing.',
-      'Return JSON only: {"title":"string","summary":"string","steps":[{"sourceActivityId":"string","activityId":"string","order":1,"title":"string","kind":"task|decision","note":"string"}]}.'
+      'Gunakan hanya data sumber Register Aktivitas yang diberikan.',
+      'Jangan mengarang langkah, peran, sistem, kontrol, persetujuan, ambang batas, regulasi, kejadian, cabang, pengecualian, atau fakta yang tidak tersedia.',
+      'Pertahankan jumlah dan urutan aktivitas sumber secara persis.',
+      'Untuk setiap langkah, kembalikan sourceActivityId persis dari input.',
+      'Buat judul setiap langkah ringkas dan ramah perangkat seluler: idealnya 3-9 kata dan maksimal 90 karakter; ringkas hanya jika makna tetap terjaga.',
+      'Klasifikasikan kind sebagai decision hanya jika teks sumber jelas menunjukkan keputusan, persetujuan, otorisasi, validasi, atau pemeriksaan kondisi; selain itu gunakan task.',
+      'Buat note ringkas: satu kalimat sederhana yang hanya berdasarkan aktivitas sumber, idealnya di bawah 140 karakter. Gunakan string kosong jika sumber tidak mendukung catatan yang berguna.',
+      'Jangan mengulang performer, system, status, nomor urut, atau nama proses di title maupun note karena Total ARC menampilkan field tersebut secara terpisah.',
+      'Jika nilai sumber tidak tersedia, biarkan kosong; jangan menggantinya dengan asumsi.',
+      'Renderer akan menerapkan tinggi kartu dinamis, chip status terpisah, pembungkusan teks aman, konektor tanpa tumpang tindih, dan jarak untuk perangkat seluler.',
+      'Kembalikan JSON saja: {"title":"string","summary":"string","steps":[{"sourceActivityId":"string","activityId":"string","order":1,"title":"string","kind":"task|decision","note":"string"}]}. Semua nilai title, summary, dan note wajib menggunakan Bahasa Indonesia; token kind tetap task|decision untuk kompatibilitas sistem.'
     ].join(' ');
 
     const result = await runAiGateway({
@@ -179,7 +179,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
       sensitivity: 'confidential',
       systemPrompt,
       prompt:
-        'Create concise structured flow content from this registered Total ARC BPM source. The visual layout is rendered by Total ARC, not by the AI.\n' +
+        'Buat konten alur terstruktur yang ringkas dari sumber BPM Total ARC terdaftar berikut. Tata letak visual dirender oleh Total ARC, bukan oleh AI.\n' +
         JSON.stringify({
           process: source.process,
           activities: source.activities
@@ -216,17 +216,17 @@ export async function POST(request: Request, routeContext: RouteContext) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return noStore({ error: 'Business process was not found in the active institution.' }, { status: 404 });
+      return noStore({ error: 'Proses bisnis tidak ditemukan pada institusi aktif.' }, { status: 404 });
     }
     if (code === 'PROCESS_SOURCE_CHANGED') {
       return noStore(
-        { error: 'Activity Register changed while the flow was being generated. Please generate again.' },
+        { error: 'Register Aktivitas berubah saat alur sedang dibuat. Silakan buat ulang.' },
         { status: 409 }
       );
     }
     if (code === 'AI_FLOW_INVALID') {
       return noStore(
-        { error: 'AI returned an invalid flow structure. The existing saved flow was not changed.' },
+        { error: 'AI mengembalikan struktur alur yang tidak valid. Alur tersimpan yang ada tidak diubah.' },
         { status: 502 }
       );
     }
@@ -272,12 +272,12 @@ export async function PATCH(request: Request, routeContext: RouteContext) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return noStore({ error: 'Business process was not found in the active institution.' }, { status: 404 });
+      return noStore({ error: 'Proses bisnis tidak ditemukan pada institusi aktif.' }, { status: 404 });
     }
     if (code === 'FLOW_NOT_FOUND') {
-      return noStore({ error: 'Saved flow version was not found in the active institution.' }, { status: 404 });
+      return noStore({ error: 'Versi alur tersimpan tidak ditemukan pada institusi aktif.' }, { status: 404 });
     }
     console.error('Failed to activate saved process flow:', error);
-    return noStore({ error: 'Failed to activate the saved process-flow version.' }, { status: 500 });
+    return noStore({ error: 'Gagal mengaktifkan versi alur proses tersimpan.' }, { status: 500 });
   }
 }
