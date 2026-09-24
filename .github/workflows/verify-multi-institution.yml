@@ -39,5 +39,7 @@ jobs:
         run: npm run verify:process-flow
       - name: Verify supporting document AI workflow
         run: npm run verify:process-document-ai
+      - name: Verify BPM-to-AI Risk Register
+        run: npm run verify:ai-risk-register
       - name: TypeScript check
         run: npx tsc --noEmit
