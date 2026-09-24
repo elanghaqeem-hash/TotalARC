@@ -4,12 +4,20 @@ import {
   ingestMonitoringRun,
   listMonitoringRules
 } from '@/lib/d1-assurance';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const rules = await listMonitoringRules();
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const rules = await listMonitoringRules(context.institution.id);
     return NextResponse.json({ rules, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 CCM rules:', error);
@@ -19,6 +27,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = typeof body.actionType === 'string' ? body.actionType : 'INGEST_RUN';
 
@@ -36,7 +52,10 @@ export async function POST(request: Request) {
         );
       }
 
-      const rule = await createMonitoringRule({ ...body, controlId, name, description, dataSource, queryLogic });
+      const rule = await createMonitoringRule(
+        { ...body, controlId, name, description, dataSource, queryLogic },
+        institutionId
+      );
       return NextResponse.json(rule, { status: 201 });
     }
 
@@ -75,11 +94,14 @@ export async function POST(request: Request) {
       exceptionsFound,
       details,
       exceptions
-    });
+    }, institutionId);
 
     return NextResponse.json(run, { status: 201 });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
+    if (code === 'TENANT_RECORD_NOT_FOUND') {
+      return NextResponse.json({ error: 'CCM record not found in the active institution.' }, { status: 404 });
+    }
     if (code === 'CONTROL_NOT_FOUND') {
       return NextResponse.json({ error: 'Control not found.' }, { status: 404 });
     }

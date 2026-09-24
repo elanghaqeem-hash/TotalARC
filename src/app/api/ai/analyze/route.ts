@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
 import { findBusinessProcessForAi, recordAiAnalysisAudit } from '@/lib/d1-core';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 type Finding = {
   id: string;
@@ -63,6 +64,15 @@ function normalizeFindings(value: unknown): Finding[] {
 
 export async function POST(request: Request) {
   try {
+    const institutionContext = await resolveInstitutionAccess(request);
+    if (!institutionContext?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: institutionContext ? 409 : 401 }
+      );
+    }
+    const institutionId = institutionContext.institution.id;
+
     const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
     if (!guarded.ok) return guarded.response;
 
@@ -75,7 +85,7 @@ export async function POST(request: Request) {
         ? await findBusinessProcessForAi({
             processId: processId || undefined,
             processName: processName || undefined
-          })
+          }, institutionId)
         : null;
 
     const suppliedActivities = Array.isArray(body.activities) ? body.activities : [];

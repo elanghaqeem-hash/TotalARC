@@ -1357,9 +1357,12 @@ async function getSubCertificationContext(
   return contexts;
 }
 
-export async function getCertificationData() {
+export async function getCertificationData(institutionId?: string | null) {
   const db = await ensureIcofrCertificationSchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) {
     return {
       institution: null,

@@ -83,6 +83,31 @@ function nullable(value: unknown) {
   return value === undefined || value === '' ? null : value;
 }
 
+function assertAssuranceTenant(
+  recordInstitutionId: unknown,
+  institutionId?: string | null
+) {
+  const tenantId = String(institutionId || '').trim();
+  if (tenantId && String(recordInstitutionId || '') !== tenantId) {
+    throw new Error('TENANT_RECORD_NOT_FOUND');
+  }
+}
+
+async function assertMapTenant(
+  db: D1DatabaseLike,
+  map: Record<string, unknown>,
+  institutionId?: string | null
+) {
+  const tenantId = String(institutionId || '').trim();
+  if (!tenantId) return;
+  const issue = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Issue WHERE id = ? AND institutionId = ? LIMIT 1',
+    [map.issueId, tenantId]
+  );
+  if (!issue) throw new Error('TENANT_RECORD_NOT_FOUND');
+}
+
 let assuranceSchemaReady: Promise<D1DatabaseLike> | null = null;
 
 export async function ensureAssuranceSchema() {
@@ -477,7 +502,7 @@ export async function createToeTest(input: {
   populationSource: string;
   samplingMethod: string;
   notes?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const control = await first<Record<string, unknown>>(
     db,
@@ -485,6 +510,7 @@ export async function createToeTest(input: {
     [input.controlId]
   );
   if (!control) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceTenant(control.institutionId, institutionId);
 
   await assertIcofrPeriodWritable({
     institutionId: String(control.institutionId),
@@ -559,7 +585,7 @@ export async function addToeSample(input: {
   amount?: number | null;
   attributesTested?: string | null;
   evidenceRef?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const test = await first<Record<string, unknown>>(
     db,
@@ -574,6 +600,7 @@ export async function addToeSample(input: {
     [test.controlId]
   );
   if (!testControl) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceTenant(testControl.institutionId, institutionId);
 
   await assertIcofrPeriodWritable({
     institutionId: String(testControl.institutionId),
@@ -631,7 +658,7 @@ export async function createTestingExceptionFromSample(input: {
   sampleId: string;
   severity: string;
   description?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const test = await first<Record<string, unknown>>(
     db,
@@ -646,6 +673,7 @@ export async function createTestingExceptionFromSample(input: {
     [test.controlId]
   );
   if (!exceptionControl) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceTenant(exceptionControl.institutionId, institutionId);
 
   await assertIcofrPeriodWritable({
     institutionId: String(exceptionControl.institutionId),
@@ -716,7 +744,7 @@ export async function createControlDeficiency(input: {
   regulatoryImpact?: string | null;
   compensatingControls?: string | null;
   approvedBy: string;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const exception = await first<Record<string, unknown>>(
     db,
@@ -738,6 +766,7 @@ export async function createControlDeficiency(input: {
     [deficiencyTest.controlId]
   );
   if (!deficiencyControl) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceTenant(deficiencyControl.institutionId, institutionId);
 
   await assertIcofrPeriodWritable({
     institutionId: String(deficiencyControl.institutionId),
@@ -813,7 +842,7 @@ export async function createIssueFromDeficiency(input: {
   severity: string;
   ownerName: string;
   targetDate: string;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const deficiency = await first<Record<string, unknown>>(
     db,
@@ -845,6 +874,7 @@ export async function createIssueFromDeficiency(input: {
     [test.processId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
+  assertAssuranceTenant(process.institutionId, institutionId);
 
   const id = crypto.randomUUID();
   const issueId = 'ISS-' + crypto.randomUUID().slice(0, 8).toUpperCase();
@@ -905,7 +935,7 @@ export async function createManagementActionPlan(input: {
   actionOwner: string;
   approverName: string;
   originalDueDate: string;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const issue = await first<Record<string, unknown>>(
     db,
@@ -913,6 +943,7 @@ export async function createManagementActionPlan(input: {
     [input.issueId]
   );
   if (!issue) throw new Error('ISSUE_NOT_FOUND');
+  assertAssuranceTenant(issue.institutionId, institutionId);
 
   const id = crypto.randomUUID();
   const mapId = 'MAP-' + crypto.randomUUID().slice(0, 8).toUpperCase();
@@ -964,7 +995,7 @@ export async function createMapMilestone(input: {
   title: string;
   owner: string;
   dueDate: string;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const map = await first<Record<string, unknown>>(
     db,
@@ -972,6 +1003,7 @@ export async function createMapMilestone(input: {
     [input.mapId]
   );
   if (!map) throw new Error('MAP_NOT_FOUND');
+  await assertMapTenant(db, map, institutionId);
 
   const id = crypto.randomUUID();
   await run(
@@ -1003,7 +1035,7 @@ export async function createRetestRecord(input: {
   testerName: string;
   reviewerName: string;
   conclusionNotes?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const map = await first<Record<string, unknown>>(
     db,
@@ -1011,6 +1043,7 @@ export async function createRetestRecord(input: {
     [input.mapId]
   );
   if (!map) throw new Error('MAP_NOT_FOUND');
+  await assertMapTenant(db, map, institutionId);
 
   if (
     input.sampleCount < 0 ||
@@ -1067,17 +1100,20 @@ export async function createRetestRecord(input: {
   };
 }
 
-export async function listToeTests() {
+export async function listToeTests(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institutionId = await resolveServerActiveInstitutionId();
+  const tenantId = String(
+    institutionId || (await resolveServerActiveInstitutionId()) || ''
+  ).trim();
+  if (!tenantId) return [];
   const tests = await all<Record<string, unknown>>(
     db,
     `SELECT t.*
        FROM ToETest t
        JOIN ControlMaster c ON c.id = t.controlId
-      ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+      WHERE c.institutionId = ?
       ORDER BY t.testedAt DESC, t.testId ASC`,
-    institutionId ? [institutionId] : []
+    [tenantId]
   );
 
   return Promise.all(
@@ -1139,7 +1175,7 @@ export async function updateToeSample(input: {
   sampleId: string;
   result: string;
   failureReason?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const sample = await first<Record<string, unknown>>(
     db,
@@ -1161,6 +1197,7 @@ export async function updateToeSample(input: {
     [sampleTest.controlId]
   );
   if (!sampleControl) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceTenant(sampleControl.institutionId, institutionId);
 
   await assertIcofrPeriodWritable({
     institutionId: String(sampleControl.institutionId),
@@ -1212,9 +1249,14 @@ export async function updateToeSample(input: {
   };
 }
 
-export async function listRemediationData() {
+export async function listRemediationData(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institutionId = await resolveServerActiveInstitutionId();
+  const tenantId = String(
+    institutionId || (await resolveServerActiveInstitutionId()) || ''
+  ).trim();
+  if (!tenantId) {
+    return { exceptions: [], deficiencies: [], issues: [], maps: [], retests: [] };
+  }
   const [exceptionRows, deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
     all<Record<string, unknown>>(
       db,
@@ -1222,9 +1264,9 @@ export async function listRemediationData() {
          FROM TestingException e
          JOIN ToETest t ON t.id = e.toeTestId
          JOIN ControlMaster c ON c.id = t.controlId
-        ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+        WHERE c.institutionId = ?
         ORDER BY e.createdAt DESC`,
-      institutionId ? [institutionId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
@@ -1233,25 +1275,25 @@ export async function listRemediationData() {
          LEFT JOIN TestingException e ON e.id = d.exceptionId
          LEFT JOIN ToETest t ON t.id = e.toeTestId
          LEFT JOIN ControlMaster c ON c.id = t.controlId
-        ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+        WHERE c.institutionId = ?
         ORDER BY d.createdAt DESC`,
-      institutionId ? [institutionId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
       `SELECT * FROM Issue
-        ${institutionId ? 'WHERE institutionId = ?' : ''}
+        WHERE institutionId = ?
         ORDER BY createdAt DESC`,
-      institutionId ? [institutionId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
       `SELECT m.*
          FROM ManagementActionPlan m
          JOIN Issue i ON i.id = m.issueId
-        ${institutionId ? 'WHERE i.institutionId = ?' : ''}
+        WHERE i.institutionId = ?
         ORDER BY m.createdAt DESC`,
-      institutionId ? [institutionId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
@@ -1259,9 +1301,9 @@ export async function listRemediationData() {
          FROM RetestRecord r
          JOIN ManagementActionPlan m ON m.id = r.mapId
          JOIN Issue i ON i.id = m.issueId
-        ${institutionId ? 'WHERE i.institutionId = ?' : ''}
+        WHERE i.institutionId = ?
         ORDER BY r.retestedAt DESC`,
-      institutionId ? [institutionId] : []
+      [tenantId]
     )
   ]);
 
@@ -1341,7 +1383,7 @@ export async function requestMapExtension(input: {
   extensionReason: string;
   newDueDate: string;
   approverName: string;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const existing = await first<Record<string, unknown>>(
     db,
@@ -1349,6 +1391,7 @@ export async function requestMapExtension(input: {
     [input.mapId]
   );
   if (!existing) throw new Error('MAP_NOT_FOUND');
+  await assertMapTenant(db, existing, institutionId);
 
   const extensionCount = Number(existing.extensionCount || 0) + 1;
   await run(
@@ -1377,17 +1420,20 @@ export async function requestMapExtension(input: {
   };
 }
 
-export async function listMonitoringRules() {
+export async function listMonitoringRules(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institutionId = await resolveServerActiveInstitutionId();
+  const tenantId = String(
+    institutionId || (await resolveServerActiveInstitutionId()) || ''
+  ).trim();
+  if (!tenantId) return [];
   const rules = await all<Record<string, unknown>>(
     db,
     `SELECT m.*
        FROM MonitoringRule m
        JOIN ControlMaster c ON c.id = m.controlId
-      ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+      WHERE c.institutionId = ?
       ORDER BY m.createdAt DESC, m.ruleId ASC`,
-    institutionId ? [institutionId] : []
+    [tenantId]
   );
 
   return Promise.all(
@@ -1438,7 +1484,10 @@ export async function listMonitoringRules() {
   );
 }
 
-export async function createMonitoringRule(input: Record<string, unknown>) {
+export async function createMonitoringRule(
+  input: Record<string, unknown>,
+  institutionId?: string | null
+) {
   const db = await ensureAssuranceSchema();
   const control = await first<Record<string, unknown>>(
     db,
@@ -1446,6 +1495,7 @@ export async function createMonitoringRule(input: Record<string, unknown>) {
     [input.controlId]
   );
   if (!control) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceTenant(control.institutionId, institutionId);
 
   const enterpriseId =
     typeof input.ruleId === 'string' && input.ruleId.trim()
@@ -1505,7 +1555,7 @@ export async function ingestMonitoringRun(input: {
   exceptionsFound: number;
   details?: string | null;
   exceptions?: Array<{ transactionRef?: string; details?: string }>;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
   const rule = await first<Record<string, unknown>>(
     db,
@@ -1513,6 +1563,13 @@ export async function ingestMonitoringRun(input: {
     [input.ruleId]
   );
   if (!rule) throw new Error('RULE_NOT_FOUND');
+  const ruleControl = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
+    [rule.controlId]
+  );
+  if (!ruleControl) throw new Error('CONTROL_NOT_FOUND');
+  assertAssuranceTenant(ruleControl.institutionId, institutionId);
 
   const status = input.exceptionsFound > 0 ? 'Exception Detected' : 'Healthy';
   const runId = crypto.randomUUID();
@@ -1783,6 +1840,20 @@ async function primaryAssuranceInstitution(db: D1DatabaseLike) {
   );
 }
 
+async function assuranceInstitutionFor(
+  db: D1DatabaseLike,
+  institutionId?: string | null
+) {
+  const requestedId = String(institutionId || '').trim();
+  const tenantId = requestedId || (await resolveServerActiveInstitutionId()) || '';
+  if (!tenantId) return null;
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [tenantId]
+  );
+}
+
 async function auditAssuranceCalendar(
   db: D1DatabaseLike,
   institutionId: string,
@@ -1814,9 +1885,9 @@ async function auditAssuranceCalendar(
   );
 }
 
-export async function listAssuranceCalendarEvents() {
+export async function listAssuranceCalendarEvents(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institution = await primaryAssuranceInstitution(db);
+  const institution = await assuranceInstitutionFor(db, institutionId);
   if (!institution) return [];
 
   return all<Record<string, unknown>>(
@@ -1829,9 +1900,12 @@ export async function listAssuranceCalendarEvents() {
   );
 }
 
-export async function saveAssuranceCalendarEvent(input: Record<string, unknown>) {
+export async function saveAssuranceCalendarEvent(
+  input: Record<string, unknown>,
+  institutionId?: string | null
+) {
   const db = await ensureAssuranceSchema();
-  const institution = await primaryAssuranceInstitution(db);
+  const institution = await assuranceInstitutionFor(db, institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const id = typeof input.id === 'string' && input.id.trim()
@@ -1962,9 +2036,12 @@ export async function saveAssuranceCalendarEvent(input: Record<string, unknown>)
   return record;
 }
 
-export async function deleteAssuranceCalendarEvent(id: string) {
+export async function deleteAssuranceCalendarEvent(
+  id: string,
+  institutionId?: string | null
+) {
   const db = await ensureAssuranceSchema();
-  const institution = await primaryAssuranceInstitution(db);
+  const institution = await assuranceInstitutionFor(db, institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const existing = await first<Record<string, unknown>>(

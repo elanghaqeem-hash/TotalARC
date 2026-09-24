@@ -250,6 +250,27 @@ async function primaryInstitution(db: D1DatabaseLike) {
   );
 }
 
+async function institutionFor(
+  db: D1DatabaseLike,
+  institutionId?: string | null
+) {
+  const requestedId = String(institutionId || '').trim();
+  const tenantId = requestedId || (await resolveServerActiveInstitutionId()) || '';
+  if (!tenantId) return null;
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [tenantId]
+  );
+}
+
+function assertTenant(recordInstitutionId: unknown, institutionId?: string | null) {
+  const tenantId = String(institutionId || '').trim();
+  if (tenantId && String(recordInstitutionId || '') !== tenantId) {
+    throw new Error('TENANT_RECORD_NOT_FOUND');
+  }
+}
+
 async function writeAudit(
   db: D1DatabaseLike,
   institutionId: string,
@@ -301,8 +322,8 @@ async function upsertTask(
 ) {
   const existing = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM AssuranceTask WHERE sourceType = ? AND sourceId = ? LIMIT 1',
-    [input.sourceType, input.sourceId]
+    'SELECT * FROM AssuranceTask WHERE institutionId = ? AND sourceType = ? AND sourceId = ? LIMIT 1',
+    [input.institutionId, input.sourceType, input.sourceId]
   );
   const now = nowIso();
 
@@ -312,7 +333,7 @@ async function upsertTask(
       `UPDATE AssuranceTask
           SET type = ?, title = ?, description = ?, assigneeName = ?, dueDate = ?,
               priority = ?, status = ?, link = ?, updatedAt = ?
-        WHERE id = ?`,
+        WHERE id = ? AND institutionId = ?`,
       [
         input.type,
         input.title,
@@ -323,7 +344,8 @@ async function upsertTask(
         input.status || 'Open',
         clean(input.link),
         now,
-        existing.id
+        existing.id,
+        input.institutionId
       ]
     );
     return String(existing.id);
@@ -442,9 +464,9 @@ async function loadCampaign(db: D1DatabaseLike, row: Record<string, unknown>) {
   };
 }
 
-export async function getRcsaWorkspaceData() {
+export async function getRcsaWorkspaceData(institutionId?: string | null) {
   const db = await ensureRcsaSchema();
-  const institution = await primaryInstitution(db);
+  const institution = await institutionFor(db, institutionId);
   if (!institution) {
     return {
       institution: null,
@@ -490,7 +512,15 @@ export async function getRcsaWorkspaceData() {
         ORDER BY controlId ASC`,
       [institution.id]
     ),
-    all<Record<string, unknown>>(db, 'SELECT controlId, riskId FROM ControlRiskMapping'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.controlId, m.riskId
+         FROM ControlRiskMapping m
+         JOIN ControlMaster c ON c.id = m.controlId
+         JOIN RiskMaster r ON r.id = m.riskId
+        WHERE c.institutionId = ? AND r.institutionId = ?`,
+      [institution.id, institution.id]
+    ),
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM AssuranceTask WHERE institutionId = ? ORDER BY dueDate ASC, createdAt DESC',
@@ -681,9 +711,9 @@ export async function createAssessmentCampaign(input: {
     assessorName: string;
     dueDate?: string | null;
   } | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureRcsaSchema();
-  const institution = await primaryInstitution(db);
+  const institution = await institutionFor(db, institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   if (new Date(input.startDate).getTime() > new Date(input.dueDate).getTime()) {
@@ -785,12 +815,13 @@ export async function addAssessmentScope(input: {
   controlId?: string | null;
   assessorName: string;
   dueDate?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureRcsaSchema();
+  const tenantId = String(institutionId || '').trim();
   const campaign = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM AssessmentCampaign WHERE id = ? LIMIT 1',
-    [input.campaignId]
+    `SELECT * FROM AssessmentCampaign WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [input.campaignId, tenantId] : [input.campaignId]
   );
   if (!campaign) throw new Error('CAMPAIGN_NOT_FOUND');
   if (String(campaign.status) === 'Closed') throw new Error('CAMPAIGN_CLOSED');
@@ -815,7 +846,7 @@ export async function submitAssessmentResponse(input: {
   actionRequired: boolean;
   actionOwner?: string | null;
   actionDueDate?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureRcsaSchema();
   const scope = await first<Record<string, unknown>>(
     db,
@@ -830,6 +861,7 @@ export async function submitAssessmentResponse(input: {
     [scope.campaignId]
   );
   if (!campaign) throw new Error('CAMPAIGN_NOT_FOUND');
+  assertTenant(campaign.institutionId, institutionId);
   if (String(campaign.status) === 'Closed') throw new Error('CAMPAIGN_CLOSED');
 
   if (bool(campaign.evidenceRequired) && !clean(input.evidenceRef) && input.csaConclusion !== 'Not Applicable') {
@@ -1038,7 +1070,7 @@ export async function reviewAssessmentResponse(input: {
   reviewerName: string;
   reviewStatus: string;
   reviewNotes?: string | null;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureRcsaSchema();
   const response = await first<Record<string, unknown>>(
     db,
@@ -1053,6 +1085,7 @@ export async function reviewAssessmentResponse(input: {
     [response.campaignId]
   );
   if (!campaign) throw new Error('CAMPAIGN_NOT_FOUND');
+  assertTenant(campaign.institutionId, institutionId);
 
   const reviewStatus = ['Approved', 'Needs Revision'].includes(input.reviewStatus)
     ? input.reviewStatus
@@ -1094,14 +1127,15 @@ export async function reviewAssessmentResponse(input: {
         `UPDATE ControlMaster
             SET designAssessment = ?, operatingStatus = ?, overallHealth = ?,
                 healthRationale = ?, updatedAt = ?
-          WHERE id = ?`,
+          WHERE id = ? AND institutionId = ?`,
         [
           normalizeEffectiveness(String(response.designEffectiveness)),
           normalizeEffectiveness(String(response.operatingEffectiveness)),
           normalizeEffectiveness(String(response.csaConclusion)),
           clean(input.reviewNotes) || clean(response.comments),
           now,
-          response.controlId
+          response.controlId,
+          campaign.institutionId
         ]
       );
     }
@@ -1112,14 +1146,15 @@ export async function reviewAssessmentResponse(input: {
         `UPDATE RiskMaster
             SET residualLikelihood = ?, residualImpact = ?, residualScore = ?,
                 residualRating = ?, updatedAt = ?
-          WHERE id = ?`,
+          WHERE id = ? AND institutionId = ?`,
         [
           Number(response.residualLikelihood || 1),
           Number(response.residualImpact || 1),
           Number(response.residualScore || 1),
           response.residualRating,
           now,
-          response.riskId
+          response.riskId,
+          campaign.institutionId
         ]
       );
     }
@@ -1168,12 +1203,13 @@ export async function reviewAssessmentResponse(input: {
 export async function updateAssessmentCampaignStatus(input: {
   campaignId: string;
   status: string;
-}) {
+}, institutionId?: string | null) {
   const db = await ensureRcsaSchema();
+  const tenantId = String(institutionId || '').trim();
   const campaign = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM AssessmentCampaign WHERE id = ? LIMIT 1',
-    [input.campaignId]
+    `SELECT * FROM AssessmentCampaign WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [input.campaignId, tenantId] : [input.campaignId]
   );
   if (!campaign) throw new Error('CAMPAIGN_NOT_FOUND');
 

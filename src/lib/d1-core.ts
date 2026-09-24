@@ -1473,26 +1473,35 @@ export async function applyRcmDerivedBpmDraft(
   return hydrateProcess(db, updated);
 }
 
-export async function findBusinessProcessForAi(identifier: {
-  processId?: string;
-  processName?: string;
-}) {
+export async function findBusinessProcessForAi(
+  identifier: {
+    processId?: string;
+    processName?: string;
+  },
+  institutionId?: string | null
+) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
+  if (!tenantId) return null;
   let row: Record<string, unknown> | null = null;
 
   if (identifier.processId) {
     row = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM BusinessProcess WHERE id = ? OR processId = ? LIMIT 1',
-      [identifier.processId, identifier.processId]
+      `SELECT * FROM BusinessProcess
+        WHERE (id = ? OR processId = ?) AND institutionId = ?
+        LIMIT 1`,
+      [identifier.processId, identifier.processId, tenantId]
     );
   }
 
   if (!row && identifier.processName) {
     row = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM BusinessProcess WHERE name = ? LIMIT 1',
-      [identifier.processName]
+      `SELECT * FROM BusinessProcess
+        WHERE name = ? AND institutionId = ?
+        LIMIT 1`,
+      [identifier.processName, tenantId]
     );
   }
 

@@ -114,41 +114,41 @@ export async function GET(request: Request) {
       () => getOrganizationStructure(institutionId),
       { institution: null, legalEntities: [], organizationUnits: [], users: [] } as any
     ),
-    loadModule('tod', needTod, listDesignAssessments, [] as any[]),
+    loadModule('tod', needTod, () => listDesignAssessments(institutionId), [] as any[]),
     loadModule(
       'rcsa',
       needRcsa,
-      getRcsaWorkspaceData,
+      () => getRcsaWorkspaceData(institutionId),
       { institution: null, campaigns: [], processes: [], risks: [], controls: [], tasks: [] } as any
     ),
-    loadModule('pbc-tasks', needPbc, listPbcTasks, [] as any[]),
-    loadModule('toe', needToe, listToeTests, [] as any[]),
+    loadModule('pbc-tasks', needPbc, () => listPbcTasks(institutionId), [] as any[]),
+    loadModule('toe', needToe, () => listToeTests(institutionId), [] as any[]),
     loadModule(
       'remediation',
       needRemediation,
-      listRemediationData,
+      () => listRemediationData(institutionId),
       { exceptions: [], deficiencies: [], issues: [], maps: [], retests: [] } as any
     ),
-    loadModule('ccm', needCcm, listMonitoringRules, [] as any[]),
+    loadModule('ccm', needCcm, () => listMonitoringRules(institutionId), [] as any[]),
     loadModule(
       'certification',
       needCertification,
-      getCertificationData,
+      () => getCertificationData(institutionId),
       { subCertifications: [], attestations: [], evidencePacks: [] } as any
     ),
-    loadModule('calendar-events', needCalendar, listAssuranceCalendarEvents, [] as any[]),
-    loadModule('financial-items', needFinancial, listFinancialItems, { records: [] } as any),
-    loadModule('information-register', needInformation, listInformationRegister, { records: [] } as any),
+    loadModule('calendar-events', needCalendar, () => listAssuranceCalendarEvents(institutionId), [] as any[]),
+    loadModule('financial-items', needFinancial, () => listFinancialItems(institutionId), { records: [] } as any),
+    loadModule('information-register', needInformation, () => listInformationRegister(undefined, institutionId), { records: [] } as any),
     loadModule(
       'testing-plan',
       needTesting,
-      getTestingPlanData,
+      () => getTestingPlanData(institutionId),
       { cycles: [], planItems: [], metrics: {} } as any
     ),
     loadModule(
       'workpaper-review-tasks',
       needWorkpaperReviewTasks,
-      listWorkpaperReviewTasks,
+      () => listWorkpaperReviewTasks(institutionId),
       [] as any[]
     )
   ]);
@@ -371,6 +371,14 @@ function textValue(body: Record<string, unknown>, key: string) {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = textValue(body, 'actionType');
 
@@ -387,7 +395,7 @@ export async function POST(request: Request) {
         status: textValue(body, 'status') || 'Planned',
         link: textValue(body, 'link') || null,
         notes: textValue(body, 'notes') || null
-      });
+      }, institutionId);
       return NextResponse.json(event, { status: textValue(body, 'id') ? 200 : 201 });
     }
 
@@ -396,7 +404,7 @@ export async function POST(request: Request) {
       if (!id) {
         return NextResponse.json({ error: 'id is required.' }, { status: 400 });
       }
-      const deleted = await deleteAssuranceCalendarEvent(id);
+      const deleted = await deleteAssuranceCalendarEvent(id, institutionId);
       return NextResponse.json(deleted);
     }
 
@@ -462,7 +470,7 @@ export async function POST(request: Request) {
                 dueDate: textValue(body, 'scopeDueDate') || dueDate
               }
             : null
-      });
+      }, institutionId);
       return NextResponse.json(campaign, { status: 201 });
     }
 
@@ -485,7 +493,7 @@ export async function POST(request: Request) {
         controlId: textValue(body, 'controlId') || null,
         assessorName,
         dueDate: textValue(body, 'dueDate') || null
-      });
+      }, institutionId);
       return NextResponse.json(scope, { status: 201 });
     }
 
@@ -537,7 +545,7 @@ export async function POST(request: Request) {
         actionRequired: body.actionRequired === true,
         actionOwner: textValue(body, 'actionOwner') || null,
         actionDueDate: textValue(body, 'actionDueDate') || null
-      });
+      }, institutionId);
       return NextResponse.json(response, { status: 201 });
     }
 
@@ -558,7 +566,7 @@ export async function POST(request: Request) {
         reviewerName,
         reviewStatus,
         reviewNotes: textValue(body, 'reviewNotes') || null
-      });
+      }, institutionId);
       return NextResponse.json(response);
     }
 
@@ -572,7 +580,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const campaign = await updateAssessmentCampaignStatus({ campaignId, status });
+      const campaign = await updateAssessmentCampaignStatus({ campaignId, status }, institutionId);
       return NextResponse.json(campaign);
     }
 
@@ -580,6 +588,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const notFound: Record<string, string> = {
+      TENANT_RECORD_NOT_FOUND: 'Record was not found in the active institution.',
       CAMPAIGN_NOT_FOUND: 'Assessment campaign not found.',
       ASSESSMENT_SCOPE_NOT_FOUND: 'Assessment scope not found.',
       ASSESSMENT_RESPONSE_NOT_FOUND: 'Assessment response not found.',
