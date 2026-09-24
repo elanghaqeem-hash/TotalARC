@@ -1,0 +1,38 @@
+name: Verify multi-institution isolation
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/verify-multi-institution-isolation.js'
+      - 'scripts/promote-bank-ntt-source-data.py'
+      - 'data/bank-ntt-source-2025.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/verify-multi-institution.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Verify tenant isolation guards
+        run: npm run verify:tenant-isolation
+      - name: Verify authentication security
+        run: npm run verify:auth-security
+      - name: Verify D1 schema stability
+        run: npm run verify:d1-schema-stability
+      - name: TypeScript check
+        run: npx tsc --noEmit
