@@ -1783,6 +1783,19 @@ async function primaryAssuranceInstitution(db: D1DatabaseLike) {
   );
 }
 
+async function assuranceInstitutionFor(
+  db: D1DatabaseLike,
+  institutionId?: string | null
+) {
+  const tenantId = String(institutionId || '').trim();
+  if (!tenantId) return primaryAssuranceInstitution(db);
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [tenantId]
+  );
+}
+
 async function auditAssuranceCalendar(
   db: D1DatabaseLike,
   institutionId: string,
@@ -1814,9 +1827,9 @@ async function auditAssuranceCalendar(
   );
 }
 
-export async function listAssuranceCalendarEvents() {
+export async function listAssuranceCalendarEvents(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institution = await primaryAssuranceInstitution(db);
+  const institution = await assuranceInstitutionFor(db, institutionId);
   if (!institution) return [];
 
   return all<Record<string, unknown>>(
@@ -1829,9 +1842,12 @@ export async function listAssuranceCalendarEvents() {
   );
 }
 
-export async function saveAssuranceCalendarEvent(input: Record<string, unknown>) {
+export async function saveAssuranceCalendarEvent(
+  input: Record<string, unknown>,
+  institutionId?: string | null
+) {
   const db = await ensureAssuranceSchema();
-  const institution = await primaryAssuranceInstitution(db);
+  const institution = await assuranceInstitutionFor(db, institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const id = typeof input.id === 'string' && input.id.trim()
@@ -1962,9 +1978,12 @@ export async function saveAssuranceCalendarEvent(input: Record<string, unknown>)
   return record;
 }
 
-export async function deleteAssuranceCalendarEvent(id: string) {
+export async function deleteAssuranceCalendarEvent(
+  id: string,
+  institutionId?: string | null
+) {
   const db = await ensureAssuranceSchema();
-  const institution = await primaryAssuranceInstitution(db);
+  const institution = await assuranceInstitutionFor(db, institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const existing = await first<Record<string, unknown>>(
