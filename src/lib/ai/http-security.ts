@@ -71,12 +71,12 @@ async function enforceRateLimit(
     if (!limiter) {
       if (process.env.NODE_ENV === 'development') return null;
       console.error('AI rate limiter binding is unavailable:', limiterName);
-      return errorResponse(503, 'AI request protection is unavailable.');
+      return errorResponse(503, 'Perlindungan permintaan AI sedang tidak tersedia.');
     }
 
     const { success } = await limiter.limit({ key: await actorKey(request) });
     if (!success) {
-      return errorResponse(429, 'AI request rate limit exceeded. Please retry later.', {
+      return errorResponse(429, 'Batas permintaan AI tercapai. Silakan coba kembali beberapa saat lagi.', {
         'Retry-After': '60'
       });
     }
@@ -85,7 +85,7 @@ async function enforceRateLimit(
   } catch (error) {
     if (process.env.NODE_ENV === 'development') return null;
     console.error('AI rate limiter check failed:', limiterName, error);
-    return errorResponse(503, 'AI request protection is unavailable.');
+    return errorResponse(503, 'Perlindungan permintaan AI sedang tidak tersedia.');
   }
 }
 
@@ -95,17 +95,17 @@ export async function guardAiPost(
   maxBodyBytes = DEFAULT_MAX_BODY_BYTES
 ): Promise<GuardResult> {
   if (isExplicitCrossOrigin(request)) {
-    return { ok: false, response: errorResponse(403, 'Cross-origin AI requests are not allowed.') };
+    return { ok: false, response: errorResponse(403, 'Permintaan AI lintas-origin tidak diizinkan.') };
   }
 
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.toLowerCase().includes('application/json')) {
-    return { ok: false, response: errorResponse(415, 'Content-Type must be application/json.') };
+    return { ok: false, response: errorResponse(415, 'Content-Type harus application/json.') };
   }
 
   const declaredLength = Number(request.headers.get('content-length') || 0);
   if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
-    return { ok: false, response: errorResponse(413, 'AI request body is too large.') };
+    return { ok: false, response: errorResponse(413, 'Ukuran permintaan AI terlalu besar.') };
   }
 
   const rateLimited = await enforceRateLimit(request, limiterName);
@@ -115,21 +115,21 @@ export async function guardAiPost(
   try {
     raw = await request.text();
   } catch {
-    return { ok: false, response: errorResponse(400, 'Unable to read request body.') };
+    return { ok: false, response: errorResponse(400, 'Isi permintaan tidak dapat dibaca.') };
   }
 
   if (raw.length > maxBodyBytes) {
-    return { ok: false, response: errorResponse(413, 'AI request body is too large.') };
+    return { ok: false, response: errorResponse(413, 'Ukuran permintaan AI terlalu besar.') };
   }
 
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, response: errorResponse(400, 'JSON object body is required.') };
+      return { ok: false, response: errorResponse(400, 'Isi permintaan harus berupa objek JSON.') };
     }
     return { ok: true, body: parsed as Record<string, unknown> };
   } catch {
-    return { ok: false, response: errorResponse(400, 'Request body must be valid JSON.') };
+    return { ok: false, response: errorResponse(400, 'Isi permintaan harus berupa JSON yang valid.') };
   }
 }
 
@@ -139,17 +139,17 @@ export async function guardAiMultipart(
   maxBodyBytes = 9 * 1024 * 1024
 ): Promise<NextResponse | null> {
   if (isExplicitCrossOrigin(request)) {
-    return errorResponse(403, 'Cross-origin AI requests are not allowed.');
+    return errorResponse(403, 'Permintaan AI lintas-origin tidak diizinkan.');
   }
 
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.toLowerCase().includes('multipart/form-data')) {
-    return errorResponse(415, 'Content-Type must be multipart/form-data.');
+    return errorResponse(415, 'Content-Type harus multipart/form-data.');
   }
 
   const declaredLength = Number(request.headers.get('content-length') || 0);
   if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
-    return errorResponse(413, 'AI upload body is too large.');
+    return errorResponse(413, 'Ukuran unggahan AI terlalu besar.');
   }
 
   return enforceRateLimit(request, limiterName);
