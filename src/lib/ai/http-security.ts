@@ -132,3 +132,25 @@ export async function guardAiPost(
     return { ok: false, response: errorResponse(400, 'Request body must be valid JSON.') };
   }
 }
+
+export async function guardAiMultipart(
+  request: Request,
+  limiterName: AiLimiterName,
+  maxBodyBytes = 9 * 1024 * 1024
+): Promise<NextResponse | null> {
+  if (isExplicitCrossOrigin(request)) {
+    return errorResponse(403, 'Cross-origin AI requests are not allowed.');
+  }
+
+  const contentType = request.headers.get('content-type') || '';
+  if (!contentType.toLowerCase().includes('multipart/form-data')) {
+    return errorResponse(415, 'Content-Type must be multipart/form-data.');
+  }
+
+  const declaredLength = Number(request.headers.get('content-length') || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
+    return errorResponse(413, 'AI upload body is too large.');
+  }
+
+  return enforceRateLimit(request, limiterName);
+}
