@@ -1506,8 +1506,10 @@ async function count(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
   return Number(row?.count || 0);
 }
 
-export async function getAssuranceDashboardMetrics() {
+export async function getAssuranceDashboardMetrics(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
+  const tenantId = String(institutionId || '').trim();
+  const values = tenantId ? [tenantId] : [];
 
   const [
     failedToEs,
@@ -1522,25 +1524,75 @@ export async function getAssuranceDashboardMetrics() {
   ] = await Promise.all([
     count(
       db,
-      `SELECT COUNT(*) AS count FROM ToETest
-        WHERE failCount > 0 OR finalConclusion IN ('Partially Effective', 'Ineffective')`
+      `SELECT COUNT(*) AS count
+         FROM ToETest t
+         JOIN ControlMaster c ON c.id = t.controlId
+        WHERE (t.failCount > 0 OR t.finalConclusion IN ('Partially Effective', 'Ineffective'))
+          ${tenantId ? 'AND c.institutionId = ?' : ''}`,
+      values
     ),
-    count(db, 'SELECT COUNT(*) AS count FROM TestingException'),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status <> 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status = 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status = 'Overdue'"),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status IN ('Completed by Owner', 'Closed')"
+      `SELECT COUNT(*) AS count
+         FROM TestingException e
+         JOIN ToETest t ON t.id = e.toeTestId
+         JOIN ControlMaster c ON c.id = t.controlId
+        ${tenantId ? 'WHERE c.institutionId = ?' : ''}`,
+      values
     ),
-    count(db, "SELECT COUNT(*) AS count FROM MonitoringRule WHERE lastStatus = 'Healthy'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RetestRecord'),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM Issue
+        WHERE status <> 'Closed' ${tenantId ? 'AND institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM Issue
+        WHERE status = 'Closed' ${tenantId ? 'AND institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE m.status = 'Overdue' ${tenantId ? 'AND i.institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE m.status IN ('Completed by Owner', 'Closed')
+          ${tenantId ? 'AND i.institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM MonitoringRule m
+         JOIN ControlMaster c ON c.id = m.controlId
+        WHERE m.lastStatus = 'Healthy' ${tenantId ? 'AND c.institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+        ${tenantId ? 'WHERE i.institutionId = ?' : ''}`,
+      values
+    ),
     count(
       db,
       `SELECT COUNT(DISTINCT t.controlId) AS count
          FROM ToETest t
          JOIN ControlMaster c ON c.id = t.controlId
-        WHERE c.isKeyControl = 1`
+        WHERE c.isKeyControl = 1 ${tenantId ? 'AND c.institutionId = ?' : ''}`,
+      values
     )
   ]);
 
