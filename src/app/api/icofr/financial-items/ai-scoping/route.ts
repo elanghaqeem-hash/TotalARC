@@ -560,8 +560,10 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const candidates = analysis.result.candidates || [];
-    const selected = candidates.filter(item => selectedCodes.includes(item.itemCode));
+    const candidates = (analysis.result.candidates || []) as FinancialScopingCandidate[];
+    const selected = candidates.filter((item: FinancialScopingCandidate) =>
+      selectedCodes.includes(item.itemCode)
+    );
     if (!selected.length) {
       return noStore({ error: 'Kandidat terpilih tidak ditemukan pada analisis tersimpan.' }, { status: 400 });
     }
