@@ -105,14 +105,14 @@ export default function ProcessesPage() {
         { cache: 'no-store' }
       );
       const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || 'Unable to load process profile.');
+      if (!res.ok) throw new Error(payload.error || 'Gagal memuat profil proses.');
       if (processDetailRequestRef.current !== requestId) return;
       setSelectedProcess(payload.process || process);
     } catch (error) {
       if (processDetailRequestRef.current !== requestId) return;
       console.error(error);
       setProcessDetailError(
-        error instanceof Error ? error.message : 'Unable to load process profile.'
+        error instanceof Error ? error.message : 'Gagal memuat profil proses.'
       );
     } finally {
       if (processDetailRequestRef.current === requestId) {
@@ -126,7 +126,7 @@ export default function ProcessesPage() {
     setProcessLoadError('');
     try {
       const res = await fetch('/api/processes?view=list', { cache: 'no-store' });
-      if (!res.ok) throw new Error('Unable to load business processes.');
+      if (!res.ok) throw new Error('Gagal memuat daftar proses bisnis.');
       const data = await res.json();
 
       const nextProcesses = Array.isArray(data.processes) ? data.processes : [];
@@ -165,7 +165,7 @@ export default function ProcessesPage() {
     } catch (error) {
       console.error(error);
       setProcessLoadError(
-        error instanceof Error ? error.message : 'Unable to load business processes.'
+        error instanceof Error ? error.message : 'Gagal memuat daftar proses bisnis.'
       );
       setProcessDetailLoading(false);
     } finally {
@@ -229,7 +229,7 @@ export default function ProcessesPage() {
         body: JSON.stringify(isEditing ? { id: editingProcess.id, ...formData } : formData)
       });
       const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || 'Unable to save process.');
+      if (!res.ok) throw new Error(payload.error || 'Gagal menyimpan proses.');
 
       await loadProcesses(
         String(payload.id || ''),
@@ -238,7 +238,7 @@ export default function ProcessesPage() {
       setNewProcessModal(false);
       setEditingProcess(null);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Unable to save process.');
+      setSaveError(err instanceof Error ? err.message : 'Gagal menyimpan proses.');
     } finally {
       setSaving(false);
     }
@@ -259,7 +259,7 @@ export default function ProcessesPage() {
         method: 'DELETE'
       });
       const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || 'Unable to delete process.');
+      if (!res.ok) throw new Error(payload.error || 'Gagal menghapus proses.');
 
       const remaining = processes.filter(process => process.id !== deleteTarget.id);
       setProcesses(remaining);
@@ -270,7 +270,7 @@ export default function ProcessesPage() {
       }
       setDeleteTarget(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Unable to delete process.');
+      setDeleteError(err instanceof Error ? err.message : 'Gagal menghapus proses.');
     } finally {
       setDeleting(false);
     }
@@ -293,7 +293,7 @@ export default function ProcessesPage() {
       });
       const payload = await res.json();
       if (!res.ok) {
-        throw new Error(payload.error || 'Unable to validate and apply the RCM-derived BPM draft.');
+        throw new Error(payload.error || 'Gagal memvalidasi dan menerapkan draf BPM yang berasal dari RCM.');
       }
 
       await loadProcesses(processId);
@@ -301,7 +301,7 @@ export default function ProcessesPage() {
       setDraftApplyError(
         error instanceof Error
           ? error.message
-          : 'Unable to validate and apply the RCM-derived BPM draft.'
+          : 'Gagal memvalidasi dan menerapkan draf BPM yang berasal dari RCM.'
       );
     } finally {
       setDraftApplying(false);
@@ -324,7 +324,7 @@ export default function ProcessesPage() {
         })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to review source-backed BPM draft.');
+      if (!response.ok) throw new Error(payload.error || 'Gagal meninjau draf BPM berbasis dokumen sumber.');
 
       setSourceDraftReviewMessage(
         decision === 'APPROVE'
@@ -334,7 +334,7 @@ export default function ProcessesPage() {
       await loadProcesses(String(selectedProcess.id));
     } catch (error) {
       setSourceDraftReviewMessage(
-        error instanceof Error ? error.message : 'Unable to review source-backed BPM draft.'
+        error instanceof Error ? error.message : 'Gagal meninjau draf BPM berbasis dokumen sumber.'
       );
     } finally {
       setSourceDraftReviewBusy(false);
@@ -384,7 +384,7 @@ export default function ProcessesPage() {
         <div>
           <div className="flex items-center space-x-2 text-xs font-bold text-brand-600 uppercase tracking-wider">
             <Layers className="w-4 h-4" />
-            <span>Process Architecture & BPM (MANAGE)</span>
+            <span>Arsitektur Proses & BPM (KELOLA)</span>
           </div>
           <h1 className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
             Enterprise Business Process Register
@@ -394,7 +394,7 @@ export default function ProcessesPage() {
           </p>
 
           <div className="mt-2 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-2.5 text-[10px] leading-4 text-slate-500 sm:text-[11px]">
-            Source-fed processes remain <strong>Draft / Not Assessed</strong> until Process Owner validation is completed.
+            Proses yang berasal dari dokumen sumber tetap berstatus <strong>Draf / Belum Dinilai</strong> sampai validasi Pemilik Proses selesai.
           </div>
         </div>
 
@@ -404,7 +404,7 @@ export default function ProcessesPage() {
             className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-600 px-3 py-2.5 text-center text-[11px] font-bold text-white shadow-sm shadow-brand-500/20 transition-all hover:from-brand-700 hover:to-sky-700 sm:px-4 sm:text-xs md:w-auto"
           >
             <Sparkles className="w-4 h-4 text-sky-200" />
-            <span>AI Process Analysis</span>
+            <span>Analisis Proses Berbasis AI</span>
           </button>
 
           <button
@@ -412,7 +412,7 @@ export default function ProcessesPage() {
             className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-center text-[11px] font-bold text-white shadow-sm transition-all hover:bg-slate-800 sm:px-4 sm:text-xs md:w-auto"
           >
             <Plus className="w-4 h-4" />
-            <span>Register Process</span>
+            <span>Daftarkan Proses</span>
           </button>
         </div>
       </div>
@@ -425,7 +425,7 @@ export default function ProcessesPage() {
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Filter by Process ID, Name, or Owner..."
+            placeholder="Filter berdasarkan ID Proses, Nama, atau Pemilik..."
             className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
           />
         </div>
@@ -459,7 +459,7 @@ export default function ProcessesPage() {
 
       {processLoadError && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
-          <strong className="font-black">Process data unavailable.</strong>{' '}
+          <strong className="font-black">Data proses tidak tersedia.</strong>{' '}
           {processLoadError} Please retry after the database/API connection is available.
         </div>
       )}
@@ -475,7 +475,7 @@ export default function ProcessesPage() {
         {/* Left List: 5 cols */}
         <div className="space-y-4 lg:col-span-5">
           {processLoading ? (
-            <DataLoadingState label="Loading business processes..." variant="list" rows={3} />
+            <DataLoadingState label="Memuat proses bisnis..." variant="list" rows={3} />
           ) : (
             filtered.map(proc => {
             const isSelected = selectedProcess?.id === proc.id;
@@ -551,7 +551,7 @@ export default function ProcessesPage() {
 
                 <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
                   <span className="min-w-0 truncate">
-                    Owner: <strong>{proc.ownerName || proc.orgUnit?.name || 'Not assigned'}</strong>
+                    Pemilik: <strong>{proc.ownerName || proc.orgUnit?.name || 'Belum ditetapkan'}</strong>
                   </span>
                   <div className="grid w-full grid-cols-[40px_40px_minmax(0,1fr)] items-center gap-2 sm:flex sm:w-auto sm:shrink-0">
                     <button
@@ -564,7 +564,7 @@ export default function ProcessesPage() {
                       aria-label={`Update ${proc.name}`}
                     >
                       <Pencil className="w-3 h-3" />
-                      <span className="hidden sm:inline">Update</span>
+                      <span className="hidden sm:inline">Perbarui</span>
                     </button>
                     <button
                       type="button"
@@ -577,7 +577,7 @@ export default function ProcessesPage() {
                       aria-label={`Delete ${proc.name}`}
                     >
                       <Trash2 className="w-3 h-3" />
-                      <span className="hidden sm:inline">Delete</span>
+                      <span className="hidden sm:inline">Hapus</span>
                     </button>
                     <button
                       type="button"
@@ -602,10 +602,10 @@ export default function ProcessesPage() {
         {/* Right Detail: Process 360 (7 cols) */}
         <div ref={process360Ref} id="process-360-detail" className="scroll-mt-24 lg:col-span-7">
           {processLoading || processDetailLoading ? (
-            <DataLoadingState label="Loading process profile..." variant="profile" className="min-h-[220px]" />
+            <DataLoadingState label="Memuat profil proses..." variant="profile" className="min-h-[220px]" />
           ) : processDetailError ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-xs text-rose-700">
-              <strong className="font-black">Process profile unavailable.</strong>{' '}
+              <strong className="font-black">Profil proses tidak tersedia.</strong>{' '}
               {processDetailError}
             </div>
           ) : selectedProcess ? (
@@ -624,8 +624,8 @@ export default function ProcessesPage() {
                   <div className="flex items-center justify-end gap-2 flex-wrap">
                     <button
                       type="button"
-                      title="Update Business Process"
-                      aria-label="Update Business Process"
+                      title="Perbarui Proses Bisnis"
+                      aria-label="Perbarui Proses Bisnis"
                       onClick={() => openEdit(selectedProcess)}
                       className="h-10 w-10 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:text-brand-700 hover:border-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-colors"
                     >
@@ -633,8 +633,8 @@ export default function ProcessesPage() {
                     </button>
                     <button
                       type="button"
-                      title="Delete Business Process"
-                      aria-label="Delete Business Process"
+                      title="Hapus Proses Bisnis"
+                      aria-label="Hapus Proses Bisnis"
                       onClick={() => {
                         setDeleteError('');
                         setDeleteTarget(selectedProcess);
@@ -690,19 +690,19 @@ export default function ProcessesPage() {
                         {selectedParent
                           ? `${selectedParent.processId} · ${selectedParent.name}`
                           : selectedProcess.level === 2
-                          ? 'Canonical L2 / top process'
+                          ? 'Proses utama / L2 kanonis'
                           : 'Parent not assigned'}
                       </div>
                       <div>
-                        <span className="font-bold text-slate-500">Source request:</span>{' '}
+                        <span className="font-bold text-slate-500">Permintaan sumber:</span>{' '}
                         {selectedProcessTags.sourceRequestNo
                           ? `#${selectedProcessTags.sourceRequestNo} · ${String(selectedProcessTags.sourceRequestStatus || 'tracked').replaceAll('_', ' ')}`
-                          : 'No open source request recorded in this BPM tag'}
+                          : 'Tidak ada permintaan sumber terbuka yang tercatat pada tag BPM ini'}
                       </div>
                     </div>
                     {selectedProcessTags.scopeSourceName && (
                       <div className="mt-2 text-[11px] leading-relaxed text-slate-600">
-                        <span className="font-bold text-slate-500">FY2026 source scope:</span>{' '}
+                        <span className="font-bold text-slate-500">Cakupan sumber FY2026:</span>{' '}
                         {selectedProcessTags.scopeSourceName}
                       </div>
                     )}
@@ -729,7 +729,7 @@ export default function ProcessesPage() {
                           </span>
                         </div>
                         <h3 className="mt-2 text-sm font-black text-slate-900">
-                          Draft BPM menunggu validasi Process Owner
+                          Draft BPM menunggu validasi Pemilik Proses
                         </h3>
                         <p className="mt-1 text-[11px] leading-5 text-slate-600">
                           Isi BPM berasal dari source file dan masih berstatus draft. Gunakan Update untuk memperbaiki
@@ -761,7 +761,7 @@ export default function ProcessesPage() {
                           onClick={() => reviewSourceBackedDraft('APPROVE')}
                           className="rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                         >
-                          {sourceDraftReviewBusy ? 'Processing...' : 'Validate & Use'}
+                          {sourceDraftReviewBusy ? 'Memproses...' : 'Validasi & Gunakan'}
                         </button>
                       </div>
                     </div>
@@ -771,7 +771,7 @@ export default function ProcessesPage() {
                       </div>
                     )}
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-4 text-amber-800">
-                      <strong>Validation gate:</strong> atribut yang tidak dinyatakan dalam source file tetap harus
+                      <strong>Gerbang validasi:</strong> atribut yang tidak dinyatakan dalam dokumen sumber tetap harus
                       dikonfirmasi user. Validasi BPM tidak otomatis memvalidasi risk/control pada Draft RCM.
                     </div>
                   </div>
@@ -794,7 +794,7 @@ export default function ProcessesPage() {
                       </h3>
                       <p className="mt-1 text-[11px] leading-5 text-slate-600">
                         Draft ini belum mengubah Process Objective, Activity Register, maupun SIPOC operasional.
-                        Review isi di bawah ini terlebih dahulu. Hanya klik <strong>Validate &amp; Apply</strong>{' '}
+                        Tinjau isi di bawah ini terlebih dahulu. Hanya klik <strong>Validasi &amp; Terapkan</strong>{' '}
                         bila scope, urutan, role, system, input/output, dan control-point sudah dianggap memadai
                         untuk digunakan.
                       </p>
@@ -804,13 +804,13 @@ export default function ProcessesPage() {
                         <div className="font-black text-slate-900">
                           {selectedRcmDraft.sourceSummary?.riskCount || 0}
                         </div>
-                        <div className="text-slate-500">Risks</div>
+                        <div className="text-slate-500">Risiko</div>
                       </div>
                       <div className="rounded-xl border border-cyan-100 bg-white p-2">
                         <div className="font-black text-slate-900">
                           {selectedRcmDraft.sourceSummary?.controlCount || 0}
                         </div>
-                        <div className="text-slate-500">Controls</div>
+                        <div className="text-slate-500">Kontrol</div>
                       </div>
                       <div className="rounded-xl border border-cyan-100 bg-white p-2">
                         <div className="font-black text-slate-900">
@@ -870,7 +870,7 @@ export default function ProcessesPage() {
                                     {activity.description}
                                   </div>
                                   <div className="mt-1 text-[10px] text-slate-400">
-                                    Performer: {activity.performer || 'To be validated'} · Nature:{' '}
+                                    Pelaksana: {activity.performer || 'Perlu divalidasi'} · Sifat:{' '}
                                     {activity.nature} · Frequency: {activity.frequency}
                                     {activity.systemUsed ? ` · System: ${activity.systemUsed}` : ''}
                                   </div>
@@ -889,11 +889,11 @@ export default function ProcessesPage() {
                       </div>
                       <div className="grid grid-cols-1 gap-2 text-[10px] sm:grid-cols-5">
                         {[
-                          ['Supplier', selectedRcmDraft.sipoc.suppliers],
+                          ['Pemasok', selectedRcmDraft.sipoc.suppliers],
                           ['Input', selectedRcmDraft.sipoc.inputs],
-                          ['Process', selectedRcmDraft.sipoc.processSteps],
+                          ['Proses', selectedRcmDraft.sipoc.processSteps],
                           ['Output', selectedRcmDraft.sipoc.outputs],
-                          ['Customer', selectedRcmDraft.sipoc.customers]
+                          ['Pelanggan', selectedRcmDraft.sipoc.customers]
                         ].map(([label, value]) => (
                           <div key={label} className="rounded-xl border border-slate-200 bg-white p-2.5">
                             <div className="font-black uppercase text-slate-400">{label}</div>
@@ -905,7 +905,7 @@ export default function ProcessesPage() {
                   )}
 
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-4 text-amber-800">
-                    <strong>Validation gate:</strong> Draft ini tidak dipakai sebagai BPM operasional sebelum
+                    <strong>Gerbang validasi:</strong> Draf ini tidak dipakai sebagai BPM operasional sebelum
                     user melakukan Validate &amp; Apply. Setelah diterapkan, perubahan RCM berikutnya tetap harus
                     direview karena dapat membuat draft sebelumnya tidak lagi relevan.
                   </div>
@@ -918,7 +918,7 @@ export default function ProcessesPage() {
 
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-[10px] leading-4 text-slate-500">
-                      Missing sections: {selectedRcmDraft.missingSections?.join(', ')}
+                      Bagian yang belum lengkap: {selectedRcmDraft.missingSections?.join(', ')}
                     </div>
                     <button
                       type="button"
@@ -927,7 +927,7 @@ export default function ProcessesPage() {
                       className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <CheckCircle2 className="h-4 w-4" />
-                      <span>{draftApplying ? 'Applying validated draft…' : 'Validate & Apply Draft'}</span>
+                      <span>{draftApplying ? 'Menerapkan draf tervalidasi…' : 'Validasi & Terapkan Draf'}</span>
                     </button>
                   </div>
                 </div>
@@ -938,11 +938,11 @@ export default function ProcessesPage() {
                 <div className="space-y-2">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
                     <Target className="w-3.5 h-3.5 text-brand-600" />
-                    <span>Process Objectives & Target Metrics (Section 22)</span>
+                    <span>Tujuan Proses & Metrik Target</span>
                   </h3>
                   <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
                     <div>
-                      <span className="text-slate-500 font-medium">Core Objective:</span>
+                      <span className="text-slate-500 font-medium">Tujuan Utama:</span>
                       <p className="text-slate-800 font-semibold mt-0.5">
                         {selectedProcess.objectives[0].objective}
                       </p>
@@ -951,13 +951,13 @@ export default function ProcessesPage() {
                       <div>
                         <span className="text-slate-400 font-medium">Target KPI:</span>
                         <div className="font-bold text-slate-700">
-                          {selectedProcess.objectives[0].kpi || 'Not provided'}
+                          {selectedProcess.objectives[0].kpi || 'Belum tersedia'}
                         </div>
                       </div>
                       <div>
-                        <span className="text-slate-400 font-medium">Key Risk Indicator (KRI):</span>
+                        <span className="text-slate-400 font-medium">Indikator Risiko Utama (KRI):</span>
                         <div className="font-bold text-rose-700">
-                          {selectedProcess.objectives[0].kri || 'Not provided'}
+                          {selectedProcess.objectives[0].kri || 'Belum tersedia'}
                         </div>
                       </div>
                     </div>
@@ -973,7 +973,7 @@ export default function ProcessesPage() {
                   </h3>
                   <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-5">
                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Supplier</div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">Pemasok</div>
                       <div className="text-[11px] font-medium text-slate-800 mt-1">{selectedProcess.sipoc.suppliers}</div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
@@ -981,7 +981,7 @@ export default function ProcessesPage() {
                       <div className="text-[11px] font-medium text-slate-800 mt-1">{selectedProcess.sipoc.inputs}</div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-brand-50 border border-brand-200">
-                      <div className="text-[10px] font-bold text-brand-700 uppercase">Process</div>
+                      <div className="text-[10px] font-bold text-brand-700 uppercase">Proses</div>
                       <div className="text-[11px] font-medium text-brand-900 mt-1">{selectedProcess.sipoc.processSteps}</div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
@@ -989,7 +989,7 @@ export default function ProcessesPage() {
                       <div className="text-[11px] font-medium text-slate-800 mt-1">{selectedProcess.sipoc.outputs}</div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Customer</div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">Pelanggan</div>
                       <div className="text-[11px] font-medium text-slate-800 mt-1">{selectedProcess.sipoc.customers}</div>
                     </div>
                   </div>
@@ -999,13 +999,13 @@ export default function ProcessesPage() {
               {/* Saved AI Process Flow */}
               <ProcessFlowDiagramPanel process={selectedProcess} />
 
-              {/* Activity Register (Section 26) */}
+              {/* Register Aktivitas (Section 26) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Activity Register ({selectedProcess.activities?.length || 0} Steps)
+                    Register Aktivitas ({selectedProcess.activities?.length || 0} Steps)
                   </h3>
-                  <span className="text-[10px] text-slate-400 font-mono">BPMN-Compatible Data</span>
+                  <span className="text-[10px] text-slate-400 font-mono">Data Kompatibel BPMN</span>
                 </div>
 
                 <div className="space-y-2">
@@ -1054,7 +1054,7 @@ export default function ProcessesPage() {
           <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl space-y-4 animate-in zoom-in-95 duration-100 sm:p-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-base text-slate-900">
-                {editingProcess ? 'Update Business Process' : 'Register Business Process'}
+                {editingProcess ? 'Perbarui Proses Bisnis' : 'Daftarkan Proses Bisnis'}
               </h3>
               <button
                 onClick={closeProcessModal}
@@ -1071,7 +1071,7 @@ export default function ProcessesPage() {
                 </div>
               )}
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Process Name *</label>
+                <label className="block text-slate-700 font-bold mb-1">Nama Proses *</label>
                 <input
                   type="text"
                   required
@@ -1084,7 +1084,7 @@ export default function ProcessesPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Process ID</label>
+                  <label className="block text-slate-700 font-bold mb-1">ID Proses</label>
                   <input
                     type="text"
                     placeholder="PRC-TREAS-002"
@@ -1095,7 +1095,7 @@ export default function ProcessesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Category *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Kategori *</label>
                   <select
                     value={formData.categoryId}
                     onChange={e => setFormData({ ...formData, categoryId: e.target.value })}
@@ -1112,10 +1112,10 @@ export default function ProcessesPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Process Owner</label>
+                  <label className="block text-slate-700 font-bold mb-1">Pemilik Proses</label>
                   <input
                     type="text"
-                    placeholder="Leave blank if source/owner is not yet confirmed"
+                    placeholder="Kosongkan jika sumber/pemilik belum terkonfirmasi"
                     value={formData.ownerName}
                     onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
@@ -1167,12 +1167,12 @@ export default function ProcessesPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Description</label>
+                <label className="block text-slate-700 font-bold mb-1">Deskripsi</label>
                 <textarea
                   rows={3}
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Summarize process purpose, boundaries, and scope..."
+                  placeholder="Ringkas tujuan, batasan, dan ruang lingkup proses..."
                   className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
@@ -1203,8 +1203,8 @@ export default function ProcessesPage() {
                 />
               ) : (
                 <div className="rounded-xl border border-dashed border-sky-200 bg-sky-50/50 p-3 text-[9px] leading-4 text-slate-500">
-                  <strong className="text-slate-700">Supporting Document & ARC AI:</strong>{' '}
-                  simpan Process Master terlebih dahulu. Setelah Process ID terbentuk, buka kembali
+                  <strong className="text-slate-700">Dokumen Pendukung & ARC AI:</strong>{' '}
+                  simpan Process Master terlebih dahulu. Setelah ID Proses terbentuk, buka kembali
                   Update Business Process untuk upload SOP/PDF/DOCX/PPTX/JPEG/XLSX dan membuat draft
                   BPM beserta flowchart.
                 </div>
@@ -1223,7 +1223,7 @@ export default function ProcessesPage() {
                   disabled={saving}
                   className="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Saving…' : editingProcess ? 'Update Process Master' : 'Save Process Master'}
+                  {saving ? 'Menyimpan…' : editingProcess ? 'Perbarui Master Proses' : 'Simpan Master Proses'}
                 </button>
               </div>
             </form>
@@ -1239,7 +1239,7 @@ export default function ProcessesPage() {
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-base text-slate-900">Delete Business Process?</h3>
+                <h3 className="font-bold text-base text-slate-900">Hapus Proses Bisnis?</h3>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
                   {deleteTarget.processId} — {deleteTarget.name}
                 </p>
@@ -1276,7 +1276,7 @@ export default function ProcessesPage() {
                 className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>{deleting ? 'Deleting…' : 'Delete BP'}</span>
+                <span>{deleting ? 'Menghapus…' : 'Hapus BP'}</span>
               </button>
             </div>
           </div>
