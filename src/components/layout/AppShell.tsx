@@ -51,15 +51,6 @@ interface NavGroup {
   items: NavItem[];
 }
 
-interface InstitutionOption {
-  id: string;
-  name: string;
-  legalName: string;
-  shortName: string;
-  institutionType: string;
-  country: string;
-}
-
 const warmedRoutes = new Set<string>();
 
 const navGroups: NavGroup[] = [
@@ -134,15 +125,20 @@ const mobileCandidates = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, authenticated, loading, logout } = useRole();
+  const {
+    currentUser,
+    authenticated,
+    loading,
+    logout,
+    institutionOptions,
+    canSwitchInstitution
+  } = useRole();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [institutionMenuOpen, setInstitutionMenuOpen] = useState(false);
-  const [institutionOptions, setInstitutionOptions] = useState<InstitutionOption[]>([]);
-  const [activeInstitutionId, setActiveInstitutionId] = useState<string | null>(null);
   const [institutionSwitching, setInstitutionSwitching] = useState(false);
 
   const isLoginPage = pathname === '/login';
@@ -224,33 +220,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [authenticated, isLoginPage, loading, pathname, prefetchRoute, visibleNavGroups]);
 
   useEffect(() => {
-    if (!authenticated || loading || isLoginPage) return;
-
-    let cancelled = false;
-    fetch('/api/institutions', {
-      method: 'GET',
-      cache: 'no-store',
-      credentials: 'same-origin'
-    })
-      .then(async response => {
-        if (!response.ok) return null;
-        return response.json();
-      })
-      .then(payload => {
-        if (cancelled || !payload) return;
-        setInstitutionOptions(Array.isArray(payload.institutions) ? payload.institutions : []);
-        setActiveInstitutionId(payload.activeInstitutionId || null);
-      })
-      .catch(() => {
-        if (!cancelled) setInstitutionOptions([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authenticated, isLoginPage, loading]);
-
-  useEffect(() => {
     const stored = window.localStorage.getItem('total-arc-sidebar-collapsed');
     if (stored === 'true') setSidebarCollapsed(true);
   }, []);
@@ -264,7 +233,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const switchInstitution = useCallback(async (institutionId: string) => {
-    if (!institutionId || institutionId === activeInstitutionId || institutionSwitching) {
+    if (!institutionId || institutionId === currentUser.institutionId || institutionSwitching) {
       setInstitutionMenuOpen(false);
       return;
     }
@@ -280,14 +249,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Institution could not be changed.');
 
-      setActiveInstitutionId(institutionId);
       setInstitutionMenuOpen(false);
       window.location.assign(pathname || '/');
     } catch (error) {
       console.error('Institution switch failed:', error);
       setInstitutionSwitching(false);
     }
-  }, [activeInstitutionId, institutionSwitching, pathname]);
+  }, [currentUser.institutionId, institutionSwitching, pathname]);
 
   const Nav = ({ mobile = false, collapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
     <div className={collapsed ? 'space-y-2' : 'space-y-4'}>
@@ -412,8 +380,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="relative min-w-0">
                 <button
                   type="button"
-                  onClick={() => setInstitutionMenuOpen(current => !current)}
-                  disabled={institutionSwitching}
+                  onClick={() => canSwitchInstitution && setInstitutionMenuOpen(current => !current)}
+                  disabled={institutionSwitching || !canSwitchInstitution}
                   className="flex h-10 max-w-[116px] min-w-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60 sm:min-h-10 sm:max-w-[220px] sm:gap-2 sm:px-3 sm:py-2"
                   aria-label="Select active institution"
                   title="Select active institution"
@@ -426,7 +394,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       Institution
                     </div>
                     <div className="truncate text-[9px] font-black leading-tight text-slate-800 sm:text-[11px]">
-                      {institutionOptions.find(item => item.id === activeInstitutionId)?.name ||
+                      {institutionOptions.find(item => item.id === currentUser.institutionId)?.name ||
                         currentUser.institutionName ||
                         'Select institution'}
                     </div>
@@ -441,7 +409,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
                     <div className="space-y-1">
                       {institutionOptions.map(item => {
-                        const active = item.id === activeInstitutionId;
+                        const active = item.id === currentUser.institutionId;
                         return (
                           <button
                             key={item.id}
