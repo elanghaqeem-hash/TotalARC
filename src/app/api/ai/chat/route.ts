@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const message = typeof body.message === 'string' ? body.message.trim() : '';
 
     if (!message) {
-      return NextResponse.json({ error: 'message is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Pesan wajib diisi.' }, { status: 400 });
     }
 
     const context =
@@ -48,12 +48,12 @@ export async function POST(request: Request) {
       task: taskFrom(body.task),
       sensitivity: 'confidential',
       systemPrompt: [
-        'You are Total ARC AI, a Governance, Risk, Compliance, ICOFR and Internal Control copilot.',
-        'Use supplied facts and context. Clearly distinguish evidence from suggestions.',
-        'Do not fabricate regulations, evidence, control performance, test results or approvals.',
-        'Never autonomously approve, reject, change ratings, close issues, or write to business records.',
-        'Every recommendation must remain subject to human review.',
-        'Reply in the language used by the user unless explicitly asked otherwise.'
+        'Anda adalah AI Total ARC, kopilot untuk Tata Kelola, Risiko, Kepatuhan, ICOFR, dan Pengendalian Internal.',
+        'Gunakan fakta dan konteks yang diberikan. Bedakan dengan jelas bukti dari usulan.',
+        'Jangan mengarang regulasi, bukti, kinerja kontrol, hasil pengujian, atau persetujuan.',
+        'Jangan pernah secara mandiri menyetujui, menolak, mengubah peringkat, menutup isu, atau menulis ke catatan bisnis.',
+        'Setiap rekomendasi harus tetap melalui review manusia.',
+        'Gunakan Bahasa Indonesia untuk seluruh jawaban kecuali pengguna secara eksplisit meminta bahasa lain.'
       ].join(' '),
       prompt: message + context,
       temperature: 0.2,
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       answer: result.text,
-      disclaimer: 'AI Suggested — Human Review Required',
+      disclaimer: 'Usulan AI — Memerlukan Review Manusia',
       ai: {
         requestId: result.requestId,
         provider: result.provider,
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     console.error('AI chat failed:', error);
     return NextResponse.json(
       {
-        error: 'AI assistant is unavailable.'
+        error: 'Asisten AI tidak tersedia.'
       },
       { status: 503 }
     );
