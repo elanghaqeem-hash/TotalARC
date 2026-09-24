@@ -234,15 +234,20 @@ function parseDefinition(value: unknown): ProcessFlowDefinition | null {
 }
 
 function diagramRow(row: Record<string, unknown>) {
+  const versionNo = Number(row.versionNo || 0);
+  const definition = parseDefinition(row.diagramJson);
+
   return {
     id: String(row.id),
     institutionId: String(row.institutionId),
     processId: String(row.processId),
-    versionNo: Number(row.versionNo || 0),
+    versionNo,
     title: String(row.title || ''),
     summary: text(row.summary) || null,
-    definition: parseDefinition(row.diagramJson),
-    svgText: String(row.svgText || ''),
+    definition,
+    // Re-render persisted structured data with the current deterministic layout.
+    // This repairs older saved diagrams without another AI call or BPM mutation.
+    svgText: definition ? buildSvg(definition, versionNo) : String(row.svgText || ''),
     sourceHash: String(row.sourceHash || ''),
     sourceType: String(row.sourceType || 'AI_GENERATED'),
     status: String(row.status || 'ACTIVE'),
@@ -300,14 +305,15 @@ function escapeXml(value: unknown) {
     .replace(/'/g, '&apos;');
 }
 
-function wrap(value: string, max = 54) {
+function wrap(value: string, maxChars = 54, maxLines = 4) {
   const words = value.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [''];
+
   const lines: string[] = [];
   let current = '';
   for (const word of words) {
     const next = current ? current + ' ' + word : word;
-    if (next.length > max && current) {
+    if (next.length > maxChars && current) {
       lines.push(current);
       current = word;
     } else {
@@ -315,10 +321,22 @@ function wrap(value: string, max = 54) {
     }
   }
   if (current) lines.push(current);
-  return lines.slice(0, 4);
+
+  if (lines.length <= maxLines) return lines;
+  const limited = lines.slice(0, maxLines);
+  const lastIndex = limited.length - 1;
+  const last = limited[lastIndex].replace(/[.…]+$/, '');
+  limited[lastIndex] = (last.length >= maxChars - 1 ? last.slice(0, maxChars - 1) : last) + '…';
+  return limited;
 }
 
-function tspanLines(lines: string[], x: number, startY: number, lineHeight: number, className: string) {
+function tspanLines(
+  lines: string[],
+  x: number,
+  startY: number,
+  lineHeight: number,
+  className: string
+) {
   return lines
     .map(
       (line, index) =>
@@ -327,23 +345,108 @@ function tspanLines(lines: string[], x: number, startY: number, lineHeight: numb
     .join('');
 }
 
+function compactBadge(value: string, max = 20) {
+  const normalized = value.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+  if (normalized.length <= max) return normalized;
+  return normalized.slice(0, Math.max(1, max - 1)).trimEnd() + '…';
+}
+
+function stepBadges(step: ProcessFlowStep) {
+  const raw = text(step.nature).toUpperCase();
+  const labels: string[] = [];
+  const add = (label: string) => {
+    if (label && !labels.includes(label)) labels.push(label);
+  };
+
+  if (step.kind === 'decision') add('DECISION');
+  if (/PENDING.*VALID/.test(raw)) add('PENDING VALIDATION');
+  else if (/USER.?VALIDATED|\bVALIDATED\b/.test(raw)) add('VALIDATED');
+
+  if (/IT.?DEPENDENT/.test(raw)) add('IT DEPENDENT');
+  if (/\bMANUAL\b/.test(raw)) add('MANUAL');
+  if (/\bAUTO(MATED|MATIC)?\b/.test(raw)) add('AUTOMATED');
+  if (/\bDRAFT\b/.test(raw)) add('DRAFT');
+  if (/\bREVIEW\b/.test(raw)) add('REVIEW');
+
+  if (!labels.length && raw) add(compactBadge(raw));
+  if (!labels.length) add(step.kind === 'decision' ? 'DECISION' : 'TASK');
+
+  return labels.slice(0, 4);
+}
+
+function layoutBadges(labels: string[], maxWidth: number) {
+  const gap = 8;
+  const rowHeight = 30;
+  const items: Array<{ label: string; x: number; row: number; width: number }> = [];
+  let row = 0;
+  let cursorX = 0;
+
+  for (const rawLabel of labels) {
+    const label = compactBadge(rawLabel);
+    const width = Math.min(184, Math.max(72, 26 + label.length * 7.1));
+    if (cursorX > 0 && cursorX + width > maxWidth) {
+      row += 1;
+      cursorX = 0;
+    }
+    items.push({ label, x: cursorX, row, width });
+    cursorX += width + gap;
+  }
+
+  return {
+    items,
+    rowCount: items.length ? row + 1 : 0,
+    height: items.length ? (row + 1) * rowHeight : 0
+  };
+}
+
 function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
   const width = 1000;
-  const cardX = 115;
-  const cardWidth = 770;
-  const startY = 190;
-  const cardGap = 34;
+  const cardX = 90;
+  const cardWidth = 820;
+  const contentX = cardX + 104;
+  const contentRight = cardX + cardWidth - 38;
+  const contentWidth = contentRight - contentX;
+  const cardGap = 44;
+
+  const headerTitleLines = wrap(definition.title || definition.processName, 42, 2);
+  const headerTitleY = 116;
+  const headerTitleHeight = headerTitleLines.length * 36;
+  const subheadingY = headerTitleY + headerTitleHeight + 10;
+  const startPillY = subheadingY + 30;
+  const startY = startPillY + 76;
+
   const stepLayouts = definition.steps.map(step => {
-    const titleLines = wrap(step.title, 52);
-    const performerLines = wrap(step.performer || 'Performer not provided', 70).slice(0, 2);
-    const systemLine = step.system ? 'System: ' + step.system : 'System: Not provided';
-    const noteLines = step.note ? wrap(step.note, 72).slice(0, 2) : [];
-    const cardHeight =
-      82 +
-      titleLines.length * 28 +
-      performerLines.length * 22 +
-      (noteLines.length ? 12 + noteLines.length * 20 : 0);
-    return { step, titleLines, performerLines, systemLine, noteLines, cardHeight };
+    const titleLines = wrap(step.title || step.sourceTitle, 48, 2);
+    const badges = layoutBadges(stepBadges(step), contentWidth);
+    const performerLines = wrap(
+      'Performer: ' + (step.performer || 'To be confirmed'),
+      74,
+      2
+    );
+    const systemLines = wrap(
+      'System: ' + (step.system || 'To be confirmed'),
+      74,
+      2
+    );
+    const noteLines = step.note ? wrap(step.note, 78, 3) : [];
+
+    const titleHeight = titleLines.length * 28;
+    const metaHeight = (performerLines.length + systemLines.length) * 22;
+    const noteHeight = noteLines.length ? 30 + noteLines.length * 20 : 0;
+    const cardHeight = Math.max(
+      168,
+      30 + titleHeight + 10 + badges.height + 10 + metaHeight + noteHeight + 26
+    );
+
+    return {
+      step,
+      titleLines,
+      badges,
+      performerLines,
+      systemLines,
+      noteLines,
+      cardHeight
+    };
   });
 
   let cursorY = startY;
@@ -361,18 +464,67 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
 
     if (index > 0) {
       const previous = stepLayouts[index - 1];
-      const previousTop =
-        y - cardGap - previous.cardHeight;
+      const previousTop = y - cardGap - previous.cardHeight;
       const fromY = previousTop + previous.cardHeight;
       arrows.push(
-        `<line x1="${centerX}" y1="${fromY + 4}" x2="${centerX}" y2="${y - 10}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />`
+        `<line x1="${centerX}" y1="${fromY + 8}" x2="${centerX}" y2="${y - 14}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />`
       );
     }
 
-    const titleY = y + 42;
-    const performerY = titleY + layout.titleLines.length * 28 + 12;
-    const systemY = performerY + layout.performerLines.length * 22 + 8;
-    const noteY = systemY + 34;
+    let contentY = y + 42;
+    const titleY = contentY;
+    contentY += layout.titleLines.length * 28 + 10;
+
+    const badgeSvg = layout.badges.items
+      .map(item => {
+        const chipX = contentX + item.x;
+        const chipY = contentY + item.row * 30;
+        const fill =
+          item.label === 'DECISION'
+            ? '#fffbeb'
+            : item.label === 'VALIDATED'
+              ? '#ecfdf5'
+              : item.label === 'DRAFT' || item.label === 'PENDING VALIDATION'
+                ? '#fff7ed'
+                : '#f8fafc';
+        const stroke =
+          item.label === 'DECISION'
+            ? '#fbbf24'
+            : item.label === 'VALIDATED'
+              ? '#a7f3d0'
+              : item.label === 'DRAFT' || item.label === 'PENDING VALIDATION'
+                ? '#fed7aa'
+                : '#e2e8f0';
+        const color =
+          item.label === 'DECISION'
+            ? '#92400e'
+            : item.label === 'VALIDATED'
+              ? '#047857'
+              : item.label === 'DRAFT' || item.label === 'PENDING VALIDATION'
+                ? '#9a3412'
+                : '#475569';
+
+        return `<g>
+          <rect x="${chipX}" y="${chipY}" width="${item.width}" height="22" rx="11" fill="${fill}" stroke="${stroke}" />
+          <text x="${chipX + item.width / 2}" y="${chipY + 15}" text-anchor="middle" class="kind" fill="${color}">${escapeXml(item.label)}</text>
+        </g>`;
+      })
+      .join('');
+
+    contentY += layout.badges.height + 10;
+    const performerY = contentY;
+    contentY += layout.performerLines.length * 22;
+    const systemY = contentY;
+    contentY += layout.systemLines.length * 22;
+
+    let noteSvg = '';
+    if (layout.noteLines.length) {
+      const dividerY = contentY + 8;
+      const noteY = dividerY + 24;
+      noteSvg =
+        `<line x1="${contentX}" y1="${dividerY}" x2="${contentRight}" y2="${dividerY}" stroke="#e2e8f0" stroke-width="1" />` +
+        tspanLines(layout.noteLines, contentX, noteY, 20, 'note');
+    }
 
     cards.push(`
       <g>
@@ -380,21 +532,11 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
           fill="#ffffff" stroke="${border}" stroke-width="${isDecision ? 3 : 2}" />
         <circle cx="${cardX + 48}" cy="${y + 48}" r="25" fill="${numberFill}" />
         <text x="${cardX + 48}" y="${y + 56}" text-anchor="middle" class="stepNo" fill="${numberText}">${layout.step.order}</text>
-        ${tspanLines(layout.titleLines, cardX + 92, titleY, 28, 'title')}
-        ${tspanLines(
-          layout.performerLines.map((line, i) => (i === 0 ? 'Performer: ' + line : line)),
-          cardX + 92,
-          performerY,
-          22,
-          'meta'
-        )}
-        <text x="${cardX + 92}" y="${systemY}" class="meta">${escapeXml(layout.systemLine)}</text>
-        ${layout.noteLines.length
-          ? `<line x1="${cardX + 92}" y1="${noteY - 20}" x2="${cardX + cardWidth - 40}" y2="${noteY - 20}" stroke="#e2e8f0" stroke-width="1" />
-             ${tspanLines(layout.noteLines, cardX + 92, noteY, 20, 'note')}`
-          : ''}
-        <rect x="${cardX + cardWidth - 170}" y="${y + 28}" width="130" height="32" rx="16" fill="${isDecision ? '#fffbeb' : '#f8fafc'}" />
-        <text x="${cardX + cardWidth - 105}" y="${y + 49}" text-anchor="middle" class="kind">${isDecision ? 'DECISION' : escapeXml(layout.step.nature || 'TASK').toUpperCase()}</text>
+        ${tspanLines(layout.titleLines, contentX, titleY, 28, 'title')}
+        ${badgeSvg}
+        ${tspanLines(layout.performerLines, contentX, performerY, 22, 'meta')}
+        ${tspanLines(layout.systemLines, contentX, systemY, 22, 'meta')}
+        ${noteSvg}
       </g>`
     );
 
@@ -402,18 +544,19 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
   }
 
   const endY = cursorY + 8;
-  const height = endY + 130;
+  const height = endY + 138;
+
   if (stepLayouts.length) {
     const last = stepLayouts[stepLayouts.length - 1];
     const lastTop = cursorY - cardGap - last.cardHeight;
     arrows.push(
-      `<line x1="${width / 2}" y1="${lastTop + last.cardHeight + 4}" x2="${width / 2}" y2="${endY - 14}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />`
+      `<line x1="${width / 2}" y1="${lastTop + last.cardHeight + 8}" x2="${width / 2}" y2="${endY - 14}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />`
     );
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="flowTitle flowDesc">
   <title id="flowTitle">${escapeXml(definition.title)}</title>
-  <desc id="flowDesc">Saved AI-generated process flow for ${escapeXml(definition.processName)}.</desc>
+  <desc id="flowDesc">Saved process flow for ${escapeXml(definition.processName)} rendered by Total ARC from persisted structured data.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8" />
@@ -425,22 +568,26 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
       .title { font: 700 22px Arial, Helvetica, sans-serif; fill: #0f172a; }
       .meta { font: 400 16px Arial, Helvetica, sans-serif; fill: #64748b; }
       .note { font: 500 15px Arial, Helvetica, sans-serif; fill: #475569; }
-      .kind { font: 700 12px Arial, Helvetica, sans-serif; fill: #64748b; letter-spacing: 0.7px; }
+      .kind { font: 700 11px Arial, Helvetica, sans-serif; letter-spacing: 0.55px; }
       .stepNo { font: 800 17px Arial, Helvetica, sans-serif; }
       .startEnd { font: 800 15px Arial, Helvetica, sans-serif; fill: #ffffff; letter-spacing: 1px; }
       .version { font: 700 13px Arial, Helvetica, sans-serif; fill: #0369a1; }
+      .footer { font: 400 14px Arial, Helvetica, sans-serif; fill: #64748b; }
     </style>
   </defs>
+
   <rect width="100%" height="100%" fill="#f8fafc" />
   <text x="70" y="58" class="eyebrow">TOTAL ARC · SAVED PROCESS FLOW</text>
-  <text x="70" y="98" class="heading">${escapeXml(definition.title)}</text>
-  <text x="70" y="130" class="subheading">${escapeXml(definition.processCode)} · ${escapeXml(definition.processName)}</text>
-  <rect x="780" y="48" width="150" height="36" rx="18" fill="#e0f2fe" />
-  <text x="855" y="71" text-anchor="middle" class="version">VERSION ${versionNo}</text>
 
-  <rect x="410" y="150" width="180" height="48" rx="24" fill="#0284c7" />
-  <text x="500" y="180" text-anchor="middle" class="startEnd">START</text>
-  <line x1="500" y1="198" x2="500" y2="${startY - 10}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />
+  <rect x="790" y="42" width="140" height="36" rx="18" fill="#e0f2fe" />
+  <text x="860" y="65" text-anchor="middle" class="version">VERSION ${versionNo}</text>
+
+  ${tspanLines(headerTitleLines, 70, headerTitleY, 36, 'heading')}
+  <text x="70" y="${subheadingY}" class="subheading">${escapeXml(definition.processCode)} · ${escapeXml(definition.processName)}</text>
+
+  <rect x="410" y="${startPillY}" width="180" height="48" rx="24" fill="#0284c7" />
+  <text x="500" y="${startPillY + 30}" text-anchor="middle" class="startEnd">START</text>
+  <line x1="500" y1="${startPillY + 48}" x2="500" y2="${startY - 14}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />
 
   ${arrows.join('')}
   ${cards.join('')}
@@ -448,7 +595,7 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
   <rect x="410" y="${endY}" width="180" height="48" rx="24" fill="#0f172a" />
   <text x="500" y="${endY + 30}" text-anchor="middle" class="startEnd">END</text>
 
-  <text x="70" y="${height - 34}" class="subheading">Generated from the saved Activity Register. AI output is a visual aid and does not change BPM source data.</text>
+  <text x="70" y="${height - 34}" class="footer">Rendered from the saved Activity Register. Existing saved versions are re-laid out without another AI call.</text>
 </svg>`;
 }
 
