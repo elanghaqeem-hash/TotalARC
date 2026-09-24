@@ -23,8 +23,8 @@ export type ProcessDocumentDraft = {
     description: string | null;
     ownerName: string | null;
     categorySuggestion: string | null;
-    criticality: 'Critical' | 'High' | 'Medium' | 'Low' | 'Not Assessed';
-    classification: 'Core' | 'Finance' | 'Technology' | 'Governance' | 'Support' | 'Management';
+    criticality: 'Critical' | 'High' | 'Medium' | 'Low' | 'Not Assessed' | null;
+    classification: 'Core' | 'Finance' | 'Technology' | 'Governance' | 'Support' | 'Management' | null;
     isIcofrRelevant: boolean | null;
   };
   objective: {
