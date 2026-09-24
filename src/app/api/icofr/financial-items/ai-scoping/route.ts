@@ -230,13 +230,13 @@ async function access(request: Request) {
 
 async function activeScope() {
   const data = await getIcofrScopingData();
-  const scopes = Array.isArray(data.scopes) ? data.scopes : [];
-  const scope = scopes.find(
-    (item: Record<string, unknown>) =>
+  const scopes = (Array.isArray(data.scopes) ? data.scopes : []) as Array<Record<string, any>>;
+  const scope: Record<string, any> | null = scopes.find(
+    item =>
       Number(item.performanceMaterialityAmount || 0) > 0 &&
       String(item.status || '').toLowerCase() !== 'closed'
   ) || scopes.find(
-    (item: Record<string, unknown>) => Number(item.performanceMaterialityAmount || 0) > 0
+    item => Number(item.performanceMaterialityAmount || 0) > 0
   ) || null;
 
   return { data, scope };
@@ -552,7 +552,7 @@ export async function PATCH(request: Request) {
     const analysis = await getFinancialScopingAnalysis(
       analysisId,
       context.institution!.id
-    );
+    ) as any;
     if (String(analysis.status || '') !== 'PENDING_USER_VALIDATION') {
       return noStore(
         { error: 'Draf analisis ini sudah tidak menunggu validasi pengguna.' },
@@ -567,8 +567,9 @@ export async function PATCH(request: Request) {
     }
 
     const current = await listFinancialItems(context.institution!.id);
+    const currentRecords = current.records as Array<Record<string, any>>;
     const existingByKey = new Map(
-      current.records.map(item => [
+      currentRecords.map(item => [
         String(item.recordType) + '::' + String(item.itemCode).toUpperCase(),
         item
       ])
