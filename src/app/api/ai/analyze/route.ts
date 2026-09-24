@@ -56,7 +56,7 @@ function normalizeFindings(value: unknown): Finding[] {
       recommendation: typeof item.recommendation === 'string' ? item.recommendation : '',
       suggestedRisk: typeof item.suggestedRisk === 'string' ? item.suggestedRisk : '',
       suggestedControl: typeof item.suggestedControl === 'string' ? item.suggestedControl : '',
-      disclaimer: 'AI Suggested — Human Review Required',
+      disclaimer: 'Usulan AI — Memerlukan Review Manusia',
       status: 'Pending Review'
     };
   });
@@ -133,14 +133,14 @@ export async function POST(request: Request) {
         };
 
     const systemPrompt = [
-      'You are Total ARC AI, an enterprise Governance, Risk, Internal Control and Assurance copilot.',
-      'Analyze only the evidence supplied in the registered BPM/RCM context.',
-      'Never invent ERP roles, transaction thresholds, regulations, control failures, evidence, incidents, or system configurations that are not present in the input.',
-      'If evidence is insufficient to support a finding, do not create that finding.',
-      'Focus on risk coverage, control design gaps, segregation of duties, automation opportunities, key-control logic, ICOFR relevance, duplicated controls, missing controls and traceability.',
-      'AI output is advisory only. It never approves a process, changes a risk rating, changes ToD/ToE conclusions, closes an issue, or creates remediation without human approval.',
+      'Anda adalah AI Total ARC, kopilot perusahaan untuk Tata Kelola, Risiko, Pengendalian Internal, dan Penjaminan.',
+      'Analisis hanya bukti yang tersedia dalam konteks BPM/RCM terdaftar.',
+      'Jangan mengarang peran ERP, batas transaksi, regulasi, kegagalan kontrol, bukti, insiden, atau konfigurasi sistem yang tidak terdapat pada input.',
+      'Jika bukti tidak memadai untuk mendukung temuan, jangan membuat temuan tersebut.',
+      'Fokus pada cakupan risiko, kesenjangan desain kontrol, pemisahan tugas, peluang otomasi, logika kontrol kunci, relevansi ICOFR, duplikasi kontrol, kontrol yang hilang, dan ketertelusuran.',
+      'Output AI hanya bersifat advisory. AI tidak pernah menyetujui proses, mengubah peringkat risiko, mengubah kesimpulan ToD/ToE, menutup isu, atau membuat remediasi tanpa persetujuan manusia.',
       'Return JSON only with this shape: {"analysisNote":"string","findings":[{"type":"string","severity":"Critical|High|Medium|Low","title":"string","category":"string","description":"string","recommendation":"string","suggestedRisk":"string","suggestedControl":"string"}]}.',
-      'Maximum 12 findings. Use an empty findings array when there is no evidence-based gap.'
+      'Maksimum 12 temuan. Gunakan array findings kosong jika tidak ada kesenjangan berbasis bukti. Semua nilai teks yang ditampilkan kepada pengguna harus menggunakan Bahasa Indonesia; token severity tetap Critical|High|Medium|Low untuk kompatibilitas sistem.'
     ].join(' ');
 
     const analysisSensitivity = 'confidential' as const;
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
       task: 'process_analysis',
       sensitivity: analysisSensitivity,
       systemPrompt,
-      prompt: 'Analyze this Total ARC BPM/RCM context:\n' + JSON.stringify(context),
+      prompt: 'Analisis konteks BPM/RCM Total ARC berikut:\n' + JSON.stringify(context),
       temperature: 0.15,
       maxOutputTokens: 4096,
       requireJson: true
@@ -161,8 +161,8 @@ export async function POST(request: Request) {
       typeof parsed.analysisNote === 'string'
         ? parsed.analysisNote
         : findings.length === 0
-          ? 'No evidence-based control gap was identified from the supplied context.'
-          : 'Evidence-based AI analysis completed.';
+          ? 'Tidak ditemukan kesenjangan kontrol berbasis bukti dari konteks yang diberikan.'
+          : 'Analisis AI berbasis bukti selesai.';
 
     if (registeredProcess) {
       try {
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       processAnalyzed: (registeredProcess?.name as string | undefined) || processName || 'Ad-hoc process',
       processId: (registeredProcess?.processId as string | undefined) || processId || null,
-      disclaimer: 'AI Suggested — Human Review Required',
+      disclaimer: 'Usulan AI — Memerlukan Review Manusia',
       analysisNote,
       findingsCount: findings.length,
       findings,
