@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     const context = await resolveInstitutionAccess(request, undefined, { includeInstitutions: true });
     if (!context) {
       return NextResponse.json(
-        { error: 'Authentication required.' },
+        { error: 'Autentikasi diperlukan.' },
         { status: 401, headers: { 'Cache-Control': 'no-store' } }
       );
     }
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('Institution selector read failed:', error);
     return NextResponse.json(
-      { error: 'Institution selector is temporarily unavailable.' },
+      { error: 'Pemilih institusi sementara tidak tersedia.' },
       { status: 503, headers: { 'Cache-Control': 'no-store' } }
     );
   }
@@ -58,26 +58,26 @@ export async function POST(request: Request) {
   try {
     const context = await resolveInstitutionAccess(request, undefined, { includeInstitutions: true });
     if (!context) {
-      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+      return NextResponse.json({ error: 'Autentikasi diperlukan.' }, { status: 401 });
     }
 
     const body = await request.json();
     const institutionId = typeof body?.institutionId === 'string' ? body.institutionId.trim() : '';
     if (!institutionId) {
-      return NextResponse.json({ error: 'Institution id is required.' }, { status: 400 });
+      return NextResponse.json({ error: 'ID institusi wajib diisi.' }, { status: 400 });
     }
 
     const institution = context.institutions.find(item => item.id === institutionId);
     if (!institution) {
       return NextResponse.json(
-        { error: 'You do not have access to the selected institution.' },
+        { error: 'Anda tidak memiliki akses ke institusi terpilih.' },
         { status: 403 }
       );
     }
 
     if (context.profile.role !== 'Admin' && institutionId !== context.profile.institutionId) {
       return NextResponse.json(
-        { error: 'Only administrators can switch institution context.' },
+        { error: 'Hanya administrator yang dapat berpindah konteks institusi.' },
         { status: 403 }
       );
     }
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Institution switch failed:', error);
     return NextResponse.json(
-      { error: 'Institution context could not be changed.' },
+      { error: 'Konteks institusi tidak dapat diubah.' },
       { status: 503 }
     );
   }
