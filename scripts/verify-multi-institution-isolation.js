@@ -31,6 +31,8 @@ requireText(rcsa, 'TENANT_RECORD_NOT_FOUND', 'RCSA rejects records outside activ
 requireText(rcsa, 'AND institutionId = ?', 'RCSA master updates are institution constrained');
 requireText(rcsa, 'JOIN ControlMaster c ON c.id = m.controlId', 'RCSA risk-control mappings are tenant-joined');
 requireText(rcsa, 'WHERE institutionId = ? AND sourceType = ? AND sourceId = ?', 'RCSA tasks are tenant-scoped');
+requireText(rcsa, "const tenantId = requestedId || (await resolveServerActiveInstitutionId()) || '';", 'RCSA resolves tenant without first-institution fallback');
+requireText(rcsa, 'if (!tenantId) return null;', 'RCSA fails closed without tenant context');
 
 const assurance = 'src/lib/d1-assurance.ts';
 requireText(assurance, 'export async function listToeTests(institutionId?: string | null)', 'ToE reads accept explicit institution');
@@ -40,6 +42,8 @@ requireText(assurance, 'export async function saveAssuranceCalendarEvent(', 'Cal
 requireText(assurance, 'institutionId?: string | null', 'Assurance writers/readers support explicit institution');
 requireText(assurance, 'function assertAssuranceTenant(', 'ToE/remediation/CCM mutations enforce tenant ownership');
 requireText(assurance, 'TENANT_RECORD_NOT_FOUND', 'Assurance mutations reject cross-tenant records');
+requireText(assurance, 'if (!tenantId) return [];', 'Assurance tenant-aware list reads fail closed');
+requireText(assurance, 'if (!tenantId) return null;', 'Assurance tenant institution resolver fails closed');
 
 const toeRoute = 'src/app/api/assure/toe/route.ts';
 requireText(toeRoute, 'resolveInstitutionAccess(request)', 'ToE API resolves active institution');
@@ -59,7 +63,8 @@ requireText(aiRoute, '}, institutionId)', 'AI analysis passes tenant id to BPM l
 
 const core = 'src/lib/d1-core.ts';
 requireText(core, 'export async function findBusinessProcessForAi(', 'AI BPM lookup exists');
-requireText(core, "tenantId ? ' AND institutionId = ?' : ''", 'AI BPM lookup is tenant constrained');
+requireText(core, 'if (!tenantId) return null;', 'AI BPM lookup fails closed without tenant context');
+requireText(core, 'AND institutionId = ?', 'AI BPM lookup is tenant constrained');
 
 const institutionApi = 'src/app/api/institutions/route.ts';
 requireText(institutionApi, 'Only administrators can switch institution context.', 'Institution switching is admin-only');
