@@ -177,16 +177,16 @@ export async function POST(request: Request) {
     };
 
     const systemPrompt = [
-      'You are Total ARC AI, an enterprise risk management and internal control copilot.',
-      'Explain the supplied 5x5 risk heatmap using only the supplied database-derived statistics.',
-      'Do not invent risk scores, likelihoods, impacts, incidents, root causes, controls, regulations, thresholds, or management conclusions.',
-      'Unassessed risks must never be treated as low risk and must not be placed into heatmap cells.',
-      'When assessment coverage is low, make data quality and completion of validated assessment the primary message.',
-      'Differentiate observation from recommendation.',
-      'For residual heatmaps, only discuss inherent-to-residual movement when comparisonEligible is greater than zero.',
-      'Keep wording suitable for management and risk owners.',
+      'Anda adalah AI Total ARC, kopilot manajemen risiko perusahaan dan pengendalian internal.',
+      'Jelaskan heatmap risiko 5x5 yang diberikan hanya menggunakan statistik yang berasal dari database.',
+      'Jangan mengarang skor risiko, likelihood, impact, insiden, akar penyebab, kontrol, regulasi, ambang batas, atau kesimpulan manajemen.',
+      'Risiko yang belum dinilai tidak boleh dianggap sebagai risiko rendah dan tidak boleh ditempatkan ke sel heatmap.',
+      'Jika cakupan asesmen rendah, jadikan kualitas data dan penyelesaian asesmen tervalidasi sebagai pesan utama.',
+      'Bedakan observasi dari rekomendasi.',
+      'Untuk heatmap residual, bahas pergerakan inheren-ke-residual hanya jika comparisonEligible lebih besar dari nol.',
+      'Gunakan Bahasa Indonesia profesional yang sesuai untuk manajemen dan pemilik risiko.',
       'Return JSON only with this shape: {"headline":"string","executiveSummary":"string","dataQuality":"string","concentrationInsights":["string"],"managementActions":["string"],"caution":"string"}.',
-      'Maximum 5 concentrationInsights and 5 managementActions.'
+      'Maksimum 5 concentrationInsights dan 5 managementActions. Semua nilai teks yang ditampilkan kepada pengguna wajib menggunakan Bahasa Indonesia.'
     ].join(' ');
 
     const result = await runAiGateway({
@@ -194,7 +194,7 @@ export async function POST(request: Request) {
       sensitivity: 'confidential',
       systemPrompt,
       prompt:
-        'Analyze this Total ARC risk heatmap dataset. The selected view is ' +
+        'Analisis dataset heatmap risiko Total ARC berikut. Tampilan yang dipilih adalah ' +
         mode +
         '.\n' +
         JSON.stringify(heatmapContext),
@@ -223,7 +223,7 @@ export async function POST(request: Request) {
         headline:
           typeof parsed.headline === 'string'
             ? parsed.headline
-            : 'Risk heatmap analysis completed.',
+            : 'Analisis heatmap risiko selesai.',
         executiveSummary:
           typeof parsed.executiveSummary === 'string'
             ? parsed.executiveSummary
@@ -237,7 +237,7 @@ export async function POST(request: Request) {
         caution:
           typeof parsed.caution === 'string'
             ? parsed.caution
-            : 'AI-generated analysis requires human review before use in risk decisions.'
+            : 'Analisis yang dihasilkan AI memerlukan review manusia sebelum digunakan dalam keputusan risiko.'
       },
       ai: {
         requestId: result.requestId,
@@ -246,12 +246,12 @@ export async function POST(request: Request) {
         fallbackUsed: result.fallbackUsed,
         durationMs: result.durationMs
       },
-      disclaimer: 'AI Suggested — Human Review Required'
+      disclaimer: 'Usulan AI — Memerlukan Review Manusia'
     });
   } catch (error) {
     console.error('AI risk heatmap analysis failed:', error);
     return NextResponse.json(
-      { error: 'Failed to generate AI risk heatmap analysis.' },
+      { error: 'Gagal menghasilkan analisis heatmap risiko dengan AI.' },
       { status: 503 }
     );
   }
