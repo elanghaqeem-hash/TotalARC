@@ -2524,10 +2524,10 @@ export async function listRcmRows(institutionId?: string | null) {
   });
 }
 
-export async function getRcmGovernanceData(institutionId?: string | null) {
+export async function getRcmGovernanceData(requestedInstitutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
-  const institution = institutionId
-    ? await institutionById(db, institutionId)
+  const institution = requestedInstitutionId
+    ? await institutionById(db, requestedInstitutionId)
     : await primaryInstitution(db);
   if (!institution) {
     return {
