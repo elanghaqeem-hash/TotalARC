@@ -679,9 +679,13 @@ async function ensureBankKalbarOrganizationCompletion(
   );
 }
 
-export async function getOrganizationStructure() {
+export async function getOrganizationStructure(institutionId: string) {
   const db = await ensureOrganizationSchema();
-  const institution = await primaryInstitution(db);
+  const institution = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [institutionId]
+  );
 
   if (!institution) {
     return {
@@ -731,9 +735,13 @@ export async function getOrganizationStructure() {
   };
 }
 
-export async function createLegalEntity(input: LegalEntityInput) {
+export async function createLegalEntity(input: LegalEntityInput, institutionId: string) {
   const db = await ensureOrganizationSchema();
-  const institution = await primaryInstitution(db);
+  const institution = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [institutionId]
+  );
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const code = input.code.trim().toUpperCase();
@@ -791,9 +799,13 @@ export async function createLegalEntity(input: LegalEntityInput) {
   return created;
 }
 
-export async function createOrganizationUnit(input: OrganizationUnitInput) {
+export async function createOrganizationUnit(input: OrganizationUnitInput, institutionId: string) {
   const db = await ensureOrganizationSchema();
-  const institution = await primaryInstitution(db);
+  const institution = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [institutionId]
+  );
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const code = input.code.trim().toUpperCase();
