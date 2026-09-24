@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   try {
     const context = await resolveInstitutionAccess(request);
     if (!context?.institution) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: context ? 409 : 401 });
     }
     const institutionId = context.institution.id;
     const url = new URL(request.url);
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     if (view === 'detail') {
       const id = url.searchParams.get('id')?.trim() || '';
       if (!id) {
-        return NextResponse.json({ error: 'Control id is required.' }, { status: 400 });
+        return NextResponse.json({ error: 'ID kontrol wajib diisi.' }, { status: 400 });
       }
       const control = await getControlDetail(id, institutionId);
       return NextResponse.json({
@@ -59,10 +59,10 @@ export async function GET(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'CONTROL_NOT_FOUND') {
-      return NextResponse.json({ error: 'Control was not found.' }, { status: 404 });
+      return NextResponse.json({ error: 'Kontrol tidak ditemukan.' }, { status: 404 });
     }
     console.error('Failed to fetch D1 controls:', error);
-    return NextResponse.json({ error: 'Failed to fetch controls from persistent database.' }, { status: 503 });
+    return NextResponse.json({ error: 'Gagal mengambil data kontrol dari database permanen.' }, { status: 503 });
   }
 }
 
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
   try {
     const context = await resolveInstitutionAccess(request);
     if (!context?.institution) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: context ? 409 : 401 });
     }
     const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
@@ -111,19 +111,19 @@ export async function POST(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return NextResponse.json({ error: 'Select a registered business process before creating a control.' }, { status: 400 });
+      return NextResponse.json({ error: 'Pilih proses bisnis terdaftar sebelum membuat kontrol.' }, { status: 400 });
     }
     if (code === 'RISK_NOT_FOUND') {
-      return NextResponse.json({ error: 'Selected risk does not exist.' }, { status: 400 });
+      return NextResponse.json({ error: 'Risiko terpilih tidak tersedia.' }, { status: 400 });
     }
     if (code === 'RISK_PROCESS_MISMATCH') {
-      return NextResponse.json({ error: 'Selected risk belongs to a different business process.' }, { status: 400 });
+      return NextResponse.json({ error: 'Risiko terpilih berasal dari proses bisnis yang berbeda.' }, { status: 400 });
     }
     if (code === 'CONTROL_ID_CONFLICT') {
-      return NextResponse.json({ error: 'Control ID already exists for this institution.' }, { status: 409 });
+      return NextResponse.json({ error: 'ID Kontrol sudah ada pada institusi ini.' }, { status: 409 });
     }
 
     console.error('Failed to create D1 control:', error);
-    return NextResponse.json({ error: 'Failed to create control in persistent database.' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal membuat kontrol pada database permanen.' }, { status: 500 });
   }
 }
