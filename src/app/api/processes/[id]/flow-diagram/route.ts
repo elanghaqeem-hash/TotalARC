@@ -53,7 +53,7 @@ function normalizeDefinition(
       rawSteps[index] ||
       {};
 
-    const kind = matched.kind === 'decision' ? 'decision' : 'task';
+    const kind: 'task' | 'decision' = matched.kind === 'decision' ? 'decision' : 'task';
     const title = clean(matched.title, 180) || activity.name;
     const note = clean(matched.note, 260) || null;
 
@@ -108,7 +108,8 @@ export async function GET(request: Request, routeContext: RouteContext) {
       return noStore({ error: 'Process id is required.' }, { status: 400 });
     }
 
-    const workspace = await getProcessFlowWorkspace(processId, context.institution.id);
+    const institutionId = context.institution!.id;
+    const workspace = await getProcessFlowWorkspace(processId, institutionId);
     return noStore({
       ...workspace,
       storage: 'cloudflare-d1',
@@ -146,7 +147,8 @@ export async function POST(request: Request, routeContext: RouteContext) {
       return noStore({ error: 'Unsupported process-flow action.' }, { status: 400 });
     }
 
-    const source = await getProcessFlowSource(processId, context.institution.id);
+    const institutionId = context.institution!.id;
+    const source = await getProcessFlowSource(processId, institutionId);
     if (!source.activities.length) {
       return noStore(
         {
@@ -186,7 +188,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const parsed = parseJsonObject(result.text);
     const definition = normalizeDefinition(parsed, source);
     const saved = await saveGeneratedProcessFlow({
-      institutionId: context.institution.id,
+      institutionId,
       processId,
       sourceHash: source.sourceHash,
       definition,
@@ -196,7 +198,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
       generatedBy: context.profile.name || context.profile.email
     });
 
-    const workspace = await getProcessFlowWorkspace(processId, context.institution.id);
+    const workspace = await getProcessFlowWorkspace(processId, institutionId);
     return noStore(
       {
         ...workspace,
@@ -255,8 +257,9 @@ export async function PATCH(request: Request, routeContext: RouteContext) {
       );
     }
 
+    const institutionId = context.institution!.id;
     const workspace = await activateProcessFlowDiagram({
-      institutionId: context.institution.id,
+      institutionId,
       processId,
       diagramId,
       actor: context.profile.name || context.profile.email
