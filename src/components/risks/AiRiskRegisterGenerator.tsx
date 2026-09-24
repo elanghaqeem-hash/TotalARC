@@ -553,7 +553,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                                         </span>
                                         {isApplied && (
                                           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[7px] font-black text-emerald-700">
-                                            CREATED
+                                            SUDAH DIBUAT
                                           </span>
                                         )}
                                       </div>
