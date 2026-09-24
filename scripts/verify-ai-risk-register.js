@@ -25,8 +25,6 @@ requireText(route, 'Jangan menetapkan likelihood, impact score', 'No AI risk sco
 requireText(route, 'selectedSuggestionIds', 'Explicit user selection');
 requireText(route, 'AI_RISK_BATCH_STALE', 'BPM change protection');
 requireText(route, 'WAJIB menggunakan Bahasa Indonesia', 'AI narrative output language');
-requireText(ui, "Operational: 'Operasional'", 'Risk category localization');
-requireText(ui, "High: 'Tinggi'", 'Confidence localization');
 
 const persistence = 'src/lib/d1-ai-risk-register.ts';
 requireText(persistence, 'CREATE TABLE IF NOT EXISTS AIRiskSuggestionBatch', 'Persistent AI suggestion batch');
@@ -41,6 +39,8 @@ requireText(persistence, "action: 'CREATE_AI_SELECTED'", 'Risk creation audit');
 requireText(persistence, "action: 'APPLY_SELECTION'", 'Selection audit');
 
 const ui = 'src/components/risks/AiRiskRegisterGenerator.tsx';
+requireText(ui, "Operational: 'Operasional'", 'Risk category localization');
+requireText(ui, "High: 'Tinggi'", 'Confidence localization');
 requireText(ui, 'AI Buat Register Risiko', 'AI risk entry point');
 requireText(ui, '— Pilih BPM sebelum membuat risiko dengan AI —', 'Empty BPM selection');
 requireText(ui, 'disabled={!processId || generating}', 'Generate disabled before BPM selection');
