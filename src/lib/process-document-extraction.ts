@@ -67,7 +67,8 @@ async function inflateRaw(compressed: Uint8Array) {
   if (typeof DecompressionStream === 'undefined') {
     throw new Error('PPTX_DECOMPRESSION_UNAVAILABLE');
   }
-  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const compressedBuffer = compressed.slice().buffer as ArrayBuffer;
+  const stream = new Blob([compressedBuffer]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
@@ -159,7 +160,9 @@ async function workersAiToText(fileName: string, mimeType: string, bytes: Uint8A
   const result = await ai.toMarkdown(
     {
       name: fileName,
-      blob: new Blob([bytes], { type: mimeType || 'application/octet-stream' })
+      blob: new Blob([bytes.slice().buffer as ArrayBuffer], {
+        type: mimeType || 'application/octet-stream'
+      })
     },
     {
       conversionOptions: {
