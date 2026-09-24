@@ -18,15 +18,15 @@ function profileError(error: unknown) {
   const code = error instanceof Error ? error.message : 'PROFILE_ERROR';
   const mapping: Record<string, { status: number; error: string }> = {
     USER_REQUIRED_FIELDS: { status: 400, error: 'Nama pengguna wajib diisi.' },
-    USER_NOT_FOUND: { status: 404, error: 'User tidak ditemukan atau tidak aktif.' },
-    CURRENT_PASSWORD_INVALID: { status: 400, error: 'Password saat ini tidak sesuai.' },
+    USER_NOT_FOUND: { status: 404, error: 'Pengguna tidak ditemukan atau tidak aktif.' },
+    CURRENT_PASSWORD_INVALID: { status: 400, error: 'Kata sandi saat ini tidak sesuai.' },
     PASSWORD_POLICY: {
       status: 400,
-      error: 'Password baru harus 12–128 karakter dan mengandung huruf besar, huruf kecil, angka, serta simbol. Password umum/default tidak diperbolehkan.'
+      error: 'Kata sandi baru harus 12–128 karakter dan mengandung huruf besar, huruf kecil, angka, serta simbol. Kata sandi umum/default tidak diperbolehkan.'
     },
     PASSWORD_REUSE: {
       status: 409,
-      error: 'Password baru sama dengan password saat ini atau salah satu dari lima password terakhir.'
+      error: 'Kata sandi baru sama dengan kata sandi saat ini atau salah satu dari lima kata sandi terakhir.'
     }
   };
   const mapped = mapping[code];
@@ -39,7 +39,7 @@ function profileError(error: unknown) {
 
   console.error('Profile security action failed:', error);
   return NextResponse.json(
-    { error: 'Profile tidak dapat diproses.', code },
+    { error: 'Profil tidak dapat diproses.', code },
     { status: 500, headers: { 'Cache-Control': 'no-store' } }
   );
 }
@@ -55,7 +55,7 @@ export async function PATCH(request: Request) {
     const profile = await authenticatedProfile(request);
     if (!profile) {
       return NextResponse.json(
-        { error: 'Authentication required.', code: 'AUTH_REQUIRED' },
+        { error: 'Autentikasi diperlukan.', code: 'AUTH_REQUIRED' },
         { status: 401, headers: { 'Cache-Control': 'no-store' } }
       );
     }
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     const profile = await authenticatedProfile(request);
     if (!profile) {
       return NextResponse.json(
-        { error: 'Authentication required.', code: 'AUTH_REQUIRED' },
+        { error: 'Autentikasi diperlukan.', code: 'AUTH_REQUIRED' },
         { status: 401, headers: { 'Cache-Control': 'no-store' } }
       );
     }
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     if (body.actionType !== 'CHANGE_PASSWORD') {
       return NextResponse.json(
-        { error: 'Unsupported profile action.' },
+        { error: 'Aksi profil tidak didukung.' },
         { status: 400, headers: { 'Cache-Control': 'no-store' } }
       );
     }
