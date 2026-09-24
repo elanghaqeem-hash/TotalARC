@@ -10,6 +10,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/verify-multi-institution.yml'
+      - '.github/workflows/deploy-cloudflare.yml'
   workflow_dispatch:
 
 permissions:
