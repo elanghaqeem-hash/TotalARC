@@ -987,7 +987,7 @@ export async function listProcessLookups(institutionId?: string | null) {
   const tenantId = String(institutionId || '').trim();
   return all<Record<string, unknown>>(
     db,
-    `SELECT id, institutionId, categoryId, processId, name, criticality,
+    `SELECT id, institutionId, categoryId, processId, name, ownerName, criticality,
             classification, isIcofrRelevant, status
        FROM BusinessProcess
       ${tenantId ? 'WHERE institutionId = ?' : ''}
