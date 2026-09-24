@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 import { DataLoadingState } from '@/components/common/DataLoadingState';
+import { ProcessFlowDiagramPanel } from '@/components/processes/ProcessFlowDiagramPanel';
 
 function parseProcessTags(raw: unknown): Record<string, any> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -993,6 +994,9 @@ export default function ProcessesPage() {
                   </div>
                 </div>
               )}
+
+              {/* Saved AI Process Flow */}
+              <ProcessFlowDiagramPanel process={selectedProcess} />
 
               {/* Activity Register (Section 26) */}
               <div className="space-y-2">
