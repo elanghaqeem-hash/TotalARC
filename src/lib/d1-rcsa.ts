@@ -254,8 +254,9 @@ async function institutionFor(
   db: D1DatabaseLike,
   institutionId?: string | null
 ) {
-  const tenantId = String(institutionId || '').trim();
-  if (!tenantId) return primaryInstitution(db);
+  const requestedId = String(institutionId || '').trim();
+  const tenantId = requestedId || (await resolveServerActiveInstitutionId()) || '';
+  if (!tenantId) return null;
   return first<Record<string, unknown>>(
     db,
     'SELECT * FROM Institution WHERE id = ? LIMIT 1',
