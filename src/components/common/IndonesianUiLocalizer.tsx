@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { translateUiToIndonesian } from '@/lib/ui-language-id';
 
-const ATTRIBUTE_NAMES = ['placeholder', 'title', 'aria-label'] as const;
+const ATTRIBUTE_NAMES = ['placeholder', 'title', 'aria-label', 'alt'] as const;
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA']);
 
 function translateTextNode(node: Text) {
