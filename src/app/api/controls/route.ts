@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { createControl, getControlDetail, listControls, listControlSummaries, listProcessLookups, listRiskLookups } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+    }
+    const institutionId = context.institution.id;
     const url = new URL(request.url);
     const view = url.searchParams.get('view');
 
@@ -13,7 +19,7 @@ export async function GET(request: Request) {
       if (!id) {
         return NextResponse.json({ error: 'Control id is required.' }, { status: 400 });
       }
-      const control = await getControlDetail(id);
+      const control = await getControlDetail(id, institutionId);
       return NextResponse.json({
         control,
         storage: 'cloudflare-d1',
@@ -23,9 +29,9 @@ export async function GET(request: Request) {
 
     if (view === 'list') {
       const [controls, processes, risks] = await Promise.all([
-        listControlSummaries(),
-        listProcessLookups(),
-        listRiskLookups()
+        listControlSummaries(institutionId),
+        listProcessLookups(institutionId),
+        listRiskLookups(institutionId)
       ]);
       return NextResponse.json({
         controls,
@@ -39,9 +45,9 @@ export async function GET(request: Request) {
     }
 
     const [controls, processes, risks] = await Promise.all([
-      listControls(),
-      listProcessLookups(),
-      listRiskLookups()
+      listControls(institutionId),
+      listProcessLookups(institutionId),
+      listRiskLookups(institutionId)
     ]);
     return NextResponse.json({
       controls,
@@ -62,6 +68,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+    }
+    const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const description = typeof body.description === 'string' ? body.description.trim() : '';
@@ -94,7 +105,7 @@ export async function POST(request: Request) {
       type,
       nature,
       frequency
-    });
+    }, institutionId);
 
     return NextResponse.json(control, { status: 201 });
   } catch (error) {
