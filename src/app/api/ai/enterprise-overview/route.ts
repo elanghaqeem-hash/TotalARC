@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
-import { listControls, listRisks } from '@/lib/d1-core';
 import { getRcsaWorkspaceData } from '@/lib/d1-rcsa';
 import {
   listMonitoringRules,
@@ -30,7 +29,7 @@ type OverviewAnalysis = {
 };
 
 function parseJsonObject(text: string): Record<string, unknown> {
-  const trimmed = text.trim().replace(/^\`\`\`(?:json)?/i, '').replace(/\`\`\`$/i, '').trim();
+  const trimmed = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
 
   try {
     return JSON.parse(trimmed) as Record<string, unknown>;
@@ -234,8 +233,6 @@ export async function POST(request: Request) {
 
     const [
       rcsa,
-      controls,
-      risks,
       todTests,
       toeTests,
       remediation,
@@ -246,8 +243,6 @@ export async function POST(request: Request) {
       certification
     ] = await Promise.all([
       getRcsaWorkspaceData(),
-      listControls(),
-      listRisks(),
       listDesignAssessments(),
       listToeTests(),
       listRemediationData(),
@@ -258,10 +253,28 @@ export async function POST(request: Request) {
       getCertificationData()
     ]);
 
-    const controlRows = controls as Array<Record<string, any>>;
-    const riskRows = risks as Array<Record<string, any>>;
+    const institutionId = String(rcsa.institution?.id || '');
+    const controlRows = (rcsa.controls || []) as Array<Record<string, any>>;
+    const riskRows = (rcsa.risks || []) as Array<Record<string, any>>;
     const todRows = todTests as Array<Record<string, any>>;
-    const toeRows = toeTests as Array<Record<string, any>>;
+    const toeRows = (toeTests as Array<Record<string, any>>).filter(
+      test =>
+        !institutionId ||
+        String(test.control?.institutionId || '') === institutionId
+    );
+    const issueRows = (remediation.issues || []).filter(
+      (item: any) => !institutionId || String(item.institutionId || '') === institutionId
+    );
+    const mapRows = (remediation.maps || []).filter(
+      (item: any) =>
+        !institutionId ||
+        String(item.issue?.institutionId || '') === institutionId
+    );
+    const monitoringRows = (monitoringRules || []).filter(
+      (rule: any) =>
+        !institutionId ||
+        String(rule.control?.institutionId || '') === institutionId
+    );
 
     const assessedRisks = riskRows.filter(risk => Number(risk.residualScore || 0) > 0);
     const highResidual = riskRows.filter(risk => String(risk.residualRating || '').toLowerCase() === 'high').length;
@@ -292,13 +305,13 @@ export async function POST(request: Request) {
 
     const completedTod = todRows.filter(test => isCompletedTest(test, 'tod')).length;
     const completedToe = toeRows.filter(test => isCompletedTest(test, 'toe')).length;
-    const openIssues = (remediation.issues || []).filter((item: any) => !isClosed(item.status)).length;
-    const openMaps = (remediation.maps || []).filter((item: any) => !isClosed(item.status)).length;
+    const openIssues = issueRows.filter((item: any) => !isClosed(item.status)).length;
+    const openMaps = mapRows.filter((item: any) => !isClosed(item.status)).length;
     const overduePlanItems = Number((testingPlan.metrics as any)?.overdue || 0);
     const completedPlanItems = Number((testingPlan.metrics as any)?.completed || 0);
     const testingPlanItems = Number((testingPlan.metrics as any)?.totalPlanItems || testingPlan.planItems?.length || 0);
     const significantFinancialItems = (financialItems.records || []).filter((item: any) => Boolean(item.significant)).length;
-    const completedMonitoringRuns = (monitoringRules || []).flatMap((rule: any) => rule.runs || []);
+    const completedMonitoringRuns = monitoringRows.flatMap((rule: any) => rule.runs || []);
     const monitoringExceptions = completedMonitoringRuns.filter((run: any) =>
       Number(run.exceptionsFound || 0) > 0 || String(run.status || '') === 'Exception Detected'
     ).length;
@@ -354,10 +367,12 @@ export async function POST(request: Request) {
       remediation: {
         openIssues,
         openMaps,
-        totalDeficiencies: remediation.deficiencies?.length || 0
+        totalDeficiencies: new Set(
+          issueRows.map((item: any) => String(item.deficiencyId || '')).filter(Boolean)
+        ).size
       },
       monitoring: {
-        rules: monitoringRules?.length || 0,
+        rules: monitoringRows.length,
         runs: completedMonitoringRuns.length,
         runsWithException: monitoringExceptions
       }
