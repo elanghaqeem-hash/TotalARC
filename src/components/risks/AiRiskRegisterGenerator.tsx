@@ -238,8 +238,8 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
   };
 
   const toggleCategory = (items: Suggestion[]) => {
-    const tersedia = items.filter(item => !alreadyApplied.has(item.id));
-    const allSelected = tersedia.length > 0 && tersedia.every(item => selected.has(item.id));
+    const available = items.filter(item => !alreadyApplied.has(item.id));
+    const allSelected = available.length > 0 && available.every(item => selected.has(item.id));
     setSelected(current => {
       const next = new Set(current);
       for (const item of tersedia) {
@@ -404,7 +404,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                         >
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-[9px] font-black text-slate-700">
-                              {item.suggestions?.length || 0} suggestions ·{' '}
+                              {item.suggestions?.length || 0} usulan ·{' '}
                               {new Date(item.createdAt).toLocaleString('id-ID', {
                                 dateStyle: 'medium',
                                 timeStyle: 'short'
@@ -498,7 +498,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
                                 {CATEGORY_LABEL_ID[category] || category}
                               </span>
                               <span className="text-[8px] font-bold text-slate-400">
-                                {items.length} usulan risiko{items.length === 1 ? '' : 's'}
+                                {items.length} usulan risiko
                               </span>
                             </div>
                             {available.length > 0 && (
