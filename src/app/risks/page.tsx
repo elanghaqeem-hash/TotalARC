@@ -300,6 +300,11 @@ export default function RisksPage() {
                         <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                           {r.category}
                         </span>
+                        {r.status === 'Draft' && (
+                          <span className="text-[9px] font-black text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded">
+                            Draft
+                          </span>
+                        )}
                       </div>
                       <h3 className="font-bold text-sm text-slate-900 mt-1.5">
                         {r.name}
@@ -358,6 +363,11 @@ export default function RisksPage() {
                       <span className="text-xs text-slate-500 font-semibold">
                         Category: {selectedRisk.category}
                       </span>
+                      {selectedRisk.status === 'Draft' && (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[9px] font-black text-sky-700">
+                          Draft · Human Validation Required
+                        </span>
+                      )}
                     </div>
                     <Link
                       href="/rcm"
