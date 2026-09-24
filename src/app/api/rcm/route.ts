@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRcmGovernanceData, listRcmRows } from '@/lib/d1-core';
+import { getAuthenticatedProfile } from '@/lib/auth';
+import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
 import { enrichRcmWithAssurance } from '@/lib/d1-assurance';
 import {
   generateBpmDerivedRcmDrafts,
@@ -11,13 +13,29 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+function tokenFromRequest(request: Request) {
+  const cookie = request.headers.get('cookie') || '';
+  const match = cookie.match(new RegExp('(?:^|;\\s*)' + AUTH_COOKIE_NAME + '=([^;]+)'));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+async function requireProfile(request: Request) {
+  const token = tokenFromRequest(request);
+  if (!token) return null;
+  return getAuthenticatedProfile(token);
+}
+
+export async function GET(request: Request) {
   try {
+    const profile = await requireProfile(request);
+    if (!profile?.institutionId) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+    }
     const [baseRows, governance, draftRows, bpmCoverage] = await Promise.all([
-      listRcmRows(),
-      getRcmGovernanceData(),
-      listBpmDraftRcmRows(),
-      listBpmWithoutRcm()
+      listRcmRows(profile.institutionId),
+      getRcmGovernanceData(profile.institutionId),
+      listBpmDraftRcmRows(profile.institutionId),
+      listBpmWithoutRcm(profile.institutionId)
     ]);
     const operationalRcm = await enrichRcmWithAssurance(baseRows);
     const rcm = [...operationalRcm, ...draftRows].map((row, index) => ({
@@ -46,6 +64,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const profile = await requireProfile(request);
+    if (!profile?.institutionId) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+    }
     const body = (await request.json()) as Record<string, unknown>;
     const actionType =
       typeof body.actionType === 'string' ? body.actionType.trim() : 'GENERATE_BPM_DRAFTS';
@@ -67,7 +89,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await generateBpmDerivedRcmDrafts({ processIds, requestedBy });
+    const result = await generateBpmDerivedRcmDrafts({
+      processIds,
+      requestedBy: requestedBy || profile.name || profile.email,
+      institutionId: profile.institutionId
+    });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
@@ -88,6 +114,10 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const profile = await requireProfile(request);
+    if (!profile?.institutionId) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+    }
     const body = (await request.json()) as Record<string, unknown>;
     const draftReferenceId =
       typeof body.draftReferenceId === 'string' ? body.draftReferenceId.trim() : '';
@@ -103,12 +133,16 @@ export async function PATCH(request: Request) {
 
       const result = await updateBpmDerivedRcmDraft({
         draftReferenceId,
+        institutionId: profile.institutionId,
         updates: body.updates as {
           processObjective?: string | null;
           risk?: Record<string, unknown>;
           control?: Record<string, unknown>;
         },
-        updatedBy: typeof body.updatedBy === 'string' ? body.updatedBy.trim() : null
+        updatedBy:
+          (typeof body.updatedBy === 'string' ? body.updatedBy.trim() : '') ||
+          profile.name ||
+          profile.email
       });
       return NextResponse.json(result);
     }
@@ -130,7 +164,8 @@ export async function PATCH(request: Request) {
     const result = await reviewBpmDerivedRcmDraft({
       draftReferenceId,
       decision,
-      reviewedBy
+      reviewedBy: reviewedBy || profile.name || profile.email,
+      institutionId: profile.institutionId
     });
     return NextResponse.json(result);
   } catch (error) {
