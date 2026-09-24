@@ -22,7 +22,6 @@ requireText(route, "entityType: 'PROCESS'", 'Evidence linked to process');
 requireText(route, 'extractProcessSupportingDocument', 'Document text extraction');
 requireText(route, "task: 'process_document_analysis'", 'Dedicated AI document analysis task');
 requireText(route, "sensitivity: 'confidential'", 'Confidential process document AI handling');
-requireText(route, 'PENDING_USER_VALIDATION', 'Human validation status');
 requireText(route, "actionType === 'REJECT'", 'Reject path');
 requireText(route, "actionType !== 'APPLY'", 'Apply validation path');
 requireText(route, 'replaceActivities', 'Explicit activity replacement control');
@@ -39,6 +38,7 @@ requireText(persistence, 'CREATE TABLE IF NOT EXISTS ProcessDocumentAnalysis', '
 requireText(persistence, 'institutionId TEXT NOT NULL', 'Analysis tenant ownership');
 requireText(persistence, 'evidenceDocumentId TEXT NOT NULL', 'Evidence linkage');
 requireText(persistence, "status TEXT NOT NULL DEFAULT 'PENDING_USER_VALIDATION'", 'Default draft status');
+requireText(persistence, "String(analysisRow.status) !== 'PENDING_USER_VALIDATION'", 'Human validation gate');
 requireText(persistence, 'ACTIVITY_REPLACE_BLOCKED', 'Dependency protection');
 requireText(persistence, "sourceType: 'AI_SUPPORTING_DOCUMENT'", 'Saved flow source lineage');
 requireText(persistence, "action, entityType, recordId", 'Audit trail');
