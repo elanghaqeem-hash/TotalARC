@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       return response;
     }
 
-    const institutionContext = await resolveInstitutionAccess(request, profile);
+    const institutionContext = await resolveInstitutionAccess(request, profile, { includeInstitutions: true });
     const activeInstitution = institutionContext?.institution || null;
     const user = activeInstitution
       ? {
@@ -47,7 +47,15 @@ export async function GET(request: Request) {
       {
         authenticated: true,
         user,
-        canSwitchInstitution: institutionContext?.canSwitch || false
+        canSwitchInstitution: institutionContext?.canSwitch || false,
+        institutions: (institutionContext?.institutions || []).map(item => ({
+          id: item.id,
+          name: item.name,
+          legalName: item.legalName,
+          shortName: item.shortName,
+          institutionType: item.institutionType,
+          country: item.country
+        }))
       },
       { headers: { 'Cache-Control': 'no-store' } }
     );
