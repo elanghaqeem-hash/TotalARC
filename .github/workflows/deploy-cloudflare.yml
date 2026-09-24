@@ -140,6 +140,9 @@ jobs:
       - name: Verify BPM-to-AI Risk Register
         run: npm run verify:ai-risk-register
 
+      - name: Verify Indonesian UI localization
+        run: npm run verify:indonesian-ui
+
       - name: Build OpenNext Worker
         run: npm run build
 
