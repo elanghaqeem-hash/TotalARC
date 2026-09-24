@@ -473,7 +473,8 @@ export async function getRcsaWorkspaceData() {
     all<Record<string, unknown>>(
       db,
       `SELECT id, processId, controlId, name, objective, controlOwner, type, nature, frequency,
-              isKeyControl, isIcofrKey, designAssessment, operatingStatus, overallHealth, status
+              isKeyControl, isIcofrKey, evidenceRequirement, frameworkMapping, regulationMapping,
+              designAssessment, operatingStatus, overallHealth, status
          FROM ControlMaster
         WHERE institutionId = ?
         ORDER BY controlId ASC`,
