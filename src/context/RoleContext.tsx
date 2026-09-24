@@ -5,6 +5,15 @@ import { ROLE_TITLES, type UserRole } from '@/lib/access-control';
 
 export type { UserRole } from '@/lib/access-control';
 
+export interface InstitutionOption {
+  id: string;
+  name: string;
+  legalName: string;
+  shortName: string;
+  institutionType: string;
+  country: string;
+}
+
 export interface UserProfile {
   id: string;
   institutionId: string | null;
@@ -35,6 +44,8 @@ interface RoleContextType {
   authenticated: boolean;
   loading: boolean;
   institutionName: string;
+  institutionOptions: InstitutionOption[];
+  canSwitchInstitution: boolean;
   setInstitutionName: (name: string) => void;
   refreshSession: () => Promise<boolean>;
   logout: () => Promise<void>;
@@ -46,6 +57,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserProfile>(loadingUser);
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [institutionOptions, setInstitutionOptions] = useState<InstitutionOption[]>([]);
+  const [canSwitchInstitution, setCanSwitchInstitution] = useState(false);
 
   const refreshSession = useCallback(async () => {
     setLoading(true);
@@ -59,6 +72,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) {
         setAuthenticated(false);
         setCurrentUser(loadingUser);
+        setInstitutionOptions([]);
+        setCanSwitchInstitution(false);
         return false;
       }
 
@@ -66,15 +81,21 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
       if (!payload?.authenticated || !payload?.user) {
         setAuthenticated(false);
         setCurrentUser(loadingUser);
+        setInstitutionOptions([]);
+        setCanSwitchInstitution(false);
         return false;
       }
 
       setCurrentUser(payload.user as UserProfile);
+      setInstitutionOptions(Array.isArray(payload.institutions) ? payload.institutions : []);
+      setCanSwitchInstitution(Boolean(payload.canSwitchInstitution));
       setAuthenticated(true);
       return true;
     } catch {
       setAuthenticated(false);
       setCurrentUser(loadingUser);
+      setInstitutionOptions([]);
+      setCanSwitchInstitution(false);
       return false;
     } finally {
       setLoading(false);
@@ -98,6 +119,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setAuthenticated(false);
       setCurrentUser(loadingUser);
+      setInstitutionOptions([]);
+      setCanSwitchInstitution(false);
       window.location.assign('/login');
     }
   }, []);
@@ -109,6 +132,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
         authenticated,
         loading,
         institutionName: currentUser.institutionName || 'No institution registered',
+        institutionOptions,
+        canSwitchInstitution,
         setInstitutionName,
         refreshSession,
         logout

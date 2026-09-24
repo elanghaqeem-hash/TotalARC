@@ -1722,38 +1722,57 @@ export async function getAssuranceDashboardMetrics(institutionId?: string | null
   };
 }
 
-export async function enrichRcmWithAssurance(rows: Array<Record<string, unknown>>) {
+export async function enrichRcmWithAssurance(
+  rows: Array<Record<string, unknown>>,
+  institutionId?: string | null
+) {
   if (rows.length === 0) return rows;
 
   const db = await ensureAssuranceSchema();
+  const tenantId = String(institutionId || '').trim();
   const [controls, toes, issues, maps, retests] = await Promise.all([
     all<Record<string, unknown>>(
       db,
-      'SELECT id, controlId FROM ControlMaster'
+      `SELECT id, controlId
+         FROM ControlMaster
+        ${tenantId ? 'WHERE institutionId = ?' : ''}`,
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
-      `SELECT controlId, finalConclusion, passCount, sampleSize, testedAt
-         FROM ToETest
-        ORDER BY testedAt DESC`
+      `SELECT t.controlId, t.finalConclusion, t.passCount, t.sampleSize, t.testedAt
+         FROM ToETest t
+         JOIN ControlMaster c ON c.id = t.controlId
+        ${tenantId ? 'WHERE c.institutionId = ?' : ''}
+        ORDER BY t.testedAt DESC`,
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
       `SELECT id, controlId, issueId, title, severity, status, createdAt
          FROM Issue
-        ORDER BY createdAt DESC`
+        ${tenantId ? 'WHERE institutionId = ?' : ''}
+        ORDER BY createdAt DESC`,
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
-      `SELECT id, issueId, mapId, agreedAction, status, progressPercent, createdAt
-         FROM ManagementActionPlan
-        ORDER BY createdAt DESC`
+      `SELECT m.id, m.issueId, m.mapId, m.agreedAction, m.status, m.progressPercent, m.createdAt
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        ${tenantId ? 'WHERE i.institutionId = ?' : ''}
+        ORDER BY m.createdAt DESC`,
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
-      `SELECT mapId, result, retestedAt
-         FROM RetestRecord
-        ORDER BY retestedAt DESC`
+      `SELECT r.mapId, r.result, r.retestedAt
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+        ${tenantId ? 'WHERE i.institutionId = ?' : ''}
+        ORDER BY r.retestedAt DESC`,
+      tenantId ? [tenantId] : []
     )
   ]);
 

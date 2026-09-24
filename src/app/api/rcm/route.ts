@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       listBpmDraftRcmRows(profile.institutionId),
       listBpmWithoutRcm(profile.institutionId)
     ]);
-    const operationalRcm = await enrichRcmWithAssurance(baseRows);
+    const operationalRcm = await enrichRcmWithAssurance(baseRows, profile.institutionId);
     const rcm = [...operationalRcm, ...draftRows].map((row, index) => ({
       ...row,
       rowNumber: index + 1

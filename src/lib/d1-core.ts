@@ -1017,15 +1017,29 @@ export async function listBusinessProcessSummaries(institutionId?: string | null
       ),
       all<Record<string, unknown>>(
         db,
-        'SELECT processId, COUNT(*) AS count FROM ProcessObjective GROUP BY processId'
+        `SELECT po.processId, COUNT(*) AS count
+           FROM ProcessObjective po
+           JOIN BusinessProcess p ON p.id = po.processId
+          ${tenantId ? 'WHERE p.institutionId = ?' : ''}
+          GROUP BY po.processId`,
+        tenantId ? [tenantId] : []
       ),
       all<Record<string, unknown>>(
         db,
-        'SELECT processId, COUNT(*) AS count FROM ProcessActivity GROUP BY processId'
+        `SELECT pa.processId, COUNT(*) AS count
+           FROM ProcessActivity pa
+           JOIN BusinessProcess p ON p.id = pa.processId
+          ${tenantId ? 'WHERE p.institutionId = ?' : ''}
+          GROUP BY pa.processId`,
+        tenantId ? [tenantId] : []
       ),
       all<Record<string, unknown>>(
         db,
-        'SELECT processId FROM SIPOC'
+        `SELECT s.processId
+           FROM SIPOC s
+           JOIN BusinessProcess p ON p.id = s.processId
+          ${tenantId ? 'WHERE p.institutionId = ?' : ''}`,
+        tenantId ? [tenantId] : []
       ),
       all<Record<string, unknown>>(
         db,
@@ -1034,7 +1048,9 @@ export async function listBusinessProcessSummaries(institutionId?: string | null
            JOIN RiskMaster r ON r.id = m.riskId
            JOIN ControlMaster c ON c.id = m.controlId
           WHERE r.processId = c.processId
-          GROUP BY r.processId`
+            ${tenantId ? 'AND r.institutionId = ? AND c.institutionId = ?' : ''}
+          GROUP BY r.processId`,
+        tenantId ? [tenantId, tenantId] : []
       )
     ]);
 
@@ -1135,9 +1151,32 @@ export async function listBusinessProcesses(institutionId?: string | null) {
     all<Record<string, unknown>>(db, 'SELECT * FROM ProcessCategory ORDER BY orderIndex ASC, name ASC'),
     all<Record<string, unknown>>(db, `SELECT * FROM BusinessProcess ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY level ASC, processId ASC`, tenantId ? [tenantId] : []),
     all<Record<string, unknown>>(db, `SELECT * FROM OrganizationUnit WHERE status = 'Active'${tenantId ? ' AND institutionId = ?' : ''} ORDER BY code ASC`, tenantId ? [tenantId] : []),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessObjective ORDER BY createdAt ASC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM SIPOC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity ORDER BY orderIndex ASC, createdAt ASC'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT po.*
+         FROM ProcessObjective po
+         JOIN BusinessProcess p ON p.id = po.processId
+        ${tenantId ? 'WHERE p.institutionId = ?' : ''}
+        ORDER BY po.createdAt ASC`,
+      tenantId ? [tenantId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT s.*
+         FROM SIPOC s
+         JOIN BusinessProcess p ON p.id = s.processId
+        ${tenantId ? 'WHERE p.institutionId = ?' : ''}`,
+      tenantId ? [tenantId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT pa.*
+         FROM ProcessActivity pa
+         JOIN BusinessProcess p ON p.id = pa.processId
+        ${tenantId ? 'WHERE p.institutionId = ?' : ''}
+        ORDER BY pa.orderIndex ASC, pa.createdAt ASC`,
+      tenantId ? [tenantId] : []
+    ),
     all<Record<string, unknown>>(db, `SELECT * FROM RiskMaster ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY riskId ASC`, tenantId ? [tenantId] : []),
     all<Record<string, unknown>>(db, `SELECT * FROM ControlMaster ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY controlId ASC`, tenantId ? [tenantId] : []),
     all<Record<string, unknown>>(
@@ -1147,7 +1186,9 @@ export async function listBusinessProcesses(institutionId?: string | null) {
               c.processId AS controlProcessId
          FROM ControlRiskMapping m
          JOIN RiskMaster r ON r.id = m.riskId
-         JOIN ControlMaster c ON c.id = m.controlId`
+         JOIN ControlMaster c ON c.id = m.controlId
+        ${tenantId ? 'WHERE r.institutionId = ? AND c.institutionId = ?' : ''}`,
+      tenantId ? [tenantId, tenantId] : []
     )
   ]);
 
