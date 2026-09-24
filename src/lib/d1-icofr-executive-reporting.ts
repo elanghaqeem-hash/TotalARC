@@ -713,9 +713,12 @@ function pbcTaskLink(relatedType: unknown) {
   }
 }
 
-export async function listPbcTasks() {
+export async function listPbcTasks(institutionId?: string | null) {
   const db = await ensureIcofrExecutiveReportingSchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) return [];
 
   const rows = await all<Record<string, unknown>>(
