@@ -159,14 +159,18 @@ export async function POST(request: Request, routeContext: RouteContext) {
     }
 
     const systemPrompt = [
-      'You are Total ARC AI creating a reusable business-process flow visualization from an existing Activity Register.',
-      'Use only the supplied source data.',
-      'Do not invent steps, roles, systems, controls, approvals, thresholds, regulations, events, branches, or exceptions.',
+      'You are Total ARC AI preparing structured business-process content for the Total ARC deterministic flow renderer.',
+      'Return structured JSON only; never draw SVG, HTML, Mermaid, ASCII diagrams, coordinates, colors, typography, or layout instructions.',
+      'Use only the supplied Activity Register source data.',
+      'Do not invent steps, roles, systems, controls, approvals, thresholds, regulations, events, branches, exceptions, or missing facts.',
       'Preserve the exact number and order of source activities.',
-      'For each step, return the exact sourceActivityId from the input.',
-      'You may shorten a title for readability without changing its meaning.',
-      'Classify kind as decision only when the wording clearly represents a decision, approval, authorization, validation, or conditional check; otherwise use task.',
-      'The note must be a short plain-language explanation grounded only in that source activity, or an empty string if no helpful explanation can be supported.',
+      'For every step, return the exact sourceActivityId from the input.',
+      'Keep each step title concise and mobile-friendly: preferably 3-9 words and never more than 90 characters; shorten wording only when meaning is preserved.',
+      'Classify kind as decision only when the source wording clearly represents a decision, approval, authorization, validation, or conditional check; otherwise use task.',
+      'Keep note concise: one plain-language sentence grounded only in the source activity, preferably under 140 characters. Use an empty string when the source does not support a useful note.',
+      'Do not repeat performer, system, status, sequence number, or process name inside title or note because Total ARC renders those fields separately.',
+      'If a source value is missing, leave it missing; do not replace it with assumptions.',
+      'The renderer will enforce dynamic card height, separate status chips, safe text wrapping, non-overlapping connectors, and mobile spacing.',
       'Return JSON only: {"title":"string","summary":"string","steps":[{"sourceActivityId":"string","activityId":"string","order":1,"title":"string","kind":"task|decision","note":"string"}]}.'
     ].join(' ');
 
@@ -175,7 +179,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
       sensitivity: 'confidential',
       systemPrompt,
       prompt:
-        'Create a concise mobile-friendly process flow from this registered Total ARC BPM source.\n' +
+        'Create concise structured flow content from this registered Total ARC BPM source. The visual layout is rendered by Total ARC, not by the AI.\n' +
         JSON.stringify({
           process: source.process,
           activities: source.activities
