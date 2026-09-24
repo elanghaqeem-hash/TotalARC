@@ -4,6 +4,7 @@ import {
   createOrganizationUnit,
   getOrganizationStructure
 } from '@/lib/d1-organization';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,7 @@ function apiError(error: unknown) {
   const messages: Record<string, { status: number; message: string }> = {
     INSTITUTION_REQUIRED: {
       status: 409,
-      message: 'Register an institution before building the organization structure.'
+      message: 'Select or register an institution before building the organization structure.'
     },
     LEGAL_ENTITY_REQUIRED_FIELDS: {
       status: 400,
@@ -21,7 +22,7 @@ function apiError(error: unknown) {
     },
     LEGAL_ENTITY_CODE_CONFLICT: {
       status: 409,
-      message: 'That legal entity code is already in use.'
+      message: 'That legal entity code is already in use for this institution.'
     },
     ORG_UNIT_REQUIRED_FIELDS: {
       status: 400,
@@ -29,7 +30,7 @@ function apiError(error: unknown) {
     },
     ORG_UNIT_CODE_CONFLICT: {
       status: 409,
-      message: 'That organization unit code is already in use.'
+      message: 'That organization unit code is already in use for this institution.'
     },
     LEGAL_ENTITY_NOT_FOUND: {
       status: 400,
@@ -37,7 +38,7 @@ function apiError(error: unknown) {
     },
     PARENT_UNIT_NOT_FOUND: {
       status: 400,
-      message: 'The selected parent organization unit is not available.'
+      message: 'The selected parent organization unit is not available for this institution.'
     }
   };
 
@@ -51,13 +52,24 @@ function apiError(error: unknown) {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const data = await getOrganizationStructure();
+    const context = await resolveInstitutionAccess(request);
+    if (!context) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+    if (!context.institution) {
+      return NextResponse.json(
+        { error: 'Select or register an institution before opening organization structure.' },
+        { status: 409 }
+      );
+    }
+
+    const data = await getOrganizationStructure(context.institution.id);
     return NextResponse.json({
       ...data,
       storage: 'cloudflare-d1'
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('Organization read error:', error);
     return NextResponse.json(
@@ -69,6 +81,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+    if (!context.institution) throw new Error('INSTITUTION_REQUIRED');
+
     const body = await request.json();
 
     if (body.kind === 'legalEntity') {
@@ -77,7 +95,7 @@ export async function POST(request: Request) {
         name: String(body.name || ''),
         country: typeof body.country === 'string' ? body.country : 'Indonesia',
         taxId: typeof body.taxId === 'string' ? body.taxId : null
-      });
+      }, context.institution.id);
       return NextResponse.json({ legalEntity, storage: 'cloudflare-d1' }, { status: 201 });
     }
 
@@ -90,7 +108,7 @@ export async function POST(request: Request) {
         parentId: typeof body.parentId === 'string' ? body.parentId : null,
         headName: typeof body.headName === 'string' ? body.headName : null,
         headEmail: typeof body.headEmail === 'string' ? body.headEmail : null
-      });
+      }, context.institution.id);
       return NextResponse.json({ organizationUnit, storage: 'cloudflare-d1' }, { status: 201 });
     }
 
