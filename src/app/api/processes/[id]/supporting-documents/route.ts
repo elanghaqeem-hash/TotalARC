@@ -137,11 +137,11 @@ function normalizeDraft(parsed: Record<string, unknown>): ProcessDocumentDraft {
       ownerName: nullable(rawMaster.ownerName, 300),
       categorySuggestion: nullable(rawMaster.categorySuggestion, 160),
       criticality: criticalities.has(criticalityRaw)
-        ? criticalityRaw as ProcessDocumentDraft['master']['criticality']
-        : 'Not Assessed',
+        ? criticalityRaw as Exclude<ProcessDocumentDraft['master']['criticality'], null>
+        : null,
       classification: classifications.has(classificationRaw)
-        ? classificationRaw as ProcessDocumentDraft['master']['classification']
-        : 'Core',
+        ? classificationRaw as Exclude<ProcessDocumentDraft['master']['classification'], null>
+        : null,
       isIcofrRelevant
     },
     objective: objectiveText
@@ -301,7 +301,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
       'Do not change Process ID. Category is a suggestion only and is not automatically applied.',
       'ICOFR relevance may be true/false only when reasonably supported; otherwise null.',
       'Return JSON only with this shape:',
-      '{"master":{"name":string|null,"description":string|null,"ownerName":string|null,"categorySuggestion":string|null,"criticality":"Critical|High|Medium|Low|Not Assessed","classification":"Core|Finance|Technology|Governance|Support|Management","isIcofrRelevant":boolean|null},"objective":{"objective":string,"strategicGoal":string|null,"expectedOutcome":string|null,"kpi":string|null,"kri":string|null,"sla":string|null}|null,"sipoc":{"suppliers":string|null,"inputs":string|null,"processSteps":string|null,"outputs":string|null,"customers":string|null}|null,"activities":[{"activityId":string|null,"name":string,"description":string|null,"performer":string|null,"nature":string|null,"frequency":string|null,"inputData":string|null,"outputData":string|null,"systemUsed":string|null,"sla":string|null,"kind":"task|decision","flowNote":string|null}],"sourceSummary":string,"confidence":"High|Medium|Low","assumptions":[string],"gaps":[string]}.'
+      '{"master":{"name":string|null,"description":string|null,"ownerName":string|null,"categorySuggestion":string|null,"criticality":"Critical|High|Medium|Low|Not Assessed"|null,"classification":"Core|Finance|Technology|Governance|Support|Management"|null,"isIcofrRelevant":boolean|null},"objective":{"objective":string,"strategicGoal":string|null,"expectedOutcome":string|null,"kpi":string|null,"kri":string|null,"sla":string|null}|null,"sipoc":{"suppliers":string|null,"inputs":string|null,"processSteps":string|null,"outputs":string|null,"customers":string|null}|null,"activities":[{"activityId":string|null,"name":string,"description":string|null,"performer":string|null,"nature":string|null,"frequency":string|null,"inputData":string|null,"outputData":string|null,"systemUsed":string|null,"sla":string|null,"kind":"task|decision","flowNote":string|null}],"sourceSummary":string,"confidence":"High|Medium|Low","assumptions":[string],"gaps":[string]}.'
     ].join(' ');
 
     const result = await runAiGateway({
