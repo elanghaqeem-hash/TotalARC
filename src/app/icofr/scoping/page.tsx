@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { MaterialityAiAssistant } from '@/components/icofr/MaterialityAiAssistant';
 import {
   AlertCircle,
   BadgeCheck,
@@ -565,12 +566,17 @@ export default function IcofrScopingPage() {
                 <div className="mb-4 flex items-center gap-2">
                   <Scale className="h-4 w-4 text-brand-600" />
                   <div>
-                    <h2 className="text-sm font-black text-slate-900">2. Materiality</h2>
+                    <h2 className="text-sm font-black text-slate-900">2. Materialitas</h2>
                     <p className="text-[10px] text-slate-500">
-                      Set OM, PM and supporting thresholds. No default percentages are imposed.
+                      Tetapkan OM, PM, dan ambang pendukung. Tidak ada persentase universal yang dipaksakan.
                     </p>
                   </div>
                 </div>
+
+                <MaterialityAiAssistant
+                  form={form}
+                  onApply={next => setForm(current => ({ ...current, ...next }))}
+                />
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="text-xs font-bold text-slate-700">
@@ -583,18 +589,18 @@ export default function IcofrScopingPage() {
                       }
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
                     >
-                      <option value="">Select benchmark</option>
-                      <option value="Profit Before Tax">Profit Before Tax</option>
-                      <option value="Revenue">Revenue</option>
-                      <option value="Total Assets">Total Assets</option>
-                      <option value="Equity">Equity</option>
-                      <option value="Operating Expenses">Operating Expenses</option>
-                      <option value="Custom">Custom</option>
+                      <option value="">Pilih benchmark</option>
+                      <option value="Profit Before Tax">Laba sebelum pajak (PBT)</option>
+                      <option value="Revenue">Pendapatan (bunga + fee)</option>
+                      <option value="Total Assets">Total aset</option>
+                      <option value="Equity">Ekuitas</option>
+                      <option value="Average PBT 3 Years">Rata-rata PBT 3 tahun</option>\n                      <option value="Operating Expenses">Beban operasional</option>
+                      <option value="Custom">Kustom</option>
                     </select>
                   </label>
 
                   <label className="text-xs font-bold text-slate-700">
-                    Benchmark amount *
+                    Nilai benchmark *
                     <input
                       required
                       type="number"
@@ -610,7 +616,7 @@ export default function IcofrScopingPage() {
                   </label>
 
                   <label className="text-xs font-bold text-slate-700">
-                    OM % of benchmark *
+                    OM % dari benchmark *
                     <input
                       required
                       type="number"
@@ -648,7 +654,7 @@ export default function IcofrScopingPage() {
                       />
                       <button
                         type="button"
-                        title="Use benchmark × OM percentage"
+                        title="Gunakan benchmark × persentase OM"
                         onClick={() =>
                           setForm({
                             ...form,
@@ -661,12 +667,12 @@ export default function IcofrScopingPage() {
                       </button>
                     </div>
                     <span className="mt-1 block text-[9px] font-medium text-slate-400">
-                      Calculated: {formatAmount(calculatedOm, form.currency)}
+                      Hasil hitung: {formatAmount(calculatedOm, form.currency)}
                     </span>
                   </label>
 
                   <label className="text-xs font-bold text-slate-700">
-                    PM % of OM *
+                    PM % dari OM *
                     <input
                       required
                       type="number"
@@ -704,7 +710,7 @@ export default function IcofrScopingPage() {
                       />
                       <button
                         type="button"
-                        title="Use OM × PM percentage"
+                        title="Gunakan OM × persentase PM"
                         onClick={() =>
                           setForm({
                             ...form,
@@ -717,12 +723,12 @@ export default function IcofrScopingPage() {
                       </button>
                     </div>
                     <span className="mt-1 block text-[9px] font-medium text-slate-400">
-                      Calculated: {formatAmount(calculatedPm, form.currency)}
+                      Hasil hitung: {formatAmount(calculatedPm, form.currency)}
                     </span>
                   </label>
 
                   <label className="text-xs font-bold text-slate-700">
-                    Clearly trivial / SAD % of PM
+                    Clearly Trivial / SAD % dari PM
                     <input
                       type="number"
                       min="0"
@@ -737,7 +743,7 @@ export default function IcofrScopingPage() {
                   </label>
 
                   <label className="text-xs font-bold text-slate-700">
-                    Clearly trivial / SAD amount
+                    Nilai Clearly Trivial / SAD
                     <div className="mt-1 flex gap-2">
                       <input
                         type="number"
@@ -752,7 +758,7 @@ export default function IcofrScopingPage() {
                       />
                       <button
                         type="button"
-                        title="Use PM × clearly trivial percentage"
+                        title="Gunakan PM × persentase Clearly Trivial"
                         onClick={() =>
                           setForm({
                             ...form,
@@ -765,12 +771,12 @@ export default function IcofrScopingPage() {
                       </button>
                     </div>
                     <span className="mt-1 block text-[9px] font-medium text-slate-400">
-                      Calculated: {formatAmount(calculatedTrivial, form.currency)}
+                      Hasil hitung: {formatAmount(calculatedTrivial, form.currency)}
                     </span>
                   </label>
 
                   <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                    Component materiality amount
+                    Nilai materialitas komponen
                     <input
                       type="number"
                       min="0"
@@ -782,7 +788,7 @@ export default function IcofrScopingPage() {
                           componentMaterialityAmount: event.target.value
                         })
                       }
-                      placeholder="Optional for group / component scoping"
+                      placeholder="Opsional untuk scoping grup / komponen"
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
                     />
                   </label>
