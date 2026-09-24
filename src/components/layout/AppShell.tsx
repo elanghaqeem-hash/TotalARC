@@ -27,6 +27,7 @@ import {
   Link2,
   LockKeyhole,
   LogOut,
+  Languages,
   Menu,
   Shield,
   Sparkles,
@@ -50,6 +51,87 @@ interface NavGroup {
   subtitle: string;
   items: NavItem[];
 }
+
+type UiLanguage = 'id' | 'en';
+
+const LANGUAGE_STORAGE_KEY = 'total-arc-language';
+
+const englishGroupCopy: Record<string, { title: string; subtitle: string }> = {
+  KELOLA: { title: 'MANAGE', subtitle: 'Define & govern' },
+  ASESMEN: { title: 'ASSURE', subtitle: 'Assess & validate' },
+  PANTAU: { title: 'MONITOR', subtitle: 'Monitor & respond' }
+};
+
+const englishNavLabels: Record<string, string> = {
+  '/': 'Core Dashboard',
+  '/onboarding': 'Institution Onboarding',
+  '/organization': 'Organization Structure',
+  '/admin/users': 'User & Role Management',
+  '/admin/security': 'Authentication Security',
+  '/admin/data-hub': 'Data Integration Hub',
+  '/processes': 'Process Architecture (BPM)',
+  '/risks': 'Risk Universe & Heatmap',
+  '/controls': 'Single Control Library',
+  '/rcm': 'Relational RCM Workspace',
+  '/evidence': 'Enterprise Evidence Repository',
+  '/rcsa': 'RCSA & CSA Workspace',
+  '/icofr': 'ICOFR Program Hub',
+  '/icofr/scoping': 'ICOFR Scoping & Materiality',
+  '/icofr/accounts': 'Accounts, Disclosures & Assertions',
+  '/icofr/traceability': 'ICOFR Traceability Matrix',
+  '/icofr/coverage': 'ICOFR Coverage & Gap Analytics',
+  '/icofr/elc': 'Entity-Level Controls (ELC)',
+  '/icofr/plc': 'Process-Level Controls (PLC)',
+  '/icofr/itgc': 'IT General Controls (ITGC)',
+  '/icofr/itac': 'IT Application Controls (ITAC)',
+  '/icofr/information': 'IPE & EUC Register',
+  '/icofr/testing-plan': 'ICOFR Testing Plan & Cycle',
+  '/icofr/smart-testing': 'ICOFR Smart Testing Strategy',
+  '/icofr/sampling-evidence': 'ICOFR Sampling & Evidence',
+  '/icofr/workpaper-review': 'ICOFR Workpaper Review',
+  '/tod': 'Walkthrough & ToD',
+  '/toe': 'ToE Testing & Samples',
+  '/icofr/deficiencies': 'ICOFR Deficiency Evaluation',
+  '/remediation': 'Remediation & MAP',
+  '/health': 'Control Health Cockpit',
+  '/ccm': 'Continuous Monitoring (CCM)',
+  '/certification': 'ICOFR Certification & Close',
+  '/icofr/reporting': 'ICOFR Executive Reporting',
+  '/icofr/period-close': 'ICOFR Period Close & Archive',
+  '/icofr/roll-forward': 'ICOFR Roll-Forward',
+  '/calendar': 'Assurance Calendar',
+  '/tasks': 'Task Center & Escalation',
+  '/reports': 'Analytics'
+};
+
+const shellCopy = {
+  id: {
+    institution: 'Institusi',
+    activeInstitution: 'Institusi aktif',
+    selectInstitution: 'Pilih institusi',
+    profile: 'Profil Saya',
+    language: 'Bahasa',
+    indonesian: 'Indonesia',
+    english: 'English',
+    security: 'Administrasi Keamanan',
+    signOut: 'Keluar',
+    navigation: 'Navigasi',
+    more: 'Lainnya'
+  },
+  en: {
+    institution: 'Institution',
+    activeInstitution: 'Active institution',
+    selectInstitution: 'Select institution',
+    profile: 'My Profile',
+    language: 'Language',
+    indonesian: 'Indonesia',
+    english: 'English',
+    security: 'Security Administration',
+    signOut: 'Sign Out',
+    navigation: 'Navigation',
+    more: 'More'
+  }
+} as const;
 
 const warmedRoutes = new Set<string>();
 
@@ -140,26 +222,71 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [institutionMenuOpen, setInstitutionMenuOpen] = useState(false);
   const [institutionSwitching, setInstitutionSwitching] = useState(false);
+  const [language, setLanguage] = useState<UiLanguage>('id');
 
   const isLoginPage = pathname === '/login';
+  const copy = shellCopy[language];
+
+  useEffect(() => {
+    const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    const nextLanguage: UiLanguage = storedLanguage === 'en' ? 'en' : 'id';
+    setLanguage(nextLanguage);
+    document.documentElement.lang = nextLanguage;
+  }, []);
+
+  const changeLanguage = useCallback((nextLanguage: UiLanguage) => {
+    setLanguage(nextLanguage);
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+    document.documentElement.lang = nextLanguage;
+    document.cookie =
+      'total_arc_language=' +
+      encodeURIComponent(nextLanguage) +
+      '; Path=/; Max-Age=31536000; SameSite=Lax';
+    window.dispatchEvent(
+      new CustomEvent('totalarc:language-change', {
+        detail: { language: nextLanguage }
+      })
+    );
+  }, []);
 
   const visibleNavGroups = useMemo(
     () =>
       navGroups
-        .map(group => ({
-          ...group,
-          items: group.items.filter(item => canAccessPage(currentUser.role, item.href))
-        }))
+        .map(group => {
+          const englishGroup = englishGroupCopy[group.title];
+          return {
+            ...group,
+            title: language === 'en' && englishGroup ? englishGroup.title : group.title,
+            subtitle:
+              language === 'en' && englishGroup ? englishGroup.subtitle : group.subtitle,
+            items: group.items
+              .filter(item => canAccessPage(currentUser.role, item.href))
+              .map(item => ({
+                ...item,
+                name:
+                  language === 'en'
+                    ? englishNavLabels[item.href] || item.name
+                    : item.name
+              }))
+          };
+        })
         .filter(group => group.items.length > 0),
-    [currentUser.role]
+    [currentUser.role, language]
   );
 
   const mobileItems = useMemo(
     () =>
       mobileCandidates
         .filter(item => canAccessPage(currentUser.role, item.href))
+        .map(item => ({
+          ...item,
+          label:
+            language === 'en'
+              ? englishNavLabels[item.href] || item.label
+              : item.label
+        }))
         .slice(0, 4),
-    [currentUser.role]
+    [currentUser.role, language]
   );
 
   const prefetchRoute = useCallback(
@@ -391,12 +518,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </span>
                   <div className="min-w-0">
                     <div className="truncate text-[7px] font-bold uppercase tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-wide">
-                      Institution
+                      {copy.institution}
                     </div>
                     <div className="truncate text-[9px] font-black leading-tight text-slate-800 sm:text-[11px]">
                       {institutionOptions.find(item => item.id === currentUser.institutionId)?.name ||
                         currentUser.institutionName ||
-                        'Pilih institusi'}
+                        copy.selectInstitution}
                     </div>
                   </div>
                   <ChevronDown className="h-3 w-3 shrink-0 text-slate-400 sm:h-3.5 sm:w-3.5" />
@@ -405,7 +532,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {institutionMenuOpen && (
                   <div className="absolute right-0 z-50 mt-2 w-[290px] max-w-[calc(100vw-20px)] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10 sm:w-[320px] sm:max-w-[calc(100vw-24px)]">
                     <div className="px-2.5 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
-                      Institusi aktif
+                      {copy.activeInstitution}
                     </div>
                     <div className="space-y-1">
                       {institutionOptions.map(item => {
@@ -506,8 +633,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-50"
                     >
                       <UserRound className="h-4 w-4" />
-                      Profil Saya
+                      {copy.profile}
                     </Link>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <div className="mb-2 flex items-center gap-2 px-1 text-[10px] font-black text-slate-600">
+                        <Languages className="h-3.5 w-3.5 text-brand-600" />
+                        {copy.language}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => changeLanguage('id')}
+                          aria-pressed={language === 'id'}
+                          className={`flex min-h-9 items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-black transition ${
+                            language === 'id'
+                              ? 'border-brand-200 bg-white text-brand-700 shadow-sm'
+                              : 'border-transparent bg-transparent text-slate-500 hover:bg-white'
+                          }`}
+                        >
+                          {language === 'id' && <BadgeCheck className="h-3.5 w-3.5" />}
+                          {copy.indonesian}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => changeLanguage('en')}
+                          aria-pressed={language === 'en'}
+                          className={`flex min-h-9 items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-black transition ${
+                            language === 'en'
+                              ? 'border-brand-200 bg-white text-brand-700 shadow-sm'
+                              : 'border-transparent bg-transparent text-slate-500 hover:bg-white'
+                          }`}
+                        >
+                          {language === 'en' && <BadgeCheck className="h-3.5 w-3.5" />}
+                          {copy.english}
+                        </button>
+                      </div>
+                    </div>
                     {currentUser.role === 'Admin' && (
                       <Link
                         href="/admin/security"
@@ -515,7 +676,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-50"
                       >
                         <LockKeyhole className="h-4 w-4" />
-                        Administrasi Keamanan
+                        {copy.security}
                       </Link>
                     )}
                   </div>
@@ -526,7 +687,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-100"
                   >
                     <LogOut className="h-4 w-4" />
-                    Keluar
+                    {copy.signOut}
                   </button>
                 </div>
               )}
@@ -582,7 +743,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="h-[46px] w-auto max-w-[158px] object-contain"
                 />
                 <span className="hidden text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xs:inline">
-                  Navigation
+                  {copy.navigation}
                 </span>
               </div>
               <button
@@ -615,15 +776,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:bg-slate-50"
                 >
                   <UserRound className="h-4 w-4" />
-                  Profil Saya
+                  {copy.profile}
                 </Link>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+                  <div className="mb-2 flex items-center gap-2 px-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">
+                    <Languages className="h-4 w-4 text-brand-600" />
+                    {copy.language}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => changeLanguage('id')}
+                      aria-pressed={language === 'id'}
+                      className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition ${
+                        language === 'id'
+                          ? 'border-brand-200 bg-brand-50 text-brand-700 shadow-sm'
+                          : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-white'
+                      }`}
+                    >
+                      {language === 'id' && <BadgeCheck className="h-4 w-4" />}
+                      Indonesia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => changeLanguage('en')}
+                      aria-pressed={language === 'en'}
+                      className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition ${
+                        language === 'en'
+                          ? 'border-brand-200 bg-brand-50 text-brand-700 shadow-sm'
+                          : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-white'
+                      }`}
+                    >
+                      {language === 'en' && <BadgeCheck className="h-4 w-4" />}
+                      English
+                    </button>
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => void logout()}
+                  onClick={() => void logout()
                   className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100"
                 >
                   <LogOut className="h-4 w-4" />
-                  Keluar
+                  {copy.signOut}
                 </button>
               </div>
             </div>
@@ -652,7 +849,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="flex min-h-[54px] min-w-[58px] flex-col items-center justify-center rounded-2xl px-2 py-1.5 text-[10px] font-bold text-slate-500"
         >
           <Menu className="h-5 w-5" />
-          <span className="mt-0.5">Lainnya</span>
+          <span className="mt-0.5">{copy.more}</span>
         </button>
       </nav>
 
