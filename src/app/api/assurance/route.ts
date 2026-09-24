@@ -71,18 +71,18 @@ export async function GET(request: Request) {
     full || names.some(name => requested.has(name.toLowerCase()));
 
   const needOrganization = wants('organization');
-  const needRcsa = wants('rcsa', 'integration', 'health', 'tasks', 'calendar');
-  const needTod = wants('tod', 'integration', 'health', 'calendar');
-  const needPbc = wants('tasks', 'calendar', 'integration');
-  const needToe = wants('toe', 'integration', 'health', 'calendar');
+  const needRcsa = wants('rcsa', 'integration', 'health', 'tasks', 'calendar', 'reports');
+  const needTod = wants('tod', 'integration', 'health', 'calendar', 'reports');
+  const needPbc = wants('tasks', 'calendar', 'integration', 'reports');
+  const needToe = wants('toe', 'integration', 'health', 'calendar', 'reports');
   const needRemediation = wants('remediation', 'integration', 'health', 'tasks', 'calendar', 'reports');
-  const needCcm = wants('ccm', 'health');
-  const needCertification = wants('certification', 'calendar');
+  const needCcm = wants('ccm', 'health', 'reports');
+  const needCertification = wants('certification', 'calendar', 'reports');
   const needCalendar = wants('calendar');
-  const needFinancial = wants('financial');
-  const needInformation = wants('information');
-  const needTesting = wants('testing', 'integration', 'tasks', 'calendar');
-  const needWorkpaperReviewTasks = wants('workpaper-review', 'tasks', 'integration');
+  const needFinancial = wants('financial', 'reports');
+  const needInformation = wants('information', 'reports');
+  const needTesting = wants('testing', 'integration', 'tasks', 'calendar', 'reports');
+  const needWorkpaperReviewTasks = wants('workpaper-review', 'tasks', 'integration', 'reports');
 
   const [
     organizationResult,
