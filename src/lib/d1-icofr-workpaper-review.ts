@@ -1500,9 +1500,12 @@ export async function getWorkpaperReviewData() {
 }
 
 
-export async function listWorkpaperReviewTasks() {
+export async function listWorkpaperReviewTasks(institutionId?: string | null) {
   const db = await ensureIcofrWorkpaperReviewSchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) return [];
 
   const [reviews, notes] = await Promise.all([
