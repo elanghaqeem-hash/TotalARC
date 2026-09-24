@@ -303,8 +303,35 @@ jobs:
             exit 1
           fi
 
-          PROBE_HTTP=$(curl --silent --show-error --max-time 60 --output /tmp/totalarc-ai-probe.json --write-out "%{http_code}"             -X POST -H "Authorization: Bearer $AI_PROBE_TOKEN" "$PROBE_URL")
-          probe=$(cat /tmp/totalarc-ai-probe.json)
+          probe_ready=false
+          PROBE_HTTP=000
+          probe=''
+
+          for attempt in $(seq 1 12); do
+            PROBE_HTTP=$(curl --silent --show-error --max-time 60 --output /tmp/totalarc-ai-probe.json --write-out "%{http_code}"               -X POST -H "Authorization: Bearer $AI_PROBE_TOKEN" "$PROBE_URL" || true)
+            probe=$(cat /tmp/totalarc-ai-probe.json 2>/dev/null || true)
+            private_ready=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);process.stdout.write(j.privateProviderReady===true?'true':'false')}catch{process.stdout.write('false')}})")
+
+            if [ "$PROBE_HTTP" -ge 200 ] && [ "$PROBE_HTTP" -lt 300 ] && [ "$private_ready" = "true" ]; then
+              probe_ready=true
+              break
+            fi
+
+            if [ "$PROBE_HTTP" = "401" ] || [ "$PROBE_HTTP" = "503" ]; then
+              echo "AI inference probe belum konsisten di seluruh Worker (HTTP $PROBE_HTTP, percobaan $attempt/12)."
+              sleep 5
+              continue
+            fi
+
+            echo "AI inference probe belum siap (HTTP $PROBE_HTTP, percobaan $attempt/12)."
+            sleep 5
+          done
+
+          if [ "$probe_ready" != "true" ]; then
+            echo "::error::Cloudflare Workers AI tersedia, tetapi verifikasi inference privat belum stabil (HTTP $PROBE_HTTP)."
+            exit 1
+          fi
+
           provider_summary=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);for(const p of j.providers||[]){console.log('- '+p.provider+': configured='+p.configured+', healthy='+p.ok+', model='+p.model+(p.error?(', error='+p.error):''))}}catch{console.log('- Probe response was not valid JSON')}})")
 
           echo "### AI production verification" >> "$GITHUB_STEP_SUMMARY"
@@ -313,12 +340,6 @@ jobs:
           echo "- AI probe secret: propagated and authorized" >> "$GITHUB_STEP_SUMMARY"
           echo "$provider_summary"
           echo "$provider_summary" >> "$GITHUB_STEP_SUMMARY"
-
-          private_ready=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);process.stdout.write(j.privateProviderReady===true?'true':'false')}catch{process.stdout.write('false')}})")
-          if [ "$PROBE_HTTP" -lt 200 ] || [ "$PROBE_HTTP" -ge 300 ] || [ "$private_ready" != "true" ]; then
-            echo "::error::Cloudflare Workers AI binding exists but private inference failed (HTTP $PROBE_HTTP)."
-            exit 1
-          fi
 
           external_healthy=$(printf '%s' "$probe" | node -e "let i='';process.stdin.on('data',c=>i+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(i);process.stdout.write(j.configuredExternalProvidersHealthy===true?'true':'false')}catch{process.stdout.write('false')}})")
           if [ "$external_healthy" != "true" ]; then
