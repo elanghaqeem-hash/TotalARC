@@ -8,12 +8,20 @@ import {
   listRemediationData,
   requestMapExtension
 } from '@/lib/d1-assurance';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const data = await listRemediationData();
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const data = await listRemediationData(context.institution.id);
     return NextResponse.json({ ...data, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to fetch D1 remediation data:', error);
@@ -30,6 +38,14 @@ function textValue(body: Record<string, unknown>, key: string) {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = textValue(body, 'actionType');
 
@@ -71,7 +87,7 @@ export async function POST(request: Request) {
         regulatoryImpact: textValue(body, 'regulatoryImpact') || null,
         compensatingControls: textValue(body, 'compensatingControls') || null,
         approvedBy
-      });
+      }, institutionId);
       return NextResponse.json(deficiency, { status: 201 });
     }
 
@@ -100,7 +116,7 @@ export async function POST(request: Request) {
         severity,
         ownerName,
         targetDate
-      });
+      }, institutionId);
       return NextResponse.json(issue, { status: 201 });
     }
 
@@ -128,7 +144,7 @@ export async function POST(request: Request) {
         actionOwner,
         approverName,
         originalDueDate
-      });
+      }, institutionId);
       return NextResponse.json(map, { status: 201 });
     }
 
@@ -145,7 +161,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const milestone = await createMapMilestone({ mapId, title, owner, dueDate });
+      const milestone = await createMapMilestone({ mapId, title, owner, dueDate }, institutionId);
       return NextResponse.json(milestone, { status: 201 });
     }
 
@@ -182,7 +198,7 @@ export async function POST(request: Request) {
         testerName,
         reviewerName,
         conclusionNotes: textValue(body, 'conclusionNotes') || null
-      });
+      }, institutionId);
       return NextResponse.json(retest, { status: 201 });
     }
 
@@ -204,7 +220,7 @@ export async function POST(request: Request) {
         extensionReason,
         newDueDate,
         approverName
-      });
+      }, institutionId);
       return NextResponse.json(updated);
     }
 
@@ -216,6 +232,7 @@ export async function POST(request: Request) {
     const code = error instanceof Error ? error.message : '';
 
     const notFoundErrors: Record<string, string> = {
+      TENANT_RECORD_NOT_FOUND: 'Remediation record not found in the active institution.',
       EXCEPTION_NOT_FOUND: 'Testing exception not found.',
       DEFICIENCY_NOT_FOUND: 'Control deficiency not found.',
       ISSUE_NOT_FOUND: 'Issue not found.',
