@@ -229,7 +229,10 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const processId = String(id || '').trim();
     if (!processId) return noStore({ error: 'Process id is required.' }, { status: 400 });
 
-    const process = await getBusinessProcessDetail(processId, context.institution!.id);
+    const process = await getBusinessProcessDetail(
+      processId,
+      context.institution!.id
+    ) as Record<string, any>;
     const form = await request.formData();
     const file = form.get('file');
     if (!(file instanceof File)) {
