@@ -21,7 +21,7 @@ function setActiveInstitutionCookie(response: NextResponse, institutionId: strin
 
 export async function GET(request: Request) {
   try {
-    const context = await resolveInstitutionAccess(request);
+    const context = await resolveInstitutionAccess(request, undefined, { includeInstitutions: true });
     if (!context) {
       return NextResponse.json(
         { error: 'Authentication required.' },
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const context = await resolveInstitutionAccess(request);
+    const context = await resolveInstitutionAccess(request, undefined, { includeInstitutions: true });
     if (!context) {
       return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
     }
