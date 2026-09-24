@@ -2752,8 +2752,12 @@ async function count(
   return Number(row?.count || 0);
 }
 
-export async function getCoreDashboardData() {
+export async function getCoreDashboardData(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
+  const tenantWhere = tenantId ? ' WHERE institutionId = ?' : '';
+  const tenantAnd = tenantId ? ' AND institutionId = ?' : '';
+  const tenantValues = tenantId ? [tenantId] : [];
 
   const [
     totalProcesses,
@@ -2767,27 +2771,35 @@ export async function getCoreDashboardData() {
     highCritical,
     recentAuditLogs
   ] = await Promise.all([
-    count(db, 'SELECT COUNT(*) AS count FROM BusinessProcess'),
-    count(db, "SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RiskMaster'),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'"),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'"),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster'),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1'),
+    count(db, `SELECT COUNT(*) AS count FROM BusinessProcess${tenantWhere}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'${tenantAnd}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM RiskMaster${tenantWhere}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'${tenantAnd}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'${tenantAnd}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM ControlMaster${tenantWhere}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1${tenantAnd}`, tenantValues),
     count(
       db,
       `SELECT COUNT(DISTINCT r.id) AS count
          FROM RiskMaster r
          JOIN ControlRiskMapping m ON m.riskId = r.id
-        WHERE r.inherentRating IN ('High', 'Critical')`
+        WHERE r.inherentRating IN ('High', 'Critical')
+          ${tenantId ? 'AND r.institutionId = ?' : ''}`,
+      tenantValues
     ),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating IN ('High', 'Critical')"
+      `SELECT COUNT(*) AS count FROM RiskMaster
+        WHERE inherentRating IN ('High', 'Critical')
+        ${tenantId ? 'AND institutionId = ?' : ''}`,
+      tenantValues
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM AuditLog ORDER BY timestamp DESC LIMIT 8'
+      `SELECT * FROM AuditLog
+        ${tenantId ? 'WHERE institutionId = ?' : ''}
+        ORDER BY timestamp DESC LIMIT 8`,
+      tenantValues
     )
   ]);
 
