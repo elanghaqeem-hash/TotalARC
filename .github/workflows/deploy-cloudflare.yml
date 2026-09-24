@@ -128,6 +128,9 @@ jobs:
       - name: Verify D1 schema stability
         run: npm run verify:d1-schema-stability
 
+      - name: Verify multi-institution isolation
+        run: npm run verify:tenant-isolation
+
       - name: Build OpenNext Worker
         run: npm run build
 
