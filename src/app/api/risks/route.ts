@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   try {
     const context = await resolveInstitutionAccess(request);
     if (!context?.institution) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: context ? 409 : 401 });
     }
     const institutionId = context.institution.id;
     const view = new URL(request.url).searchParams.get('view');
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('Failed to fetch D1 risks:', error);
-    return NextResponse.json({ error: 'Failed to fetch risks from persistent database.' }, { status: 503 });
+    return NextResponse.json({ error: 'Gagal mengambil data risiko dari database permanen.' }, { status: 503 });
   }
 }
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   try {
     const context = await resolveInstitutionAccess(request);
     if (!context?.institution) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: context ? 409 : 401 });
     }
     const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
@@ -86,13 +86,13 @@ export async function POST(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return NextResponse.json({ error: 'Select a registered business process before creating a risk.' }, { status: 400 });
+      return NextResponse.json({ error: 'Pilih proses bisnis terdaftar sebelum membuat risiko.' }, { status: 400 });
     }
     if (code === 'RISK_ID_CONFLICT') {
-      return NextResponse.json({ error: 'Risk ID already exists for this institution.' }, { status: 409 });
+      return NextResponse.json({ error: 'ID Risiko sudah ada pada institusi ini.' }, { status: 409 });
     }
 
     console.error('Failed to create D1 risk:', error);
-    return NextResponse.json({ error: 'Failed to create risk in persistent database.' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal membuat risiko pada database permanen.' }, { status: 500 });
   }
 }
