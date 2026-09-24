@@ -139,6 +139,8 @@ jobs:
 
       - name: Verify BPM-to-AI Risk Register
         run: npm run verify:ai-risk-register
+      - name: Verify AI significant account scoping
+        run: npm run verify:ai-significant-accounts
 
       - name: Build OpenNext Worker
         run: npm run build
