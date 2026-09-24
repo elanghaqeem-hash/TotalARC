@@ -19,7 +19,7 @@ function parseJsonObject(text: string): Record<string, unknown> {
     if (start >= 0 && end > start) {
       return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
     }
-    throw new Error('AI response was not valid JSON');
+    throw new Error('Respons AI bukan JSON yang valid');
   }
 }
 
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     const context = await resolveInstitutionAccess(request);
     if (!context?.institution) {
       return NextResponse.json(
-        { error: 'Active institution is required.' },
+        { error: 'Institusi aktif wajib tersedia.' },
         { status: context ? 409 : 401 }
       );
     }
@@ -113,8 +113,8 @@ export async function POST(request: Request) {
     const byCategory = new Map<string, number>();
     const byProcess = new Map<string, number>();
     for (const risk of risks as any[]) {
-      const category = String(risk.category || 'Uncategorized');
-      const processName = String(risk.process?.name || 'Unassigned process');
+      const category = String(risk.category || 'Belum Dikategorikan');
+      const processName = String(risk.process?.name || 'Proses belum ditetapkan');
       byCategory.set(category, (byCategory.get(category) || 0) + 1);
       byProcess.set(processName, (byProcess.get(processName) || 0) + 1);
     }
