@@ -47,8 +47,8 @@ export default function RisksPage() {
     category: 'Operational',
     processId: '',
     ownerName: '',
-    inherentLikelihood: 0,
-    inherentImpact: 0
+    inherentKemungkinan: 0,
+    inherentDampak: 0
   });
 
   const loadRisks = () => {
@@ -137,7 +137,7 @@ export default function RisksPage() {
     }
   }, [activeTab, riskLoading, risks]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormKejadian) => {
     e.preventDefault();
     setSaving(true);
     setSaveError('');
@@ -164,8 +164,8 @@ export default function RisksPage() {
         category: 'Operational',
         processId: formData.processId || processes[0]?.id || '',
         ownerName: '',
-        inherentLikelihood: 0,
-        inherentImpact: 0
+        inherentKemungkinan: 0,
+        inherentDampak: 0
       });
       setNewRiskModal(false);
     } catch (err) {
@@ -193,14 +193,14 @@ export default function RisksPage() {
             <span>Risk Universe (MANAGE)</span>
           </div>
           <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            Enterprise Risk Register & Heatmaps
+            Register Risiko Perusahaan & Heatmap
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Structured Cause → Event → Impact risk articulation. Interactive 5x5 Likelihood × Impact matrices.
+            Struktur risiko menggunakan format Penyebab → Kejadian → Dampak. Interactive 5x5 Kemungkinan × Dampak matrices.
           </p>
           <p className="mt-2 text-[11px] text-slate-400">
-            Source-fed risks remain Draft / Not Assessed until a validated 1–5 likelihood and impact assessment is completed.
-            Unassessed risks are excluded from the 5×5 heatmap.
+            Risiko dari sumber tetap berstatus Draf / Belum Dinilai sampai asesmen kemungkinan dan dampak skala 1–5 divalidasi.
+            Risiko yang belum dinilai tidak dimasukkan ke heatmap 5×5.
           </p>
         </div>
 
@@ -211,7 +211,7 @@ export default function RisksPage() {
             className="inline-flex min-h-10 items-center justify-center space-x-2 rounded-xl bg-slate-900 px-4 text-xs font-bold text-white shadow-sm transition-all hover:bg-slate-800"
           >
             <Plus className="w-4 h-4" />
-            <span>Identify New Risk</span>
+            <span>Identifikasi Risiko Baru</span>
           </button>
         </div>
       </div>
@@ -224,7 +224,7 @@ export default function RisksPage() {
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by Risk ID, Category, or Title..."
+            placeholder="Cari berdasarkan ID Risiko, Kategori, atau Judul..."
             className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
           />
         </div>
@@ -238,7 +238,7 @@ export default function RisksPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Risk Register ({riskLoading ? '…' : risks.length})
+            Register Risiko ({riskLoading ? '…' : risks.length})
           </button>
           <button
             onClick={() => setActiveTab('inherent_heatmap')}
@@ -248,7 +248,7 @@ export default function RisksPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            5×5 Inherent Heatmap
+            Heatmap Inheren 5×5
           </button>
           <button
             onClick={() => setActiveTab('residual_heatmap')}
@@ -258,7 +258,7 @@ export default function RisksPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            5×5 Residual Heatmap
+            Heatmap Residual 5×5
           </button>
         </div>
       </div>
@@ -317,7 +317,7 @@ export default function RisksPage() {
                       >
                         {r.inherentScore > 0
                           ? `Score: ${r.inherentScore} (${r.inherentRating})`
-                          : 'Not Assessed'}
+                          : 'Belum Dinilai'}
                       </span>
                       {r.sourceMetadata?.sourceRiskRating && (
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
@@ -338,7 +338,7 @@ export default function RisksPage() {
                       <span>
                         {r.residualScore > 0
                           ? `Residual: ${r.residualScore} (${r.residualRating})`
-                          : 'Residual: Not Assessed'}
+                          : 'Residual: Belum Dinilai'}
                       </span>
                     </span>
                   </div>
@@ -365,7 +365,7 @@ export default function RisksPage() {
                       </span>
                       {selectedRisk.status === 'Draft' && (
                         <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[9px] font-black text-sky-700">
-                          Draft · Human Validation Required
+                          Draf · Memerlukan Validasi Manusia
                         </span>
                       )}
                     </div>
@@ -398,25 +398,25 @@ export default function RisksPage() {
                   )}
                 </div>
 
-                {/* Structured Cause - Event - Impact (Section 29) */}
+                {/* Structured Penyebab - Kejadian - Dampak (Section 29) */}
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Cause → Event → Impact Syntax (Section 29)
+                    Penyebab → Kejadian → Dampak Syntax (Section 29)
                   </h3>
 
                   <div className="space-y-2 text-xs">
                     <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <span className="text-slate-500 font-bold uppercase text-[10px]">Due to Cause:</span>
+                      <span className="text-slate-500 font-bold uppercase text-[10px]">Due to Penyebab:</span>
                       <p className="text-slate-800 font-medium mt-0.5">{selectedRisk.cause || 'Not provided in source'}</p>
                     </div>
 
                     <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200">
-                      <span className="text-amber-700 font-bold uppercase text-[10px]">There is a Risk that (Event):</span>
+                      <span className="text-amber-700 font-bold uppercase text-[10px]">There is a Risk that (Kejadian):</span>
                       <p className="text-amber-900 font-medium mt-0.5">{selectedRisk.event || 'Not provided in source'}</p>
                     </div>
 
                     <div className="p-3 bg-rose-50/60 rounded-lg border border-rose-200">
-                      <span className="text-rose-700 font-bold uppercase text-[10px]">Resulting in (Impact):</span>
+                      <span className="text-rose-700 font-bold uppercase text-[10px]">Resulting in (Dampak):</span>
                       <p className="text-rose-900 font-medium mt-0.5">{selectedRisk.impact || 'Not provided in source'}</p>
                     </div>
                   </div>
@@ -434,7 +434,7 @@ export default function RisksPage() {
                     <div className="text-xs font-bold text-rose-700">{selectedRisk.inherentRating}</div>
                     <div className="text-[10px] text-rose-600">
                       {selectedRisk.inherentScore > 0
-                        ? `Likelihood ${selectedRisk.inherentLikelihood} × Impact ${selectedRisk.inherentImpact}`
+                        ? `Kemungkinan ${selectedRisk.inherentKemungkinan} × Dampak ${selectedRisk.inherentDampak}`
                         : 'Awaiting validated 1–5 assessment'}
                     </div>
                   </div>
@@ -474,7 +474,7 @@ export default function RisksPage() {
                           </div>
                         </div>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          {m.control?.overallHealth || 'Not Assessed'}
+                          {m.control?.overallHealth || 'Belum Dinilai'}
                         </span>
                       </div>
                     ))
@@ -488,7 +488,7 @@ export default function RisksPage() {
               </div>
             ) : (
               <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 text-xs">
-                Select a risk from the register to inspect its 360° profile.
+                Pilih risiko dari register untuk melihat profil 360°.
               </div>
             )}
           </div>
@@ -505,7 +505,7 @@ export default function RisksPage() {
                   5×5 {activeTab === 'inherent_heatmap' ? 'Inherent' : 'Residual'} Risk Matrix
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Likelihood (Vertical Axis, 1–5) × Impact (Horizontal Axis, 1–5). Only assessed risks are mapped.
+                  Kemungkinan (Vertical Axis, 1–5) × Dampak (Horizontal Axis, 1–5). Only assessed risks are mapped.
                   <span className="ml-1 font-bold text-slate-700">
                     {risks.filter((risk: any) =>
                       Number(
@@ -513,7 +513,7 @@ export default function RisksPage() {
                           ? risk.inherentScore || 0
                           : risk.residualScore || 0
                       ) === 0
-                    ).length} risk(s) currently Not Assessed.
+                    ).length} risk(s) currently Belum Dinilai.
                   </span>
                 </p>
               </div>
@@ -543,12 +543,12 @@ export default function RisksPage() {
                     const count = risks.filter((risk: any) => {
                       const likelihood =
                         activeTab === 'inherent_heatmap'
-                          ? risk.inherentLikelihood
-                          : risk.residualLikelihood;
+                          ? risk.inherentKemungkinan
+                          : risk.residualKemungkinan;
                       const impact =
                         activeTab === 'inherent_heatmap'
-                          ? risk.inherentImpact
-                          : risk.residualImpact;
+                          ? risk.inherentDampak
+                          : risk.residualDampak;
                       return likelihood === l && impact === i;
                     }).length;
 
@@ -571,8 +571,8 @@ export default function RisksPage() {
                 )}
               </div>
               <div className="mt-3 flex justify-between gap-4 px-1 text-[10px] font-bold text-slate-500 sm:px-2 sm:text-xs">
-                <span>Impact 1 (Insignificant)</span>
-                <span className="text-right">Impact 5 (Catastrophic)</span>
+                <span>Dampak 1 (Insignificant)</span>
+                <span className="text-right">Dampak 5 (Catastrophic)</span>
               </div>
             </div>
           </div>
@@ -634,7 +634,7 @@ export default function RisksPage() {
                       </div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
-                      <div className="text-[9px] font-black uppercase text-slate-400">Not Assessed</div>
+                      <div className="text-[9px] font-black uppercase text-slate-400">Belum Dinilai</div>
                       <div className="mt-1 text-xl font-black text-slate-900">
                         {heatmapAi.metrics?.unassessed ?? 0}
                       </div>
@@ -720,12 +720,12 @@ export default function RisksPage() {
         </div>
       )}
 
-      {/* Identify New Risk Modal */}
+      {/* Identifikasi Risiko Baru Modal */}
       {newRiskModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-100">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-base text-slate-900">Identify New Risk Master</h3>
+              <h3 className="font-bold text-base text-slate-900">Identifikasi Risiko Baru Master</h3>
               <button
                 onClick={() => setNewRiskModal(false)}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded"
@@ -742,7 +742,7 @@ export default function RisksPage() {
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Risk ID</label>
+                  <label className="block text-slate-700 font-bold mb-1">ID Risiko</label>
                   <input
                     type="text"
                     placeholder="Auto-generated if blank"
@@ -752,7 +752,7 @@ export default function RisksPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Risk Category *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Kategori Risiko *</label>
                   <select
                     required
                     value={formData.category}
@@ -792,7 +792,7 @@ export default function RisksPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Risk Owner *</label>
+                <label className="block text-slate-700 font-bold mb-1">Pemilik Risiko *</label>
                 <input
                   type="text"
                   required
@@ -804,7 +804,7 @@ export default function RisksPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Risk Name *</label>
+                <label className="block text-slate-700 font-bold mb-1">Nama Risiko *</label>
                 <input
                   type="text"
                   required
@@ -816,7 +816,7 @@ export default function RisksPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Due to Cause: *</label>
+                <label className="block text-slate-700 font-bold mb-1">Due to Penyebab: *</label>
                 <input
                   type="text"
                   required
@@ -828,7 +828,7 @@ export default function RisksPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">There is a Risk that (Event): *</label>
+                <label className="block text-slate-700 font-bold mb-1">There is a Risk that (Kejadian): *</label>
                 <input
                   type="text"
                   required
@@ -840,7 +840,7 @@ export default function RisksPage() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Resulting in (Impact): *</label>
+                <label className="block text-slate-700 font-bold mb-1">Resulting in (Dampak): *</label>
                 <input
                   type="text"
                   required
@@ -853,13 +853,13 @@ export default function RisksPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Inherent Likelihood (1-5)</label>
+                  <label className="block text-slate-700 font-bold mb-1">Inherent Kemungkinan (1-5)</label>
                   <select
-                    value={formData.inherentLikelihood}
-                    onChange={e => setFormData({ ...formData, inherentLikelihood: parseInt(e.target.value) })}
+                    value={formData.inherentKemungkinan}
+                    onChange={e => setFormData({ ...formData, inherentKemungkinan: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
-                    <option value={0}>Not Assessed</option>
+                    <option value={0}>Belum Dinilai</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
@@ -867,13 +867,13 @@ export default function RisksPage() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Inherent Impact (1-5)</label>
+                  <label className="block text-slate-700 font-bold mb-1">Inherent Dampak (1-5)</label>
                   <select
-                    value={formData.inherentImpact}
-                    onChange={e => setFormData({ ...formData, inherentImpact: parseInt(e.target.value) })}
+                    value={formData.inherentDampak}
+                    onChange={e => setFormData({ ...formData, inherentDampak: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
-                    <option value={0}>Not Assessed</option>
+                    <option value={0}>Belum Dinilai</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
