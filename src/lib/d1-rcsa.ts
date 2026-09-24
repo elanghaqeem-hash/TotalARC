@@ -321,8 +321,8 @@ async function upsertTask(
 ) {
   const existing = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM AssuranceTask WHERE sourceType = ? AND sourceId = ? LIMIT 1',
-    [input.sourceType, input.sourceId]
+    'SELECT * FROM AssuranceTask WHERE institutionId = ? AND sourceType = ? AND sourceId = ? LIMIT 1',
+    [input.institutionId, input.sourceType, input.sourceId]
   );
   const now = nowIso();
 
@@ -332,7 +332,7 @@ async function upsertTask(
       `UPDATE AssuranceTask
           SET type = ?, title = ?, description = ?, assigneeName = ?, dueDate = ?,
               priority = ?, status = ?, link = ?, updatedAt = ?
-        WHERE id = ?`,
+        WHERE id = ? AND institutionId = ?`,
       [
         input.type,
         input.title,
@@ -343,7 +343,8 @@ async function upsertTask(
         input.status || 'Open',
         clean(input.link),
         now,
-        existing.id
+        existing.id,
+        input.institutionId
       ]
     );
     return String(existing.id);
@@ -510,7 +511,15 @@ export async function getRcsaWorkspaceData(institutionId?: string | null) {
         ORDER BY controlId ASC`,
       [institution.id]
     ),
-    all<Record<string, unknown>>(db, 'SELECT controlId, riskId FROM ControlRiskMapping'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.controlId, m.riskId
+         FROM ControlRiskMapping m
+         JOIN ControlMaster c ON c.id = m.controlId
+         JOIN RiskMaster r ON r.id = m.riskId
+        WHERE c.institutionId = ? AND r.institutionId = ?`,
+      [institution.id, institution.id]
+    ),
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM AssuranceTask WHERE institutionId = ? ORDER BY dueDate ASC, createdAt DESC',
