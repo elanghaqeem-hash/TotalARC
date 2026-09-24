@@ -55,71 +55,71 @@ const warmedRoutes = new Set<string>();
 
 const navGroups: NavGroup[] = [
   {
-    title: 'MANAGE',
-    subtitle: 'Define & govern',
+    title: 'KELOLA',
+    subtitle: 'Definisikan & kelola',
     items: [
-      { name: 'Core Dashboard', href: '/', icon: Activity },
-      { name: 'Institution Onboarding', href: '/onboarding', icon: Building2 },
-      { name: 'Organization Structure', href: '/organization', icon: FolderTree },
-      { name: 'User & Role Management', href: '/admin/users', icon: Users, badge: 'RBAC' },
-      { name: 'Authentication Security', href: '/admin/security', icon: LockKeyhole, badge: 'AUTH' },
-      { name: 'Data Integration Hub', href: '/admin/data-hub', icon: Database, badge: 'D1' },
-      { name: 'Process Architecture (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
-      { name: 'Risk Universe & Heatmap', href: '/risks', icon: AlertTriangle },
-      { name: 'Single Control Library', href: '/controls', icon: Shield },
-      { name: 'Relational RCM Workspace', href: '/rcm', icon: FileSpreadsheet },
-      { name: 'Enterprise Evidence Repository', href: '/evidence', icon: FileArchive, badge: 'FILES' }
+      { name: 'Dasbor Utama', href: '/', icon: Activity },
+      { name: 'Registrasi Institusi', href: '/onboarding', icon: Building2 },
+      { name: 'Struktur Organisasi', href: '/organization', icon: FolderTree },
+      { name: 'Manajemen Pengguna & Peran', href: '/admin/users', icon: Users, badge: 'RBAC' },
+      { name: 'Keamanan Autentikasi', href: '/admin/security', icon: LockKeyhole, badge: 'AUTH' },
+      { name: 'Pusat Integrasi Data', href: '/admin/data-hub', icon: Database, badge: 'D1' },
+      { name: 'Arsitektur Proses (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
+      { name: 'Semesta Risiko & Peta Risiko', href: '/risks', icon: AlertTriangle },
+      { name: 'Pustaka Kontrol Terpadu', href: '/controls', icon: Shield },
+      { name: 'Ruang Kerja RCM Relasional', href: '/rcm', icon: FileSpreadsheet },
+      { name: 'Repositori Bukti Perusahaan', href: '/evidence', icon: FileArchive, badge: 'FILES' }
     ]
   },
   {
-    title: 'ASSURE',
-    subtitle: 'Assess & validate',
+    title: 'ASESMEN',
+    subtitle: 'Uji & validasi',
     items: [
-      { name: 'RCSA & CSA Workspace', href: '/rcsa', icon: ClipboardCheck },
-      { name: 'ICOFR Program Hub', href: '/icofr', icon: FileCheck },
-      { name: 'ICOFR Scoping & Materiality', href: '/icofr/scoping', icon: Target, badge: 'OM · PM' },
-      { name: 'Accounts, Disclosures & Assertions', href: '/icofr/accounts', icon: FileSpreadsheet },
-      { name: 'ICOFR Traceability Matrix', href: '/icofr/traceability', icon: Link2, badge: 'E2E' },
-      { name: 'ICOFR Coverage & Gap Analytics', href: '/icofr/coverage', icon: BarChart3, badge: 'GAP' },
-      { name: 'Entity-Level Controls (ELC)', href: '/icofr/elc', icon: Shield },
-      { name: 'Process-Level Controls (PLC)', href: '/icofr/plc', icon: ClipboardCheck },
-      { name: 'IT General Controls (ITGC)', href: '/icofr/itgc', icon: Cpu },
-      { name: 'IT Application Controls (ITAC)', href: '/icofr/itac', icon: Workflow },
-      { name: 'IPE & EUC Register', href: '/icofr/information', icon: FileSpreadsheet },
-      { name: 'ICOFR Testing Plan & Cycle', href: '/icofr/testing-plan', icon: Calendar, badge: 'PLAN' },
-      { name: 'ICOFR Smart Testing Strategy', href: '/icofr/smart-testing', icon: Sparkles, badge: 'SMART' },
-      { name: 'ICOFR Sampling & Evidence', href: '/icofr/sampling-evidence', icon: FileSpreadsheet, badge: 'SAMPLE' },
-      { name: 'ICOFR Workpaper Review', href: '/icofr/workpaper-review', icon: ClipboardCheck, badge: 'QA' },
+      { name: 'Ruang Kerja RCSA & CSA', href: '/rcsa', icon: ClipboardCheck },
+      { name: 'Pusat Program ICOFR', href: '/icofr', icon: FileCheck },
+      { name: 'Ruang Lingkup & Materialitas ICOFR', href: '/icofr/scoping', icon: Target, badge: 'OM · PM' },
+      { name: 'Akun, Pengungkapan & Asersi', href: '/icofr/accounts', icon: FileSpreadsheet },
+      { name: 'Matriks Ketertelusuran ICOFR', href: '/icofr/traceability', icon: Link2, badge: 'E2E' },
+      { name: 'Cakupan & Analisis Gap ICOFR', href: '/icofr/coverage', icon: BarChart3, badge: 'GAP' },
+      { name: 'Kontrol Tingkat Entitas (ELC)', href: '/icofr/elc', icon: Shield },
+      { name: 'Kontrol Tingkat Proses (PLC)', href: '/icofr/plc', icon: ClipboardCheck },
+      { name: 'Kontrol Umum TI (ITGC)', href: '/icofr/itgc', icon: Cpu },
+      { name: 'Kontrol Aplikasi TI (ITAC)', href: '/icofr/itac', icon: Workflow },
+      { name: 'Register IPE & EUC', href: '/icofr/information', icon: FileSpreadsheet },
+      { name: 'Rencana & Siklus Pengujian ICOFR', href: '/icofr/testing-plan', icon: Calendar, badge: 'PLAN' },
+      { name: 'Strategi Pengujian Cerdas ICOFR', href: '/icofr/smart-testing', icon: Sparkles, badge: 'SMART' },
+      { name: 'Sampling & Bukti ICOFR', href: '/icofr/sampling-evidence', icon: FileSpreadsheet, badge: 'SAMPLE' },
+      { name: 'Tinjauan Kertas Kerja ICOFR', href: '/icofr/workpaper-review', icon: ClipboardCheck, badge: 'QA' },
       { name: 'Walkthrough & ToD', href: '/tod', icon: Workflow },
-      { name: 'ToE Testing & Samples', href: '/toe', icon: Cpu },
-      { name: 'ICOFR Deficiency Evaluation', href: '/icofr/deficiencies', icon: AlertTriangle },
-      { name: 'Remediation & MAP', href: '/remediation', icon: BadgeCheck }
+      { name: 'Pengujian ToE & Sampel', href: '/toe', icon: Cpu },
+      { name: 'Evaluasi Defisiensi ICOFR', href: '/icofr/deficiencies', icon: AlertTriangle },
+      { name: 'Remediasi & MAP', href: '/remediation', icon: BadgeCheck }
     ]
   },
   {
-    title: 'MONITOR',
-    subtitle: 'Monitor & respond',
+    title: 'PANTAU',
+    subtitle: 'Pantau & tindak lanjuti',
     items: [
-      { name: 'Control Health Cockpit', href: '/health', icon: Activity },
-      { name: 'Continuous Monitoring (CCM)', href: '/ccm', icon: Cpu },
-      { name: 'ICOFR Certification & Close', href: '/certification', icon: BadgeCheck, badge: 'SIGN' },
-      { name: 'ICOFR Executive Reporting', href: '/icofr/reporting', icon: BarChart3, badge: 'BOARD' },
-      { name: 'ICOFR Period Close & Archive', href: '/icofr/period-close', icon: FileCheck, badge: 'LOCK' },
+      { name: 'Dasbor Kesehatan Kontrol', href: '/health', icon: Activity },
+      { name: 'Pemantauan Berkelanjutan (CCM)', href: '/ccm', icon: Cpu },
+      { name: 'Sertifikasi & Penutupan ICOFR', href: '/certification', icon: BadgeCheck, badge: 'SIGN' },
+      { name: 'Pelaporan Eksekutif ICOFR', href: '/icofr/reporting', icon: BarChart3, badge: 'BOARD' },
+      { name: 'Penutupan Periode & Arsip ICOFR', href: '/icofr/period-close', icon: FileCheck, badge: 'LOCK' },
       { name: 'ICOFR Roll-Forward', href: '/icofr/roll-forward', icon: Calendar, badge: 'NEW FY' },
-      { name: 'Assurance Calendar', href: '/calendar', icon: Calendar },
-      { name: 'Task Center & Escalation', href: '/tasks', icon: CheckSquare },
-      { name: 'Analytics', href: '/reports', icon: BarChart3 }
+      { name: 'Kalender Assurance', href: '/calendar', icon: Calendar },
+      { name: 'Pusat Tugas & Eskalasi', href: '/tasks', icon: CheckSquare },
+      { name: 'Analitik', href: '/reports', icon: BarChart3 }
     ]
   }
 ];
 
 const mobileCandidates = [
-  { label: 'Home', href: '/', icon: Activity },
-  { label: 'Process', href: '/processes', icon: Layers },
-  { label: 'Controls', href: '/controls', icon: Shield },
+  { label: 'Beranda', href: '/', icon: Activity },
+  { label: 'Proses', href: '/processes', icon: Layers },
+  { label: 'Kontrol', href: '/controls', icon: Shield },
   { label: 'ToE', href: '/toe', icon: Cpu },
-  { label: 'Tasks', href: '/tasks', icon: CheckSquare },
-  { label: 'Reports', href: '/reports', icon: BarChart3 }
+  { label: 'Tugas', href: '/tasks', icon: CheckSquare },
+  { label: 'Laporan', href: '/reports', icon: BarChart3 }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -247,7 +247,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ institutionId })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Institution could not be changed.');
+      if (!response.ok) throw new Error(payload.error || 'Institusi tidak dapat diganti.');
 
       setInstitutionMenuOpen(false);
       window.location.assign(pathname || '/');
@@ -354,7 +354,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:h-11 sm:w-11 sm:rounded-xl lg:hidden"
-              aria-label="Open navigation"
+              aria-label="Buka navigasi"
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -365,7 +365,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onMouseEnter={() => prefetchRoute('/')}
               onFocus={() => prefetchRoute('/')}
               className="flex min-w-0 items-center"
-              aria-label="Total ARC home"
+              aria-label="Beranda Total ARC"
             >
               <img
                 src="/brand/total-arc-logo.svg"
@@ -383,8 +383,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onClick={() => canSwitchInstitution && setInstitutionMenuOpen(current => !current)}
                   disabled={institutionSwitching || !canSwitchInstitution}
                   className="flex h-10 max-w-[116px] min-w-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60 sm:min-h-10 sm:max-w-[220px] sm:gap-2 sm:px-3 sm:py-2"
-                  aria-label="Select active institution"
-                  title="Select active institution"
+                  aria-label="Pilih institusi aktif"
+                  title="Pilih institusi aktif"
                 >
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 sm:h-auto sm:w-auto sm:bg-transparent">
                     <Building2 className="h-3.5 w-3.5 shrink-0 text-brand-600 sm:h-4 sm:w-4" />
@@ -396,7 +396,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="truncate text-[9px] font-black leading-tight text-slate-800 sm:text-[11px]">
                       {institutionOptions.find(item => item.id === currentUser.institutionId)?.name ||
                         currentUser.institutionName ||
-                        'Select institution'}
+                        'Pilih institusi'}
                     </div>
                   </div>
                   <ChevronDown className="h-3 w-3 shrink-0 text-slate-400 sm:h-3.5 sm:w-3.5" />
@@ -405,7 +405,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {institutionMenuOpen && (
                   <div className="absolute right-0 z-50 mt-2 w-[290px] max-w-[calc(100vw-20px)] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10 sm:w-[320px] sm:max-w-[calc(100vw-24px)]">
                     <div className="px-2.5 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
-                      Active institution
+                      Institusi aktif
                     </div>
                     <div className="space-y-1">
                       {institutionOptions.map(item => {
@@ -444,7 +444,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => setAiDrawerOpen(true)}
               className="inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 p-0 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:min-h-10 sm:w-auto sm:rounded-2xl sm:px-3.5 sm:py-2.5 sm:text-[11px]"
-              aria-label="Open ARC AI"
+              aria-label="Buka ARC AI"
               title="ARC AI"
             >
               <Sparkles className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
@@ -455,7 +455,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 onClick={() => setAccountMenuOpen(current => !current)}
                 className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50"
-                aria-label="Open user account menu"
+                aria-label="Buka menu akun pengguna"
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-xs font-black text-brand-700 ring-1 ring-brand-100">
                   {initial}
@@ -486,8 +486,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                   <div className="mt-3 space-y-2 px-1 text-[10px] text-slate-500">
                     <div>
-                      <span className="font-bold text-slate-700">Institution:</span>{' '}
-                      {currentUser.institutionName || 'Not assigned'}
+                      <span className="font-bold text-slate-700">Institusi:</span>{' '}
+                      {currentUser.institutionName || 'Belum ditetapkan'}
                     </div>
                     {currentUser.department && (
                       <div>
@@ -506,7 +506,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-50"
                     >
                       <UserRound className="h-4 w-4" />
-                      My profile
+                      Profil Saya
                     </Link>
                     {currentUser.role === 'Admin' && (
                       <Link
@@ -515,7 +515,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-50"
                       >
                         <LockKeyhole className="h-4 w-4" />
-                        Security administration
+                        Administrasi Keamanan
                       </Link>
                     )}
                   </div>
@@ -526,7 +526,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-100"
                   >
                     <LogOut className="h-4 w-4" />
-                    Sign out
+                    Keluar
                   </button>
                 </div>
               )}
@@ -544,8 +544,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={toggleSidebar}
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+            aria-label={sidebarCollapsed ? 'Perluas sidebar' : 'Ciutkan sidebar'}
+            title={sidebarCollapsed ? 'Tampilkan menu' : 'Sembunyikan menu'}
             className="group/toggle absolute -right-4 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-500 shadow-[0_10px_30px_-10px_rgba(15,23,42,0.45)] ring-4 ring-slate-50/90 backdrop-blur transition-all duration-200 hover:scale-105 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_12px_32px_-10px_rgba(2,132,199,0.45)] focus:outline-none focus:ring-4 focus:ring-brand-100"
           >
             {sidebarCollapsed ? (
@@ -559,7 +559,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 sidebarCollapsed ? 'left-[46px]' : 'right-[46px]'
               }`}
             >
-              {sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+              {sidebarCollapsed ? 'Tampilkan menu' : 'Sembunyikan menu'}
             </span>
           </button>
 
@@ -588,7 +588,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 onClick={() => setMobileMenuOpen(false)}
                 className="rounded-xl p-2 text-slate-500 hover:bg-white"
-                aria-label="Close navigation"
+                aria-label="Tutup navigasi"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -603,7 +603,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="min-w-0">
                   <div className="truncate text-xs font-black text-slate-900">{currentUser.name}</div>
                   <div className="truncate text-[10px] text-slate-400">
-                    {currentUser.roleTitle} · {currentUser.institutionName || 'Institution'}
+                    {currentUser.roleTitle} · {currentUser.institutionName || 'Institusi'}
                   </div>
                 </div>
               </div>
@@ -615,7 +615,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:bg-slate-50"
                 >
                   <UserRound className="h-4 w-4" />
-                  My profile
+                  Profil Saya
                 </Link>
                 <button
                   type="button"
@@ -623,7 +623,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100"
                 >
                   <LogOut className="h-4 w-4" />
-                  Sign out
+                  Keluar
                 </button>
               </div>
             </div>
@@ -652,7 +652,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="flex min-h-[54px] min-w-[58px] flex-col items-center justify-center rounded-2xl px-2 py-1.5 text-[10px] font-bold text-slate-500"
         >
           <Menu className="h-5 w-5" />
-          <span className="mt-0.5">More</span>
+          <span className="mt-0.5">Lainnya</span>
         </button>
       </nav>
 
