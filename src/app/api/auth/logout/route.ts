@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { recordLogout } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
+import { ACTIVE_INSTITUTION_COOKIE_NAME } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,15 @@ export async function POST(request: Request) {
   const response = NextResponse.json({ success: true });
   response.cookies.set({
     name: AUTH_COOKIE_NAME,
+    value: '',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0
+  });
+  response.cookies.set({
+    name: ACTIVE_INSTITUTION_COOKIE_NAME,
     value: '',
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
