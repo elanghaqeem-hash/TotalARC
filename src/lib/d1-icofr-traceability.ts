@@ -531,9 +531,12 @@ export async function saveDesignAssessment(input: Record<string, unknown>) {
   return record;
 }
 
-export async function listDesignAssessments() {
+export async function listDesignAssessments(institutionId?: string | null) {
   const db = await ensureIcofrTraceabilitySchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) return [];
 
   const rows = await all<Record<string, unknown>>(
