@@ -1,0 +1,424 @@
+{
+  "batch": "BANK_NTT_SOURCE_IMPORT_20260924",
+  "sources": {
+    "annualReport": {
+      "ref": "UPLOAD:LK NTT 25.pdf#Laporan Tahunan 2025",
+      "name": "LK NTT 25.pdf",
+      "sha256": "26fd5cc17cf44b282aa5b1efc4d3d65b5fcc461aef40836e89b5c2110109c0d5",
+      "asOfDate": "2025-12-31"
+    },
+    "businessProcess": {
+      "ref": "UPLOAD:BP LAPORAN KEUANGAN AKUNTANSI (akhir bulan).xlsx#Sheet1",
+      "name": "BP LAPORAN KEUANGAN AKUNTANSI (akhir bulan).xlsx",
+      "sha256": "06293d5205731f04304ea5aeeb57a906cc5746e60cbdafd34ed5b73acea88074"
+    }
+  },
+  "institution": {
+    "name": "Bank NTT",
+    "legalName": "PT. Bank Pembangunan Daerah Nusa Tenggara Timur",
+    "shortName": "Bank NTT",
+    "institutionType": "Financial Institution",
+    "country": "Indonesia",
+    "provinceState": "Nusa Tenggara Timur",
+    "city": "Kupang",
+    "registeredAddress": "Jl. W. J. Lalamentik No. 102, Kupang 85111",
+    "operationalAddress": "Jl. W. J. Lalamentik No. 102, Kupang 85111",
+    "website": "www.bpdntt.co.id",
+    "generalEmail": "bankntt@bpdntt.co.id",
+    "telephone": "0380-840555",
+    "yearEstablished": 1962,
+    "registrationNumber": "24.13.1.65.00382",
+    "taxId": "01.126.733.3-922.0.00",
+    "employeeCount": "2005",
+    "businessModel": "B2C",
+    "operatingModel": "Regional Banking"
+  },
+  "legalEntity": {
+    "code": "BANK-NTT"
+  },
+  "organizationUnits": [
+    {
+      "code": "NTT-GOV-RUPS",
+      "name": "Rapat Umum Pemegang Saham (RUPS)",
+      "type": "Governance Body",
+      "parentCode": null,
+      "headName": null
+    },
+    {
+      "code": "NTT-GOV-DEKOM",
+      "name": "Dewan Komisaris",
+      "type": "Board",
+      "parentCode": "NTT-GOV-RUPS",
+      "headName": "S. Donny H. Heatubun, S.E., M.B.M"
+    },
+    {
+      "code": "NTT-GOV-KOM-RISK",
+      "name": "Komite Pemantau Risiko",
+      "type": "Committee",
+      "parentCode": "NTT-GOV-DEKOM",
+      "headName": null
+    },
+    {
+      "code": "NTT-GOV-KOM-REMNOM",
+      "name": "Komite Remunerasi & Nominasi",
+      "type": "Committee",
+      "parentCode": "NTT-GOV-DEKOM",
+      "headName": null
+    },
+    {
+      "code": "NTT-GOV-KOM-AUD",
+      "name": "Komite Audit",
+      "type": "Committee",
+      "parentCode": "NTT-GOV-DEKOM",
+      "headName": null
+    },
+    {
+      "code": "NTT-EXEC-DIREKSI",
+      "name": "Direksi",
+      "type": "Board",
+      "parentCode": "NTT-GOV-RUPS",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIR-UTAMA",
+      "name": "Direktur Utama",
+      "type": "Directorate",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": "Charlie Paulus"
+    },
+    {
+      "code": "NTT-DIR-UMUM-SDM",
+      "name": "Direktur Umum & SDM",
+      "type": "Directorate",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": "Rahmat Saleh"
+    },
+    {
+      "code": "NTT-DIR-KEPATUHAN",
+      "name": "Direktur Kepatuhan",
+      "type": "Directorate",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": "Christofel S.M. Adoe"
+    },
+    {
+      "code": "NTT-DIR-KEU-TREASURY",
+      "name": "Direktur Keuangan & Treasury",
+      "type": "Directorate",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": "Heru Helbianto"
+    },
+    {
+      "code": "NTT-DIR-KREDIT",
+      "name": "Direktur Kredit",
+      "type": "Directorate",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": "Aloysius R.A. Geong"
+    },
+    {
+      "code": "NTT-DIV-CORSEC-LEGAL",
+      "name": "Divisi Corporate Secretary & Legal",
+      "type": "Division",
+      "parentCode": "NTT-DIR-UTAMA",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-PENGAWASAN-SKAI",
+      "name": "Divisi Pengawasan & SKAI",
+      "type": "Division",
+      "parentCode": "NTT-DIR-UTAMA",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-RISET-PENGEMBANGAN",
+      "name": "Divisi Riset & Pengembangan",
+      "type": "Division",
+      "parentCode": "NTT-DIR-UTAMA",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-SDM",
+      "name": "Divisi Sumber Daya Manusia",
+      "type": "Division",
+      "parentCode": "NTT-DIR-UMUM-SDM",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-UMUM",
+      "name": "Divisi Umum",
+      "type": "Division",
+      "parentCode": "NTT-DIR-UMUM-SDM",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-OPERASIONAL",
+      "name": "Divisi Operasional",
+      "type": "Division",
+      "parentCode": "NTT-DIR-UMUM-SDM",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-TI",
+      "name": "Divisi Teknologi Informasi",
+      "type": "Division",
+      "parentCode": "NTT-DIR-UMUM-SDM",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-KEPATUHAN",
+      "name": "Divisi Kepatuhan",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KEPATUHAN",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-MR",
+      "name": "Divisi Manajemen Risiko",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KEPATUHAN",
+      "headName": null
+    },
+    {
+      "code": "NTT-SUBDIV-SPPK",
+      "name": "Sub Divisi Sistem Prosedur & Pelaporan Kepatuhan",
+      "type": "Sub Division",
+      "parentCode": "NTT-DIV-KEPATUHAN",
+      "headName": null
+    },
+    {
+      "code": "NTT-FUNC-ICOFR",
+      "name": "Unit Kerja Khusus ICoFR",
+      "type": "Function",
+      "parentCode": "NTT-SUBDIV-SPPK",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-TREASURY-FI",
+      "name": "Divisi Treasury & Financial Institution",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KEU-TREASURY",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-DANA-JASA",
+      "name": "Divisi Dana & Jasa",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KEU-TREASURY",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-KREDIT-MKK",
+      "name": "Divisi Kredit Mikro, Kecil & Konsumer",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KREDIT",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-KREDIT-KEU-KOM",
+      "name": "Divisi Kredit Keuangan & Komersil",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KREDIT",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-SUPPORT-KREDIT",
+      "name": "Divisi Supporting Kredit",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KREDIT",
+      "headName": null
+    },
+    {
+      "code": "NTT-DIV-PENYELAMATAN-KREDIT",
+      "name": "Divisi Penyelamatan & Penyelesaian Kredit",
+      "type": "Division",
+      "parentCode": "NTT-DIR-KREDIT",
+      "headName": null
+    },
+    {
+      "code": "NTT-STAFF-DIREKSI",
+      "name": "Staf Direksi",
+      "type": "Function",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": null
+    },
+    {
+      "code": "NTT-KOM-IT",
+      "name": "Komite IT",
+      "type": "Committee",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": null
+    },
+    {
+      "code": "NTT-KOM-MR",
+      "name": "Komite Manajemen Risiko",
+      "type": "Committee",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": null
+    },
+    {
+      "code": "NTT-KOM-ALCO",
+      "name": "Komite ALCO",
+      "type": "Committee",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": null
+    },
+    {
+      "code": "NTT-KOM-KREDIT",
+      "name": "Komite Kredit",
+      "type": "Committee",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": null
+    },
+    {
+      "code": "NTT-KOM-SDM",
+      "name": "Komite SDM",
+      "type": "Committee",
+      "parentCode": "NTT-EXEC-DIREKSI",
+      "headName": null
+    }
+  ],
+  "branches": [
+    "Cabang Utama Kupang",
+    "Cabang Khusus",
+    "Cabang Maumere",
+    "Cabang Atambua",
+    "Cabang Ende",
+    "Cabang Waingapu",
+    "Cabang Ruteng",
+    "Cabang Kefamenanu",
+    "Cabang SoE",
+    "Cabang Waikabubak",
+    "Cabang Lewoleba",
+    "Cabang Larantuka",
+    "Cabang Bajawa",
+    "Cabang Kalabahi",
+    "Cabang Rote Ndao",
+    "Cabang Labuan Bajo",
+    "Cabang Betun",
+    "Cabang Waitabula",
+    "Cabang Mbay",
+    "Cabang Borong",
+    "Cabang Sabu",
+    "Cabang Waibakul",
+    "Cabang Oelamasi"
+  ],
+  "annualReportSnapshot": {
+    "identity": {
+      "business": "Perbankan",
+      "status": "Bank Umum (Tertutup)",
+      "callCenter": "14013",
+      "whatsApp": "08113814013",
+      "swift": "PDNTIDJA",
+      "dateEstablished": "1962-07-17",
+      "authorizedCapitalIdr": 7000000000000,
+      "paidInCapitalIdr": 2209536800000
+    },
+    "network": {
+      "headOffice": 1,
+      "mainBranch": 1,
+      "specialBranch": 1,
+      "branchesTotal": 23,
+      "subBranches": 46,
+      "functionalOffices": 117,
+      "paymentPoints": 28,
+      "mobileCashUnits": 8,
+      "atmCrm": 248,
+      "edcMerchants": 948
+    },
+    "financialHighlightsRpMillion": {
+      "totalAssets": 20092885,
+      "productiveAssets": 19298268,
+      "grossLoans": 13945702,
+      "creditCKPN": 466950,
+      "thirdPartyFunds": 15929812,
+      "totalEquity": 2811274,
+      "paidUpCapital": 2209537,
+      "netProfitAfterTax": 92618,
+      "interestIncome": 1678299,
+      "interestExpense": 597016,
+      "netInterestIncome": 1081283,
+      "operatingProfit": 183608,
+      "profitBeforeTax": 171831,
+      "incomeTax": 79213
+    },
+    "ratiosPercent": {
+      "KPMM": 26.81,
+      "NPLGross": 3.32,
+      "NPLNet": 0.74,
+      "ROA": 0.97,
+      "ROE": 3.88,
+      "NIM": 6.36,
+      "BOPO": 89.92,
+      "CASA": 41.75,
+      "LDR": 87.54,
+      "currentRatio": 112.95,
+      "LCR": 264.61,
+      "NSFR": 106.89,
+      "liabilitiesToAssets": 86.31,
+      "liabilitiesToEquity": 614.73,
+      "netOpenPosition": 0.73
+    },
+    "icofr": {
+      "regulatoryReference": "POJK No. 15 Tahun 2024",
+      "internalPolicy": "Surat Keputusan Direksi Nomor 172 Tahun 2025",
+      "coordinator": "Unit Kerja Khusus ICoFR di bawah Divisi Kepatuhan - Sub Divisi Sistem Prosedur & Pelaporan Kepatuhan"
+    }
+  },
+  "businessProcessSnapshot": {
+    "title": "ALUR PROSES BISNIS LAPORAN KEUANGAN CBS",
+    "lanes": [
+      "KANTOR PUSAT & KANTOR CABANG",
+      "DIVISI OPERASIONAL / KANTOR CABANG",
+      "DIVISI OPERASIONAL"
+    ],
+    "steps": [
+      "Nota/Warkat Transaksi Kantor Pusat/Cabang",
+      "Nota Transaksi diperiksa Teller OB/Kas",
+      "Nota transaksi diinput ke Core Banking Sistem (CBS) T24",
+      "Input transaksi pada CBS T24 dicocokan dengan Nota untuk diotorisasi oleh Pejabat Berwenang",
+      "Transaksi Kantor Pusat masuk Laporan Post Close H+1",
+      "H+1 Download Laporan Keuangan T24: Balance Sheet; Laba Rugi",
+      "Melakukan Pengecekan Saldo abnormal",
+      "Menghubungi Divisi Kantor Pusat dan Cabang terkait untuk memperbaiki saldo abnormal",
+      "Arsip"
+    ],
+    "riskGroups": {
+      "R1": [
+        "Kesalahan Input Data Transaksi (Human Error)",
+        "Risiko Duplikasi Transaksi",
+        "Risiko Fraud",
+        "Risiko Dokumen tidak Valid",
+        "Risiko Sistem"
+      ],
+      "R2": [
+        "Risiko salah Otorisasi (Human Error)",
+        "Risiko Fraud Kolusi Teller dan Officer",
+        "Risiko Otorisasi Transaksi Duplikat",
+        "Risiko Penyalahgunaan User ID Officer"
+      ],
+      "R3": [
+        "Risiko Salah Mengidentifikasi Saldo Abnormal",
+        "Risiko Salah Analisis Penyebab Selisih",
+        "Risiko Jurnal Koreksi Tidak Tepat"
+      ]
+    },
+    "controlGroups": {
+      "C1": [
+        "Verifikasi Petugas",
+        "Penerapan Maker-Checker dan Otorisasi Supervisor",
+        "Verifikasi Kelengkapan Dokumen Sebelum Input"
+      ],
+      "C2": [
+        "Officer wajib cek 3 hal sebelum approve nominal transaksi, nomor rekening, jenis transaksi",
+        "Bandingkan data di CBS dengan dokumen fisik",
+        "Rotation job teller/officer",
+        "audit",
+        "Sistem duplicate alert"
+      ],
+      "C3": [
+        "Rekonsiliasi Akun Berisiko Tinggi",
+        "Verifikasi dengan Unit Operasional"
+      ]
+    },
+    "validationStatus": "PENDING_USER_VALIDATION_FOR_ATTRIBUTES_NOT_PRESENT_IN_SOURCE"
+  }
+}
