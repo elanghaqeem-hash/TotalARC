@@ -5,8 +5,8 @@ import { AppShell } from '@/components/layout/AppShell';
 import { IndonesianUiLocalizer } from '@/components/common/IndonesianUiLocalizer';
 
 export const metadata: Metadata = {
-  title: 'TOTAL ARC — Platform Terpadu Assurance, Risiko & Kontrol',
-  description: 'Platform terintegrasi untuk proses bisnis, risiko, pengendalian internal, ICOFR, kepatuhan, audit, dan assurance.',
+  title: 'TOTAL ARC — Platform Terpadu Penjaminan, Risiko & Kontrol',
+  description: 'Platform terintegrasi untuk proses bisnis, risiko, pengendalian internal, ICOFR, kepatuhan, audit, dan penjaminan.',
 };
 
 export default function RootLayout({
