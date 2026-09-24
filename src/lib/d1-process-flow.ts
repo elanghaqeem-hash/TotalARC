@@ -491,6 +491,7 @@ export async function saveGeneratedProcessFlow(input: {
   aiModel: string;
   aiRequestId: string;
   generatedBy: string;
+  sourceType?: string;
 }) {
   const db = await ensureProcessFlowSchema();
   const source = await getProcessFlowSource(input.processId, input.institutionId);
@@ -514,7 +515,7 @@ export async function saveGeneratedProcessFlow(input: {
       id, institutionId, processId, versionNo, title, summary, diagramJson, svgText,
       sourceHash, sourceType, status, isActive, aiProvider, aiModel, aiRequestId,
       generatedBy, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AI_GENERATED', 'ACTIVE', 0, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.institutionId,
@@ -525,6 +526,7 @@ export async function saveGeneratedProcessFlow(input: {
       JSON.stringify(input.definition),
       svgText,
       input.sourceHash,
+      input.sourceType || 'AI_GENERATED',
       input.aiProvider,
       input.aiModel,
       input.aiRequestId,
