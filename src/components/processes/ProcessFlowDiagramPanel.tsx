@@ -49,7 +49,7 @@ type Workspace = {
   activityCount: number;
   currentSourceHash: string;
   reusable?: boolean;
-  aiRequiredToLihat?: boolean;
+  aiRequiredToView?: boolean;
   generatedWithFallback?: boolean;
   notice?: string;
 };
