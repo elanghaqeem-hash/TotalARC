@@ -29,6 +29,8 @@ const rcsa = 'src/lib/d1-rcsa.ts';
 requireText(rcsa, 'function assertTenant(', 'RCSA contains cross-tenant record guard');
 requireText(rcsa, 'TENANT_RECORD_NOT_FOUND', 'RCSA rejects records outside active institution');
 requireText(rcsa, 'AND institutionId = ?', 'RCSA master updates are institution constrained');
+requireText(rcsa, 'JOIN ControlMaster c ON c.id = m.controlId', 'RCSA risk-control mappings are tenant-joined');
+requireText(rcsa, 'WHERE institutionId = ? AND sourceType = ? AND sourceId = ?', 'RCSA tasks are tenant-scoped');
 
 const assurance = 'src/lib/d1-assurance.ts';
 requireText(assurance, 'export async function listToeTests(institutionId?: string | null)', 'ToE reads accept explicit institution');
@@ -36,6 +38,20 @@ requireText(assurance, 'export async function listRemediationData(institutionId?
 requireText(assurance, 'export async function listMonitoringRules(institutionId?: string | null)', 'CCM reads accept explicit institution');
 requireText(assurance, 'export async function saveAssuranceCalendarEvent(', 'Calendar writer present');
 requireText(assurance, 'institutionId?: string | null', 'Assurance writers/readers support explicit institution');
+requireText(assurance, 'function assertAssuranceTenant(', 'ToE/remediation/CCM mutations enforce tenant ownership');
+requireText(assurance, 'TENANT_RECORD_NOT_FOUND', 'Assurance mutations reject cross-tenant records');
+
+const toeRoute = 'src/app/api/assure/toe/route.ts';
+requireText(toeRoute, 'resolveInstitutionAccess(request)', 'ToE API resolves active institution');
+requireText(toeRoute, 'institutionId);', 'ToE mutations propagate active institution');
+
+const remediationRoute = 'src/app/api/assure/remediation/route.ts';
+requireText(remediationRoute, 'resolveInstitutionAccess(request)', 'Remediation API resolves active institution');
+requireText(remediationRoute, 'institutionId);', 'Remediation mutations propagate active institution');
+
+const ccmRoute = 'src/app/api/monitor/ccm/route.ts';
+requireText(ccmRoute, 'resolveInstitutionAccess(request)', 'CCM API resolves active institution');
+requireText(ccmRoute, 'institutionId', 'CCM mutations propagate active institution');
 
 const aiRoute = 'src/app/api/ai/analyze/route.ts';
 requireText(aiRoute, "import { resolveInstitutionAccess } from '@/lib/institution-context';", 'AI analysis resolves institution server-side');
