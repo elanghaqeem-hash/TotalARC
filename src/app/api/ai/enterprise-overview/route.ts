@@ -449,7 +449,7 @@ export async function POST(request: Request) {
           fallbackUsed: result.fallbackUsed,
           durationMs: result.durationMs
         },
-        disclaimer: 'AI Suggested — Human Review Required'
+        disclaimer: 'Usulan AI — Memerlukan Review Manusia'
       });
     } catch (aiError) {
       console.error('Total ARC enterprise overview AI provider failed; using deterministic fallback:', aiError);
@@ -461,13 +461,13 @@ export async function POST(request: Request) {
         metrics,
         analysis: baseline,
         ai: null,
-        disclaimer: 'Data-derived fallback — AI provider unavailable; Human Review Required'
+        disclaimer: 'Fallback berbasis data — penyedia AI tidak tersedia; Memerlukan Review Manusia'
       });
     }
   } catch (error) {
     console.error('Total ARC enterprise overview analysis failed:', error);
     return NextResponse.json(
-      { error: 'Failed to generate Total ARC enterprise analysis.' },
+      { error: 'Gagal menghasilkan analisis perusahaan Total ARC.' },
       { status: 503, headers: { 'Cache-Control': 'no-store' } }
     );
   }
