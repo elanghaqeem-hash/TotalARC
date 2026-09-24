@@ -1,0 +1,45 @@
+name: Promote Bank NTT BPM and RCM drafts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'data/bank-ntt-bpm-rcm-draft-20260924.json'
+      - 'scripts/promote-bank-ntt-bpm-rcm-drafts.py'
+      - 'src/lib/d1-core.ts'
+      - 'src/lib/d1-rcm-draft.ts'
+      - 'src/app/api/processes/route.ts'
+      - 'src/app/api/processes/rcm-drafts/route.ts'
+      - 'src/app/api/rcm/route.ts'
+      - 'src/app/processes/page.tsx'
+      - '.github/workflows/promote-bank-ntt-bpm-rcm-drafts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-promote-bank-ntt-bpm-rcm-drafts
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Validate application and draft source bundle
+        run: |
+          npx tsc --noEmit
+          python -m json.tool data/bank-ntt-bpm-rcm-draft-20260924.json >/dev/null
+          python -m py_compile scripts/promote-bank-ntt-bpm-rcm-drafts.py
+      - name: Promote Bank NTT source-backed BPM and RCM drafts
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/promote-bank-ntt-bpm-rcm-drafts.py data/bank-ntt-bpm-rcm-draft-20260924.json

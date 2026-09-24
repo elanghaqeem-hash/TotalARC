@@ -1,0 +1,221 @@
+{
+  "batch": "BANK_NTT_BPM_RCM_DRAFT_20260924",
+  "institutionLegalName": "PT. Bank Pembangunan Daerah Nusa Tenggara Timur",
+  "source": {
+    "name": "BP LAPORAN KEUANGAN AKUNTANSI (akhir bulan).xlsx",
+    "sha256": "06293d5205731f04304ea5aeeb57a906cc5746e60cbdafd34ed5b73acea88074",
+    "reference": "UPLOAD:BP LAPORAN KEUANGAN AKUNTANSI (akhir bulan).xlsx#Sheet1",
+    "title": "ALUR PROSES BISNIS LAPORAN KEUANGAN CBS",
+    "lanes": [
+      "KANTOR PUSAT & KANTOR CABANG",
+      "DIVISI OPERASIONAL /KANTOR CABANG",
+      "DIVISI OPERASIONAL"
+    ]
+  },
+  "bpm": {
+    "processId": "BNTT-BPM-FINREP-CBS-001",
+    "name": "Laporan Keuangan CBS (Akhir Bulan)",
+    "categoryCode": "CAT-FIN",
+    "orgUnitCode": "NTT-DIV-OPERASIONAL",
+    "ownerName": "Divisi Operasional",
+    "criticality": "Not Assessed",
+    "classification": "Support",
+    "isIcofrRelevant": false,
+    "description": "Draft BPM source-backed dari alur proses bisnis laporan keuangan CBS. Atribut yang tidak dinyatakan eksplisit pada source tetap memerlukan validasi user sebelum digunakan secara operasional.",
+    "processObjective": "Memastikan transaksi Kantor Pusat dan Kantor Cabang diproses, diperiksa, diinput dan diotorisasi pada CBS T24 serta hasil laporan keuangan H+1 ditelaah untuk mendeteksi dan menindaklanjuti saldo abnormal sebelum proses selesai dan diarsipkan.",
+    "activities": [
+      {
+        "activityId": "BNTT-ACT-01",
+        "name": "Nota/Warkat Transaksi Kantor Pusat/Cabang",
+        "performer": "Kantor Pusat & Kantor Cabang",
+        "nature": "Pending User Validation",
+        "frequency": "Pending User Validation",
+        "systemUsed": null,
+        "orderIndex": 1
+      },
+      {
+        "activityId": "BNTT-ACT-02",
+        "name": "Nota Transaksi diperiksa Teller OB/Kas",
+        "performer": "Divisi Operasional / Kantor Cabang",
+        "nature": "Pending User Validation",
+        "frequency": "Pending User Validation",
+        "systemUsed": null,
+        "orderIndex": 2
+      },
+      {
+        "activityId": "BNTT-ACT-03",
+        "name": "Nota transaksi diinput ke Core Banking Sistem (CBS) T24",
+        "performer": "Divisi Operasional / Kantor Cabang",
+        "nature": "IT Dependent Manual - Draft",
+        "frequency": "Pending User Validation",
+        "systemUsed": "CBS T24",
+        "orderIndex": 3
+      },
+      {
+        "activityId": "BNTT-ACT-04",
+        "name": "Input transaksi pada CBS T24 dicocokan dengan Nota untuk diotorisasi oleh Pejabat Berwenang",
+        "performer": "Divisi Operasional / Kantor Cabang",
+        "nature": "IT Dependent Manual - Draft",
+        "frequency": "Pending User Validation",
+        "systemUsed": "CBS T24",
+        "orderIndex": 4
+      },
+      {
+        "activityId": "BNTT-ACT-05",
+        "name": "Transaksi Kantor Pusat masuk Laporan Post Close H+1",
+        "performer": "Divisi Operasional / Kantor Cabang",
+        "nature": "Pending User Validation",
+        "frequency": "H+1 / Pending User Validation",
+        "systemUsed": "CBS T24",
+        "orderIndex": 5
+      },
+      {
+        "activityId": "BNTT-ACT-06",
+        "name": "H+1 Download Laporan Keuangan T24 (Balance Sheet; Laba Rugi) dan Melakukan Pengecekan Saldo abnormal",
+        "performer": "Divisi Operasional",
+        "nature": "IT Dependent Manual - Draft",
+        "frequency": "H+1 / Pending User Validation",
+        "systemUsed": "CBS T24",
+        "orderIndex": 6
+      },
+      {
+        "activityId": "BNTT-ACT-07",
+        "name": "Menghubungi Divisi Kantor Pusat dan Cabang terkait untuk memperbaiki saldo abnormal",
+        "performer": "Divisi Operasional",
+        "nature": "Manual - Draft",
+        "frequency": "As Needed / Pending User Validation",
+        "systemUsed": null,
+        "orderIndex": 7
+      },
+      {
+        "activityId": "BNTT-ACT-08",
+        "name": "Selesai",
+        "performer": "Divisi Operasional",
+        "nature": "Pending User Validation",
+        "frequency": "Pending User Validation",
+        "systemUsed": null,
+        "orderIndex": 8
+      },
+      {
+        "activityId": "BNTT-ACT-09",
+        "name": "Arsip",
+        "performer": "Divisi Operasional",
+        "nature": "Pending User Validation",
+        "frequency": "Pending User Validation",
+        "systemUsed": null,
+        "orderIndex": 9
+      }
+    ],
+    "inferredFields": [
+      "process objective",
+      "process criticality",
+      "process classification",
+      "ICOFR relevance",
+      "activity nature",
+      "activity frequency",
+      "control type/nature/method/frequency/evidence",
+      "risk cause/event/impact/category"
+    ]
+  },
+  "controls": {
+    "C1": {
+      "controlId": "BNTT-C1",
+      "name": "C1 - Kontrol Input Transaksi CBS T24",
+      "activityId": "BNTT-ACT-03",
+      "owner": "Divisi Operasional / Kantor Cabang",
+      "systemDependency": "CBS T24",
+      "items": [
+        "Verifikasi Petugas",
+        "Penerapan Maker-Checker dan Otorisasi Supervisor",
+        "Verifikasi Kelengkapan Dokumen Sebelum Input"
+      ]
+    },
+    "C2": {
+      "controlId": "BNTT-C2",
+      "name": "C2 - Kontrol Otorisasi Transaksi CBS T24",
+      "activityId": "BNTT-ACT-04",
+      "owner": "Divisi Operasional / Kantor Cabang",
+      "systemDependency": "CBS T24",
+      "items": [
+        "Officer wajib cek 3 hal sebelum approve nominal transaksi, nomor rekening, jenis transaksi",
+        "Bandingkan data di CBS dengan dokumen fisik",
+        "Rotation job teller/officer",
+        "audit",
+        "Sistem duplicate alert"
+      ]
+    },
+    "C3": {
+      "controlId": "BNTT-C3",
+      "name": "C3 - Kontrol Review Saldo Abnormal",
+      "activityId": "BNTT-ACT-06",
+      "owner": "Divisi Operasional",
+      "systemDependency": "CBS T24",
+      "items": [
+        "Rekonsiliasi Akun Berisiko Tinggi",
+        "Verifikasi dengan Unit Operasional"
+      ]
+    }
+  },
+  "risks": [
+    {
+      "group": "R1",
+      "seq": "01",
+      "name": "Kesalahan Input Data Transaksi (Human Eror)"
+    },
+    {
+      "group": "R1",
+      "seq": "02",
+      "name": "Risiko Duplikasi Transaksi"
+    },
+    {
+      "group": "R1",
+      "seq": "03",
+      "name": "Risiko Fraud"
+    },
+    {
+      "group": "R1",
+      "seq": "04",
+      "name": "Risiko Dokumen tidak Valid"
+    },
+    {
+      "group": "R1",
+      "seq": "05",
+      "name": "Risiko Sistem"
+    },
+    {
+      "group": "R2",
+      "seq": "01",
+      "name": "Risiko salah Otorisasi (Human Error)"
+    },
+    {
+      "group": "R2",
+      "seq": "02",
+      "name": "Risiko Fraud Kolusi Teller dan Officer"
+    },
+    {
+      "group": "R2",
+      "seq": "03",
+      "name": "Risiko Otorisasi Transaksi Duplikat"
+    },
+    {
+      "group": "R2",
+      "seq": "04",
+      "name": "Risiko Penyalahgunaan User ID Officer"
+    },
+    {
+      "group": "R3",
+      "seq": "01",
+      "name": "Risiko Salah Mengidentifikasi Saldo Abnormal"
+    },
+    {
+      "group": "R3",
+      "seq": "02",
+      "name": "Risiko Salah Analisis Penyebab Selisih"
+    },
+    {
+      "group": "R3",
+      "seq": "03",
+      "name": "Risiko Jurnal Koreksi Tidak Tepat"
+    }
+  ]
+}

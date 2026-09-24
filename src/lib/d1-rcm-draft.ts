@@ -109,8 +109,9 @@ async function writeAudit(
   );
 }
 
-export async function listBpmWithoutRcm() {
+export async function listBpmWithoutRcm(institutionId?: string | null) {
   const db = await getDb();
+  const tenantId = String(institutionId || '').trim();
   const rows = await all<Record<string, unknown>>(
     db,
     `SELECT
@@ -144,13 +145,14 @@ export async function listBpmWithoutRcm() {
         ) AS pendingDraftCount
        FROM BusinessProcess p
        LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
-      WHERE NOT EXISTS (
+      WHERE ${tenantId ? 'p.institutionId = ? AND ' : ''}NOT EXISTS (
         SELECT 1
           FROM ControlRiskMapping m
           JOIN ControlMaster c ON c.id = m.controlId
          WHERE c.processId = p.id
       )
-      ORDER BY p.processId ASC`
+      ORDER BY p.processId ASC`,
+    tenantId ? [tenantId] : []
   );
 
   return rows.map(row => {
@@ -320,6 +322,7 @@ function buildDerivedPair(input: {
 export async function generateBpmDerivedRcmDrafts(input: {
   processIds: string[];
   requestedBy?: string | null;
+  institutionId?: string | null;
 }) {
   const db = await getDb();
   const processIds = Array.from(
@@ -328,6 +331,7 @@ export async function generateBpmDerivedRcmDrafts(input: {
   if (processIds.length === 0) throw new Error('PROCESS_IDS_REQUIRED');
 
   const requestedBy = String(input.requestedBy || 'System').trim() || 'System';
+  const tenantId = String(input.institutionId || '').trim();
   const results: Array<Record<string, unknown>> = [];
 
   for (const processInternalId of processIds) {
@@ -337,8 +341,9 @@ export async function generateBpmDerivedRcmDrafts(input: {
          FROM BusinessProcess p
          LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
         WHERE p.id = ?
+          ${tenantId ? 'AND p.institutionId = ?' : ''}
         LIMIT 1`,
-      [processInternalId]
+      tenantId ? [processInternalId, tenantId] : [processInternalId]
     );
 
     if (!process) {
@@ -495,8 +500,9 @@ export async function generateBpmDerivedRcmDrafts(input: {
   };
 }
 
-export async function listBpmDraftRcmRows() {
+export async function listBpmDraftRcmRows(institutionId?: string | null) {
   const db = await getDb();
+  const tenantId = String(institutionId || '').trim();
   const refs = await all<Record<string, unknown>>(
     db,
     `SELECT *
@@ -504,7 +510,9 @@ export async function listBpmDraftRcmRows() {
       WHERE referenceType = 'BPM_RCM_DRAFT'
         AND sourceStatus = 'DRAFT_PENDING_VALIDATION'
         AND validationRequired = 1
-      ORDER BY sourceReference ASC, referenceCode ASC`
+        ${tenantId ? 'AND institutionId = ?' : ''}
+      ORDER BY sourceReference ASC, referenceCode ASC`,
+    tenantId ? [tenantId] : []
   );
 
   return refs.map(ref => {
@@ -599,6 +607,7 @@ export async function listBpmDraftRcmRows() {
 
 export async function updateBpmDerivedRcmDraft(input: {
   draftReferenceId: string;
+  institutionId?: string | null;
   updates: {
     processObjective?: string | null;
     risk?: Record<string, unknown>;
@@ -608,14 +617,16 @@ export async function updateBpmDerivedRcmDraft(input: {
 }) {
   const db = await getDb();
   const updatedBy = String(input.updatedBy || 'User').trim() || 'User';
+  const tenantId = String(input.institutionId || '').trim();
   const draft = await first<Record<string, unknown>>(
     db,
     `SELECT *
        FROM RCMDraftReference
       WHERE id = ?
         AND referenceType = 'BPM_RCM_DRAFT'
+        ${tenantId ? 'AND institutionId = ?' : ''}
       LIMIT 1`,
-    [input.draftReferenceId]
+    tenantId ? [input.draftReferenceId, tenantId] : [input.draftReferenceId]
   );
 
   if (!draft) throw new Error('DRAFT_NOT_FOUND');
@@ -740,17 +751,20 @@ export async function reviewBpmDerivedRcmDraft(input: {
   draftReferenceId: string;
   decision: DraftDecision;
   reviewedBy?: string | null;
+  institutionId?: string | null;
 }) {
   const db = await getDb();
   const reviewedBy = String(input.reviewedBy || 'User').trim() || 'User';
+  const tenantId = String(input.institutionId || '').trim();
   const draft = await first<Record<string, unknown>>(
     db,
     `SELECT *
        FROM RCMDraftReference
       WHERE id = ?
         AND referenceType = 'BPM_RCM_DRAFT'
+        ${tenantId ? 'AND institutionId = ?' : ''}
       LIMIT 1`,
-    [input.draftReferenceId]
+    tenantId ? [input.draftReferenceId, tenantId] : [input.draftReferenceId]
   );
 
   if (!draft) throw new Error('DRAFT_NOT_FOUND');

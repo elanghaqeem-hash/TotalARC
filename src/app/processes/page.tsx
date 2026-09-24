@@ -56,6 +56,8 @@ export default function ProcessesPage() {
   const [processDetailError, setProcessDetailError] = useState('');
   const [draftApplying, setDraftApplying] = useState(false);
   const [draftApplyError, setDraftApplyError] = useState('');
+  const [sourceDraftReviewBusy, setSourceDraftReviewBusy] = useState(false);
+  const [sourceDraftReviewMessage, setSourceDraftReviewMessage] = useState('');
   const process360Ref = useRef<HTMLDivElement | null>(null);
   const processDetailRequestRef = useRef(0);
 
@@ -301,6 +303,39 @@ export default function ProcessesPage() {
       );
     } finally {
       setDraftApplying(false);
+    }
+  };
+
+  const reviewSourceBackedDraft = async (decision: 'APPROVE' | 'REJECT') => {
+    if (!selectedProcess?.id) return;
+    setSourceDraftReviewBusy(true);
+    setSourceDraftReviewMessage('');
+
+    try {
+      const response = await fetch('/api/processes', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionType: 'REVIEW_SOURCE_DRAFT',
+          id: selectedProcess.id,
+          decision
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to review source-backed BPM draft.');
+
+      setSourceDraftReviewMessage(
+        decision === 'APPROVE'
+          ? 'Draft BPM tervalidasi untuk penggunaan operasional. Draft RCM tetap menunggu validasi terpisah.'
+          : 'Draft BPM ditolak dan tidak digunakan sebagai BPM operasional.'
+      );
+      await loadProcesses(String(selectedProcess.id));
+    } catch (error) {
+      setSourceDraftReviewMessage(
+        error instanceof Error ? error.message : 'Unable to review source-backed BPM draft.'
+      );
+    } finally {
+      setSourceDraftReviewBusy(false);
     }
   };
 
@@ -677,6 +712,68 @@ export default function ProcessesPage() {
                   </div>
                 )}
               </div>
+
+              {selectedProcessTags.sourceBacked &&
+                selectedProcessTags.sourceValidationStatus === 'PENDING_USER_VALIDATION' && (
+                  <div className="space-y-3 rounded-2xl border border-violet-200 bg-violet-50/60 p-4 sm:p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-violet-200 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-violet-800">
+                            Source-backed BPM draft
+                          </span>
+                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-800">
+                            User validation required
+                          </span>
+                        </div>
+                        <h3 className="mt-2 text-sm font-black text-slate-900">
+                          Draft BPM menunggu validasi Process Owner
+                        </h3>
+                        <p className="mt-1 text-[11px] leading-5 text-slate-600">
+                          Isi BPM berasal dari source file dan masih berstatus draft. Gunakan Update untuk memperbaiki
+                          atribut yang belum tersedia pada source. Validate &amp; Use hanya memvalidasi BPM; Draft RCM
+                          tetap diproses dan divalidasi secara terpisah.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={sourceDraftReviewBusy}
+                          onClick={() => openEdit(selectedProcess)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white px-3 py-2 text-[10px] font-bold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Update
+                        </button>
+                        <button
+                          type="button"
+                          disabled={sourceDraftReviewBusy}
+                          onClick={() => reviewSourceBackedDraft('REJECT')}
+                          className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          disabled={sourceDraftReviewBusy}
+                          onClick={() => reviewSourceBackedDraft('APPROVE')}
+                          className="rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {sourceDraftReviewBusy ? 'Processing...' : 'Validate & Use'}
+                        </button>
+                      </div>
+                    </div>
+                    {sourceDraftReviewMessage && (
+                      <div className="rounded-xl border border-violet-100 bg-white p-3 text-[11px] leading-5 text-slate-700">
+                        {sourceDraftReviewMessage}
+                      </div>
+                    )}
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-4 text-amber-800">
+                      <strong>Validation gate:</strong> atribut yang tidak dinyatakan dalam source file tetap harus
+                      dikonfirmasi user. Validasi BPM tidak otomatis memvalidasi risk/control pada Draft RCM.
+                    </div>
+                  </div>
+                )}
 
               {selectedRcmDraft?.status === 'PENDING_USER_VALIDATION' && (
                 <div className="space-y-4 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4 sm:p-5">

@@ -1,14 +1,32 @@
 import { NextResponse } from 'next/server';
-import { createBusinessProcess, deleteBusinessProcess, getBusinessProcessDetail, listBusinessProcesses, listBusinessProcessSummaries, listProcessLookups, updateBusinessProcess } from '@/lib/d1-core';
+import { createBusinessProcess, deleteBusinessProcess, getBusinessProcessDetail, listBusinessProcesses, listBusinessProcessSummaries, listProcessLookups, reviewSourceBackedBusinessProcessDraft, updateBusinessProcess } from '@/lib/d1-core';
+import { getAuthenticatedProfile } from '@/lib/auth';
+import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
 
 export const dynamic = 'force-dynamic';
 
+function tokenFromRequest(request: Request) {
+  const cookie = request.headers.get('cookie') || '';
+  const match = cookie.match(new RegExp('(?:^|;\\s*)' + AUTH_COOKIE_NAME + '=([^;]+)'));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+async function requireProfile(request: Request) {
+  const token = tokenFromRequest(request);
+  if (!token) return null;
+  return getAuthenticatedProfile(token);
+}
+
 export async function GET(request: Request) {
   try {
+    const profile = await requireProfile(request);
+    if (!profile?.institutionId) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+    }
     const url = new URL(request.url);
     const view = url.searchParams.get('view');
     if (view === 'lookup') {
-      const processes = await listProcessLookups();
+      const processes = await listProcessLookups(profile.institutionId);
       return NextResponse.json({
         processes,
         storage: 'cloudflare-d1',
@@ -17,7 +35,7 @@ export async function GET(request: Request) {
     }
 
     if (view === 'list') {
-      const { processes, categories } = await listBusinessProcessSummaries();
+      const { processes, categories } = await listBusinessProcessSummaries(profile.institutionId);
       return NextResponse.json({
         processes,
         categories,
@@ -32,7 +50,7 @@ export async function GET(request: Request) {
       if (!id) {
         return NextResponse.json({ error: 'Process id is required.' }, { status: 400 });
       }
-      const process = await getBusinessProcessDetail(id);
+      const process = await getBusinessProcessDetail(id, profile.institutionId);
       return NextResponse.json({
         process,
         storage: 'cloudflare-d1',
@@ -40,7 +58,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const { processes, categories } = await listBusinessProcesses();
+    const { processes, categories } = await listBusinessProcesses(profile.institutionId);
     return NextResponse.json({
       processes,
       categories,
@@ -58,6 +76,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const profile = await requireProfile(request);
+    if (!profile?.institutionId) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+    }
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const categoryId = typeof body.categoryId === 'string' ? body.categoryId.trim() : '';
@@ -79,7 +101,7 @@ export async function POST(request: Request) {
       ownerName,
       criticality,
       classification
-    });
+    }, profile.institutionId);
 
     return NextResponse.json(process, { status: 201 });
   } catch (error) {
@@ -101,7 +123,31 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const profile = await requireProfile(request);
+    if (!profile?.institutionId) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+    }
     const body = (await request.json()) as Record<string, unknown>;
+    const actionType = typeof body.actionType === 'string' ? body.actionType.trim() : '';
+
+    if (actionType === 'REVIEW_SOURCE_DRAFT') {
+      const processId = typeof body.id === 'string' ? body.id.trim() : '';
+      const decision = body.decision === 'APPROVE' || body.decision === 'REJECT' ? body.decision : null;
+      if (!processId || !decision) {
+        return NextResponse.json(
+          { error: 'Process id and a valid decision (APPROVE or REJECT) are required.' },
+          { status: 400 }
+        );
+      }
+
+      const result = await reviewSourceBackedBusinessProcessDraft({
+        processId,
+        institutionId: profile.institutionId,
+        decision,
+        reviewedBy: profile.name || profile.email
+      });
+      return NextResponse.json(result);
+    }
     const id = typeof body.id === 'string' ? body.id.trim() : '';
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const categoryId = typeof body.categoryId === 'string' ? body.categoryId.trim() : '';
@@ -123,7 +169,7 @@ export async function PATCH(request: Request) {
       ownerName,
       criticality,
       classification
-    });
+    }, profile.institutionId);
 
     return NextResponse.json(process);
   } catch (error) {
@@ -137,6 +183,15 @@ export async function PATCH(request: Request) {
     if (code === 'PROCESS_ID_CONFLICT') {
       return NextResponse.json({ error: 'Process ID already exists for this institution.' }, { status: 409 });
     }
+    if (code === 'SOURCE_BPM_DRAFT_NOT_PENDING') {
+      return NextResponse.json(
+        { error: 'This source-backed BPM is not waiting for validation.' },
+        { status: 409 }
+      );
+    }
+    if (code === 'INVALID_DRAFT_DECISION') {
+      return NextResponse.json({ error: 'Invalid BPM draft validation decision.' }, { status: 400 });
+    }
 
     console.error('Failed to update D1 process:', error);
     return NextResponse.json({ error: 'Failed to update process in persistent database.' }, { status: 500 });
@@ -145,12 +200,16 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const profile = await requireProfile(request);
+    if (!profile?.institutionId) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+    }
     const id = new URL(request.url).searchParams.get('id')?.trim() || '';
     if (!id) {
       return NextResponse.json({ error: 'Process id is required.' }, { status: 400 });
     }
 
-    const deleted = await deleteBusinessProcess(id);
+    const deleted = await deleteBusinessProcess(id, profile.institutionId);
     return NextResponse.json({ deleted: true, process: deleted });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
