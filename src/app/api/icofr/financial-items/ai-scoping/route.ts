@@ -81,12 +81,22 @@ function currencyMatches(a: string | null, b: string) {
   return a.trim().toUpperCase() === b.trim().toUpperCase();
 }
 
+function detectDocumentUnitMultiplier(text: string) {
+  const sample = text.slice(0, 12000).toLowerCase();
+  if (/\b(dalam|in)\s+(triliun|trillion)/i.test(sample)) return 1_000_000_000_000;
+  if (/\b(dalam|in)\s+(miliar|billion)/i.test(sample)) return 1_000_000_000;
+  if (/\b(dalam|in)\s+(jutaan|juta|million)/i.test(sample)) return 1_000_000;
+  if (/\b(dalam|in)\s+(ribuan|ribu|thousand)/i.test(sample)) return 1_000;
+  return null;
+}
+
 function normalizeAiResult(
   parsed: Record<string, unknown>,
   input: {
     pmAmount: number;
     currency: string;
     fileName: string;
+    fallbackUnitMultiplier?: number | null;
   }
 ): FinancialScopingAnalysisResult {
   const rawCandidates = Array.isArray(parsed.candidates)
@@ -97,7 +107,9 @@ function normalizeAiResult(
 
   const documentCurrency =
     nullable(parsed.documentCurrency, 10)?.toUpperCase() || input.currency.toUpperCase();
-  const documentUnitMultiplier = validMultiplier(parsed.documentUnitMultiplier);
+  const documentUnitMultiplier =
+    validMultiplier(parsed.documentUnitMultiplier) ||
+    validMultiplier(input.fallbackUnitMultiplier);
   const usedCodes = new Set<string>();
 
   const candidates: FinancialScopingCandidate[] = rawCandidates.slice(0, 250).map((item, index) => {
@@ -406,7 +418,8 @@ export async function POST(request: Request) {
     const normalized = normalizeAiResult(parsed, {
       pmAmount,
       currency,
-      fileName: file.name
+      fileName: file.name,
+      fallbackUnitMultiplier: detectDocumentUnitMultiplier(extracted.text)
     });
 
     const analysis = await saveFinancialScopingAnalysis({
