@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedProfile } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +33,22 @@ export async function GET(request: Request) {
       return response;
     }
 
+    const institutionContext = await resolveInstitutionAccess(request, profile);
+    const activeInstitution = institutionContext?.institution || null;
+    const user = activeInstitution
+      ? {
+          ...profile,
+          institutionId: activeInstitution.id,
+          institutionName: activeInstitution.name
+        }
+      : profile;
+
     return NextResponse.json(
-      { authenticated: true, user: profile },
+      {
+        authenticated: true,
+        user,
+        canSwitchInstitution: institutionContext?.canSwitch || false
+      },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
