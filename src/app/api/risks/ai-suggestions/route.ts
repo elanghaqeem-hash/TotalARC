@@ -94,6 +94,13 @@ function buildBpmRiskContext(process: Record<string, any>) {
   };
 }
 
+function fingerprintSource(context: ReturnType<typeof buildBpmRiskContext>) {
+  return {
+    process: context.process,
+    activities: context.activities
+  };
+}
+
 function normalizeSuggestions(
   value: unknown,
   activities: Array<Record<string, unknown>>
@@ -178,7 +185,7 @@ export async function GET(request: Request) {
     }
 
     const bpmContext = buildBpmRiskContext(process);
-    const fingerprint = await fingerprintAiRiskContext(bpmContext);
+    const fingerprint = await fingerprintAiRiskContext(fingerprintSource(bpmContext));
     const batches = await listAiRiskSuggestionBatches(String(process.id), context.institution!.id);
 
     return noStore({
@@ -240,7 +247,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const fingerprint = await fingerprintAiRiskContext(bpmContext);
+    const fingerprint = await fingerprintAiRiskContext(fingerprintSource(bpmContext));
 
     const systemPrompt = [
       'You are Total ARC AI creating a draft Risk Register from one registered Business Process.',
@@ -363,7 +370,7 @@ export async function PATCH(request: Request) {
     }
 
     const bpmContext = buildBpmRiskContext(process);
-    const currentFingerprint = await fingerprintAiRiskContext(bpmContext);
+    const currentFingerprint = await fingerprintAiRiskContext(fingerprintSource(bpmContext));
     if (currentFingerprint !== batch.sourceFingerprint) {
       return noStore(
         {
