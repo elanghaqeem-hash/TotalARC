@@ -294,17 +294,17 @@ export async function POST(request: Request, routeContext: RouteContext) {
     });
 
     const systemPrompt = [
-      'You are Total ARC AI assisting a Process Owner to define a business process from an uploaded supporting document.',
-      'Treat the document as evidence, not as unquestionable truth.',
-      'Use only information supported by the document or the supplied current process context.',
-      'Never invent performer names, systems, approval thresholds, frequencies, KPIs, KRIs, SLAs, regulations, or process steps.',
-      'When a field cannot be supported, use null. Put unresolved items in gaps.',
-      'Return the operational sequence in document order when possible.',
-      'A decision node is allowed only for an explicit approval, authorization, validation, condition, or yes/no branch.',
-      'Do not change Process ID. Category is a suggestion only and is not automatically applied.',
-      'ICOFR relevance may be true/false only when reasonably supported; otherwise null.',
-      'Return JSON only with this shape:',
-      '{"master":{"name":string|null,"description":string|null,"ownerName":string|null,"categorySuggestion":string|null,"criticality":"Critical|High|Medium|Low|Not Assessed"|null,"classification":"Core|Finance|Technology|Governance|Support|Management"|null,"isIcofrRelevant":boolean|null},"objective":{"objective":string,"strategicGoal":string|null,"expectedOutcome":string|null,"kpi":string|null,"kri":string|null,"sla":string|null}|null,"sipoc":{"suppliers":string|null,"inputs":string|null,"processSteps":string|null,"outputs":string|null,"customers":string|null}|null,"activities":[{"activityId":string|null,"name":string,"description":string|null,"performer":string|null,"nature":string|null,"frequency":string|null,"inputData":string|null,"outputData":string|null,"systemUsed":string|null,"sla":string|null,"kind":"task|decision","flowNote":string|null}],"sourceSummary":string,"confidence":"High|Medium|Low","assumptions":[string],"gaps":[string]}.'
+      'Anda adalah AI Total ARC yang membantu Pemilik Proses mendefinisikan proses bisnis dari dokumen pendukung yang diunggah.',
+      'Perlakukan dokumen sebagai bukti, bukan sebagai kebenaran yang tidak dapat dipertanyakan.',
+      'Gunakan hanya informasi yang didukung dokumen atau konteks proses saat ini yang diberikan.',
+      'Jangan mengarang nama pelaksana, sistem, ambang persetujuan, frekuensi, KPI, KRI, SLA, regulasi, atau langkah proses.',
+      'Jika suatu field tidak didukung sumber, gunakan null. Masukkan item yang belum terselesaikan ke gaps.',
+      'Kembalikan urutan operasional sesuai urutan dokumen jika memungkinkan.',
+      'Node keputusan hanya boleh digunakan untuk persetujuan, otorisasi, validasi, kondisi, atau cabang ya/tidak yang eksplisit.',
+      'Jangan mengubah ID Proses. Kategori hanya berupa usulan dan tidak diterapkan secara otomatis.',
+      'Relevansi ICOFR hanya boleh true/false jika didukung secara memadai; jika tidak, gunakan null.',
+      'Kembalikan JSON saja dengan struktur berikut:',
+      '{"master":{"name":string|null,"description":string|null,"ownerName":string|null,"categorySuggestion":string|null,"criticality":"Critical|High|Medium|Low|Not Assessed"|null,"classification":"Core|Finance|Technology|Governance|Support|Management"|null,"isIcofrRelevant":boolean|null},"objective":{"objective":string,"strategicGoal":string|null,"expectedOutcome":string|null,"kpi":string|null,"kri":string|null,"sla":string|null}|null,"sipoc":{"suppliers":string|null,"inputs":string|null,"processSteps":string|null,"outputs":string|null,"customers":string|null}|null,"activities":[{"activityId":string|null,"name":string,"description":string|null,"performer":string|null,"nature":string|null,"frequency":string|null,"inputData":string|null,"outputData":string|null,"systemUsed":string|null,"sla":string|null,"kind":"task|decision","flowNote":string|null}],"sourceSummary":string,"confidence":"High|Medium|Low","assumptions":[string],"gaps":[string]} Semua nilai teks yang ditampilkan kepada pengguna wajib menggunakan Bahasa Indonesia; token enum seperti criticality, classification, kind, dan confidence tetap menggunakan nilai yang ditentukan untuk kompatibilitas sistem.'
     ].join(' ');
 
     const result = await runAiGateway({
@@ -312,7 +312,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
       sensitivity: 'confidential',
       systemPrompt,
       prompt:
-        'CURRENT PROCESS CONTEXT\n' +
+        'KONTEKS PROSES SAAT INI\n' +
         JSON.stringify({
           id: process.id,
           processId: process.processId,
@@ -323,7 +323,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
           classification: process.classification,
           isIcofrRelevant: process.isIcofrRelevant
         }) +
-        '\n\nUPLOADED DOCUMENT TEXT\n' +
+        '\n\nTEKS DOKUMEN YANG DIUNGGAH\n' +
         extracted.text,
       temperature: 0.1,
       maxOutputTokens: 5500,
@@ -366,14 +366,14 @@ export async function POST(request: Request, routeContext: RouteContext) {
           truncated: extracted.truncated
         },
         applyRequired: true,
-        message: 'File stored and analyzed. Review the AI draft before applying it to the Business Process.'
+        message: 'File telah disimpan dan dianalisis. Review draf AI sebelum menerapkannya ke Proses Bisnis.'
       },
       { status: 201 }
     );
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const known: Record<string, [string, number]> = {
-      PROCESS_NOT_FOUND: ['Business process was not found in the active institution.', 404],
+      PROCESS_NOT_FOUND: ['Proses bisnis tidak ditemukan pada institusi aktif.', 404],
       FILE_TYPE_NOT_ALLOWED: ['This supporting document type is not allowed by the Evidence Repository.', 415],
       FILE_TOO_LARGE: ['Supporting document exceeds the current 8 MB limit.', 413],
       DOCUMENT_CONVERTER_UNAVAILABLE: ['Document conversion is temporarily unavailable.', 503],
@@ -407,8 +407,8 @@ export async function POST(request: Request, routeContext: RouteContext) {
     return noStore(
       {
         error: storedEvidence
-          ? 'The file was stored safely, but AI analysis could not be completed. You can retry with a clearer supporting document.'
-          : 'Unable to store and analyze the supporting document.',
+          ? 'File telah disimpan dengan aman, tetapi analisis AI belum dapat diselesaikan. Anda dapat mencoba kembali dengan dokumen pendukung yang lebih jelas.'
+          : 'Tidak dapat menyimpan dan menganalisis dokumen pendukung.',
         evidenceStored: Boolean(storedEvidence)
       },
       { status: 503 }
@@ -454,16 +454,16 @@ export async function PATCH(request: Request, routeContext: RouteContext) {
     return noStore({
       result,
       message:
-        'AI document draft validated and applied. Any generated flowchart is now stored for reuse without another AI call.'
+        'Draf dokumen AI telah divalidasi dan diterapkan. Flowchart yang dihasilkan kini tersimpan dan dapat digunakan kembali tanpa pemanggilan AI berikutnya.'
     });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const known: Record<string, [string, number]> = {
-      PROCESS_NOT_FOUND: ['Business process was not found in the active institution.', 404],
-      DOCUMENT_ANALYSIS_NOT_FOUND: ['Supporting-document analysis draft was not found.', 404],
-      DOCUMENT_ANALYSIS_NOT_PENDING: ['This analysis draft is no longer pending user validation.', 409],
-      DOCUMENT_ANALYSIS_ALREADY_APPLIED: ['This analysis draft has already been applied.', 409],
-      DOCUMENT_ANALYSIS_INVALID: ['Saved AI draft is invalid and cannot be applied.', 409],
+      PROCESS_NOT_FOUND: ['Proses bisnis tidak ditemukan pada institusi aktif.', 404],
+      DOCUMENT_ANALYSIS_NOT_FOUND: ['Draf analisis dokumen pendukung tidak ditemukan.', 404],
+      DOCUMENT_ANALYSIS_NOT_PENDING: ['Draf analisis ini tidak lagi menunggu validasi pengguna.', 409],
+      DOCUMENT_ANALYSIS_ALREADY_APPLIED: ['Draf analisis ini sudah diterapkan.', 409],
+      DOCUMENT_ANALYSIS_INVALID: ['Draf AI tersimpan tidak valid dan tidak dapat diterapkan.', 409],
       ACTIVITY_REPLACE_BLOCKED: [
         'Activity replacement is blocked because existing risks or controls reference current Activity Register records. Preserve the current activities or remap those dependencies first.',
         409
@@ -472,6 +472,6 @@ export async function PATCH(request: Request, routeContext: RouteContext) {
     if (known[code]) return noStore({ error: known[code][0] }, { status: known[code][1] });
 
     console.error('Failed to review process supporting-document draft:', error);
-    return noStore({ error: 'Unable to apply the supporting-document AI draft.' }, { status: 500 });
+    return noStore({ error: 'Tidak dapat menerapkan draf AI dari dokumen pendukung.' }, { status: 500 });
   }
 }
