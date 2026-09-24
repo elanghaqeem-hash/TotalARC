@@ -381,11 +381,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur">
-        <div className="mx-auto flex h-[72px] max-w-[1600px] items-center justify-between gap-2.5 px-3 sm:gap-4 sm:px-5 lg:px-6">
-          <div className="flex min-w-0 items-center gap-3">
+        <div className="mx-auto flex h-[64px] max-w-[1600px] items-center justify-between gap-1.5 px-2.5 sm:h-[72px] sm:gap-4 sm:px-5 lg:px-6">
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:h-11 sm:w-11 sm:rounded-xl lg:hidden"
               aria-label="Open navigation"
             >
               <Menu className="h-5 w-5" />
@@ -402,38 +402,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <img
                 src="/brand/total-arc-logo.svg"
                 alt="Total ARC"
-                className="h-[42px] w-auto max-w-[132px] object-contain sm:h-[48px] sm:max-w-[150px] md:max-w-[165px]"
+                className="h-[34px] w-auto max-w-[92px] object-contain sm:h-[48px] sm:max-w-[150px] md:max-w-[165px]"
               />
             </Link>
           </div>
 
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
             {currentUser.role === 'Admin' && institutionOptions.length > 0 && (
-              <div className="relative">
+              <div className="relative min-w-0">
                 <button
                   type="button"
                   onClick={() => setInstitutionMenuOpen(current => !current)}
                   disabled={institutionSwitching}
-                  className="flex min-h-10 max-w-[150px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-left transition hover:bg-slate-50 disabled:opacity-60 sm:max-w-[220px] sm:px-3"
+                  className="flex h-10 max-w-[116px] min-w-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60 sm:min-h-10 sm:max-w-[220px] sm:gap-2 sm:px-3 sm:py-2"
                   aria-label="Select active institution"
                   title="Select active institution"
                 >
-                  <Building2 className="h-4 w-4 shrink-0 text-brand-600" />
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 sm:h-auto sm:w-auto sm:bg-transparent">
+                    <Building2 className="h-3.5 w-3.5 shrink-0 text-brand-600 sm:h-4 sm:w-4" />
+                  </span>
                   <div className="min-w-0">
-                    <div className="truncate text-[9px] font-bold uppercase tracking-wide text-slate-400">
+                    <div className="truncate text-[7px] font-bold uppercase tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-wide">
                       Institution
                     </div>
-                    <div className="truncate text-[10px] font-black text-slate-800 sm:text-[11px]">
+                    <div className="truncate text-[9px] font-black leading-tight text-slate-800 sm:text-[11px]">
                       {institutionOptions.find(item => item.id === activeInstitutionId)?.name ||
                         currentUser.institutionName ||
                         'Select institution'}
                     </div>
                   </div>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <ChevronDown className="h-3 w-3 shrink-0 text-slate-400 sm:h-3.5 sm:w-3.5" />
                 </button>
 
                 {institutionMenuOpen && (
-                  <div className="absolute right-0 z-50 mt-2 w-[320px] max-w-[calc(100vw-24px)] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                  <div className="absolute right-0 z-50 mt-2 w-[290px] max-w-[calc(100vw-20px)] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10 sm:w-[320px] sm:max-w-[calc(100vw-24px)]">
                     <div className="px-2.5 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
                       Active institution
                     </div>
@@ -473,13 +475,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <button
               onClick={() => setAiDrawerOpen(true)}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-2xl bg-gradient-to-r from-brand-600 to-sky-500 px-3 py-2.5 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:px-3.5 sm:text-[11px]"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 p-0 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:min-h-10 sm:w-auto sm:rounded-2xl sm:px-3.5 sm:py-2.5 sm:text-[11px]"
+              aria-label="Open ARC AI"
+              title="ARC AI"
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>ARC AI</span>
+              <Sparkles className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+              <span className="hidden sm:inline">ARC AI</span>
             </button>
 
-            <div className="relative">
+            <div className="relative hidden sm:block">
               <button
                 onClick={() => setAccountMenuOpen(current => !current)}
                 className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50"
@@ -622,6 +626,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             <Nav mobile />
+
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <div className="mb-3 flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-sm font-black text-brand-700 ring-1 ring-brand-100">
+                  {initial}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-black text-slate-900">{currentUser.name}</div>
+                  <div className="truncate text-[10px] text-slate-400">
+                    {currentUser.roleTitle} · {currentUser.institutionName || 'Institution'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Link
+                  href="/profile"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:bg-slate-50"
+                >
+                  <UserRound className="h-4 w-4" />
+                  My profile
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void logout()}
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
