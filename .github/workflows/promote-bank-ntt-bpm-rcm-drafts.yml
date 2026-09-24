@@ -35,6 +35,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Validate application and draft source bundle
         run: |
+          npx prisma generate
           npx tsc --noEmit
           python -m json.tool data/bank-ntt-bpm-rcm-draft-20260924.json >/dev/null
           python -m py_compile scripts/promote-bank-ntt-bpm-rcm-drafts.py
