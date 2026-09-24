@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { getAuthenticatedProfile, type AuthUserProfile } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
 import { listInstitutions, type InstitutionRecord } from '@/lib/d1';
@@ -49,4 +50,34 @@ export async function resolveInstitutionAccess(
     institutions,
     canSwitch: profile.role === 'Admin' && institutions.length > 1
   };
+}
+
+
+export async function resolveServerActiveInstitutionId(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(AUTH_COOKIE_NAME)?.value || '';
+    if (!token) return null;
+
+    const profile = await getAuthenticatedProfile(token);
+    if (!profile) return null;
+
+    const allInstitutions = await listInstitutions();
+    const institutions =
+      profile.role === 'Admin'
+        ? allInstitutions
+        : allInstitutions.filter(item => item.id === profile.institutionId);
+
+    const requestedId = cookieStore.get(ACTIVE_INSTITUTION_COOKIE_NAME)?.value || '';
+    const active =
+      institutions.find(item => item.id === requestedId) ||
+      institutions.find(item => item.id === profile.institutionId) ||
+      institutions[0] ||
+      null;
+
+    return active?.id || null;
+  } catch {
+    // Background jobs and build-time execution may not have a request cookie context.
+    return null;
+  }
 }
