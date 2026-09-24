@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   try {
     const profile = await requireProfile(request);
     if (!profile?.institutionId) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: 409 });
     }
     const url = new URL(request.url);
     const view = url.searchParams.get('view');
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     if (view === 'detail') {
       const id = url.searchParams.get('id')?.trim() || '';
       if (!id) {
-        return NextResponse.json({ error: 'Process id is required.' }, { status: 400 });
+        return NextResponse.json({ error: 'ID proses wajib diisi.' }, { status: 400 });
       }
       const process = await getBusinessProcessDetail(id, profile.institutionId);
       return NextResponse.json({
@@ -65,10 +65,10 @@ export async function GET(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return NextResponse.json({ error: 'Business process was not found.' }, { status: 404 });
+      return NextResponse.json({ error: 'Proses bisnis tidak ditemukan.' }, { status: 404 });
     }
     console.error('Failed to fetch D1 processes:', error);
-    return NextResponse.json({ error: 'Failed to fetch processes from persistent database.' }, { status: 503 });
+    return NextResponse.json({ error: 'Gagal mengambil data proses dari database permanen.' }, { status: 503 });
   }
 }
 
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
   try {
     const profile = await requireProfile(request);
     if (!profile?.institutionId) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: 409 });
     }
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 
     if (!name || !categoryId || !criticality || !classification) {
       return NextResponse.json(
-        { error: 'name, categoryId, criticality, and classification are required.' },
+        { error: 'Nama, kategori, kritikalitas, dan klasifikasi wajib diisi.' },
         { status: 400 }
       );
     }
@@ -105,17 +105,17 @@ export async function POST(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'INSTITUTION_REQUIRED') {
-      return NextResponse.json({ error: 'Register an institution before creating processes.' }, { status: 409 });
+      return NextResponse.json({ error: 'Daftarkan institusi sebelum membuat proses.' }, { status: 409 });
     }
     if (code === 'CATEGORY_NOT_FOUND') {
-      return NextResponse.json({ error: 'Selected process category does not exist.' }, { status: 400 });
+      return NextResponse.json({ error: 'Kategori proses terpilih tidak tersedia.' }, { status: 400 });
     }
     if (code === 'PROCESS_ID_CONFLICT') {
-      return NextResponse.json({ error: 'Process ID already exists for this institution.' }, { status: 409 });
+      return NextResponse.json({ error: 'ID Proses sudah ada pada institusi ini.' }, { status: 409 });
     }
 
     console.error('Failed to create D1 process:', error);
-    return NextResponse.json({ error: 'Failed to create process in persistent database.' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal membuat proses pada database permanen.' }, { status: 500 });
   }
 }
 
@@ -123,7 +123,7 @@ export async function PATCH(request: Request) {
   try {
     const profile = await requireProfile(request);
     if (!profile?.institutionId) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: 409 });
     }
     const body = (await request.json()) as Record<string, unknown>;
     const actionType = typeof body.actionType === 'string' ? body.actionType.trim() : '';
@@ -133,7 +133,7 @@ export async function PATCH(request: Request) {
       const decision = body.decision === 'APPROVE' || body.decision === 'REJECT' ? body.decision : null;
       if (!processId || !decision) {
         return NextResponse.json(
-          { error: 'Process id and a valid decision (APPROVE or REJECT) are required.' },
+          { error: 'ID proses dan keputusan yang valid (APPROVE atau REJECT) wajib diisi.' },
           { status: 400 }
         );
       }
@@ -155,7 +155,7 @@ export async function PATCH(request: Request) {
 
     if (!id || !name || !categoryId || !criticality || !classification) {
       return NextResponse.json(
-        { error: 'id, name, categoryId, criticality, and classification are required.' },
+        { error: 'ID, nama, kategori, kritikalitas, dan klasifikasi wajib diisi.' },
         { status: 400 }
       );
     }
@@ -173,26 +173,26 @@ export async function PATCH(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return NextResponse.json({ error: 'Business process was not found.' }, { status: 404 });
+      return NextResponse.json({ error: 'Proses bisnis tidak ditemukan.' }, { status: 404 });
     }
     if (code === 'CATEGORY_NOT_FOUND') {
-      return NextResponse.json({ error: 'Selected process category does not exist.' }, { status: 400 });
+      return NextResponse.json({ error: 'Kategori proses terpilih tidak tersedia.' }, { status: 400 });
     }
     if (code === 'PROCESS_ID_CONFLICT') {
-      return NextResponse.json({ error: 'Process ID already exists for this institution.' }, { status: 409 });
+      return NextResponse.json({ error: 'ID Proses sudah ada pada institusi ini.' }, { status: 409 });
     }
     if (code === 'SOURCE_BPM_DRAFT_NOT_PENDING') {
       return NextResponse.json(
-        { error: 'This source-backed BPM is not waiting for validation.' },
+        { error: 'BPM berbasis sumber ini tidak sedang menunggu validasi.' },
         { status: 409 }
       );
     }
     if (code === 'INVALID_DRAFT_DECISION') {
-      return NextResponse.json({ error: 'Invalid BPM draft validation decision.' }, { status: 400 });
+      return NextResponse.json({ error: 'Keputusan validasi draf BPM tidak valid.' }, { status: 400 });
     }
 
     console.error('Failed to update D1 process:', error);
-    return NextResponse.json({ error: 'Failed to update process in persistent database.' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal memperbarui proses pada database permanen.' }, { status: 500 });
   }
 }
 
@@ -200,11 +200,11 @@ export async function DELETE(request: Request) {
   try {
     const profile = await requireProfile(request);
     if (!profile?.institutionId) {
-      return NextResponse.json({ error: 'Active institution is required.' }, { status: 409 });
+      return NextResponse.json({ error: 'Institusi aktif wajib tersedia.' }, { status: 409 });
     }
     const id = new URL(request.url).searchParams.get('id')?.trim() || '';
     if (!id) {
-      return NextResponse.json({ error: 'Process id is required.' }, { status: 400 });
+      return NextResponse.json({ error: 'ID proses wajib diisi.' }, { status: 400 });
     }
 
     const deleted = await deleteBusinessProcess(id, profile.institutionId);
@@ -212,7 +212,7 @@ export async function DELETE(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
-      return NextResponse.json({ error: 'Business process was not found.' }, { status: 404 });
+      return NextResponse.json({ error: 'Proses bisnis tidak ditemukan.' }, { status: 404 });
     }
     if (code === 'PROCESS_HAS_DEPENDENCIES') {
       return NextResponse.json(
@@ -225,7 +225,7 @@ export async function DELETE(request: Request) {
     }
 
     console.error('Failed to delete D1 process:', error);
-    return NextResponse.json({ error: 'Failed to delete process from persistent database.' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal menghapus proses dari database permanen.' }, { status: 500 });
   }
 }
 
