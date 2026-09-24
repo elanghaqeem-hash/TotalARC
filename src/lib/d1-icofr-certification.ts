@@ -1361,7 +1361,7 @@ export async function getCertificationData() {
     };
   }
 
-  const organization = await getOrganizationStructure();
+  const organization = await getOrganizationStructure(String(institution.id));
   const [scopes, cycles, subCertifications, attestations, evidencePacks, subjectContext] = await Promise.all([
     all<Record<string, unknown>>(
       db,
