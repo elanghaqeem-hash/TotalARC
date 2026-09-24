@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { getRiskBadgeClasses } from '@/lib/utils';
 import { DataLoadingState } from '@/components/common/DataLoadingState';
+import { AiRiskRegisterGenerator } from '@/components/risks/AiRiskRegisterGenerator';
 
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
@@ -203,10 +204,11 @@ export default function RisksPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">
+          <AiRiskRegisterGenerator processes={processes} onCreated={loadRisks} />
           <button
             onClick={() => setNewRiskModal(true)}
-            className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all"
+            className="inline-flex min-h-10 items-center justify-center space-x-2 rounded-xl bg-slate-900 px-4 text-xs font-bold text-white shadow-sm transition-all hover:bg-slate-800"
           >
             <Plus className="w-4 h-4" />
             <span>Identify New Risk</span>
@@ -298,6 +300,11 @@ export default function RisksPage() {
                         <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                           {r.category}
                         </span>
+                        {r.status === 'Draft' && (
+                          <span className="text-[9px] font-black text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded">
+                            Draft
+                          </span>
+                        )}
                       </div>
                       <h3 className="font-bold text-sm text-slate-900 mt-1.5">
                         {r.name}
@@ -356,6 +363,11 @@ export default function RisksPage() {
                       <span className="text-xs text-slate-500 font-semibold">
                         Category: {selectedRisk.category}
                       </span>
+                      {selectedRisk.status === 'Draft' && (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[9px] font-black text-sky-700">
+                          Draft · Human Validation Required
+                        </span>
+                      )}
                     </div>
                     <Link
                       href="/rcm"
