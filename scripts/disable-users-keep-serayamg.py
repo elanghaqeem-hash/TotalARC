@@ -65,7 +65,6 @@ target_id = str(target["id"])
 before_users = rows("SELECT id,email,emailNormalized,role,active,institutionId FROM AuthUser ORDER BY createdAt ASC")
 
 sql = [
-    "BEGIN TRANSACTION;",
     "UPDATE AuthUser SET active=0, lockedUntil=NULL, updatedAt="+q(now)+" WHERE lower(emailNormalized)<>"+q(KEEP_EMAIL)+";"
 ]
 if table_exists("AuthSession"):
@@ -88,7 +87,6 @@ if table_exists("AuthEvent"):
         q(event_id)+","+q(target_id)+","+q(target.get("institutionId"))+","+
         q("OTHER_USERS_DISABLED")+","+q(KEEP_EMAIL)+","+q("Admin")+",NULL,NULL,"+q(detail)+","+q(now)+");"
     )
-sql.append("COMMIT;")
 runfile("\n".join(sql), "disable_totalarc_users.sql")
 
 remaining_active = rows("SELECT id,email,emailNormalized,role,active FROM AuthUser WHERE active=1 ORDER BY createdAt ASC")
