@@ -37,5 +37,7 @@ jobs:
         run: npm run verify:d1-schema-stability
       - name: Verify saved process flow persistence
         run: npm run verify:process-flow
+      - name: Verify supporting document AI workflow
+        run: npm run verify:process-document-ai
       - name: TypeScript check
         run: npx tsc --noEmit
