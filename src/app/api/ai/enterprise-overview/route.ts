@@ -116,8 +116,8 @@ function readinessSignal(input: {
   if (processCount === 0 && riskCount === 0 && controlCount === 0) {
     return {
       score: 0,
-      label: 'Insufficient Data',
-      description: 'Data persisted belum cukup untuk membentuk readiness signal.'
+      label: 'Data Belum Memadai',
+      description: 'Data tersimpan belum cukup untuk membentuk sinyal kesiapan.'
     };
   }
 
@@ -148,7 +148,7 @@ function readinessSignal(input: {
     return {
       score,
       label: 'Strong',
-      description: 'Coverage data dan aktivitas assurance relatif matang.'
+      description: 'Cakupan data dan aktivitas penjaminan relatif matang.'
     };
   }
   if (score >= 55) {
@@ -161,14 +161,14 @@ function readinessSignal(input: {
   if (score >= 30) {
     return {
       score,
-      label: 'Needs Attention',
-      description: 'Coverage assurance masih terbatas dan membutuhkan prioritas tindak lanjut.'
+      label: 'Perlu Perhatian',
+      description: 'Cakupan penjaminan masih terbatas dan membutuhkan prioritas tindak lanjut.'
     };
   }
   return {
     score,
     label: 'Early Stage',
-    description: 'Fondasi awal tersedia, namun evidence dan aktivitas assurance masih sangat terbatas.'
+    description: 'Fondasi awal tersedia, namun bukti dan aktivitas penjaminan masih sangat terbatas.'
   };
 }
 
@@ -198,31 +198,31 @@ function fallbackAnalysis(metrics: Record<string, any>, readiness: ReturnType<ty
   const assessmentMessage =
     metrics.risks.total > 0
       ? `${metrics.risks.assessed} dari ${metrics.risks.total} risiko memiliki residual assessment yang terisi; ${highResidual} berada pada residual High/Critical.`
-      : 'Belum ada risk register persisted yang dapat dianalisis.';
+      : 'Belum ada Register Risiko tersimpan yang dapat dianalisis.';
 
   const testingMessage =
     metrics.controls.keyControls > 0
-      ? `Key controls: ${metrics.controls.keyControls}; ToD completed: ${metrics.icofr.todCompleted}; ToE completed: ${metrics.icofr.toeCompleted}.`
-      : 'Key control belum teridentifikasi pada data persisted.';
+      ? `Kontrol kunci: ${metrics.controls.keyControls}; ToD selesai: ${metrics.icofr.todCompleted}; ToE selesai: ${metrics.icofr.toeCompleted}.`
+      : 'Kontrol kunci belum teridentifikasi pada data tersimpan.';
 
   return {
-    headline: `Readiness signal: ${readiness.label}`,
+    headline: `Sinyal kesiapan: ${readiness.label}`,
     executiveSummary:
-      `Total ARC menemukan ${metrics.processes.total} proses, ${metrics.risks.total} risiko, dan ${metrics.controls.total} kontrol pada data persisted. ` +
+      `Total ARC menemukan ${metrics.processes.total} proses, ${metrics.risks.total} risiko, dan ${metrics.controls.total} kontrol pada data tersimpan. ` +
       `${assessmentMessage} ${testingMessage} Readiness signal ini mengukur kelengkapan data dan coverage assurance, bukan opini audit.`,
     icofrInsight:
-      `ICOFR memiliki ${metrics.icofr.significantFinancialItems} significant financial item(s), ${metrics.controls.icoFrKeyControls} ICOFR key control(s), ${metrics.icofr.testingPlanItems} testing plan item(s), dan ${metrics.icofr.evidencePacks} evidence pack(s).`,
+      `ICOFR memiliki ${metrics.icofr.significantFinancialItems} item keuangan signifikan, ${metrics.controls.icoFrKeyControls} kontrol kunci ICOFR, ${metrics.icofr.testingPlanItems} item rencana pengujian, dan ${metrics.icofr.evidencePacks} paket bukti.`,
     riskInsight:
       `${assessmentMessage} Risk assessment coverage sebesar ${metrics.risks.assessmentCoveragePct}% berdasarkan residual score yang tersedia.`,
     complianceInsight:
       `${metrics.compliance.regulatoryMappedControls} dari ${metrics.controls.total} kontrol memiliki explicit regulation mapping dan ${metrics.compliance.frameworkMappedControls} memiliki framework mapping. Lensa kepatuhan dibatasi pada data mapping dan evidence yang tersimpan di Total ARC.`,
     priorityInsight:
       metrics.rcsa.campaigns === 0 || metrics.icofr.todCompleted === 0 || metrics.icofr.toeCompleted === 0
-        ? 'Prioritas utama adalah mengaktifkan RCSA/CSA, testing, evidencing, dan review berkelanjutan sebelum menarik kesimpulan assurance yang lebih kuat.'
-        : 'Prioritaskan closure exception, konsistensi evidence, dan monitoring periodik agar coverage assurance tetap terjaga.',
+        ? 'Prioritas utama adalah mengaktifkan RCSA/CSA, pengujian, pembuktian, dan penelaahan berkelanjutan sebelum menarik kesimpulan penjaminan yang lebih kuat.'
+        : 'Prioritaskan penyelesaian pengecualian, konsistensi bukti, dan pemantauan periodik agar cakupan penjaminan tetap terjaga.',
     recommendations: recommendations.slice(0, 5),
     caution:
-      'Analisis ini tidak menyatakan opini audit atau kesimpulan kepatuhan hukum. Validasi manusia dan review oleh fungsi yang berwenang tetap diperlukan.'
+      'Analisis ini tidak menyatakan opini audit atau kesimpulan kepatuhan hukum. Validasi manusia dan penelaahan oleh fungsi yang berwenang tetap diperlukan.'
   };
 }
 
