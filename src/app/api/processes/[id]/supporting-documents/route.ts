@@ -355,7 +355,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
           evidenceId: uploaded.evidenceId,
           versionNo: uploaded.versionNo,
           sha256: uploaded.sha256,
-          fileName,
+          fileName: file.name,
           storage: 'cloudflare-d1-chunked'
         },
         extraction: {
