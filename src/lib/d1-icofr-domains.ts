@@ -158,6 +158,32 @@ export async function ensureIcofrDomainSchema() {
       CREATE INDEX IF NOT EXISTS idx_icofr_financial_item_type
         ON ICOFRFinancialItem(institutionId, recordType);
 
+      CREATE TABLE IF NOT EXISTS ICOFRFinancialScopingAnalysis (
+        id TEXT PRIMARY KEY NOT NULL,
+        institutionId TEXT NOT NULL,
+        scopeId TEXT NOT NULL,
+        evidenceDocumentId TEXT,
+        evidenceVersionId TEXT,
+        fileName TEXT NOT NULL,
+        mimeType TEXT,
+        extractionMethod TEXT,
+        sourceTextTruncated INTEGER NOT NULL DEFAULT 0,
+        performanceMaterialityAmount REAL NOT NULL,
+        currency TEXT NOT NULL,
+        resultJson TEXT NOT NULL,
+        aiProvider TEXT,
+        aiModel TEXT,
+        aiRequestId TEXT,
+        status TEXT NOT NULL DEFAULT 'PENDING_USER_VALIDATION',
+        createdBy TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_icofr_financial_scoping_analysis_institution
+        ON ICOFRFinancialScopingAnalysis(institutionId, createdAt);
+      CREATE INDEX IF NOT EXISTS idx_icofr_financial_scoping_analysis_scope
+        ON ICOFRFinancialScopingAnalysis(institutionId, scopeId, status);
+
       CREATE TABLE IF NOT EXISTS ICOFRDeficiency (
         id TEXT PRIMARY KEY NOT NULL,
         institutionId TEXT NOT NULL,
@@ -549,9 +575,15 @@ export async function listFinancialItems(institutionId?: string | null) {
   };
 }
 
-export async function saveFinancialItem(input: Record<string, unknown>) {
+export async function saveFinancialItem(
+  input: Record<string, unknown>,
+  institutionId?: string | null
+) {
   const db = await ensureIcofrDomainSchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const recordType = String(input.recordType || '').trim();
@@ -620,6 +652,235 @@ export async function saveFinancialItem(input: Record<string, unknown>) {
 
   await audit(db,String(institution.id),existing?'UPDATE':'CREATE','ICOFR_FinancialItem',id,record,existing||undefined);
   return record;
+}
+
+export type FinancialScopingCandidate = {
+  recordType: 'Account' | 'Disclosure';
+  itemCode: string;
+  codeSource: 'DOCUMENT' | 'TOTAL_ARC_GENERATED';
+  name: string;
+  financialStatement: string | null;
+  documentAmount: number | null;
+  unitMultiplier: number | null;
+  balanceAmount: number | null;
+  currency: string | null;
+  sourceReference: string | null;
+  quantitativeSignificant: boolean;
+  qualitativeSignificant: boolean;
+  recommendedSignificant: boolean;
+  pmRatio: number | null;
+  significanceBasis: 'PM' | 'QUALITATIVE' | 'PM_AND_QUALITATIVE' | 'NOT_SIGNIFICANT' | 'REVIEW_REQUIRED';
+  assertions: string | null;
+  riskFactors: string | null;
+  processReference: string | null;
+  owner: string | null;
+  rationale: string;
+  confidence: 'High' | 'Medium' | 'Low';
+  qualitativeFactors: string[];
+};
+
+export type FinancialScopingAnalysisResult = {
+  documentTitle: string | null;
+  reportingPeriod: string | null;
+  documentCurrency: string | null;
+  documentUnit: string | null;
+  documentUnitMultiplier: number | null;
+  sourceSummary: string | null;
+  gaps: string[];
+  candidates: FinancialScopingCandidate[];
+};
+
+export async function saveFinancialScopingAnalysis(input: {
+  institutionId: string;
+  scopeId: string;
+  evidenceDocumentId?: string | null;
+  evidenceVersionId?: string | null;
+  fileName: string;
+  mimeType?: string | null;
+  extractionMethod?: string | null;
+  sourceTextTruncated: boolean;
+  performanceMaterialityAmount: number;
+  currency: string;
+  result: FinancialScopingAnalysisResult;
+  aiProvider?: string | null;
+  aiModel?: string | null;
+  aiRequestId?: string | null;
+  createdBy: string;
+}) {
+  const db = await ensureIcofrDomainSchema();
+  const institution = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id=? LIMIT 1',
+    [input.institutionId]
+  );
+  if (!institution) throw new Error('INSTITUTION_REQUIRED');
+
+  const id = crypto.randomUUID();
+  const now = nowIso();
+  await run(
+    db,
+    `INSERT INTO ICOFRFinancialScopingAnalysis (
+      id,institutionId,scopeId,evidenceDocumentId,evidenceVersionId,fileName,mimeType,
+      extractionMethod,sourceTextTruncated,performanceMaterialityAmount,currency,resultJson,
+      aiProvider,aiModel,aiRequestId,status,createdBy,createdAt,updatedAt
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id,
+      input.institutionId,
+      input.scopeId,
+      clean(input.evidenceDocumentId),
+      clean(input.evidenceVersionId),
+      input.fileName,
+      clean(input.mimeType),
+      clean(input.extractionMethod),
+      input.sourceTextTruncated ? 1 : 0,
+      input.performanceMaterialityAmount,
+      input.currency,
+      JSON.stringify(input.result),
+      clean(input.aiProvider),
+      clean(input.aiModel),
+      clean(input.aiRequestId),
+      'PENDING_USER_VALIDATION',
+      input.createdBy,
+      now,
+      now
+    ]
+  );
+
+  const record = {
+    id,
+    institutionId: input.institutionId,
+    scopeId: input.scopeId,
+    evidenceDocumentId: input.evidenceDocumentId || null,
+    evidenceVersionId: input.evidenceVersionId || null,
+    fileName: input.fileName,
+    mimeType: input.mimeType || null,
+    extractionMethod: input.extractionMethod || null,
+    sourceTextTruncated: input.sourceTextTruncated,
+    performanceMaterialityAmount: input.performanceMaterialityAmount,
+    currency: input.currency,
+    result: input.result,
+    aiProvider: input.aiProvider || null,
+    aiModel: input.aiModel || null,
+    aiRequestId: input.aiRequestId || null,
+    status: 'PENDING_USER_VALIDATION',
+    createdBy: input.createdBy,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  await audit(
+    db,
+    input.institutionId,
+    'CREATE',
+    'ICOFR_FinancialScopingAnalysis',
+    id,
+    record
+  );
+
+  return record;
+}
+
+export async function listFinancialScopingAnalyses(institutionId: string, limit = 12) {
+  const db = await ensureIcofrDomainSchema();
+  const rows = await all<Record<string, unknown>>(
+    db,
+    `SELECT * FROM ICOFRFinancialScopingAnalysis
+      WHERE institutionId=?
+      ORDER BY createdAt DESC
+      LIMIT ?`,
+    [institutionId, Math.max(1, Math.min(50, Math.floor(limit)))]
+  );
+
+  return rows.map(row => {
+    let result: FinancialScopingAnalysisResult | null = null;
+    try {
+      result = row.resultJson
+        ? JSON.parse(String(row.resultJson)) as FinancialScopingAnalysisResult
+        : null;
+    } catch {
+      result = null;
+    }
+    return {
+      ...row,
+      sourceTextTruncated: bool(row.sourceTextTruncated),
+      performanceMaterialityAmount: Number(row.performanceMaterialityAmount || 0),
+      result
+    };
+  });
+}
+
+export async function getFinancialScopingAnalysis(
+  analysisId: string,
+  institutionId: string
+) {
+  const db = await ensureIcofrDomainSchema();
+  const row = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ICOFRFinancialScopingAnalysis WHERE id=? AND institutionId=? LIMIT 1',
+    [analysisId, institutionId]
+  );
+  if (!row) throw new Error('FINANCIAL_SCOPING_ANALYSIS_NOT_FOUND');
+
+  let result: FinancialScopingAnalysisResult | null = null;
+  try {
+    result = row.resultJson
+      ? JSON.parse(String(row.resultJson)) as FinancialScopingAnalysisResult
+      : null;
+  } catch {
+    result = null;
+  }
+  if (!result) throw new Error('FINANCIAL_SCOPING_ANALYSIS_INVALID');
+
+  return {
+    ...row,
+    sourceTextTruncated: bool(row.sourceTextTruncated),
+    performanceMaterialityAmount: Number(row.performanceMaterialityAmount || 0),
+    result
+  };
+}
+
+export async function setFinancialScopingAnalysisStatus(input: {
+  analysisId: string;
+  institutionId: string;
+  status: 'APPLIED' | 'REJECTED';
+  actor: string;
+  appliedCount?: number;
+}) {
+  const db = await ensureIcofrDomainSchema();
+  const existing = await first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM ICOFRFinancialScopingAnalysis WHERE id=? AND institutionId=? LIMIT 1',
+    [input.analysisId, input.institutionId]
+  );
+  if (!existing) throw new Error('FINANCIAL_SCOPING_ANALYSIS_NOT_FOUND');
+  if (String(existing.status || '') !== 'PENDING_USER_VALIDATION') {
+    throw new Error('FINANCIAL_SCOPING_ANALYSIS_NOT_PENDING');
+  }
+
+  const now = nowIso();
+  await run(
+    db,
+    'UPDATE ICOFRFinancialScopingAnalysis SET status=?, updatedAt=? WHERE id=? AND institutionId=?',
+    [input.status, now, input.analysisId, input.institutionId]
+  );
+
+  await audit(
+    db,
+    input.institutionId,
+    input.status === 'APPLIED' ? 'APPLY' : 'REJECT',
+    'ICOFR_FinancialScopingAnalysis',
+    input.analysisId,
+    {
+      status: input.status,
+      actor: input.actor,
+      appliedCount: input.appliedCount ?? null,
+      updatedAt: now
+    },
+    existing
+  );
+
+  return { id: input.analysisId, status: input.status, updatedAt: now };
 }
 
 export async function listDeficiencies() {
