@@ -1,0 +1,38 @@
+name: Promote Bank NTT source data
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'data/bank-ntt-source-2025.json'
+      - 'scripts/promote-bank-ntt-source-data.py'
+      - '.github/workflows/promote-bank-ntt-source-data.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-promote-bank-ntt-source-data
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Validate source bundle
+        run: |
+          python -m json.tool data/bank-ntt-source-2025.json >/dev/null
+          python -m py_compile scripts/promote-bank-ntt-source-data.py
+      - name: Promote Bank NTT tenant-scoped source data
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/promote-bank-ntt-source-data.py data/bank-ntt-source-2025.json
