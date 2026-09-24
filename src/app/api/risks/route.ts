@@ -1,19 +1,25 @@
 import { NextResponse } from 'next/server';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { createRisk, listProcessLookups, listRiskLookups, listRisks } from '@/lib/d1-core';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+    }
+    const institutionId = context.institution.id;
     const view = new URL(request.url).searchParams.get('view');
     if (view === 'lookup') {
-      const risks = await listRiskLookups();
+      const risks = await listRiskLookups(institutionId);
       return NextResponse.json({ risks, storage: 'cloudflare-d1', view: 'lookup' });
     }
 
     const [risks, processes] = await Promise.all([
-      listRisks(),
-      listProcessLookups()
+      listRisks(institutionId),
+      listProcessLookups(institutionId)
     ]);
     return NextResponse.json({
       risks,
@@ -29,6 +35,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json({ error: 'Active institution is required.' }, { status: context ? 409 : 401 });
+    }
+    const institutionId = context.institution.id;
     const body = (await request.json()) as Record<string, unknown>;
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const cause = typeof body.cause === 'string' ? body.cause.trim() : '';
@@ -69,7 +80,7 @@ export async function POST(request: Request) {
       ownerName,
       inherentLikelihood: likelihood,
       inherentImpact: impactValue
-    });
+    }, institutionId);
 
     return NextResponse.json(risk, { status: 201 });
   } catch (error) {
