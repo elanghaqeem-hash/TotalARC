@@ -1,3 +1,4 @@
+import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
@@ -154,7 +155,19 @@ export async function ensureIcofrTraceabilitySchema() {
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
-  return first<Record<string, unknown>>(db, 'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1');
+  const activeInstitutionId = await resolveServerActiveInstitutionId();
+  if (activeInstitutionId) {
+    const active = await first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+      [activeInstitutionId]
+    );
+    if (active) return active;
+  }
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1'
+  );
 }
 
 async function audit(
