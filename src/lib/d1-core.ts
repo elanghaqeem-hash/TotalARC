@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -600,6 +601,16 @@ async function primaryInstitution(db: D1DatabaseLike) {
     "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='Institution'"
   );
   if (!Number(exists?.count || 0)) return null;
+
+  const activeInstitutionId = await resolveServerActiveInstitutionId();
+  if (activeInstitutionId) {
+    const active = await first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+      [activeInstitutionId]
+    );
+    if (active) return active;
+  }
 
   return first<Record<string, unknown>>(
     db,
