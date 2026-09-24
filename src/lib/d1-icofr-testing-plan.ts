@@ -801,9 +801,12 @@ export async function removeTestingPlanItem(id: string) {
   return { success: true };
 }
 
-export async function getTestingPlanData() {
+export async function getTestingPlanData(institutionId?: string | null) {
   const db = await ensureIcofrTestingPlanSchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) {
     return {
       institution: null,
