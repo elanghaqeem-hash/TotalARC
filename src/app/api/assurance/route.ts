@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getOrganizationStructure } from '@/lib/d1-organization';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { listDesignAssessments } from '@/lib/d1-icofr-traceability';
 import { listPbcTasks } from '@/lib/d1-icofr-executive-reporting';
 import {
@@ -59,6 +60,14 @@ async function loadModule<T>(
 }
 
 export async function GET(request: Request) {
+  const context = await resolveInstitutionAccess(request);
+  if (!context?.institution) {
+    return NextResponse.json(
+      { error: 'Active institution is required.' },
+      { status: context ? 409 : 401 }
+    );
+  }
+  const institutionId = context.institution.id;
   const params = new URL(request.url).searchParams;
   const requested = new Set(
     (params.get('sections') || '')
@@ -102,7 +111,7 @@ export async function GET(request: Request) {
     loadModule(
       'organization',
       needOrganization,
-      getOrganizationStructure,
+      () => getOrganizationStructure(institutionId),
       { institution: null, legalEntities: [], organizationUnits: [], users: [] } as any
     ),
     loadModule('tod', needTod, listDesignAssessments, [] as any[]),

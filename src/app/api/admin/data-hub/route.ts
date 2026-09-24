@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { getAuthenticatedProfile } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
 import { getDataHubSummary, getSourceCoverage, getSourceGovernance, listDataHubRecords } from '@/lib/d1-data-hub';
@@ -6,18 +7,14 @@ import { resolveSourceInstitution } from '@/lib/d1-source-library';
 
 export const dynamic = 'force-dynamic';
 
-function tokenFromRequest(request: Request) {
-  const cookie = request.headers.get('cookie') || '';
-  const match = cookie.match(new RegExp('(?:^|;\\s*)' + AUTH_COOKIE_NAME + '=([^;]+)'));
-  return match ? decodeURIComponent(match[1]) : '';
-}
-
 async function requireAdmin(request: Request) {
-  const token = tokenFromRequest(request);
-  if (!token) return null;
-  const profile = await getAuthenticatedProfile(token);
-  if (!profile || profile.role !== 'Admin') return null;
-  return profile;
+  const context = await resolveInstitutionAccess(request);
+  if (!context || context.profile.role !== 'Admin' || !context.institution) return null;
+  return {
+    ...context.profile,
+    institutionId: context.institution.id,
+    institutionName: context.institution.name
+  };
 }
 
 export async function GET(request: Request) {

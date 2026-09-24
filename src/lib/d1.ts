@@ -200,6 +200,23 @@ export async function getPrimaryInstitution(): Promise<InstitutionRecord | null>
     .first<InstitutionRecord>();
 }
 
+export async function getInstitutionById(id: string): Promise<InstitutionRecord | null> {
+  const db = await getD1();
+  await ensureSchema(db);
+  return db.prepare('SELECT * FROM Institution WHERE id = ? LIMIT 1')
+    .bind(id)
+    .first<InstitutionRecord>();
+}
+
+export async function listInstitutions(): Promise<InstitutionRecord[]> {
+  const db = await getD1();
+  await ensureSchema(db);
+  const result = await db.prepare(
+    'SELECT * FROM Institution ORDER BY name COLLATE NOCASE ASC, createdAt ASC'
+  ).all<InstitutionRecord>();
+  return result.results || [];
+}
+
 export async function upsertInstitution(
   input: InstitutionInput,
   reason = 'Institution saved through Total ARC.'

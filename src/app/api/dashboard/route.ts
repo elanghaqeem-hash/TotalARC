@@ -1,14 +1,23 @@
 import { NextResponse } from 'next/server';
 import { getCoreDashboardData } from '@/lib/d1-core';
 import { getAssuranceDashboardMetrics } from '@/lib/d1-assurance';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
+    const institutionId = context.institution.id;
     const [core, assurance] = await Promise.all([
-      getCoreDashboardData(),
-      getAssuranceDashboardMetrics()
+      getCoreDashboardData(institutionId),
+      getAssuranceDashboardMetrics(institutionId)
     ]);
 
     const metrics = {

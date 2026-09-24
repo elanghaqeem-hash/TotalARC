@@ -51,6 +51,15 @@ interface NavGroup {
   items: NavItem[];
 }
 
+interface InstitutionOption {
+  id: string;
+  name: string;
+  legalName: string;
+  shortName: string;
+  institutionType: string;
+  country: string;
+}
+
 const warmedRoutes = new Set<string>();
 
 const navGroups: NavGroup[] = [
@@ -131,6 +140,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [institutionMenuOpen, setInstitutionMenuOpen] = useState(false);
+  const [institutionOptions, setInstitutionOptions] = useState<InstitutionOption[]>([]);
+  const [activeInstitutionId, setActiveInstitutionId] = useState<string | null>(null);
+  const [institutionSwitching, setInstitutionSwitching] = useState(false);
 
   const isLoginPage = pathname === '/login';
 
@@ -211,6 +224,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [authenticated, isLoginPage, loading, pathname, prefetchRoute, visibleNavGroups]);
 
   useEffect(() => {
+    if (!authenticated || loading || isLoginPage) return;
+
+    let cancelled = false;
+    fetch('/api/institutions', {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'same-origin'
+    })
+      .then(async response => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then(payload => {
+        if (cancelled || !payload) return;
+        setInstitutionOptions(Array.isArray(payload.institutions) ? payload.institutions : []);
+        setActiveInstitutionId(payload.activeInstitutionId || null);
+      })
+      .catch(() => {
+        if (!cancelled) setInstitutionOptions([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, isLoginPage, loading]);
+
+  useEffect(() => {
     const stored = window.localStorage.getItem('total-arc-sidebar-collapsed');
     if (stored === 'true') setSidebarCollapsed(true);
   }, []);
@@ -222,6 +262,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return next;
     });
   };
+
+  const switchInstitution = useCallback(async (institutionId: string) => {
+    if (!institutionId || institutionId === activeInstitutionId || institutionSwitching) {
+      setInstitutionMenuOpen(false);
+      return;
+    }
+
+    setInstitutionSwitching(true);
+    try {
+      const response = await fetch('/api/institutions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ institutionId })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Institution could not be changed.');
+
+      setActiveInstitutionId(institutionId);
+      setInstitutionMenuOpen(false);
+      window.location.assign(pathname || '/');
+    } catch (error) {
+      console.error('Institution switch failed:', error);
+      setInstitutionSwitching(false);
+    }
+  }, [activeInstitutionId, institutionSwitching, pathname]);
 
   const Nav = ({ mobile = false, collapsed = false }: { mobile?: boolean; collapsed?: boolean }) => (
     <div className={collapsed ? 'space-y-2' : 'space-y-4'}>
@@ -342,6 +408,69 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex min-w-0 items-center gap-2">
+            {currentUser.role === 'Admin' && institutionOptions.length > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setInstitutionMenuOpen(current => !current)}
+                  disabled={institutionSwitching}
+                  className="flex min-h-10 max-w-[150px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-left transition hover:bg-slate-50 disabled:opacity-60 sm:max-w-[220px] sm:px-3"
+                  aria-label="Select active institution"
+                  title="Select active institution"
+                >
+                  <Building2 className="h-4 w-4 shrink-0 text-brand-600" />
+                  <div className="min-w-0">
+                    <div className="truncate text-[9px] font-bold uppercase tracking-wide text-slate-400">
+                      Institution
+                    </div>
+                    <div className="truncate text-[10px] font-black text-slate-800 sm:text-[11px]">
+                      {institutionOptions.find(item => item.id === activeInstitutionId)?.name ||
+                        currentUser.institutionName ||
+                        'Select institution'}
+                    </div>
+                  </div>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                </button>
+
+                {institutionMenuOpen && (
+                  <div className="absolute right-0 z-50 mt-2 w-[320px] max-w-[calc(100vw-24px)] rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                    <div className="px-2.5 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                      Active institution
+                    </div>
+                    <div className="space-y-1">
+                      {institutionOptions.map(item => {
+                        const active = item.id === activeInstitutionId;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => void switchInstitution(item.id)}
+                            disabled={institutionSwitching}
+                            className={`flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition ${
+                              active
+                                ? 'bg-brand-50 text-brand-800'
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <Building2 className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-brand-600' : 'text-slate-400'}`} />
+                            <div className="min-w-0">
+                              <div className="truncate text-xs font-black">{item.name}</div>
+                              <div className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-slate-400">
+                                {item.legalName}
+                              </div>
+                            </div>
+                            {active && (
+                              <BadgeCheck className="ml-auto h-4 w-4 shrink-0 text-brand-600" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               onClick={() => setAiDrawerOpen(true)}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-2xl bg-gradient-to-r from-brand-600 to-sky-500 px-3 py-2.5 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:px-3.5 sm:text-[11px]"

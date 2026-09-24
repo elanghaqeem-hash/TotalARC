@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
 import { guardAiPost } from '@/lib/ai/http-security';
 import { listRisks } from '@/lib/d1-core';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,13 +41,20 @@ function ratingBand(score: number) {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json(
+        { error: 'Active institution is required.' },
+        { status: context ? 409 : 401 }
+      );
+    }
     const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
     if (!guarded.ok) return guarded.response;
 
     const mode: HeatmapMode =
       guarded.body.mode === 'residual' ? 'residual' : 'inherent';
 
-    const risks = await listRisks();
+    const risks = await listRisks(context.institution.id);
     const likelihoodField =
       mode === 'inherent' ? 'inherentLikelihood' : 'residualLikelihood';
     const impactField =

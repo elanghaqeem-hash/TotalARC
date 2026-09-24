@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -600,6 +601,16 @@ async function primaryInstitution(db: D1DatabaseLike) {
     "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='Institution'"
   );
   if (!Number(exists?.count || 0)) return null;
+
+  const activeInstitutionId = await resolveServerActiveInstitutionId();
+  if (activeInstitutionId) {
+    const active = await first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+      [activeInstitutionId]
+    );
+    if (active) return active;
+  }
 
   return first<Record<string, unknown>>(
     db,
@@ -1896,26 +1907,42 @@ export async function deleteBusinessProcess(id: string, institutionId?: string |
   };
 }
 
-export async function listRiskLookups() {
+export async function listRiskLookups(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   return all<Record<string, unknown>>(
     db,
     `SELECT id, institutionId, processId, riskId, name, category,
             inherentScore, inherentRating, residualScore, residualRating, status
        FROM RiskMaster
-      ORDER BY riskId ASC`
+      ${tenantId ? 'WHERE institutionId = ?' : ''}
+      ORDER BY riskId ASC`,
+    tenantId ? [tenantId] : []
   );
 }
 
-export async function listRisks() {
+export async function listRisks(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const [rows, processes, activities, mappings, sourceMetadata] = await Promise.all([
-    all<Record<string, unknown>>(db, 'SELECT * FROM RiskMaster ORDER BY riskId ASC'),
     all<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name, level, parentProcessId, categoryId, criticality, classification FROM BusinessProcess'
+      `SELECT * FROM RiskMaster ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY riskId ASC`,
+      tenantId ? [tenantId] : []
     ),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, processId, name, level, parentProcessId, categoryId, criticality, classification
+         FROM BusinessProcess ${tenantId ? 'WHERE institutionId = ?' : ''}`,
+      tenantId ? [tenantId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT a.* FROM ProcessActivity a
+         JOIN BusinessProcess p ON p.id = a.processId
+        ${tenantId ? 'WHERE p.institutionId = ?' : ''}`,
+      tenantId ? [tenantId] : []
+    ),
     all<Record<string, unknown>>(
       db,
       `SELECT m.id, m.controlId, m.riskId, m.createdAt,
@@ -1925,9 +1952,18 @@ export async function listRisks() {
               c.isKeyControl, c.isIcofrKey, c.overallHealth
          FROM ControlRiskMapping m
          JOIN ControlMaster c ON c.id = m.controlId
-        ORDER BY c.controlId ASC`
+         JOIN RiskMaster r ON r.id = m.riskId
+        ${tenantId ? 'WHERE c.institutionId = ? AND r.institutionId = ?' : ''}
+        ORDER BY c.controlId ASC`,
+      tenantId ? [tenantId, tenantId] : []
     ),
-    all<Record<string, unknown>>(db, 'SELECT * FROM OperationalRiskMetadata')
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.* FROM OperationalRiskMetadata m
+         JOIN RiskMaster r ON r.id = m.riskId
+        ${tenantId ? 'WHERE r.institutionId = ?' : ''}`,
+      tenantId ? [tenantId] : []
+    )
   ]);
 
   const processById = new Map(processes.map(item => [String(item.id), item]));
@@ -1972,12 +2008,13 @@ export async function listRisks() {
     };
   });
 }
-export async function createRisk(input: Record<string, unknown>) {
+export async function createRisk(input: Record<string, unknown>, institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [input.processId]
+    `SELECT * FROM BusinessProcess WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [input.processId, tenantId] : [input.processId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -2088,21 +2125,24 @@ export async function createRisk(input: Record<string, unknown>) {
   };
 }
 
-export async function listControlSummaries() {
+export async function listControlSummaries(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const rows = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM ControlMaster ORDER BY controlId ASC'
+    `SELECT * FROM ControlMaster ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY controlId ASC`,
+    tenantId ? [tenantId] : []
   );
   return rows.map(controlRow);
 }
 
-export async function getControlDetail(id: string) {
+export async function getControlDetail(id: string, institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const row = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM ControlMaster WHERE id = ? LIMIT 1',
-    [id]
+    `SELECT * FROM ControlMaster WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [id, tenantId] : [id]
   );
   if (!row) throw new Error('CONTROL_NOT_FOUND');
 
@@ -2161,15 +2201,28 @@ export async function getControlDetail(id: string) {
   };
 }
 
-export async function listControls() {
+export async function listControls(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const [rows, processes, activities, mappings] = await Promise.all([
-    all<Record<string, unknown>>(db, 'SELECT * FROM ControlMaster ORDER BY controlId ASC'),
     all<Record<string, unknown>>(
       db,
-      'SELECT id, processId, name, categoryId, criticality, classification FROM BusinessProcess'
+      `SELECT * FROM ControlMaster ${tenantId ? 'WHERE institutionId = ?' : ''} ORDER BY controlId ASC`,
+      tenantId ? [tenantId] : []
     ),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ProcessActivity'),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT id, processId, name, categoryId, criticality, classification
+         FROM BusinessProcess ${tenantId ? 'WHERE institutionId = ?' : ''}`,
+      tenantId ? [tenantId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT a.* FROM ProcessActivity a
+         JOIN BusinessProcess p ON p.id = a.processId
+        ${tenantId ? 'WHERE p.institutionId = ?' : ''}`,
+      tenantId ? [tenantId] : []
+    ),
     all<Record<string, unknown>>(
       db,
       `SELECT m.id, m.controlId, m.riskId, m.createdAt,
@@ -2178,7 +2231,10 @@ export async function listControls() {
               r.inherentScore, r.inherentRating, r.residualScore, r.residualRating
          FROM ControlRiskMapping m
          JOIN RiskMaster r ON r.id = m.riskId
-        ORDER BY r.riskId ASC`
+         JOIN ControlMaster c ON c.id = m.controlId
+        ${tenantId ? 'WHERE r.institutionId = ? AND c.institutionId = ?' : ''}
+        ORDER BY r.riskId ASC`,
+      tenantId ? [tenantId, tenantId] : []
     )
   ]);
 
@@ -2222,12 +2278,13 @@ export async function listControls() {
     };
   });
 }
-export async function createControl(input: Record<string, unknown>) {
+export async function createControl(input: Record<string, unknown>, institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [input.processId]
+    `SELECT * FROM BusinessProcess WHERE id = ?${tenantId ? ' AND institutionId = ?' : ''} LIMIT 1`,
+    tenantId ? [input.processId, tenantId] : [input.processId]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -2706,8 +2763,12 @@ async function count(
   return Number(row?.count || 0);
 }
 
-export async function getCoreDashboardData() {
+export async function getCoreDashboardData(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
+  const tenantId = String(institutionId || '').trim();
+  const tenantWhere = tenantId ? ' WHERE institutionId = ?' : '';
+  const tenantAnd = tenantId ? ' AND institutionId = ?' : '';
+  const tenantValues = tenantId ? [tenantId] : [];
 
   const [
     totalProcesses,
@@ -2721,27 +2782,35 @@ export async function getCoreDashboardData() {
     highCritical,
     recentAuditLogs
   ] = await Promise.all([
-    count(db, 'SELECT COUNT(*) AS count FROM BusinessProcess'),
-    count(db, "SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RiskMaster'),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'"),
-    count(db, "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'"),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster'),
-    count(db, 'SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1'),
+    count(db, `SELECT COUNT(*) AS count FROM BusinessProcess${tenantWhere}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'${tenantAnd}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM RiskMaster${tenantWhere}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'${tenantAnd}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'${tenantAnd}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM ControlMaster${tenantWhere}`, tenantValues),
+    count(db, `SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1${tenantAnd}`, tenantValues),
     count(
       db,
       `SELECT COUNT(DISTINCT r.id) AS count
          FROM RiskMaster r
          JOIN ControlRiskMapping m ON m.riskId = r.id
-        WHERE r.inherentRating IN ('High', 'Critical')`
+        WHERE r.inherentRating IN ('High', 'Critical')
+          ${tenantId ? 'AND r.institutionId = ?' : ''}`,
+      tenantValues
     ),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating IN ('High', 'Critical')"
+      `SELECT COUNT(*) AS count FROM RiskMaster
+        WHERE inherentRating IN ('High', 'Critical')
+        ${tenantId ? 'AND institutionId = ?' : ''}`,
+      tenantValues
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM AuditLog ORDER BY timestamp DESC LIMIT 8'
+      `SELECT * FROM AuditLog
+        ${tenantId ? 'WHERE institutionId = ?' : ''}
+        ORDER BY timestamp DESC LIMIT 8`,
+      tenantValues
     )
   ]);
 

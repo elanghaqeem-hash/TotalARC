@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -219,6 +220,15 @@ async function ensureOrganizationSchema() {
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
+  const activeInstitutionId = await resolveServerActiveInstitutionId();
+  if (activeInstitutionId) {
+    const active = await first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+      [activeInstitutionId]
+    );
+    if (active) return active;
+  }
   return first<Record<string, unknown>>(
     db,
     'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1'
@@ -679,9 +689,16 @@ async function ensureBankKalbarOrganizationCompletion(
   );
 }
 
-export async function getOrganizationStructure() {
+export async function getOrganizationStructure(institutionId?: string | null) {
   const db = await ensureOrganizationSchema();
-  const institution = await primaryInstitution(db);
+  const requestedId = String(institutionId || '').trim();
+  const institution = requestedId
+    ? await first<Record<string, unknown>>(
+        db,
+        'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+        [requestedId]
+      )
+    : await primaryInstitution(db);
 
   if (!institution) {
     return {
@@ -731,9 +748,16 @@ export async function getOrganizationStructure() {
   };
 }
 
-export async function createLegalEntity(input: LegalEntityInput) {
+export async function createLegalEntity(input: LegalEntityInput, institutionId?: string | null) {
   const db = await ensureOrganizationSchema();
-  const institution = await primaryInstitution(db);
+  const requestedId = String(institutionId || '').trim();
+  const institution = requestedId
+    ? await first<Record<string, unknown>>(
+        db,
+        'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+        [requestedId]
+      )
+    : await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const code = input.code.trim().toUpperCase();
@@ -791,9 +815,16 @@ export async function createLegalEntity(input: LegalEntityInput) {
   return created;
 }
 
-export async function createOrganizationUnit(input: OrganizationUnitInput) {
+export async function createOrganizationUnit(input: OrganizationUnitInput, institutionId?: string | null) {
   const db = await ensureOrganizationSchema();
-  const institution = await primaryInstitution(db);
+  const requestedId = String(institutionId || '').trim();
+  const institution = requestedId
+    ? await first<Record<string, unknown>>(
+        db,
+        'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+        [requestedId]
+      )
+    : await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const code = input.code.trim().toUpperCase();

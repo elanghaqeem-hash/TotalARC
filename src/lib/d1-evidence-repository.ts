@@ -1,3 +1,4 @@
+import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
 import { ensureIcofrWorkpaperReviewSchema, saveWorkpaperEvidence } from '@/lib/d1-icofr-workpaper-review';
@@ -294,6 +295,15 @@ export async function ensureEvidenceRepositorySchema() {
 }
 
 async function primaryInstitution(db: D1DatabaseLike) {
+  const activeInstitutionId = await resolveServerActiveInstitutionId();
+  if (activeInstitutionId) {
+    const active = await first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+      [activeInstitutionId]
+    );
+    if (active) return active;
+  }
   return first<Record<string, unknown>>(
     db,
     'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1'

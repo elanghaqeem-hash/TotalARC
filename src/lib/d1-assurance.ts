@@ -1,3 +1,4 @@
+import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { assertIcofrPeriodWritable } from '@/lib/d1-icofr-period-lock';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
@@ -1068,9 +1069,15 @@ export async function createRetestRecord(input: {
 
 export async function listToeTests() {
   const db = await ensureAssuranceSchema();
+  const institutionId = await resolveServerActiveInstitutionId();
   const tests = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM ToETest ORDER BY testedAt DESC, testId ASC'
+    `SELECT t.*
+       FROM ToETest t
+       JOIN ControlMaster c ON c.id = t.controlId
+      ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+      ORDER BY t.testedAt DESC, t.testId ASC`,
+    institutionId ? [institutionId] : []
   );
 
   return Promise.all(
@@ -1207,12 +1214,55 @@ export async function updateToeSample(input: {
 
 export async function listRemediationData() {
   const db = await ensureAssuranceSchema();
+  const institutionId = await resolveServerActiveInstitutionId();
   const [exceptionRows, deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
-    all<Record<string, unknown>>(db, 'SELECT * FROM TestingException ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ControlDeficiency ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM Issue ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM ManagementActionPlan ORDER BY createdAt DESC'),
-    all<Record<string, unknown>>(db, 'SELECT * FROM RetestRecord ORDER BY retestedAt DESC')
+    all<Record<string, unknown>>(
+      db,
+      `SELECT e.*
+         FROM TestingException e
+         JOIN ToETest t ON t.id = e.toeTestId
+         JOIN ControlMaster c ON c.id = t.controlId
+        ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+        ORDER BY e.createdAt DESC`,
+      institutionId ? [institutionId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT d.*
+         FROM ControlDeficiency d
+         LEFT JOIN TestingException e ON e.id = d.exceptionId
+         LEFT JOIN ToETest t ON t.id = e.toeTestId
+         LEFT JOIN ControlMaster c ON c.id = t.controlId
+        ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+        ORDER BY d.createdAt DESC`,
+      institutionId ? [institutionId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT * FROM Issue
+        ${institutionId ? 'WHERE institutionId = ?' : ''}
+        ORDER BY createdAt DESC`,
+      institutionId ? [institutionId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT m.*
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        ${institutionId ? 'WHERE i.institutionId = ?' : ''}
+        ORDER BY m.createdAt DESC`,
+      institutionId ? [institutionId] : []
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.*
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+        ${institutionId ? 'WHERE i.institutionId = ?' : ''}
+        ORDER BY r.retestedAt DESC`,
+      institutionId ? [institutionId] : []
+    )
   ]);
 
   const exceptions = await Promise.all(
@@ -1329,9 +1379,15 @@ export async function requestMapExtension(input: {
 
 export async function listMonitoringRules() {
   const db = await ensureAssuranceSchema();
+  const institutionId = await resolveServerActiveInstitutionId();
   const rules = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM MonitoringRule ORDER BY createdAt DESC, ruleId ASC'
+    `SELECT m.*
+       FROM MonitoringRule m
+       JOIN ControlMaster c ON c.id = m.controlId
+      ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+      ORDER BY m.createdAt DESC, m.ruleId ASC`,
+    institutionId ? [institutionId] : []
   );
 
   return Promise.all(
@@ -1506,8 +1562,10 @@ async function count(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
   return Number(row?.count || 0);
 }
 
-export async function getAssuranceDashboardMetrics() {
+export async function getAssuranceDashboardMetrics(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
+  const tenantId = String(institutionId || '').trim();
+  const values = tenantId ? [tenantId] : [];
 
   const [
     failedToEs,
@@ -1522,25 +1580,75 @@ export async function getAssuranceDashboardMetrics() {
   ] = await Promise.all([
     count(
       db,
-      `SELECT COUNT(*) AS count FROM ToETest
-        WHERE failCount > 0 OR finalConclusion IN ('Partially Effective', 'Ineffective')`
+      `SELECT COUNT(*) AS count
+         FROM ToETest t
+         JOIN ControlMaster c ON c.id = t.controlId
+        WHERE (t.failCount > 0 OR t.finalConclusion IN ('Partially Effective', 'Ineffective'))
+          ${tenantId ? 'AND c.institutionId = ?' : ''}`,
+      values
     ),
-    count(db, 'SELECT COUNT(*) AS count FROM TestingException'),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status <> 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM Issue WHERE status = 'Closed'"),
-    count(db, "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status = 'Overdue'"),
     count(
       db,
-      "SELECT COUNT(*) AS count FROM ManagementActionPlan WHERE status IN ('Completed by Owner', 'Closed')"
+      `SELECT COUNT(*) AS count
+         FROM TestingException e
+         JOIN ToETest t ON t.id = e.toeTestId
+         JOIN ControlMaster c ON c.id = t.controlId
+        ${tenantId ? 'WHERE c.institutionId = ?' : ''}`,
+      values
     ),
-    count(db, "SELECT COUNT(*) AS count FROM MonitoringRule WHERE lastStatus = 'Healthy'"),
-    count(db, 'SELECT COUNT(*) AS count FROM RetestRecord'),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM Issue
+        WHERE status <> 'Closed' ${tenantId ? 'AND institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count FROM Issue
+        WHERE status = 'Closed' ${tenantId ? 'AND institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE m.status = 'Overdue' ${tenantId ? 'AND i.institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE m.status IN ('Completed by Owner', 'Closed')
+          ${tenantId ? 'AND i.institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM MonitoringRule m
+         JOIN ControlMaster c ON c.id = m.controlId
+        WHERE m.lastStatus = 'Healthy' ${tenantId ? 'AND c.institutionId = ?' : ''}`,
+      values
+    ),
+    count(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM RetestRecord r
+         JOIN ManagementActionPlan m ON m.id = r.mapId
+         JOIN Issue i ON i.id = m.issueId
+        ${tenantId ? 'WHERE i.institutionId = ?' : ''}`,
+      values
+    ),
     count(
       db,
       `SELECT COUNT(DISTINCT t.controlId) AS count
          FROM ToETest t
          JOIN ControlMaster c ON c.id = t.controlId
-        WHERE c.isKeyControl = 1`
+        WHERE c.isKeyControl = 1 ${tenantId ? 'AND c.institutionId = ?' : ''}`,
+      values
     )
   ]);
 
@@ -1660,6 +1768,15 @@ function normalizeCalendarLink(value: unknown) {
 }
 
 async function primaryAssuranceInstitution(db: D1DatabaseLike) {
+  const activeInstitutionId = await resolveServerActiveInstitutionId();
+  if (activeInstitutionId) {
+    const active = await first<Record<string, unknown>>(
+      db,
+      'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+      [activeInstitutionId]
+    );
+    if (active) return active;
+  }
   return first<Record<string, unknown>>(
     db,
     'SELECT * FROM Institution ORDER BY createdAt ASC LIMIT 1'
