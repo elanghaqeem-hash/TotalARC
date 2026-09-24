@@ -72,7 +72,7 @@ function readinessClasses(label?: string) {
 }
 
 export default function ReportsPage() {
-  const { data, loading, error, refresh } = useAssuranceData(['tasks', 'remediation']);
+  const { data, loading, error, refresh } = useAssuranceData(['reports']);
   const [overview, setOverview] = useState<EnterpriseOverview | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
