@@ -1105,14 +1105,15 @@ export async function listToeTests(institutionId?: string | null) {
   const tenantId = String(
     institutionId || (await resolveServerActiveInstitutionId()) || ''
   ).trim();
+  if (!tenantId) return [];
   const tests = await all<Record<string, unknown>>(
     db,
     `SELECT t.*
        FROM ToETest t
        JOIN ControlMaster c ON c.id = t.controlId
-      ${tenantId ? 'WHERE c.institutionId = ?' : ''}
+      WHERE c.institutionId = ?
       ORDER BY t.testedAt DESC, t.testId ASC`,
-    tenantId ? [tenantId] : []
+    [tenantId]
   );
 
   return Promise.all(
@@ -1253,6 +1254,9 @@ export async function listRemediationData(institutionId?: string | null) {
   const tenantId = String(
     institutionId || (await resolveServerActiveInstitutionId()) || ''
   ).trim();
+  if (!tenantId) {
+    return { exceptions: [], deficiencies: [], issues: [], maps: [], retests: [] };
+  }
   const [exceptionRows, deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
     all<Record<string, unknown>>(
       db,
@@ -1260,9 +1264,9 @@ export async function listRemediationData(institutionId?: string | null) {
          FROM TestingException e
          JOIN ToETest t ON t.id = e.toeTestId
          JOIN ControlMaster c ON c.id = t.controlId
-        ${tenantId ? 'WHERE c.institutionId = ?' : ''}
+        WHERE c.institutionId = ?
         ORDER BY e.createdAt DESC`,
-      tenantId ? [tenantId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
@@ -1271,25 +1275,25 @@ export async function listRemediationData(institutionId?: string | null) {
          LEFT JOIN TestingException e ON e.id = d.exceptionId
          LEFT JOIN ToETest t ON t.id = e.toeTestId
          LEFT JOIN ControlMaster c ON c.id = t.controlId
-        ${tenantId ? 'WHERE c.institutionId = ?' : ''}
+        WHERE c.institutionId = ?
         ORDER BY d.createdAt DESC`,
-      tenantId ? [tenantId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
       `SELECT * FROM Issue
-        ${tenantId ? 'WHERE institutionId = ?' : ''}
+        WHERE institutionId = ?
         ORDER BY createdAt DESC`,
-      tenantId ? [tenantId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
       `SELECT m.*
          FROM ManagementActionPlan m
          JOIN Issue i ON i.id = m.issueId
-        ${tenantId ? 'WHERE i.institutionId = ?' : ''}
+        WHERE i.institutionId = ?
         ORDER BY m.createdAt DESC`,
-      tenantId ? [tenantId] : []
+      [tenantId]
     ),
     all<Record<string, unknown>>(
       db,
@@ -1297,9 +1301,9 @@ export async function listRemediationData(institutionId?: string | null) {
          FROM RetestRecord r
          JOIN ManagementActionPlan m ON m.id = r.mapId
          JOIN Issue i ON i.id = m.issueId
-        ${tenantId ? 'WHERE i.institutionId = ?' : ''}
+        WHERE i.institutionId = ?
         ORDER BY r.retestedAt DESC`,
-      tenantId ? [tenantId] : []
+      [tenantId]
     )
   ]);
 
@@ -1421,14 +1425,15 @@ export async function listMonitoringRules(institutionId?: string | null) {
   const tenantId = String(
     institutionId || (await resolveServerActiveInstitutionId()) || ''
   ).trim();
+  if (!tenantId) return [];
   const rules = await all<Record<string, unknown>>(
     db,
     `SELECT m.*
        FROM MonitoringRule m
        JOIN ControlMaster c ON c.id = m.controlId
-      ${tenantId ? 'WHERE c.institutionId = ?' : ''}
+      WHERE c.institutionId = ?
       ORDER BY m.createdAt DESC, m.ruleId ASC`,
-    tenantId ? [tenantId] : []
+    [tenantId]
   );
 
   return Promise.all(
@@ -1839,8 +1844,9 @@ async function assuranceInstitutionFor(
   db: D1DatabaseLike,
   institutionId?: string | null
 ) {
-  const tenantId = String(institutionId || '').trim();
-  if (!tenantId) return primaryAssuranceInstitution(db);
+  const requestedId = String(institutionId || '').trim();
+  const tenantId = requestedId || (await resolveServerActiveInstitutionId()) || '';
+  if (!tenantId) return null;
   return first<Record<string, unknown>>(
     db,
     'SELECT * FROM Institution WHERE id = ? LIMIT 1',
