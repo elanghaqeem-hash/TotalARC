@@ -21,6 +21,7 @@ type FlowDiagram = {
   summary?: string | null;
   svgText: string;
   sourceHash: string;
+  sourceType?: string | null;
   isActive: boolean;
   aiProvider?: string | null;
   aiModel?: string | null;
@@ -48,7 +49,9 @@ type Workspace = {
   activityCount: number;
   currentSourceHash: string;
   reusable?: boolean;
-  aiRequiredToView?: boolean;
+  aiRequiredToLihat?: boolean;
+  generatedWithFallback?: boolean;
+  notice?: string;
 };
 
 function safeFileName(value: string) {
@@ -103,11 +106,11 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
         { cache: 'no-store' }
       );
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to load saved process flow.');
+      if (!response.ok) throw new Error(payload.error || 'Gagal memuat alur proses yang tersimpan.');
       setWorkspace(payload as Workspace);
     } catch (err) {
       setWorkspace(null);
-      setError(err instanceof Error ? err.message : 'Unable to load saved process flow.');
+      setError(err instanceof Error ? err.message : 'Gagal memuat alur proses yang tersimpan.');
     } finally {
       setLoading(false);
     }
@@ -134,11 +137,11 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
         }
       );
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to generate process flow.');
+      if (!response.ok) throw new Error(payload.error || 'Gagal membuat diagram alur proses.');
       setWorkspace(payload as Workspace);
       setHistoryOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to generate process flow.');
+      setError(err instanceof Error ? err.message : 'Gagal membuat diagram alur proses.');
     } finally {
       setGenerating(false);
     }
@@ -158,10 +161,10 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
         }
       );
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to activate saved flow.');
+      if (!response.ok) throw new Error(payload.error || 'Gagal mengaktifkan diagram alur yang tersimpan.');
       setWorkspace(payload as Workspace);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to activate saved flow.');
+      setError(err instanceof Error ? err.message : 'Gagal mengaktifkan diagram alur yang tersimpan.');
     } finally {
       setActivatingId('');
     }
@@ -189,7 +192,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
       const image = new Image();
       const loaded = new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
-        image.onerror = () => reject(new Error('Unable to render PNG from the saved SVG.'));
+        image.onerror = () => reject(new Error('Gagal merender PNG dari SVG yang tersimpan.'));
       });
       image.src = source;
       await loaded;
@@ -199,7 +202,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
       canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
       canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
       const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('PNG export is not supported by this browser.');
+      if (!ctx) throw new Error('Ekspor PNG tidak didukung oleh browser ini.');
 
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -208,7 +211,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
       const pngBlob = await new Promise<Blob | null>(resolve =>
         canvas.toBlob(resolve, 'image/png', 1)
       );
-      if (!pngBlob) throw new Error('Unable to create PNG file.');
+      if (!pngBlob) throw new Error('Gagal membuat file PNG.');
 
       triggerDownload(
         pngBlob,
@@ -218,7 +221,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
           '.png'
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to download PNG.');
+      setError(err instanceof Error ? err.message : 'Gagal mengunduh PNG.');
     } finally {
       URL.revokeObjectURL(source);
     }
@@ -239,18 +242,17 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-xs font-black uppercase tracking-[0.1em] text-slate-700">
-                  Flow Process Diagram
+                  Diagram Alur Proses
                 </h3>
                 {diagram && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-700">
                     <CheckCircle2 className="h-3 w-3" />
-                    Saved · reusable without AI
+                    Tersimpan · dapat digunakan tanpa AI
                   </span>
                 )}
               </div>
               <p className="mt-1 text-[10px] leading-4 text-slate-500 sm:text-[11px]">
-                AI menyusun visual dari Activity Register satu kali. Hasil disimpan per institusi dan
-                dapat dibuka atau diunduh kembali tanpa memanggil AI.
+                AI membantu menyusun konten alur bila tersedia. Total ARC menyimpan hasil per institusi dan dapat menata ulang diagram langsung dari Activity Register tanpa bergantung pada AI.
               </p>
             </div>
 
@@ -262,7 +264,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                   className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-600 transition hover:bg-slate-50"
                 >
                   <History className="h-3.5 w-3.5" />
-                  Versions
+                  Riwayat Versi
                 </button>
               )}
               {canGenerate && (
@@ -279,7 +281,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                   ) : (
                     <Sparkles className="h-3.5 w-3.5" />
                   )}
-                  {generating ? 'Generating…' : diagram ? 'Regenerate' : 'Generate & Save'}
+                  {generating ? 'Memproses…' : diagram ? 'Buat Ulang' : 'Buat & Simpan'}
                 </button>
               )}
             </div>
@@ -292,12 +294,29 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
           </div>
         )}
 
+        {workspace?.notice && !error && (
+          <div
+            className={`mx-3.5 mt-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[10px] leading-4 sm:mx-4 sm:text-[11px] ${
+              workspace.generatedWithFallback
+                ? 'border-amber-200 bg-amber-50 text-amber-800'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            }`}
+          >
+            {workspace.generatedWithFallback ? (
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            )}
+            <span>{workspace.notice}</span>
+          </div>
+        )}
+
         {workspace?.stale && diagram && (
           <div className="mx-3.5 mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10px] leading-4 text-amber-800 sm:mx-4 sm:text-[11px]">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               Activity Register sudah berubah setelah diagram ini dibuat. Diagram lama tetap dapat
-              digunakan; pilih <strong>Regenerate</strong> hanya bila ingin memperbarui visualnya.
+              digunakan; pilih <strong>Buat Ulang</strong> hanya bila ingin memperbarui diagramnya.
             </span>
           </div>
         )}
@@ -306,19 +325,23 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
           {loading ? (
             <div className="flex min-h-[180px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading saved flow…
+              Memuat alur tersimpan…
             </div>
           ) : diagram ? (
             <div className="space-y-3">
               <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="truncate font-black text-slate-800">
-                    Version {diagram.versionNo} · {diagram.title}
+                    Versi {diagram.versionNo} · {diagram.title}
                   </div>
                   <div className="mt-0.5 text-slate-400">
                     {createdLabel}
                     {diagram.generatedBy ? ' · ' + diagram.generatedBy : ''}
-                    {diagram.aiProvider ? ' · AI ' + diagram.aiProvider : ''}
+                    {diagram.sourceType === 'SYSTEM_FALLBACK'
+                      ? ' · Sistem Total ARC'
+                      : diagram.aiProvider
+                        ? ' · AI ' + diagram.aiProvider
+                        : ''}
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5 sm:flex">
@@ -328,7 +351,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                     className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[9px] font-bold text-slate-600 hover:bg-slate-50"
                   >
                     <Maximize2 className="h-3 w-3" />
-                    View
+                    Lihat
                   </button>
                   <button
                     type="button"
@@ -359,32 +382,31 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                 type="button"
                 onClick={() => setFullscreen(true)}
                 className="block w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100/60 text-left"
-                aria-label="Open saved process flow fullscreen"
+                aria-label="Buka diagram alur tersimpan dalam tampilan penuh"
               >
                 <div className="max-h-[520px] overflow-auto p-2 sm:p-3">
                   <img
                     src={svgDataUrl}
-                    alt={'Saved process flow: ' + diagram.title}
+                    alt={'Alur proses tersimpan: ' + diagram.title}
                     className="mx-auto h-auto w-full max-w-[900px] rounded-lg bg-white shadow-sm"
                   />
                 </div>
               </button>
 
               <div className="text-center text-[9px] leading-4 text-slate-400">
-                Tap diagram untuk tampilan penuh. Diagram ini disimpan di Total ARC dan tidak
-                membutuhkan AI untuk dibuka kembali.
+                Ketuk diagram untuk tampilan penuh. Diagram disimpan di Total ARC dan dapat dibuka kembali tanpa memanggil AI.
               </div>
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-7 text-center">
               <Sparkles className="mx-auto h-6 w-6 text-brand-500" />
               <div className="mt-2 text-xs font-black text-slate-800">
-                Belum ada flow process tersimpan
+                Belum ada diagram alur proses tersimpan
               </div>
               <p className="mx-auto mt-1 max-w-md text-[10px] leading-4 text-slate-500 sm:text-[11px]">
                 {activityCount > 0
-                  ? 'Generate diagram dari Activity Register. Setelah tersimpan, user berikutnya dapat melihat dan mengunduhnya tanpa menggunakan AI lagi.'
-                  : 'Activity Register masih kosong. Lengkapi atau validasi aktivitas terlebih dahulu sebelum membuat flow.'}
+                  ? 'Buat diagram dari Activity Register. Setelah tersimpan, pengguna dapat melihat dan mengunduhnya kembali tanpa memanggil AI.'
+                  : 'Activity Register masih kosong. Lengkapi atau validasi aktivitas terlebih dahulu sebelum membuat diagram alur.'}
               </p>
               {canGenerate && activityCount > 0 && (
                 <button
@@ -398,7 +420,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                   ) : (
                     <Sparkles className="h-4 w-4" />
                   )}
-                  Generate & Save Flow
+                  Buat & Simpan Alur
                 </button>
               )}
             </div>
@@ -407,7 +429,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
           {historyOpen && Boolean(workspace?.history?.length) && (
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
               <div className="px-1 pb-2 text-[9px] font-black uppercase tracking-[0.1em] text-slate-400">
-                Saved versions
+                Versi tersimpan
               </div>
               <div className="space-y-1.5">
                 {workspace!.history.map(item => (
@@ -417,7 +439,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[10px] font-black text-slate-700">
-                        Version {item.versionNo} · {item.title}
+                        Versi {item.versionNo} · {item.title}
                       </div>
                       <div className="mt-0.5 text-[9px] text-slate-400">
                         {new Date(item.createdAt).toLocaleDateString('id-ID')}
@@ -426,7 +448,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                     </div>
                     {item.isActive ? (
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-black text-emerald-700">
-                        ACTIVE
+                        AKTIF
                       </span>
                     ) : canGenerate ? (
                       <button
@@ -435,7 +457,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
                         onClick={() => void activate(item.id)}
                         className="min-h-8 rounded-lg border border-brand-200 bg-brand-50 px-2.5 text-[9px] font-black text-brand-700 disabled:opacity-50"
                       >
-                        {activatingId === item.id ? 'Activating…' : 'Set Active'}
+                        {activatingId === item.id ? 'Mengaktifkan…' : 'Jadikan Aktif'}
                       </button>
                     ) : null}
                   </div>
@@ -451,13 +473,13 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between rounded-t-2xl border border-slate-200 bg-white px-3 py-2.5">
             <div className="min-w-0">
               <div className="truncate text-xs font-black text-slate-900">{diagram.title}</div>
-              <div className="text-[9px] text-slate-400">Version {diagram.versionNo} · Saved in Total ARC</div>
+              <div className="text-[9px] text-slate-400">Versi {diagram.versionNo} · Tersimpan di Total ARC</div>
             </div>
             <button
               type="button"
               onClick={() => setFullscreen(false)}
               className="ml-3 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600"
-              aria-label="Close process flow"
+              aria-label="Tutup diagram alur proses"
             >
               <X className="h-4 w-4" />
             </button>
@@ -465,7 +487,7 @@ export function ProcessFlowDiagramPanel({ process }: { process: any }) {
           <div className="mx-auto w-full max-w-6xl flex-1 overflow-auto rounded-b-2xl border-x border-b border-slate-200 bg-slate-100 p-2 sm:p-4">
             <img
               src={svgDataUrl}
-              alt={'Saved process flow: ' + diagram.title}
+              alt={'Alur proses tersimpan: ' + diagram.title}
               className="mx-auto h-auto min-w-[680px] max-w-[1000px] rounded-xl bg-white shadow-xl"
             />
           </div>
