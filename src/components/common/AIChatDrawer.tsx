@@ -78,11 +78,11 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
     Promise.allSettled([
       fetch('/api/ai/status').then(async response => {
-        if (!response.ok) throw new Error('AI gateway status request failed.');
+        if (!response.ok) throw new Error('Permintaan status gateway AI gagal.');
         return response.json();
       }),
       fetch('/api/processes').then(async response => {
-        if (!response.ok) throw new Error('Registered process request failed.');
+        if (!response.ok) throw new Error('Permintaan data proses terdaftar gagal.');
         return response.json();
       })
     ])
@@ -100,7 +100,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           nextErrors.push({
             scope: 'ai',
             message:
-              'AI gateway status could not be verified. This does not indicate that registered process data is unavailable.'
+              'Status gateway AI tidak dapat diverifikasi. Kondisi ini tidak berarti data proses terdaftar tidak tersedia.'
           });
         }
 
@@ -127,7 +127,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           nextErrors.push({
             scope: 'process',
             message:
-              'Registered process data could not be loaded from the process data API. This is a business-data connectivity issue and does not by itself mean that the AI provider is unavailable.'
+              'Data proses terdaftar tidak dapat dimuat dari API proses. Ini merupakan kendala konektivitas data bisnis dan tidak otomatis berarti provider AI tidak tersedia.'
           });
         }
 
@@ -163,14 +163,14 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || data.error || 'AI analysis failed.');
+        throw new Error(data.detail || data.error || 'Analisis AI gagal.');
       }
 
       setFindings(Array.isArray(data.findings) ? data.findings : []);
       setAnalysisNote(typeof data.analysisNote === 'string' ? data.analysisNote : '');
       setAiMeta(data.ai || null);
     } catch (error) {
-      setAnalysisError(error instanceof Error ? error.message : 'AI analysis failed.');
+      setAnalysisError(error instanceof Error ? error.message : 'Analisis AI gagal.');
     } finally {
       setAnalyzing(false);
     }
@@ -188,13 +188,13 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm">Total ARC AI Assistant</h3>
+                <h3 className="font-bold text-sm">Asisten AI Total ARC</h3>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-200">
                   v3.0
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 mt-0.5">
-                Persisted-context analysis · multi-provider gateway
+                Analisis berbasis konteks tersimpan · gateway multi-provider
               </p>
             </div>
           </div>
@@ -206,8 +206,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
         <div className="px-6 py-3 bg-amber-50 border-b border-amber-200 flex gap-2.5">
           <ShieldAlert className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
           <p className="text-xs leading-relaxed text-amber-900">
-            AI is advisory only. It cannot approve processes, change risk or test ratings,
-            close issues, or create remediation without human action.
+            AI bersifat membantu dan tidak menggantikan keputusan pengguna. AI tidak dapat menyetujui proses, mengubah penilaian risiko atau hasil pengujian, menutup isu, maupun menetapkan remediasi tanpa tindakan manusia.
           </p>
         </div>
 
@@ -215,16 +214,16 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                AI Gateway
+                Gateway AI
               </div>
               <div className="text-xs text-slate-700 mt-1">
                 {loadingContext
-                  ? 'Checking configuration...'
+                  ? 'Memeriksa konfigurasi...'
                   : aiStatusUnavailable
-                    ? 'Gateway status could not be verified'
+                    ? 'Status gateway tidak dapat diverifikasi'
                     : configuredProviders.length > 0
-                      ? configuredProviders.length + ' provider(s) configured'
-                      : 'No provider is currently configured'}
+                      ? configuredProviders.length + ' provider terkonfigurasi'
+                      : 'Belum ada provider yang dikonfigurasi'}
               </div>
             </div>
             <div
@@ -244,17 +243,17 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               )}
               <span>
                 {configuredProviders.length > 0 && !aiStatusUnavailable
-                  ? 'Ready'
+                  ? 'Siap'
                   : aiStatusUnavailable
-                    ? 'Status unavailable'
-                    : 'Not configured'}
+                    ? 'Status tidak tersedia'
+                    : 'Belum dikonfigurasi'}
               </span>
             </div>
           </div>
 
           <div>
             <label className="block text-[11px] font-bold text-slate-600 mb-1.5">
-              Registered process
+              Proses terdaftar
             </label>
             <select
               value={selectedProcessId}
@@ -264,7 +263,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             >
               {processes.length === 0 ? (
                 <option value="">
-                  {processDataUnavailable ? 'Process data could not be loaded' : 'No registered process available'}
+                  {processDataUnavailable ? 'Data proses tidak dapat dimuat' : 'Belum ada proses terdaftar'}
                 </option>
               ) : (
                 processes.map(process => (
@@ -291,7 +290,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             ) : (
               <Cpu className="w-4 h-4" />
             )}
-            <span>{analyzing ? 'Analyzing persisted BPM / RCM context...' : 'Run governed AI analysis'}</span>
+            <span>{analyzing ? 'Menganalisis konteks BPM / RCM tersimpan...' : 'Jalankan Analisis AI Terkendali'}</span>
           </button>
         </div>
 
@@ -308,8 +307,8 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
             >
               <strong>
                 {error.scope === 'process'
-                  ? 'Process data unavailable:'
-                  : 'AI gateway status unavailable:'}
+                  ? 'Data proses tidak tersedia:'
+                  : 'Status gateway AI tidak tersedia:'}
               </strong>{' '}
               {error.message}
             </div>
@@ -317,16 +316,16 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
           {analysisError && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
-              <strong>AI analysis unavailable:</strong> {analysisError}
+              <strong>Analisis AI tidak tersedia:</strong> {analysisError}
             </div>
           )}
 
           {!loadingContext && processes.length === 0 && !processDataUnavailable && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center">
               <AlertCircle className="w-6 h-6 text-slate-400 mx-auto" />
-              <h4 className="text-sm font-bold text-slate-800 mt-2">No process context yet</h4>
+              <h4 className="text-sm font-bold text-slate-800 mt-2">Belum ada konteks proses</h4>
               <p className="text-xs text-slate-500 mt-1">
-                Register real BPM data first. Total ARC AI does not generate findings from synthetic process data.
+                Daftarkan data BPM aktual terlebih dahulu. AI Total ARC tidak membuat temuan dari data proses sintetis.
               </p>
             </div>
           )}
@@ -337,7 +336,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                 Provider: <strong className="text-slate-800">{aiMeta.provider}</strong>
                 {' · '}
                 {aiMeta.model}
-                {aiMeta.fallbackUsed ? ' · fallback used' : ''}
+                {aiMeta.fallbackUsed ? ' · menggunakan fallback' : ''}
               </span>
               <span>{aiMeta.durationMs} ms</span>
             </div>
@@ -351,7 +350,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
           {aiMeta && findings.length === 0 && !analysisNote && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-              Analysis completed with no evidence-based finding returned.
+              Analisis selesai dan tidak menghasilkan temuan berbasis bukti.
             </div>
           )}
 
@@ -385,7 +384,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
               {finding.recommendation && (
                 <div className="rounded-lg bg-slate-50 border border-slate-100 p-3">
-                  <div className="text-[10px] font-bold uppercase text-slate-500">Recommendation</div>
+                  <div className="text-[10px] font-bold uppercase text-slate-500">Rekomendasi</div>
                   <p className="text-xs text-slate-800 mt-1 leading-relaxed">{finding.recommendation}</p>
                 </div>
               )}
