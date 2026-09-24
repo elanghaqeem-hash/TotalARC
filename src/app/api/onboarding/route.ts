@@ -1,14 +1,40 @@
 import { NextResponse } from 'next/server';
 import { FRAMEWORK_REFERENCES, INDUSTRY_REFERENCES } from '@/lib/reference-data';
-import { getPrimaryInstitution, upsertInstitution } from '@/lib/d1';
+import { upsertInstitution } from '@/lib/d1';
+import {
+  ACTIVE_INSTITUTION_COOKIE_NAME,
+  resolveInstitutionAccess
+} from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+function setActiveInstitutionCookie(response: NextResponse, institutionId: string) {
+  response.cookies.set({
+    name: ACTIVE_INSTITUTION_COOKIE_NAME,
+    value: institutionId,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30
+  });
+  return response;
+}
+
+export async function GET(request: Request) {
   try {
-    const institution = await getPrimaryInstitution();
+    const context = await resolveInstitutionAccess(request);
+    if (!context) {
+      return NextResponse.json(
+        { error: 'Authentication required.' },
+        { status: 401, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     return NextResponse.json({
-      institution,
+      institution: context.institution,
+      institutions: context.institutions,
+      canSwitchInstitution: context.canSwitch,
       industries: INDUSTRY_REFERENCES,
       frameworks: FRAMEWORK_REFERENCES,
       regulations: [],
@@ -25,6 +51,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+    if (context.profile.role !== 'Admin') {
+      return NextResponse.json(
+        { error: 'Administrator access is required to register or update an institution.' },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const {
       name, legalName, shortName, institutionType, country, provinceState, city,
@@ -66,7 +103,11 @@ export async function POST(request: Request) {
       operatingModel: operatingModel || null
     }, 'Institution saved through onboarding to persistent Cloudflare D1.');
 
-    return NextResponse.json({ success: true, institution, storage: 'cloudflare-d1' }, { status: 200 });
+    const response = NextResponse.json(
+      { success: true, institution, storage: 'cloudflare-d1' },
+      { status: 200 }
+    );
+    return setActiveInstitutionCookie(response, institution.id);
   } catch (error) {
     console.error('Onboarding persistence failed:', error);
     return NextResponse.json(
