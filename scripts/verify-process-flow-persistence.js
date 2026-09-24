@@ -37,8 +37,8 @@ requireText(route, "sensitivity: 'confidential'", 'Confidential BPM processing')
 requireText(route, 'getProcessFlowWorkspace', 'Saved flow read path');
 requireText(route, 'aiRequiredToView: false', 'No AI required for reuse');
 requireText(route, 'PROCESS_SOURCE_CHANGED', 'Concurrent source-change protection');
-requireText(route, 'deterministic flow renderer', 'Structured AI output contract');
-requireText(route, 'never draw SVG, HTML, Mermaid, ASCII diagrams', 'AI cannot control visual layout');
+requireText(route, 'renderer alur deterministik', 'Structured AI output contract');
+requireText(route, 'jangan membuat SVG, HTML, Mermaid, diagram ASCII', 'AI cannot control visual layout');
 requireText(route, 'Tata letak visual dibuat oleh Total ARC, bukan oleh AI.', 'Renderer ownership');
 requireText(route, 'buildDeterministicDefinition', 'Deterministic fallback definition');
 requireText(route, "sourceType: 'SYSTEM_FALLBACK'", 'AI failure fallback persistence');
@@ -52,7 +52,7 @@ requireText(ui, 'workspace?.notice', 'Non-blocking generation notice');
 requireText(ui, 'Sistem Total ARC', 'Deterministic fallback label');
 requireText(ui, 'downloadPng', 'PNG export');
 requireText(ui, 'downloadSvg', 'SVG export');
-requireText(ui, 'Set Active', 'Version reuse');
+requireText(ui, 'Jadikan Aktif', 'Version reuse');
 requireText(ui, 'workspace?.stale', 'Stale-source warning');
 
 const page = 'src/app/processes/page.tsx';
