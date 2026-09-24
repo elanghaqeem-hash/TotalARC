@@ -5,6 +5,7 @@ export type AiSensitivity = 'public' | 'internal' | 'confidential' | 'restricted
 export type AiTask =
   | 'process_analysis'
   | 'process_flow'
+  | 'process_document_analysis'
   | 'risk_identification'
   | 'control_gap'
   | 'rcm_generation'
