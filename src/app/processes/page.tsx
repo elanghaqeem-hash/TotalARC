@@ -23,6 +23,7 @@ import {
 import { AIChatDrawer } from '@/components/common/AIChatDrawer';
 import { DataLoadingState } from '@/components/common/DataLoadingState';
 import { ProcessFlowDiagramPanel } from '@/components/processes/ProcessFlowDiagramPanel';
+import { ProcessSupportingDocumentAI } from '@/components/processes/ProcessSupportingDocumentAI';
 
 function parseProcessTags(raw: unknown): Record<string, any> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -1050,7 +1051,7 @@ export default function ProcessesPage() {
       {/* Register New Process Modal */}
       {newProcessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-100">
+          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl space-y-4 animate-in zoom-in-95 duration-100 sm:p-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-base text-slate-900">
                 {editingProcess ? 'Update Business Process' : 'Register Business Process'}
@@ -1175,6 +1176,39 @@ export default function ProcessesPage() {
                   className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
+
+              {editingProcess?.id ? (
+                <ProcessSupportingDocumentAI
+                  process={editingProcess}
+                  onUseSuggestions={draft => {
+                    const master = draft?.master || {};
+                    setFormData(current => ({
+                      ...current,
+                      name: master.name || current.name,
+                      ownerName: master.ownerName || current.ownerName,
+                      criticality: master.criticality || current.criticality,
+                      classification: master.classification || current.classification,
+                      isIcofrRelevant:
+                        typeof master.isIcofrRelevant === 'boolean'
+                          ? master.isIcofrRelevant
+                          : current.isIcofrRelevant,
+                      description: master.description || current.description
+                    }));
+                  }}
+                  onApplied={async () => {
+                    await loadProcesses(String(editingProcess.id));
+                    setNewProcessModal(false);
+                    setEditingProcess(null);
+                  }}
+                />
+              ) : (
+                <div className="rounded-xl border border-dashed border-sky-200 bg-sky-50/50 p-3 text-[9px] leading-4 text-slate-500">
+                  <strong className="text-slate-700">Supporting Document & ARC AI:</strong>{' '}
+                  simpan Process Master terlebih dahulu. Setelah Process ID terbentuk, buka kembali
+                  Update Business Process untuk upload SOP/PDF/DOCX/PPTX/JPEG/XLSX dan membuat draft
+                  BPM beserta flowchart.
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
                 <button
