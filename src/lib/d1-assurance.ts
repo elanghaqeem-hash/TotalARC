@@ -1067,17 +1067,19 @@ export async function createRetestRecord(input: {
   };
 }
 
-export async function listToeTests() {
+export async function listToeTests(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institutionId = await resolveServerActiveInstitutionId();
+  const tenantId = String(
+    institutionId || (await resolveServerActiveInstitutionId()) || ''
+  ).trim();
   const tests = await all<Record<string, unknown>>(
     db,
     `SELECT t.*
        FROM ToETest t
        JOIN ControlMaster c ON c.id = t.controlId
-      ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+      ${tenantId ? 'WHERE c.institutionId = ?' : ''}
       ORDER BY t.testedAt DESC, t.testId ASC`,
-    institutionId ? [institutionId] : []
+    tenantId ? [tenantId] : []
   );
 
   return Promise.all(
@@ -1212,9 +1214,11 @@ export async function updateToeSample(input: {
   };
 }
 
-export async function listRemediationData() {
+export async function listRemediationData(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institutionId = await resolveServerActiveInstitutionId();
+  const tenantId = String(
+    institutionId || (await resolveServerActiveInstitutionId()) || ''
+  ).trim();
   const [exceptionRows, deficiencyRows, issueRows, mapRows, retestRows] = await Promise.all([
     all<Record<string, unknown>>(
       db,
@@ -1222,9 +1226,9 @@ export async function listRemediationData() {
          FROM TestingException e
          JOIN ToETest t ON t.id = e.toeTestId
          JOIN ControlMaster c ON c.id = t.controlId
-        ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+        ${tenantId ? 'WHERE c.institutionId = ?' : ''}
         ORDER BY e.createdAt DESC`,
-      institutionId ? [institutionId] : []
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
@@ -1233,25 +1237,25 @@ export async function listRemediationData() {
          LEFT JOIN TestingException e ON e.id = d.exceptionId
          LEFT JOIN ToETest t ON t.id = e.toeTestId
          LEFT JOIN ControlMaster c ON c.id = t.controlId
-        ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+        ${tenantId ? 'WHERE c.institutionId = ?' : ''}
         ORDER BY d.createdAt DESC`,
-      institutionId ? [institutionId] : []
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
       `SELECT * FROM Issue
-        ${institutionId ? 'WHERE institutionId = ?' : ''}
+        ${tenantId ? 'WHERE institutionId = ?' : ''}
         ORDER BY createdAt DESC`,
-      institutionId ? [institutionId] : []
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
       `SELECT m.*
          FROM ManagementActionPlan m
          JOIN Issue i ON i.id = m.issueId
-        ${institutionId ? 'WHERE i.institutionId = ?' : ''}
+        ${tenantId ? 'WHERE i.institutionId = ?' : ''}
         ORDER BY m.createdAt DESC`,
-      institutionId ? [institutionId] : []
+      tenantId ? [tenantId] : []
     ),
     all<Record<string, unknown>>(
       db,
@@ -1259,9 +1263,9 @@ export async function listRemediationData() {
          FROM RetestRecord r
          JOIN ManagementActionPlan m ON m.id = r.mapId
          JOIN Issue i ON i.id = m.issueId
-        ${institutionId ? 'WHERE i.institutionId = ?' : ''}
+        ${tenantId ? 'WHERE i.institutionId = ?' : ''}
         ORDER BY r.retestedAt DESC`,
-      institutionId ? [institutionId] : []
+      tenantId ? [tenantId] : []
     )
   ]);
 
@@ -1377,17 +1381,19 @@ export async function requestMapExtension(input: {
   };
 }
 
-export async function listMonitoringRules() {
+export async function listMonitoringRules(institutionId?: string | null) {
   const db = await ensureAssuranceSchema();
-  const institutionId = await resolveServerActiveInstitutionId();
+  const tenantId = String(
+    institutionId || (await resolveServerActiveInstitutionId()) || ''
+  ).trim();
   const rules = await all<Record<string, unknown>>(
     db,
     `SELECT m.*
        FROM MonitoringRule m
        JOIN ControlMaster c ON c.id = m.controlId
-      ${institutionId ? 'WHERE c.institutionId = ?' : ''}
+      ${tenantId ? 'WHERE c.institutionId = ?' : ''}
       ORDER BY m.createdAt DESC, m.ruleId ASC`,
-    institutionId ? [institutionId] : []
+    tenantId ? [tenantId] : []
   );
 
   return Promise.all(
