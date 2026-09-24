@@ -1430,6 +1430,32 @@ Object.assign(INDONESIAN_UI_EXACT, {
   'Dihitung dari record aktif pada database.': 'Dihitung dari data aktif pada database.'
 });
 
+
+Object.assign(INDONESIAN_UI_EXACT, {
+  'Sampling': 'Pengambilan Sampel',
+  'Sampling & Evidence': 'Pengambilan Sampel & Bukti',
+  'ICOFR Sampling & Evidence': 'Pengambilan Sampel & Bukti ICOFR',
+  'Sampling Plan': 'Rencana Pengambilan Sampel',
+  'Sampling Method': 'Metode Pengambilan Sampel',
+  'Sampling Method *': 'Metode Pengambilan Sampel *',
+  'Walkthrough': 'Penelusuran Proses',
+  'Walkthrough & ToD': 'Penelusuran Proses & ToD',
+  'Review Kertas Kerja ICOFR': 'Penelaahan Kertas Kerja ICOFR',
+  'Reporting': 'Pelaporan',
+  'Workflow': 'Alur Kerja',
+  'Workspace': 'Ruang Kerja',
+  'Dashboard': 'Dasbor',
+  'Assurance': 'Penjaminan',
+  'Evidence': 'Bukti',
+  'Evidence Pack': 'Paket Bukti',
+  'Evidence Review': 'Penelaahan Bukti',
+  'Review Notes': 'Catatan Penelaahan',
+  'Review Status': 'Status Penelaahan',
+  'Reviewer Name': 'Nama Penelaah',
+  'Smart Testing Strategy': 'Strategi Pengujian Cerdas',
+  'Management Review Control': 'Kontrol Penelaahan Manajemen'
+});
+
 const REPLACERS: Array<[RegExp, (...args: string[]) => string]> = [
   [/^Risk Register \((\d+)\)$/i, (_all, n) => `Register Risiko (${n})`],
   [/^Version (\d+)$/i, (_all, n) => `Versi ${n}`],
