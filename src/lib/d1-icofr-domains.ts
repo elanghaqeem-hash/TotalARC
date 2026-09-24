@@ -410,9 +410,15 @@ export async function saveIcofrControl(input: Record<string, unknown>) {
   return record;
 }
 
-export async function listInformationRegister(artifactType?: string) {
+export async function listInformationRegister(
+  artifactType?: string,
+  institutionId?: string | null
+) {
   const db = await ensureIcofrDomainSchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) return { institution: null, records: [] };
   const normalized = artifactType ? artifactType.trim().toUpperCase() : '';
 
@@ -525,9 +531,12 @@ export async function saveInformationRegister(input: Record<string, unknown>) {
   return record;
 }
 
-export async function listFinancialItems() {
+export async function listFinancialItems(institutionId?: string | null) {
   const db = await ensureIcofrDomainSchema();
-  const institution = await primaryInstitution(db);
+  const tenantId = String(institutionId || '').trim();
+  const institution = tenantId
+    ? await first<Record<string, unknown>>(db, 'SELECT * FROM Institution WHERE id=? LIMIT 1', [tenantId])
+    : await primaryInstitution(db);
   if (!institution) return { institution: null, records: [] };
   const records = await all<Record<string, unknown>>(
     db,
