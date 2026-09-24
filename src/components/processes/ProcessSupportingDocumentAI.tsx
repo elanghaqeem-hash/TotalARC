@@ -62,7 +62,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
       if (!response.ok) throw new Error(payload.error || 'Unable to load supporting documents.');
       const next = Array.isArray(payload.analyses) ? payload.analyses : [];
       setAnalyses(next);
-      setActiveAnalysis(current => {
+      setActiveAnalysis((current: any) => {
         if (current?.id && next.some((item: any) => item.id === current.id)) {
           return next.find((item: any) => item.id === current.id) || current;
         }
