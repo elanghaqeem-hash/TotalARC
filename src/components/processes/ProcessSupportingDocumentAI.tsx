@@ -262,7 +262,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         </div>
       </div>
 
-      {draft && activeAnalysis?.status === 'PENDING_USER_VALIDATION' && (
+      {draft && activeAnalysis && (
         <div className="mt-3 space-y-3 rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -273,7 +273,9 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
               </div>
             </div>
             <span className={`rounded-full border px-2 py-1 text-[8px] font-black ${statusTone(activeAnalysis.status)}`}>
-              PENDING VALIDATION
+              {activeAnalysis.status === 'PENDING_USER_VALIDATION'
+                ? 'PENDING VALIDATION'
+                : activeAnalysis.status}
             </span>
           </div>
 
@@ -367,7 +369,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             </div>
           )}
 
-          {existingActivityCount > 0 && (
+          {activeAnalysis.status === 'PENDING_USER_VALIDATION' && existingActivityCount > 0 && (
             <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 text-[8px] leading-3.5 text-amber-800">
               <input
                 type="checkbox"
@@ -383,32 +385,39 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             </label>
           )}
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <button
-              type="button"
-              onClick={() => onUseSuggestions(draft)}
-              className="min-h-9 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[9px] font-black text-sky-700 hover:bg-sky-100"
-            >
-              Use Master Suggestions
-            </button>
-            <button
-              type="button"
-              onClick={() => void reject()}
-              disabled={rejecting || applying}
-              className="min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-[9px] font-black text-slate-600 disabled:opacity-50"
-            >
-              {rejecting ? 'Rejecting…' : 'Reject Draft'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void apply()}
-              disabled={applying || rejecting}
-              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[9px] font-black text-white disabled:opacity-50"
-            >
-              {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-              {applying ? 'Applying…' : 'Validate & Apply BPM'}
-            </button>
-          </div>
+          {activeAnalysis.status === 'PENDING_USER_VALIDATION' ? (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => onUseSuggestions(draft)}
+                className="min-h-9 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[9px] font-black text-sky-700 hover:bg-sky-100"
+              >
+                Use Master Suggestions
+              </button>
+              <button
+                type="button"
+                onClick={() => void reject()}
+                disabled={rejecting || applying}
+                className="min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-[9px] font-black text-slate-600 disabled:opacity-50"
+              >
+                {rejecting ? 'Rejecting…' : 'Reject Draft'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void apply()}
+                disabled={applying || rejecting}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[9px] font-black text-white disabled:opacity-50"
+              >
+                {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                {applying ? 'Applying…' : 'Validate & Apply BPM'}
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[8px] leading-3.5 text-slate-500">
+              Draft dan flow preview ini tersimpan di Total ARC dan dapat dilihat kembali tanpa
+              menjalankan AI ulang.
+            </div>
+          )}
         </div>
       )}
 
@@ -433,7 +442,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
               <button
                 key={item.id}
                 type="button"
-                onClick={() => item.status === 'PENDING_USER_VALIDATION' && setActiveAnalysis(item)}
+                onClick={() => setActiveAnalysis(item)}
                 className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left"
               >
                 <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
