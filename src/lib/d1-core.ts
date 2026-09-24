@@ -1482,17 +1482,16 @@ export async function findBusinessProcessForAi(
 ) {
   const db = await ensureCoreDomainSchema();
   const tenantId = String(institutionId || '').trim();
+  if (!tenantId) return null;
   let row: Record<string, unknown> | null = null;
 
   if (identifier.processId) {
     row = await first<Record<string, unknown>>(
       db,
       `SELECT * FROM BusinessProcess
-        WHERE (id = ? OR processId = ?)${tenantId ? ' AND institutionId = ?' : ''}
+        WHERE (id = ? OR processId = ?) AND institutionId = ?
         LIMIT 1`,
-      tenantId
-        ? [identifier.processId, identifier.processId, tenantId]
-        : [identifier.processId, identifier.processId]
+      [identifier.processId, identifier.processId, tenantId]
     );
   }
 
@@ -1500,9 +1499,9 @@ export async function findBusinessProcessForAi(
     row = await first<Record<string, unknown>>(
       db,
       `SELECT * FROM BusinessProcess
-        WHERE name = ?${tenantId ? ' AND institutionId = ?' : ''}
+        WHERE name = ? AND institutionId = ?
         LIMIT 1`,
-      tenantId ? [identifier.processName, tenantId] : [identifier.processName]
+      [identifier.processName, tenantId]
     );
   }
 
