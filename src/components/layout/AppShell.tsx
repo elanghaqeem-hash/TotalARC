@@ -816,7 +816,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                 <button
                   type="button"
-                  onClick={() => void logout()
+                  onClick={() => void logout()}
                   className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100"
                 >
                   <LogOut className="h-4 w-4" />
