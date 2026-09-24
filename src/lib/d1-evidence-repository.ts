@@ -310,6 +310,19 @@ async function primaryInstitution(db: D1DatabaseLike) {
   );
 }
 
+async function institutionFor(
+  db: D1DatabaseLike,
+  institutionId?: string | null
+) {
+  const tenantId = String(institutionId || '').trim();
+  if (!tenantId) return primaryInstitution(db);
+  return first<Record<string, unknown>>(
+    db,
+    'SELECT * FROM Institution WHERE id = ? LIMIT 1',
+    [tenantId]
+  );
+}
+
 async function audit(
   db: D1DatabaseLike,
   institutionId: string,
@@ -419,6 +432,7 @@ async function insertChunks(
 }
 
 export async function uploadEvidenceVersion(input: {
+  institutionId?: string | null;
   documentId?: string | null;
   title: string;
   description?: string | null;
@@ -436,7 +450,7 @@ export async function uploadEvidenceVersion(input: {
   bytes: Uint8Array;
 }) {
   const db = await ensureEvidenceRepositorySchema();
-  const institution = await primaryInstitution(db);
+  const institution = await institutionFor(db, input.institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const title = input.title.trim();
@@ -774,6 +788,7 @@ async function targetExists(
 }
 
 export async function linkEvidence(input: {
+  institutionId?: string | null;
   documentId: string;
   versionId?: string | null;
   entityType: string;
@@ -785,7 +800,7 @@ export async function linkEvidence(input: {
   evidenceOwner?: string | null;
 }) {
   const db = await ensureEvidenceRepositorySchema();
-  const institution = await primaryInstitution(db);
+  const institution = await institutionFor(db, input.institutionId);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const documentId = input.documentId.trim();

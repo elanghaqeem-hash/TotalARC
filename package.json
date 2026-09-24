@@ -21,7 +21,8 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "build:next": "next build",
     "verify:tenant-isolation": "node scripts/verify-multi-institution-isolation.js",
-    "verify:process-flow": "node scripts/verify-process-flow-persistence.js"
+    "verify:process-flow": "node scripts/verify-process-flow-persistence.js",
+    "verify:process-document-ai": "node scripts/verify-process-supporting-document-ai.js"
   },
   "keywords": [],
   "author": "",

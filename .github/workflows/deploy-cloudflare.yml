@@ -134,6 +134,9 @@ jobs:
       - name: Verify saved process flow persistence
         run: npm run verify:process-flow
 
+      - name: Verify supporting document AI workflow
+        run: npm run verify:process-document-ai
+
       - name: Build OpenNext Worker
         run: npm run build
 
