@@ -23,7 +23,8 @@
     "verify:tenant-isolation": "node scripts/verify-multi-institution-isolation.js",
     "verify:process-flow": "node scripts/verify-process-flow-persistence.js",
     "verify:process-document-ai": "node scripts/verify-process-supporting-document-ai.js",
-    "verify:ai-risk-register": "node scripts/verify-ai-risk-register.js"
+    "verify:ai-risk-register": "node scripts/verify-ai-risk-register.js",
+    "verify:indonesian-ui": "node scripts/verify-indonesian-ui.js"
   },
   "keywords": [],
   "author": "",
