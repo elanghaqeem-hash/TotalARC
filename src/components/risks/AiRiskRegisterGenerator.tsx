@@ -27,7 +27,7 @@ type Suggestion = {
   rationale: string;
   sourceActivityIds: string[];
   sourceActivityNames: string[];
-  keyakinan: 'High' | 'Medium' | 'Low';
+  confidence: 'High' | 'Medium' | 'Low';
 };
 
 type Batch = {
@@ -73,7 +73,7 @@ const CONFIDENCE_LABEL_ID: Record<string, string> = {
   Low: 'Rendah'
 };
 
-function keyakinanTone(value: string) {
+function confidenceTone(value: string) {
   if (value === 'High') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (value === 'Low') return 'border-slate-200 bg-slate-50 text-slate-500';
   return 'border-amber-200 bg-amber-50 text-amber-700';
@@ -242,7 +242,7 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
     const allSelected = available.length > 0 && available.every(item => selected.has(item.id));
     setSelected(current => {
       const next = new Set(current);
-      for (const item of tersedia) {
+      for (const item of available) {
         if (allSelected) next.delete(item.id);
         else next.add(item.id);
       }
@@ -486,9 +486,9 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
 
                   <div className="space-y-3">
                     {grouped.map(([category, items]) => {
-                      const tersedia = items.filter(item => !alreadyApplied.has(item.id));
+                      const available = items.filter(item => !alreadyApplied.has(item.id));
                       const allSelected =
-                        tersedia.length > 0 && tersedia.every(item => selected.has(item.id));
+                        available.length > 0 && available.every(item => selected.has(item.id));
 
                       return (
                         <div key={category} className="overflow-hidden rounded-xl border border-slate-200">
