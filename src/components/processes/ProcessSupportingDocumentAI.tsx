@@ -66,7 +66,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         if (current?.id && next.some((item: any) => item.id === current.id)) {
           return next.find((item: any) => item.id === current.id) || current;
         }
-        return next.find((item: any) => item.status === 'PENDING_USER_VALIDATION') || null;
+        return next.find((item: any) => item.status === 'MENUNGGU_USER_VALIDATION') || null;
       });
     } catch {
       // History is supporting context only; do not block editing the process form.
@@ -109,7 +109,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
           payload.error ||
             (payload.evidenceStored
               ? 'File tersimpan, tetapi analisis AI belum berhasil.'
-              : 'Upload dan analisis gagal.')
+              : 'Unggah dan analisis gagal.')
         );
       }
 
@@ -119,10 +119,10 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         ...current.filter(item => item.id !== payload.analysis?.id)
       ]);
       setMessage(
-        'Dokumen tersimpan di Evidence Repository. Draft AI siap direview; belum ada data BPM yang diubah.'
+        'Dokumen tersimpan di Repositori Bukti. Draf AI siap direview; belum ada data BPM yang diubah.'
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload dan analisis gagal.');
+      setError(err instanceof Error ? err.message : 'Unggah dan analisis gagal.');
     } finally {
       setAnalyzing(false);
     }
@@ -147,17 +147,17 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         }
       );
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'AI draft could not be applied.');
+      if (!response.ok) throw new Error(payload.error || 'Draf AI tidak dapat diterapkan.');
 
       setMessage(
         payload.result?.activityReplacementSkipped
-          ? 'Master, objective, dan SIPOC diterapkan. Activity Register lama dipertahankan karena opsi replacement tidak dipilih.'
-          : 'Draft telah divalidasi dan diterapkan. Flowchart tersimpan dan dapat digunakan kembali tanpa AI.'
+          ? 'Master, tujuan, dan SIPOC diterapkan. Register Aktivitas lama dipertahankan karena opsi penggantian tidak dipilih.'
+          : 'Draf telah divalidasi dan diterapkan. Flowchart tersimpan dan dapat digunakan kembali tanpa AI.'
       );
       await loadHistory();
       await onApplied();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI draft could not be applied.');
+      setError(err instanceof Error ? err.message : 'Draf AI tidak dapat diterapkan.');
     } finally {
       setApplying(false);
     }
@@ -177,12 +177,12 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         }
       );
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to reject this AI draft.');
-      setMessage('Draft AI ditolak. File sumber tetap tersimpan sebagai supporting evidence.');
+      if (!response.ok) throw new Error(payload.error || 'Tidak dapat menolak draf AI ini.');
+      setMessage('Draf AI ditolak. File sumber tetap tersimpan sebagai bukti pendukung.');
       setActiveAnalysis(null);
       await loadHistory();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to reject this AI draft.');
+      setError(err instanceof Error ? err.message : 'Tidak dapat menolak draf AI ini.');
     } finally {
       setRejecting(false);
     }
@@ -197,15 +197,14 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-[11px] font-black text-slate-900">
-              Supporting Document & AI Process Definition
+              Dokumen Pendukung & Definisi Proses AI
             </h4>
             <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-sky-700">
-              Review before apply
+              Review sebelum diterapkan
             </span>
           </div>
           <p className="mt-1 text-[9px] leading-4 text-slate-500">
-            Upload SOP atau catatan proses. File asli disimpan sebagai evidence; ARC AI membuat draft BPM
-            dan flowchart tanpa langsung menimpa Process Master.
+            Unggah SOP atau catatan proses. File asli disimpan sebagai bukti; ARC AI membuat draf BPM dan flowchart tanpa langsung menimpa Master Proses.
           </p>
         </div>
       </div>
@@ -257,7 +256,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             ) : (
               <Sparkles className="h-3.5 w-3.5" />
             )}
-            {analyzing ? 'Analyzing…' : 'Upload & Analyze'}
+            {analyzing ? 'Menganalisis…' : 'Unggah & Analisis'}
           </button>
         </div>
       </div>
@@ -266,15 +265,15 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         <div className="mt-3 space-y-3 rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="text-[10px] font-black text-slate-900">AI BPM Draft</div>
+              <div className="text-[10px] font-black text-slate-900">Draf BPM AI</div>
               <div className="mt-0.5 text-[8px] text-slate-400">
                 {activeAnalysis.fileName} · confidence {draft.confidence || 'Not Assessed'} ·{' '}
                 {activeAnalysis.extractionMethod}
               </div>
             </div>
             <span className={`rounded-full border px-2 py-1 text-[8px] font-black ${statusTone(activeAnalysis.status)}`}>
-              {activeAnalysis.status === 'PENDING_USER_VALIDATION'
-                ? 'PENDING VALIDATION'
+              {activeAnalysis.status === 'MENUNGGU_USER_VALIDATION'
+                ? 'MENUNGGU VALIDASI'
                 : activeAnalysis.status}
             </span>
           </div>
@@ -282,26 +281,26 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="rounded-lg bg-slate-50 p-2.5">
               <div className="text-[8px] font-black uppercase tracking-wide text-slate-400">
-                Suggested master
+                Usulan master
               </div>
               <div className="mt-1 text-[10px] font-black text-slate-800">
                 {draft.master?.name || process.name}
               </div>
               <div className="mt-1 text-[9px] leading-4 text-slate-500">
-                Owner: {draft.master?.ownerName || 'Not provided'}
+                Pemilik: {draft.master?.ownerName || 'Not provided'}
                 <br />
-                Criticality: {draft.master?.criticality || 'Not Assessed'} · Classification:{' '}
+                Kritikalitas: {draft.master?.criticality || 'Not Assessed'} · Klasifikasi:{' '}
                 {draft.master?.classification || 'Not Assessed'}
                 <br />
-                Category suggestion: {draft.master?.categorySuggestion || 'Not provided'}
+                Usulan kategori: {draft.master?.categorySuggestion || 'Not provided'}
               </div>
             </div>
             <div className="rounded-lg bg-slate-50 p-2.5">
               <div className="text-[8px] font-black uppercase tracking-wide text-slate-400">
-                Process objective
+                Tujuan proses
               </div>
               <div className="mt-1 text-[9px] leading-4 text-slate-600">
-                {draft.objective?.objective || 'Not supported by source document.'}
+                {draft.objective?.objective || 'Tidak didukung oleh dokumen sumber.'}
               </div>
             </div>
           </div>
@@ -309,7 +308,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
             <div className="mb-2 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wide text-slate-500">
               <GitBranch className="h-3.5 w-3.5 text-brand-600" />
-              AI Flowchart Preview ({draft.activities?.length || 0} steps)
+              Pratinjau Flowchart AI ({draft.activities?.length || 0} steps)
             </div>
             <div className="mx-auto max-w-md">
               <div className="mx-auto w-fit rounded-full bg-brand-600 px-3 py-1.5 text-[8px] font-black text-white">
@@ -334,13 +333,13 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
                           {activity.name}
                         </div>
                         <div className="mt-0.5 text-[8px] leading-3.5 text-slate-400">
-                          {activity.performer ? 'Performer: ' + activity.performer : 'Performer not provided'}
-                          {activity.systemUsed ? ' · System: ' + activity.systemUsed : ''}
+                          {activity.performer ? 'Pelaksana: ' + activity.performer : 'Pelaksana belum tersedia'}
+                          {activity.systemUsed ? ' · Sistem: ' + activity.systemUsed : ''}
                         </div>
                       </div>
                       {activity.kind === 'decision' && (
                         <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[7px] font-black text-amber-700">
-                          DECISION
+                          KEPUTUSAN
                         </span>
                       )}
                     </div>
@@ -358,18 +357,18 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[8px] leading-3.5 text-amber-800">
               {draft.gaps?.length > 0 && (
                 <div>
-                  <strong>Source gaps:</strong> {draft.gaps.join(' · ')}
+                  <strong>Kesenjangan sumber:</strong> {draft.gaps.join(' · ')}
                 </div>
               )}
               {draft.assumptions?.length > 0 && (
                 <div className={draft.gaps?.length ? 'mt-1' : ''}>
-                  <strong>AI assumptions to validate:</strong> {draft.assumptions.join(' · ')}
+                  <strong>Asumsi AI yang perlu divalidasi:</strong> {draft.assumptions.join(' · ')}
                 </div>
               )}
             </div>
           )}
 
-          {activeAnalysis.status === 'PENDING_USER_VALIDATION' && existingActivityCount > 0 && (
+          {activeAnalysis.status === 'MENUNGGU_USER_VALIDATION' && existingActivityCount > 0 && (
             <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 text-[8px] leading-3.5 text-amber-800">
               <input
                 type="checkbox"
@@ -378,21 +377,20 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
                 className="mt-0.5 h-3.5 w-3.5 rounded border-amber-300 text-brand-600"
               />
               <span>
-                <strong>Replace existing Activity Register ({existingActivityCount} steps)</strong>.
-                Total ARC akan memblokir replacement bila Risk atau Control sudah mereferensikan
-                activity lama. Jika tidak dicentang, activity lama dipertahankan.
+                <strong>Ganti Register Aktivitas yang ada ({existingActivityCount} steps)</strong>.
+                Total ARC akan memblokir penggantian bila Risiko atau Kontrol sudah mereferensikan aktivitas lama. Jika tidak dicentang, aktivitas lama dipertahankan.
               </span>
             </label>
           )}
 
-          {activeAnalysis.status === 'PENDING_USER_VALIDATION' ? (
+          {activeAnalysis.status === 'MENUNGGU_USER_VALIDATION' ? (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => onUseSuggestions(draft)}
                 className="min-h-9 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[9px] font-black text-sky-700 hover:bg-sky-100"
               >
-                Use Master Suggestions
+                Gunakan Usulan Master
               </button>
               <button
                 type="button"
@@ -400,7 +398,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
                 disabled={rejecting || applying}
                 className="min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-[9px] font-black text-slate-600 disabled:opacity-50"
               >
-                {rejecting ? 'Rejecting…' : 'Reject Draft'}
+                {rejecting ? 'Rejecting…' : 'Tolak Draf'}
               </button>
               <button
                 type="button"
@@ -409,13 +407,12 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
                 className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[9px] font-black text-white disabled:opacity-50"
               >
                 {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                {applying ? 'Applying…' : 'Validate & Apply BPM'}
+                {applying ? 'Menerapkan…' : 'Validasi & Terapkan BPM'}
               </button>
             </div>
           ) : (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[8px] leading-3.5 text-slate-500">
-              Draft dan flow preview ini tersimpan di Total ARC dan dapat dilihat kembali tanpa
-              menjalankan AI ulang.
+              Draf dan pratinjau alur ini tersimpan di Total ARC dan dapat dilihat kembali tanpa menjalankan AI ulang.
             </div>
           )}
         </div>
@@ -425,14 +422,14 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         <div className="mt-3 border-t border-sky-100 pt-2.5">
           <div className="mb-1.5 flex items-center justify-between">
             <span className="text-[8px] font-black uppercase tracking-wide text-slate-400">
-              Supporting document history
+              Riwayat dokumen pendukung
             </span>
             <button
               type="button"
               onClick={() => void loadHistory()}
               disabled={loadingHistory}
               className="text-slate-400 hover:text-brand-600 disabled:opacity-50"
-              aria-label="Refresh document analysis history"
+              aria-label="Muat ulang riwayat analisis dokumen"
             >
               <RefreshCw className={`h-3 w-3 ${loadingHistory ? 'animate-spin' : ''}`} />
             </button>
@@ -453,7 +450,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
                   </div>
                 </div>
                 <span className={`rounded-full border px-1.5 py-0.5 text-[7px] font-black ${statusTone(item.status)}`}>
-                  {item.status === 'PENDING_USER_VALIDATION' ? 'PENDING' : item.status}
+                  {item.status === 'MENUNGGU_USER_VALIDATION' ? 'MENUNGGU' : item.status}
                 </span>
               </button>
             ))}
