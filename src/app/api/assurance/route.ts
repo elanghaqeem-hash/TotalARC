@@ -114,41 +114,41 @@ export async function GET(request: Request) {
       () => getOrganizationStructure(institutionId),
       { institution: null, legalEntities: [], organizationUnits: [], users: [] } as any
     ),
-    loadModule('tod', needTod, listDesignAssessments, [] as any[]),
+    loadModule('tod', needTod, () => listDesignAssessments(institutionId), [] as any[]),
     loadModule(
       'rcsa',
       needRcsa,
-      getRcsaWorkspaceData,
+      () => getRcsaWorkspaceData(institutionId),
       { institution: null, campaigns: [], processes: [], risks: [], controls: [], tasks: [] } as any
     ),
-    loadModule('pbc-tasks', needPbc, listPbcTasks, [] as any[]),
-    loadModule('toe', needToe, listToeTests, [] as any[]),
+    loadModule('pbc-tasks', needPbc, () => listPbcTasks(institutionId), [] as any[]),
+    loadModule('toe', needToe, () => listToeTests(institutionId), [] as any[]),
     loadModule(
       'remediation',
       needRemediation,
-      listRemediationData,
+      () => listRemediationData(institutionId),
       { exceptions: [], deficiencies: [], issues: [], maps: [], retests: [] } as any
     ),
-    loadModule('ccm', needCcm, listMonitoringRules, [] as any[]),
+    loadModule('ccm', needCcm, () => listMonitoringRules(institutionId), [] as any[]),
     loadModule(
       'certification',
       needCertification,
-      getCertificationData,
+      () => getCertificationData(institutionId),
       { subCertifications: [], attestations: [], evidencePacks: [] } as any
     ),
-    loadModule('calendar-events', needCalendar, listAssuranceCalendarEvents, [] as any[]),
-    loadModule('financial-items', needFinancial, listFinancialItems, { records: [] } as any),
-    loadModule('information-register', needInformation, listInformationRegister, { records: [] } as any),
+    loadModule('calendar-events', needCalendar, () => listAssuranceCalendarEvents(institutionId), [] as any[]),
+    loadModule('financial-items', needFinancial, () => listFinancialItems(institutionId), { records: [] } as any),
+    loadModule('information-register', needInformation, () => listInformationRegister(undefined, institutionId), { records: [] } as any),
     loadModule(
       'testing-plan',
       needTesting,
-      getTestingPlanData,
+      () => getTestingPlanData(institutionId),
       { cycles: [], planItems: [], metrics: {} } as any
     ),
     loadModule(
       'workpaper-review-tasks',
       needWorkpaperReviewTasks,
-      listWorkpaperReviewTasks,
+      () => listWorkpaperReviewTasks(institutionId),
       [] as any[]
     )
   ]);
