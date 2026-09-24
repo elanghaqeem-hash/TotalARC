@@ -88,9 +88,9 @@ const navGroups: NavGroup[] = [
       { name: 'Register IPE & EUC', href: '/icofr/information', icon: FileSpreadsheet },
       { name: 'Rencana & Siklus Pengujian ICOFR', href: '/icofr/testing-plan', icon: Calendar, badge: 'PLAN' },
       { name: 'Strategi Pengujian Cerdas ICOFR', href: '/icofr/smart-testing', icon: Sparkles, badge: 'SMART' },
-      { name: 'Sampling & Bukti ICOFR', href: '/icofr/sampling-evidence', icon: FileSpreadsheet, badge: 'SAMPLE' },
-      { name: 'Review Kertas Kerja ICOFR', href: '/icofr/workpaper-review', icon: ClipboardCheck, badge: 'QA' },
-      { name: 'Walkthrough & ToD', href: '/tod', icon: Workflow },
+      { name: 'Pengambilan Sampel & Bukti ICOFR', href: '/icofr/sampling-evidence', icon: FileSpreadsheet, badge: 'SAMPLE' },
+      { name: 'Penelaahan Kertas Kerja ICOFR', href: '/icofr/workpaper-review', icon: ClipboardCheck, badge: 'QA' },
+      { name: 'Penelusuran Proses & ToD', href: '/tod', icon: Workflow },
       { name: 'Pengujian ToE & Sampel', href: '/toe', icon: Cpu },
       { name: 'Evaluasi Defisiensi ICOFR', href: '/icofr/deficiencies', icon: AlertTriangle },
       { name: 'Remediasi & MAP', href: '/remediation', icon: BadgeCheck }
