@@ -358,18 +358,18 @@ function stepBadges(step: ProcessFlowStep) {
     if (label && !labels.includes(label)) labels.push(label);
   };
 
-  if (step.kind === 'decision') add('DECISION');
-  if (/PENDING.*VALID/.test(raw)) add('PENDING VALIDATION');
-  else if (/USER.?VALIDATED|\bVALIDATED\b/.test(raw)) add('VALIDATED');
+  if (step.kind === 'decision') add('KEPUTUSAN');
+  if (/PENDING.*VALID/.test(raw)) add('MENUNGGU VALIDASI');
+  else if (/USER.?VALIDATED|\bVALIDATED\b/.test(raw)) add('TERVALIDASI');
 
-  if (/IT.?DEPENDENT/.test(raw)) add('IT DEPENDENT');
+  if (/IT.?DEPENDENT/.test(raw)) add('TERGANTUNG TI');
   if (/\bMANUAL\b/.test(raw)) add('MANUAL');
-  if (/\bAUTO(MATED|MATIC)?\b/.test(raw)) add('AUTOMATED');
-  if (/\bDRAFT\b/.test(raw)) add('DRAFT');
-  if (/\bREVIEW\b/.test(raw)) add('REVIEW');
+  if (/\bAUTO(MATED|MATIC)?\b/.test(raw)) add('OTOMATIS');
+  if (/\bDRAFT\b/.test(raw)) add('DRAF');
+  if (/\bREVIEW\b/.test(raw)) add('TINJAUAN');
 
   if (!labels.length && raw) add(compactBadge(raw));
-  if (!labels.length) add(step.kind === 'decision' ? 'DECISION' : 'TASK');
+  if (!labels.length) add(step.kind === 'decision' ? 'KEPUTUSAN' : 'AKTIVITAS');
 
   return labels.slice(0, 4);
 }
@@ -419,12 +419,12 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
     const titleLines = wrap(step.title || step.sourceTitle, 48, 2);
     const badges = layoutBadges(stepBadges(step), contentWidth);
     const performerLines = wrap(
-      'Performer: ' + (step.performer || 'To be confirmed'),
+      'Pelaksana: ' + (step.performer || 'Perlu dikonfirmasi'),
       74,
       2
     );
     const systemLines = wrap(
-      'System: ' + (step.system || 'To be confirmed'),
+      'Sistem: ' + (step.system || 'Perlu dikonfirmasi'),
       74,
       2
     );
@@ -480,27 +480,27 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
         const chipX = contentX + item.x;
         const chipY = contentY + item.row * 30;
         const fill =
-          item.label === 'DECISION'
+          item.label === 'KEPUTUSAN'
             ? '#fffbeb'
-            : item.label === 'VALIDATED'
+            : item.label === 'TERVALIDASI'
               ? '#ecfdf5'
-              : item.label === 'DRAFT' || item.label === 'PENDING VALIDATION'
+              : item.label === 'DRAF' || item.label === 'MENUNGGU VALIDASI'
                 ? '#fff7ed'
                 : '#f8fafc';
         const stroke =
-          item.label === 'DECISION'
+          item.label === 'KEPUTUSAN'
             ? '#fbbf24'
-            : item.label === 'VALIDATED'
+            : item.label === 'TERVALIDASI'
               ? '#a7f3d0'
-              : item.label === 'DRAFT' || item.label === 'PENDING VALIDATION'
+              : item.label === 'DRAF' || item.label === 'MENUNGGU VALIDASI'
                 ? '#fed7aa'
                 : '#e2e8f0';
         const color =
-          item.label === 'DECISION'
+          item.label === 'KEPUTUSAN'
             ? '#92400e'
-            : item.label === 'VALIDATED'
+            : item.label === 'TERVALIDASI'
               ? '#047857'
-              : item.label === 'DRAFT' || item.label === 'PENDING VALIDATION'
+              : item.label === 'DRAF' || item.label === 'MENUNGGU VALIDASI'
                 ? '#9a3412'
                 : '#475569';
 
@@ -556,7 +556,7 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="flowTitle flowDesc">
   <title id="flowTitle">${escapeXml(definition.title)}</title>
-  <desc id="flowDesc">Saved process flow for ${escapeXml(definition.processName)} rendered by Total ARC from persisted structured data.</desc>
+  <desc id="flowDesc">Alur proses tersimpan untuk ${escapeXml(definition.processName)} yang dirender Total ARC dari data terstruktur.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8" />
@@ -577,25 +577,25 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
   </defs>
 
   <rect width="100%" height="100%" fill="#f8fafc" />
-  <text x="70" y="58" class="eyebrow">TOTAL ARC · SAVED PROCESS FLOW</text>
+  <text x="70" y="58" class="eyebrow">TOTAL ARC · ALUR PROSES TERSIMPAN</text>
 
   <rect x="790" y="42" width="140" height="36" rx="18" fill="#e0f2fe" />
-  <text x="860" y="65" text-anchor="middle" class="version">VERSION ${versionNo}</text>
+  <text x="860" y="65" text-anchor="middle" class="version">VERSI ${versionNo}</text>
 
   ${tspanLines(headerTitleLines, 70, headerTitleY, 36, 'heading')}
   <text x="70" y="${subheadingY}" class="subheading">${escapeXml(definition.processCode)} · ${escapeXml(definition.processName)}</text>
 
   <rect x="410" y="${startPillY}" width="180" height="48" rx="24" fill="#0284c7" />
-  <text x="500" y="${startPillY + 30}" text-anchor="middle" class="startEnd">START</text>
+  <text x="500" y="${startPillY + 30}" text-anchor="middle" class="startEnd">MULAI</text>
   <line x1="500" y1="${startPillY + 48}" x2="500" y2="${startY - 14}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />
 
   ${arrows.join('')}
   ${cards.join('')}
 
   <rect x="410" y="${endY}" width="180" height="48" rx="24" fill="#0f172a" />
-  <text x="500" y="${endY + 30}" text-anchor="middle" class="startEnd">END</text>
+  <text x="500" y="${endY + 30}" text-anchor="middle" class="startEnd">SELESAI</text>
 
-  <text x="70" y="${height - 34}" class="footer">Rendered from the saved Activity Register. Existing saved versions are re-laid out without another AI call.</text>
+  <text x="70" y="${height - 34}" class="footer">Dirender dari Activity Register tersimpan. Versi yang sudah ada ditata ulang tanpa memanggil AI kembali.</text>
 </svg>`;
 }
 
@@ -617,8 +617,8 @@ async function audit(
     [
       crypto.randomUUID(),
       institutionId,
-      actor || 'System',
-      'Process Flow',
+      actor || 'Sistem',
+      'Alur Proses',
       action,
       'ProcessFlowDiagram',
       recordId,
@@ -707,10 +707,12 @@ export async function saveGeneratedProcessFlow(input: {
     db,
     input.institutionId,
     input.generatedBy,
-    'AI_GENERATE',
+    input.sourceType === 'SYSTEM_FALLBACK' ? 'SYSTEM_GENERATE' : 'AI_GENERATE',
     id,
     { processId: input.processId, versionNo, sourceHash: input.sourceHash },
-    'AI-generated process flow saved for reuse; no source BPM data was modified.'
+    input.sourceType === 'SYSTEM_FALLBACK'
+      ? 'Diagram alur dibuat langsung dari Activity Register karena peningkatan AI tidak tersedia; data BPM sumber tidak diubah.'
+      : 'Diagram alur berbantuan AI disimpan untuk digunakan kembali; data BPM sumber tidak diubah.'
   );
 
   return diagramRow(created);
@@ -753,7 +755,7 @@ export async function activateProcessFlowDiagram(input: {
     'ACTIVATE',
     input.diagramId,
     { processId: input.processId, versionNo: Number(existing.versionNo || 0) },
-    'Saved process-flow version selected as the active reusable diagram.'
+    'Versi diagram alur tersimpan dipilih sebagai versi aktif yang dapat digunakan kembali.'
   );
 
   return getProcessFlowWorkspace(input.processId, input.institutionId);
