@@ -1,0 +1,53 @@
+name: Disable Total ARC users except serayamg admin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/disable-users-keep-serayamg.py'
+      - '.github/workflows/disable-users-keep-serayamg.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: totalarc-user-disable-serayamg
+  cancel-in-progress: false
+
+jobs:
+  disable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Wait for production deployment for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=push&per_page=50"
+          for attempt in $(seq 1 60); do
+            body="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$api")"
+            state="$(printf '%s' "$body" | python -c "import json,sys; d=json.load(sys.stdin); r=next((x for x in d.get('workflow_runs',[]) if x.get('name')=='Deploy Total ARC to Cloudflare'), None); print('missing' if not r else str(r.get('status'))+'|'+str(r.get('conclusion') or ''))")"
+            echo "Deploy state: $state"
+            if [ "$state" = "completed|success" ]; then exit 0; fi
+            if [[ "$state" == completed\|* ]] && [ "$state" != "completed|success" ]; then exit 1; fi
+            sleep 10
+          done
+          exit 1
+
+      - name: Disable every user except serayamg administrator
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/disable-users-keep-serayamg.py serayamg@gmail.com
