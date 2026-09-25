@@ -68,10 +68,10 @@ async function rcsaSchemaIsCurrent(db: D1DatabaseLike) {
     .prepare(
       `SELECT COUNT(*) AS count
          FROM sqlite_master
-        WHERE type = 'table' AND name IN ('AssessmentCampaign','AssessmentScope','AssessmentResponse','AssuranceTask')`
+        WHERE type = 'table' AND name IN ('AssessmentCampaign','AssessmentCampaignUnit','AssessmentScope','AssessmentResponse','AssuranceTask')`
     )
     .first<{ count?: number }>();
-  return Number(row?.count || 0) === 4;
+  return Number(row?.count || 0) === 5;
 }
 
 function nowIso() {
@@ -141,6 +141,25 @@ export async function ensureRcsaSchema() {
         ON AssessmentCampaign(institutionId);
       CREATE INDEX IF NOT EXISTS idx_assessment_campaign_status
         ON AssessmentCampaign(status);
+
+      CREATE TABLE IF NOT EXISTS AssessmentCampaignUnit (
+        id TEXT PRIMARY KEY NOT NULL,
+        institutionId TEXT NOT NULL,
+        campaignId TEXT NOT NULL,
+        organizationUnitId TEXT NOT NULL,
+        unitCode TEXT NOT NULL,
+        unitName TEXT NOT NULL,
+        unitType TEXT,
+        createdAt TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_assessment_campaign_unit_unique
+        ON AssessmentCampaignUnit(campaignId, organizationUnitId);
+      CREATE INDEX IF NOT EXISTS idx_assessment_campaign_unit_institution
+        ON AssessmentCampaignUnit(institutionId);
+      CREATE INDEX IF NOT EXISTS idx_assessment_campaign_unit_campaign
+        ON AssessmentCampaignUnit(campaignId);
+      CREATE INDEX IF NOT EXISTS idx_assessment_campaign_unit_org
+        ON AssessmentCampaignUnit(organizationUnitId);
 
       CREATE TABLE IF NOT EXISTS AssessmentScope (
         id TEXT PRIMARY KEY NOT NULL,
@@ -437,11 +456,21 @@ async function loadScope(db: D1DatabaseLike, row: Record<string, unknown>) {
 }
 
 async function loadCampaign(db: D1DatabaseLike, row: Record<string, unknown>) {
-  const scopeRows = await all<Record<string, unknown>>(
-    db,
-    'SELECT * FROM AssessmentScope WHERE campaignId = ? ORDER BY dueDate ASC, createdAt ASC',
-    [row.id]
-  );
+  const [scopeRows, participatingUnits] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      'SELECT * FROM AssessmentScope WHERE campaignId = ? ORDER BY dueDate ASC, createdAt ASC',
+      [row.id]
+    ),
+    all<Record<string, unknown>>(
+      db,
+      `SELECT organizationUnitId AS id, unitCode AS code, unitName AS name, unitType AS type
+         FROM AssessmentCampaignUnit
+        WHERE campaignId = ?
+        ORDER BY unitName ASC`,
+      [row.id]
+    )
+  ]);
   const scopes: any[] = await Promise.all(scopeRows.map(scope => loadScope(db, scope)));
   const total = scopes.length;
   const submitted = scopes.filter(scope =>
@@ -453,6 +482,8 @@ async function loadCampaign(db: D1DatabaseLike, row: Record<string, unknown>) {
   return {
     ...row,
     evidenceRequired: bool(row.evidenceRequired),
+    participatingUnits,
+    organizationUnitIds: participatingUnits.map(unit => String(unit.id)),
     scopes,
     metrics: {
       total,
@@ -704,6 +735,7 @@ export async function createAssessmentCampaign(input: {
   evidenceRequired: boolean;
   instructions?: string | null;
   status: string;
+  organizationUnitIds: string[];
   initialScope?: {
     processId: string;
     riskId?: string | null;
@@ -718,6 +750,28 @@ export async function createAssessmentCampaign(input: {
 
   if (new Date(input.startDate).getTime() > new Date(input.dueDate).getTime()) {
     throw new Error('INVALID_CAMPAIGN_DATES');
+  }
+
+  const organizationUnitIds = Array.from(
+    new Set((input.organizationUnitIds || []).map(value => String(value || '').trim()).filter(Boolean))
+  );
+  if (!organizationUnitIds.length) {
+    throw new Error('CAMPAIGN_UNIT_REQUIRED');
+  }
+
+  const participatingUnits: Record<string, unknown>[] = [];
+  for (const organizationUnitId of organizationUnitIds) {
+    const unit = await first<Record<string, unknown>>(
+      db,
+      `SELECT id, institutionId, code, name, type, status
+         FROM OrganizationUnit
+        WHERE id = ? AND institutionId = ?
+        LIMIT 1`,
+      [organizationUnitId, institution.id]
+    );
+    if (!unit) throw new Error('CAMPAIGN_UNIT_NOT_FOUND');
+    if (String(unit.status || 'Active') !== 'Active') throw new Error('CAMPAIGN_UNIT_INACTIVE');
+    participatingUnits.push(unit);
   }
 
   const type = ['RCSA', 'CSA', 'Combined'].includes(input.type) ? input.type : 'RCSA';
@@ -791,14 +845,42 @@ export async function createAssessmentCampaign(input: {
     ]
   );
 
+  for (const unit of participatingUnits) {
+    await run(
+      db,
+      `INSERT INTO AssessmentCampaignUnit (
+        id, institutionId, campaignId, organizationUnitId, unitCode, unitName, unitType, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        institution.id,
+        id,
+        unit.id,
+        unit.code,
+        unit.name,
+        unit.type || null,
+        now
+      ]
+    );
+  }
+
   await writeAudit(
     db,
     String(institution.id),
     'CREATE',
     'AssessmentCampaign',
     id,
-    campaign,
-    'RCSA/CSA campaign created in persistent D1.'
+    {
+      ...campaign,
+      organizationUnitIds,
+      participatingUnits: participatingUnits.map(unit => ({
+        id: unit.id,
+        code: unit.code,
+        name: unit.name,
+        type: unit.type
+      }))
+    },
+    'RCSA/CSA/Hybrid campaign created with institution-scoped participating organization units in persistent D1.'
   );
 
   if (input.initialScope?.processId && input.initialScope.assessorName) {

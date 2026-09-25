@@ -79,7 +79,7 @@ export async function GET(request: Request) {
   const wants = (...names: string[]) =>
     full || names.some(name => requested.has(name.toLowerCase()));
 
-  const needOrganization = wants('organization');
+  const needOrganization = wants('organization', 'rcsa');
   const needRcsa = wants('rcsa', 'integration', 'health', 'tasks', 'calendar', 'reports');
   const needTod = wants('tod', 'integration', 'health', 'calendar', 'reports');
   const needPbc = wants('tasks', 'calendar', 'integration', 'reports');
@@ -369,6 +369,17 @@ function textValue(body: Record<string, unknown>, key: string) {
   return typeof body[key] === 'string' ? body[key].trim() : '';
 }
 
+function textArray(body: Record<string, unknown>, key: string) {
+  if (!Array.isArray(body[key])) return [];
+  return Array.from(
+    new Set(
+      (body[key] as unknown[])
+        .map(value => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+    )
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const context = await resolveInstitutionAccess(request);
@@ -423,6 +434,7 @@ export async function POST(request: Request) {
       const status = textValue(body, 'status');
       const processId = textValue(body, 'processId');
       const assessorName = textValue(body, 'assessorName');
+      const organizationUnitIds = textArray(body, 'organizationUnitIds');
 
       if (
         !name ||
@@ -433,12 +445,13 @@ export async function POST(request: Request) {
         !dueDate ||
         !ownerName ||
         !reviewerName ||
-        !approverName
+        !approverName ||
+        organizationUnitIds.length === 0
       ) {
         return NextResponse.json(
           {
             error:
-              'name, type, period, frequency, startDate, dueDate, ownerName, reviewerName, and approverName are required.'
+              'Nama campaign, jenis program, periode, frekuensi, tanggal, owner, reviewer, approver, dan minimal satu Unit Kerja Peserta wajib diisi.'
           },
           { status: 400 }
         );
@@ -460,6 +473,7 @@ export async function POST(request: Request) {
         evidenceRequired: body.evidenceRequired !== false,
         instructions: textValue(body, 'instructions') || null,
         status: status || 'Draft',
+        organizationUnitIds,
         initialScope:
           processId && assessorName
             ? {

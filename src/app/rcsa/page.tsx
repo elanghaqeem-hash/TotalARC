@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
+  Building2,
   CalendarDays,
   CheckCircle2,
   ClipboardCheck,
@@ -52,6 +53,7 @@ export default function RCSAPage() {
   const processes = data?.processes || [];
   const risks = data?.risks || [];
   const controls = data?.controls || [];
+  const organizationUnits = data?.institution?.organizationUnits || [];
 
   const [campaignModal, setCampaignModal] = useState(false);
   const [scopeCampaign, setScopeCampaign] = useState<any>(null);
@@ -59,6 +61,7 @@ export default function RCSAPage() {
   const [reviewContext, setReviewContext] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [unitSearch, setUnitSearch] = useState('');
 
   const [campaignForm, setCampaignForm] = useState({
     campaignCode: '',
@@ -71,6 +74,7 @@ export default function RCSAPage() {
     ownerName: '',
     reviewerName: '',
     approverName: '',
+    organizationUnitIds: [] as string[],
     methodology: 'COSO / ISO 31000 aligned',
     ratingScale: '5x5',
     evidenceRequired: true,
@@ -129,6 +133,19 @@ export default function RCSAPage() {
   const campaignRisks = risks.filter(
     (risk: any) => String(risk.processId) === String(campaignForm.processId)
   );
+  const filteredOrganizationUnits = organizationUnits
+    .filter((unit: any) => String(unit.status || 'Active') === 'Active')
+    .filter((unit: any) => {
+      const query = unitSearch.trim().toLowerCase();
+      if (!query) return true;
+      return [unit.code, unit.name, unit.type]
+        .map(value => String(value || '').toLowerCase())
+        .some(value => value.includes(query));
+    })
+    .sort((a: any, b: any) =>
+      String(a.name || '').localeCompare(String(b.name || ''), 'id-ID')
+    );
+
   const campaignControls = controls.filter((control: any) => {
     if (String(control.processId) !== String(campaignForm.processId)) return false;
     if (!campaignForm.riskId) return true;
@@ -167,6 +184,10 @@ export default function RCSAPage() {
 
   const createCampaign = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (campaignForm.organizationUnitIds.length === 0) {
+      setActionError('Pilih minimal satu Unit Kerja Peserta untuk mengikuti campaign.');
+      return;
+    }
     try {
       await postAction({ actionType: 'CREATE_CAMPAIGN', ...campaignForm });
       setCampaignModal(false);
@@ -174,6 +195,7 @@ export default function RCSAPage() {
         ...prev,
         campaignCode: '',
         name: '',
+        organizationUnitIds: [],
         processId: '',
         riskId: '',
         controlId: '',
@@ -390,7 +412,7 @@ export default function RCSAPage() {
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] uppercase font-bold text-brand-600">
-                        {campaign.campaignCode} · {campaign.type} · {campaign.period}
+                        {campaign.campaignCode} · {campaign.type === 'Combined' ? 'Hybrid (RCSA + CSA)' : campaign.type} · {campaign.period}
                       </span>
                       <span className={`text-[10px] font-bold border px-2 py-0.5 rounded-full ${statusClass(campaign.status)}`}>
                         {campaign.status}
@@ -410,6 +432,27 @@ export default function RCSAPage() {
                       <span>Reviewer: {campaign.reviewerName}</span>
                       <span>Approver: {campaign.approverName}</span>
                     </div>
+                    {(campaign.participatingUnits || []).length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                          <Building2 className="h-3.5 w-3.5" />
+                          Unit peserta:
+                        </span>
+                        {(campaign.participatingUnits || []).slice(0, 6).map((unit: any) => (
+                          <span
+                            key={unit.id}
+                            className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[9px] font-bold text-sky-700"
+                          >
+                            {unit.code ? unit.code + ' · ' : ''}{unit.name}
+                          </span>
+                        ))}
+                        {(campaign.participatingUnits || []).length > 6 && (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold text-slate-500">
+                            +{(campaign.participatingUnits || []).length - 6} unit
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
@@ -601,7 +644,9 @@ export default function RCSAPage() {
                     className="p-2.5 rounded-lg border border-slate-200"
                   />
                   <select value={campaignForm.type} onChange={e => setCampaignForm({ ...campaignForm, type: e.target.value })} className="p-2.5 rounded-lg border border-slate-200">
-                    <option>RCSA</option><option>CSA</option><option>Combined</option>
+                    <option value="RCSA">RCSA</option>
+                    <option value="CSA">CSA</option>
+                    <option value="Combined">Hybrid (RCSA + CSA)</option>
                   </select>
                   <select value={campaignForm.frequency} onChange={e => setCampaignForm({ ...campaignForm, frequency: e.target.value })} className="p-2.5 rounded-lg border border-slate-200">
                     <option>Annual</option><option>Semi-Annual</option><option>Quarterly</option><option>Monthly</option><option>Ad Hoc</option>
@@ -612,6 +657,108 @@ export default function RCSAPage() {
                   </select>
                   <label className="space-y-1"><span className="font-bold text-slate-600">Start date *</span><input required type="date" value={campaignForm.startDate} onChange={e => setCampaignForm({ ...campaignForm, startDate: e.target.value })} className="w-full p-2.5 rounded-lg border border-slate-200" /></label>
                   <label className="space-y-1"><span className="font-bold text-slate-600">Due date *</span><input required type="date" value={campaignForm.dueDate} onChange={e => setCampaignForm({ ...campaignForm, dueDate: e.target.value, scopeDueDate: e.target.value })} className="w-full p-2.5 rounded-lg border border-slate-200" /></label>
+
+                  <div className="md:col-span-2 rounded-xl border border-sky-200 bg-sky-50/40 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-1.5 font-black text-slate-800">
+                          <Building2 className="h-4 w-4 text-sky-600" />
+                          Unit Kerja Peserta *
+                        </div>
+                        <p className="mt-0.5 text-[9px] leading-4 text-slate-500">
+                          Pilih satu atau beberapa unit kerja yang terdaftar pada Struktur Organisasi
+                          untuk mengikuti campaign {campaignForm.type === 'Combined' ? 'Hybrid' : campaignForm.type}.
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-sky-200 bg-white px-2 py-1 text-[9px] font-black text-sky-700">
+                        {campaignForm.organizationUnitIds.length} dipilih
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                      <input
+                        value={unitSearch}
+                        onChange={e => setUnitSearch(e.target.value)}
+                        placeholder="Cari kode, nama, atau jenis unit kerja..."
+                        className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const visibleIds = filteredOrganizationUnits.map((unit: any) => String(unit.id));
+                          const allVisibleSelected =
+                            visibleIds.length > 0 &&
+                            visibleIds.every((id: string) => campaignForm.organizationUnitIds.includes(id));
+                          setCampaignForm(current => ({
+                            ...current,
+                            organizationUnitIds: allVisibleSelected
+                              ? current.organizationUnitIds.filter(id => !visibleIds.includes(id))
+                              : Array.from(new Set([...current.organizationUnitIds, ...visibleIds]))
+                          }));
+                        }}
+                        disabled={filteredOrganizationUnits.length === 0}
+                        className="rounded-lg border border-sky-200 bg-white px-3 py-2 text-[9px] font-black text-sky-700 disabled:opacity-40"
+                      >
+                        {filteredOrganizationUnits.length > 0 &&
+                        filteredOrganizationUnits.every((unit: any) =>
+                          campaignForm.organizationUnitIds.includes(String(unit.id))
+                        )
+                          ? 'Batalkan semua'
+                          : 'Pilih semua'}
+                      </button>
+                    </div>
+
+                    <div className="mt-2 max-h-44 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1.5">
+                      {filteredOrganizationUnits.length === 0 ? (
+                        <div className="px-2 py-4 text-center text-[9px] text-slate-400">
+                          Tidak ada unit kerja aktif yang sesuai.
+                        </div>
+                      ) : (
+                        filteredOrganizationUnits.map((unit: any) => {
+                          const unitId = String(unit.id);
+                          const checked = campaignForm.organizationUnitIds.includes(unitId);
+                          return (
+                            <label
+                              key={unitId}
+                              className={
+                                'flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 transition ' +
+                                (checked
+                                  ? 'border-sky-200 bg-sky-50'
+                                  : 'border-transparent hover:bg-slate-50')
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setCampaignForm(current => ({
+                                    ...current,
+                                    organizationUnitIds: checked
+                                      ? current.organizationUnitIds.filter(id => id !== unitId)
+                                      : [...current.organizationUnitIds, unitId]
+                                  }))
+                                }
+                                className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-sky-600"
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-[10px] font-black text-slate-700">
+                                  {unit.code ? unit.code + ' · ' : ''}{unit.name}
+                                </span>
+                                <span className="mt-0.5 block text-[8px] text-slate-400">
+                                  {unit.type || 'Unit Kerja'}
+                                  {unit.headName ? ' · Kepala: ' + unit.headName : ''}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                    <p className="mt-2 text-[8px] leading-3.5 text-slate-400">
+                      Hanya unit kerja milik institusi aktif yang dapat didaftarkan pada campaign ini.
+                    </p>
+                  </div>
+
                   <input required value={campaignForm.ownerName} onChange={e => setCampaignForm({ ...campaignForm, ownerName: e.target.value })} placeholder="Campaign owner *" className="p-2.5 rounded-lg border border-slate-200" />
                   <input required value={campaignForm.reviewerName} onChange={e => setCampaignForm({ ...campaignForm, reviewerName: e.target.value })} placeholder="Independent reviewer *" className="p-2.5 rounded-lg border border-slate-200" />
                   <input required value={campaignForm.approverName} onChange={e => setCampaignForm({ ...campaignForm, approverName: e.target.value })} placeholder="Approver *" className="p-2.5 rounded-lg border border-slate-200 md:col-span-2" />
@@ -670,7 +817,7 @@ export default function RCSAPage() {
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button type="button" onClick={() => setCampaignModal(false)} className="px-4 py-2 rounded-lg text-slate-600 font-bold">Cancel</button>
                 <button disabled={saving} type="submit" className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-brand-600 text-white font-bold disabled:opacity-50">
-                  <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Create Campaign'}
+                  <Save className="w-4 h-4" /> {saving ? 'Menyimpan…' : 'Buat Campaign'}
                 </button>
               </div>
             </form>

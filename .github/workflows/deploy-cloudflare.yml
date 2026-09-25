@@ -145,6 +145,9 @@ jobs:
       - name: Verify AI OM/PM materiality
         run: npm run verify:ai-materiality
 
+      - name: Verify RCSA/CSA participating units
+        run: npm run verify:rcsa-campaign-units
+
       - name: Build OpenNext Worker
         run: npm run build
 

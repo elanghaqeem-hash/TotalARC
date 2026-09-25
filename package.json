@@ -25,7 +25,8 @@
     "verify:process-document-ai": "node scripts/verify-process-supporting-document-ai.js",
     "verify:ai-risk-register": "node scripts/verify-ai-risk-register.js",
     "verify:ai-significant-accounts": "node scripts/verify-ai-significant-account-scoping.js",
-    "verify:ai-materiality": "node scripts/verify-ai-materiality.js"
+    "verify:ai-materiality": "node scripts/verify-ai-materiality.js",
+    "verify:rcsa-campaign-units": "node scripts/verify-rcsa-campaign-units.js"
   },
   "keywords": [],
   "author": "",
