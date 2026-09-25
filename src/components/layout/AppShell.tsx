@@ -390,17 +390,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <section
           key={group.title}
           className={`border border-slate-200 bg-white shadow-sm transition-all duration-200 ${
-            collapsed ? 'rounded-xl p-1.5' : 'rounded-2xl p-2.5'
+            collapsed ? 'rounded-xl p-1.5' : 'rounded-2xl p-3'
           }`}
         >
           {!collapsed && (
-            <div className="px-2.5 pb-2 pt-1">
-              <div className="text-[11px] font-black tracking-[0.12em] text-slate-800">{group.title}</div>
-              <div className="mt-0.5 text-[10px] text-slate-400">{group.subtitle}</div>
+            <div className="px-3 pb-2.5 pt-1.5">
+              <div className="text-[12px] font-black tracking-[0.1em] text-slate-800">{group.title}</div>
+              <div className="mt-1 text-[11px] leading-4 text-slate-500">{group.subtitle}</div>
             </div>
           )}
 
-          <div className={collapsed ? 'space-y-1.5' : 'space-y-1'}>
+          <div className={collapsed ? 'space-y-1.5' : 'space-y-1.5'}>
             {group.items.map(item => {
               const Icon = item.icon;
               const active = pathname === item.href;
@@ -416,28 +416,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onFocus={() => prefetchRoute(item.href)}
                   onTouchStart={() => prefetchRoute(item.href)}
                   onClick={() => mobile && setMobileMenuOpen(false)}
-                  className={`group flex items-center rounded-xl text-[11px] transition-all ${
-                    collapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-2.5 py-2.5'
+                  className={`group flex items-center rounded-xl transition-all ${
+                    collapsed
+                      ? 'justify-center px-2 py-2.5 text-[11px]'
+                      : mobile
+                        ? 'justify-between px-3 py-3 text-[12px] leading-5'
+                        : 'justify-between px-3 py-3 text-[13px] leading-5'
                   } ${
                     active
                       ? 'bg-gradient-to-r from-brand-600 to-sky-500 font-bold text-white shadow-md shadow-sky-100'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <span className={`flex min-w-0 items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
+                  <span className={`flex min-w-0 items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
                     <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                         active
                           ? 'bg-white/15'
                           : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-brand-700'
                       }`}
                     >
-                      <Icon className="h-3.5 w-3.5" />
+                      <Icon className={collapsed ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                     </span>
                     {!collapsed && <span className="truncate">{item.name}</span>}
                   </span>
                   {!collapsed && item.badge && (
-                    <span className={`ml-2 shrink-0 text-[9px] font-bold ${active ? 'text-white/80' : 'text-slate-400'}`}>
+                    <span className={`ml-2.5 shrink-0 text-[10px] font-bold tracking-wide ${active ? 'text-white/85' : 'text-slate-400'}`}>
                       {item.badge}
                     </span>
                   )}
@@ -699,7 +703,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto flex w-full max-w-[1600px] gap-5 px-3 py-4 sm:px-5 lg:px-6 lg:py-6">
         <div
           className={`sticky top-[96px] hidden h-[calc(100vh-112px)] shrink-0 transition-[width] duration-300 ease-out lg:block ${
-            sidebarCollapsed ? 'w-[76px]' : 'w-[272px]'
+            sidebarCollapsed ? 'w-[76px]' : 'w-[304px]'
           }`}
         >
           <button
