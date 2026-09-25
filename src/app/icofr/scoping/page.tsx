@@ -1153,8 +1153,7 @@ export default function IcofrScopingPage() {
             </div>
           </form>
 
-          {form.id && (
-            <section className="rounded-2xl border border-sky-200 bg-gradient-to-br from-white to-sky-50 p-5 shadow-sm">
+          <section className="rounded-2xl border border-sky-200 bg-gradient-to-br from-white to-sky-50 p-5 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
@@ -1176,11 +1175,20 @@ export default function IcofrScopingPage() {
                 <button
                   type="button"
                   onClick={handleDownloadApprovalMemo}
-                  disabled={memoDownloading}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!form.id || memoDownloading}
+                  title={
+                    form.id
+                      ? 'Generate dan download memo persetujuan scope ICOFR dalam format PDF'
+                      : 'Submit / Save ICOFR Scope terlebih dahulu untuk mengaktifkan memo'
+                  }
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
                 >
                   <Download className="h-4 w-4" />
-                  {memoDownloading ? 'Menyiapkan PDF…' : 'Unduh Memo Persetujuan (PDF)'}
+                  {memoDownloading
+                    ? 'Menyiapkan PDF…'
+                    : form.id
+                      ? 'Generate & Download Memo PDF'
+                      : 'Generate Memo PDF'}
                 </button>
               </div>
 
@@ -1212,9 +1220,9 @@ export default function IcofrScopingPage() {
               </div>
 
               <p className="mt-3 text-[10px] leading-4 text-slate-500">
-                Memo menggunakan data yang sudah tersimpan di database, bukan perubahan
-                form yang belum disubmit. Jika scope diubah, simpan kembali terlebih dahulu
-                lalu unduh ulang memo agar bukti persetujuan konsisten dengan data TotalARC.
+                {form.id
+                  ? 'Scope sudah tersimpan. Tombol Generate & Download Memo PDF sudah aktif dan memo akan menggunakan data terakhir yang tersimpan di database.'
+                  : 'Tombol Generate Memo PDF ditampilkan sejak awal namun baru aktif setelah ICOFR Scope disubmit / disimpan. Isi form kemudian tekan Save ICOFR Scope terlebih dahulu.'}
               </p>
 
               {memoError && (
@@ -1224,7 +1232,6 @@ export default function IcofrScopingPage() {
                 </div>
               )}
             </section>
-          )}
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
