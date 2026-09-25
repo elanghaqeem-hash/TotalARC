@@ -648,25 +648,16 @@ export default function RCSAPage() {
                     <option value="CSA">CSA</option>
                     <option value="Combined">Hybrid (RCSA + CSA)</option>
                   </select>
-                  <select value={campaignForm.frequency} onChange={e => setCampaignForm({ ...campaignForm, frequency: e.target.value })} className="p-2.5 rounded-lg border border-slate-200">
-                    <option>Annual</option><option>Semi-Annual</option><option>Quarterly</option><option>Monthly</option><option>Ad Hoc</option>
-                  </select>
-                  <input required value={campaignForm.period} onChange={e => setCampaignForm({ ...campaignForm, period: e.target.value })} placeholder="Assessment period *" className="p-2.5 rounded-lg border border-slate-200" />
-                  <select value={campaignForm.status} onChange={e => setCampaignForm({ ...campaignForm, status: e.target.value })} className="p-2.5 rounded-lg border border-slate-200">
-                    <option>Draft</option><option>Open</option>
-                  </select>
-                  <label className="space-y-1"><span className="font-bold text-slate-600">Start date *</span><input required type="date" value={campaignForm.startDate} onChange={e => setCampaignForm({ ...campaignForm, startDate: e.target.value })} className="w-full p-2.5 rounded-lg border border-slate-200" /></label>
-                  <label className="space-y-1"><span className="font-bold text-slate-600">Due date *</span><input required type="date" value={campaignForm.dueDate} onChange={e => setCampaignForm({ ...campaignForm, dueDate: e.target.value, scopeDueDate: e.target.value })} className="w-full p-2.5 rounded-lg border border-slate-200" /></label>
 
-                  <div className="md:col-span-2 rounded-xl border border-sky-200 bg-sky-50/40 p-3">
+                  <div className="md:col-span-2 rounded-xl border-2 border-sky-300 bg-sky-50 p-3.5 shadow-sm ring-1 ring-sky-100">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <div className="flex items-center gap-1.5 font-black text-slate-800">
                           <Building2 className="h-4 w-4 text-sky-600" />
-                          Unit Kerja Peserta *
+                          Unit Kerja Peserta Campaign *
                         </div>
                         <p className="mt-0.5 text-[9px] leading-4 text-slate-500">
-                          Pilih satu atau beberapa unit kerja yang terdaftar pada Struktur Organisasi
+                          WAJIB: pilih satu atau beberapa unit kerja yang terdaftar pada Struktur Organisasi
                           untuk mengikuti campaign {campaignForm.type === 'Combined' ? 'Hybrid' : campaignForm.type}.
                         </p>
                       </div>
@@ -758,6 +749,16 @@ export default function RCSAPage() {
                       Hanya unit kerja milik institusi aktif yang dapat didaftarkan pada campaign ini.
                     </p>
                   </div>
+
+                  <select value={campaignForm.frequency} onChange={e => setCampaignForm({ ...campaignForm, frequency: e.target.value })} className="p-2.5 rounded-lg border border-slate-200">
+                    <option>Annual</option><option>Semi-Annual</option><option>Quarterly</option><option>Monthly</option><option>Ad Hoc</option>
+                  </select>
+                  <input required value={campaignForm.period} onChange={e => setCampaignForm({ ...campaignForm, period: e.target.value })} placeholder="Assessment period *" className="p-2.5 rounded-lg border border-slate-200" />
+                  <select value={campaignForm.status} onChange={e => setCampaignForm({ ...campaignForm, status: e.target.value })} className="p-2.5 rounded-lg border border-slate-200">
+                    <option>Draft</option><option>Open</option>
+                  </select>
+                  <label className="space-y-1"><span className="font-bold text-slate-600">Start date *</span><input required type="date" value={campaignForm.startDate} onChange={e => setCampaignForm({ ...campaignForm, startDate: e.target.value })} className="w-full p-2.5 rounded-lg border border-slate-200" /></label>
+                  <label className="space-y-1"><span className="font-bold text-slate-600">Due date *</span><input required type="date" value={campaignForm.dueDate} onChange={e => setCampaignForm({ ...campaignForm, dueDate: e.target.value, scopeDueDate: e.target.value })} className="w-full p-2.5 rounded-lg border border-slate-200" /></label>
 
                   <input required value={campaignForm.ownerName} onChange={e => setCampaignForm({ ...campaignForm, ownerName: e.target.value })} placeholder="Campaign owner *" className="p-2.5 rounded-lg border border-slate-200" />
                   <input required value={campaignForm.reviewerName} onChange={e => setCampaignForm({ ...campaignForm, reviewerName: e.target.value })} placeholder="Independent reviewer *" className="p-2.5 rounded-lg border border-slate-200" />
