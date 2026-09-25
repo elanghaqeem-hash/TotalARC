@@ -29,13 +29,17 @@ requireText(api, 'organizationUnitIds.length === 0', 'API participant unit requi
 requireText(api, 'organizationUnitIds,', 'Participant units passed to persistence');
 
 const ui = 'src/app/rcsa/page.tsx';
-requireText(ui, 'Unit Kerja Peserta *', 'Participant unit field');
+requireText(ui, 'Unit Kerja Peserta Campaign *', 'Participant unit field');
 requireText(ui, 'organizationUnitIds: [] as string[]', 'Multi-select state');
 requireText(ui, 'Cari kode, nama, atau jenis unit kerja...', 'Participant search');
 requireText(ui, "'Pilih semua'", 'Select-all participant units');
 requireText(ui, 'Hybrid (RCSA + CSA)', 'Hybrid program label');
 requireText(ui, 'campaign.participatingUnits', 'Campaign card participant display');
 requireText(ui, 'Pilih minimal satu Unit Kerja Peserta', 'Front-end required validation');
+const uiContent = read(ui);
+if (uiContent.indexOf('Unit Kerja Peserta Campaign *') > uiContent.indexOf("value={campaignForm.frequency}")) {
+  findings.push('Mobile field position: Unit Kerja Peserta must appear immediately after campaign type and before frequency.');
+}
 
 if (findings.length) {
   console.error('RCSA/CSA campaign participating-unit verification FAILED:');
