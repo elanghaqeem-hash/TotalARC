@@ -33,10 +33,11 @@ requireText(ui, 'AI Penetapan OM / PM', 'AI materiality UI');
 requireText(ui, 'Buat Usulan OM/PM dengan AI', 'AI generation action');
 requireText(ui, 'Terapkan Usulan ke Form', 'Review-before-apply action');
 requireText(ui, 'Alternatif pembanding', 'Alternative benchmark comparison');
-requireText(ui, 'Risiko Rendah', 'Low-risk PM card');
-requireText(ui, 'Risiko Sedang', 'Medium-risk PM card');
-requireText(ui, 'Risiko Tinggi', 'High-risk PM card');
-requireText(ui, 'bukan persentase universal atau ketentuan regulator', 'Methodology disclaimer');
+requireText(ui, "['Rendah', '± 75% OM'", 'Low-risk PM card');
+requireText(ui, "['Sedang', '± 60%–65% OM'", 'Medium-risk PM card');
+requireText(ui, "['Tinggi', '± 50% OM'", 'High-risk PM card');
+requireText(ui, 'bukan persentase', 'Methodology disclaimer');
+requireText(ui, 'ketentuan regulator', 'Regulatory disclaimer');
 
 const page = 'src/app/icofr/scoping/page.tsx';
 requireText(page, '<MaterialityAiAssistant', 'Materiality form integration');
