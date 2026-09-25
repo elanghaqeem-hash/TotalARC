@@ -9,7 +9,9 @@ import {
   Building2,
   Calculator,
   CheckCircle2,
+  Download,
   FileSpreadsheet,
+  FileText,
   Landmark,
   Pencil,
   Save,
@@ -185,6 +187,8 @@ export default function IcofrScopingPage() {
   const [selectedProcesses, setSelectedProcesses] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [memoDownloading, setMemoDownloading] = useState(false);
+  const [memoError, setMemoError] = useState('');
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
 
@@ -255,6 +259,7 @@ export default function IcofrScopingPage() {
     setSelectedOrgUnits([]);
     setSelectedProcesses([]);
     setSaveMessage('');
+    setMemoError('');
     setError('');
   };
 
@@ -389,6 +394,55 @@ export default function IcofrScopingPage() {
       setError(err instanceof Error ? err.message : 'Failed to save ICOFR scope.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDownloadApprovalMemo = async () => {
+    if (!form.id) return;
+
+    setMemoDownloading(true);
+    setMemoError('');
+
+    try {
+      const response = await fetch(
+        `/api/icofr/scoping/memo?scopeId=${encodeURIComponent(form.id)}`,
+        { cache: 'no-store' }
+      );
+
+      if (!response.ok) {
+        let message = 'Memo persetujuan scope ICOFR belum dapat dibuat.';
+        try {
+          const payload = (await response.json()) as { error?: string };
+          if (payload.error) message = payload.error;
+        } catch {
+          // Keep the user-facing fallback when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const filename =
+        filenameMatch?.[1] ||
+        `Memo-Persetujuan-Scope-ICOFR-${form.fiscalYear || 'FY'}.pdf`;
+
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    } catch (err) {
+      setMemoError(
+        err instanceof Error
+          ? err.message
+          : 'Memo persetujuan scope ICOFR belum dapat dibuat.'
+      );
+    } finally {
+      setMemoDownloading(false);
     }
   };
 
@@ -1098,6 +1152,79 @@ export default function IcofrScopingPage() {
               </div>
             </div>
           </form>
+
+          {form.id && (
+            <section className="rounded-2xl border border-sky-200 bg-gradient-to-br from-white to-sky-50 p-5 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-black text-slate-900">
+                      Memo Formal Persetujuan Scope ICOFR untuk Direksi
+                    </h2>
+                    <p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-600">
+                      Setelah scope disubmit dan tersimpan, TotalARC membuat memo bank
+                      berformat A4 yang memuat identitas institusi, Kantor Pusat dan alamat
+                      dari profil institusi, ringkasan perimeter, materialitas, cakupan,
+                      rationale, serta lembar keputusan dan tanda tangan Direksi.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadApprovalMemo}
+                  disabled={memoDownloading}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {memoDownloading ? 'Menyiapkan PDF…' : 'Unduh Memo Persetujuan (PDF)'}
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="rounded-xl border border-sky-100 bg-white/80 p-3">
+                  <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
+                    Sumber data
+                  </div>
+                  <div className="mt-1 text-[11px] font-bold text-slate-800">
+                    Scope terakhir yang tersimpan
+                  </div>
+                </div>
+                <div className="rounded-xl border border-sky-100 bg-white/80 p-3">
+                  <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
+                    Persetujuan
+                  </div>
+                  <div className="mt-1 text-[11px] font-bold text-slate-800">
+                    Direksi - keputusan tertulis
+                  </div>
+                </div>
+                <div className="rounded-xl border border-sky-100 bg-white/80 p-3">
+                  <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
+                    Format
+                  </div>
+                  <div className="mt-1 text-[11px] font-bold text-slate-800">
+                    PDF A4 siap dicetak / ditandatangani
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-3 text-[10px] leading-4 text-slate-500">
+                Memo menggunakan data yang sudah tersimpan di database, bukan perubahan
+                form yang belum disubmit. Jika scope diubah, simpan kembali terlebih dahulu
+                lalu unduh ulang memo agar bukti persetujuan konsisten dengan data TotalARC.
+              </p>
+
+              {memoError && (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[10px] leading-4 text-rose-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{memoError}</span>
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
