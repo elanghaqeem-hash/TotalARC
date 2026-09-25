@@ -43,5 +43,7 @@ jobs:
         run: npm run verify:ai-risk-register
       - name: Verify AI significant account scoping
         run: npm run verify:ai-significant-accounts
+      - name: Verify AI OM/PM materiality
+        run: npm run verify:ai-materiality
       - name: TypeScript check
         run: npx tsc --noEmit
