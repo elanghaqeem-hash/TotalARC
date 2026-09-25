@@ -1285,7 +1285,7 @@ export async function buildIcofrScopingApprovalMemoPdf(scopeId: string) {
   };
 
   const preferredOrder = ['Legal Entity', 'Organization Unit', 'Business Process'];
-  const otherTypes = [...groupedItems.keys()].filter(
+  const otherTypes = Array.from(groupedItems.keys()).filter(
     key => !preferredOrder.includes(key)
   );
   const coverage: Array<[string, string[]]> = [...preferredOrder, ...otherTypes].map(
