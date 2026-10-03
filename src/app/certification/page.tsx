@@ -681,14 +681,14 @@ export default function CertificationPage() {
                           </div>
                           <div className="mt-1 text-[10px] leading-4 text-slate-500">
                             {selectedSubject.type || displaySubjectType(subCertForm.subjectType)}
-                            {selectedSubject.headName ? ` · Head: ${selectedSubject.headName}` : ''}
+                            {selectedSubject.headName ? ` · Kepala: ${selectedSubject.headName}` : ''}
                             {selectedSubject.headEmail ? ` · ${selectedSubject.headEmail}` : ''}
                           </div>
                         </div>
                         <div className="text-right text-[9px] leading-4 text-slate-400">
                           {selectedScope ? `Scope: ${displayStatus(selectedScope.status)}` : 'Scope belum dipilih'}
                           <br />
-                          {selectedCycle ? `Cycle: ${selectedCycle.cycleName}` : 'Siklus belum terhubung'}
+                          {selectedCycle ? `Siklus: ${selectedCycle.cycleName}` : 'Siklus belum terhubung'}
                         </div>
                       </div>
 
@@ -752,7 +752,7 @@ export default function CertificationPage() {
                         required
                         value={subCertForm.certifierEmail}
                         onChange={e => setSubCertForm({ ...subCertForm, certifierEmail: e.target.value })}
-                        placeholder="name@company.com"
+                        placeholder="nama@perusahaan.com"
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                       />
                     </label>
