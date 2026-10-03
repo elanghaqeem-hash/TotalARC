@@ -216,7 +216,7 @@ export async function ensureAuthSchema() {
       await db.prepare("UPDATE AuthUser SET role = 'SystemAdmin' WHERE role = 'Admin'").run();
       await db.prepare("UPDATE AuthUser SET role = 'Admin' WHERE role = 'InstitutionAdmin'").run();
       await db.prepare(
-        'INSERT INTO AuthSchemaMigration (id, appliedAt) VALUES (?, ?)'
+        'INSERT OR IGNORE INTO AuthSchemaMigration (id, appliedAt) VALUES (?, ?)'
       ).bind('20261004_ADMIN_ROLE_SPLIT', migratedAt).run();
     }
 
