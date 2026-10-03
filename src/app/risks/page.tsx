@@ -45,6 +45,67 @@ function displayAssessmentStatus(value: unknown) {
   return !raw || raw.toLowerCase() === 'not assessed' ? 'Belum Dinilai' : raw;
 }
 
+function splitNumberedRiskText(value: unknown) {
+  const normalized = String(value || '')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+
+  if (!normalized) return [];
+
+  const matches = Array.from(
+    normalized.matchAll(/(?:^|\n)\s*(\d+)\.\s*([\s\S]*?)(?=(?:\n\s*\d+\.\s)|$)/g)
+  );
+
+  if (matches.length >= 2) {
+    return matches.map(match => ({
+      number: Number(match[1]),
+      text: String(match[2] || '').trim()
+    }));
+  }
+
+  return [{ number: null as number | null, text: normalized }];
+}
+
+function NumberedRiskText({
+  value,
+  compact = false,
+  className = ''
+}: {
+  value: unknown;
+  compact?: boolean;
+  className?: string;
+}) {
+  const items = splitNumberedRiskText(value);
+  if (!items.length) return null;
+
+  if (items.length === 1 && items[0].number === null) {
+    return (
+      <span className={`whitespace-pre-line ${className}`}>
+        {items[0].text}
+      </span>
+    );
+  }
+
+  return (
+    <ol className={`space-y-1.5 ${className}`}>
+      {items.map((item, index) => (
+        <li
+          key={`${item.number || index + 1}-${index}`}
+          className="flex items-start gap-2"
+        >
+          <span className={`mt-0.5 inline-flex shrink-0 items-center justify-center rounded-full bg-slate-100 font-black text-slate-600 ${
+            compact ? 'h-4 min-w-4 px-1 text-[8px]' : 'h-5 min-w-5 px-1.5 text-[9px]'
+          }`}>
+            {item.number || index + 1}
+          </span>
+          <span className="min-w-0 flex-1">{item.text}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
   const [processes, setProcesses] = useState<any[]>([]);
@@ -391,9 +452,9 @@ export default function RisksPage() {
                           </span>
                         )}
                       </div>
-                      <h3 className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-900">
-                        {r.name}
-                      </h3>
+                      <div className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-900">
+                        <NumberedRiskText value={r.name} compact />
+                      </div>
                     </div>
 
                     <div className="flex max-w-full shrink-0 flex-wrap items-center gap-1.5 sm:max-w-[46%] sm:flex-col sm:items-end">
@@ -412,9 +473,9 @@ export default function RisksPage() {
                     </div>
                   </div>
 
-                  <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-slate-500">
-                    {r.description}
-                  </p>
+                  <div className="mt-2 line-clamp-3 text-[11px] leading-5 text-slate-500">
+                    <NumberedRiskText value={r.description} compact />
+                  </div>
 
                   <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
                     <span>Process: <strong>{r.process?.name || 'Unassigned'}</strong></span>
@@ -463,9 +524,9 @@ export default function RisksPage() {
                     </Link>
                   </div>
 
-                  <h2 className="text-xl font-black text-slate-900 mt-2">
-                    {selectedRisk.name}
-                  </h2>
+                  <div className="mt-3 text-base font-black leading-6 text-slate-900 sm:text-lg">
+                    <NumberedRiskText value={selectedRisk.name} />
+                  </div>
                   {selectedRisk.sourceMetadata && (
                     <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
                       <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 font-bold text-violet-700">
