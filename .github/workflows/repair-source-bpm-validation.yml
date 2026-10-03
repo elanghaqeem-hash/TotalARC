@@ -87,6 +87,11 @@ jobs:
               " AND action IN ('APPROVE_SOURCE_DRAFT','REJECT_SOURCE_DRAFT') "
               "ORDER BY timestamp DESC LIMIT 1"
           )
+          recent_audits = rows(
+              "SELECT action,userName,userRole,entityType,timestamp,newValue,reason FROM AuditLog "
+              "WHERE institutionId="+q(iid)+" AND recordId="+q(pid)+
+              " ORDER BY timestamp DESC LIMIT 20"
+          )
 
           try:
               tags = json.loads(process.get("tags") or "{}")
@@ -100,6 +105,7 @@ jobs:
               "name": process.get("name"),
               "beforeStatus": process.get("status"),
               "latestValidationAudit": audits[0] if audits else None,
+              "recentAudits": recent_audits,
               "repaired": False,
           }
 
