@@ -29,7 +29,7 @@ CENTRAL_PARENT_MAP = {
     "DIV-STRATEGI": "DIR-UTAMA",
     "FUNC-SKAI": "DIR-UTAMA",
     "FUNC-CORSEC": "DIR-UTAMA",
-    "FUNC-ICOFR": "EXEC-DIREKSI",
+    "FUNC-ICOFR": "DIV-MR",
 }
 
 CONVENTIONAL = [
@@ -211,9 +211,9 @@ evidence = [
 for child in CENTRAL_PARENT_MAP:
     if child == "FUNC-ICOFR":
         evidence.append(evidence_sql(
-            child,"VERIFIED_GOVERNANCE_FUNCTION","VERIFIED_GOVERNANCE_PARENT",
-            [SOURCES["seraya"],SOURCES["icofr"]],
-            "Fungsi/UKK ICOFR is source-confirmed as a Line-2 governance function. Total ARC normalizes its accountable parent to Direksi without inventing a specific director reporting line."
+            child,"USER_DIRECTED_CONFIGURATION","CONFIGURED_PARENT",
+            ["USER-INSTRUCTION:2026-10-03",SOURCES["seraya"],SOURCES["icofr"]],
+            "Total ARC configuration places Fungsi ICOFR directly under Divisi Manajemen Risiko per user instruction dated 3 October 2026, while retaining its ICOFR source references."
         ))
     else:
         evidence.append(evidence_sql(
