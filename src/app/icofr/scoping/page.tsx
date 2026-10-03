@@ -894,12 +894,54 @@ export default function IcofrScopingPage() {
                   }
                 ].map(group => {
                   const Icon = group.icon;
+                  const rowIds = group.rows.map(row => row.id);
+                  const allSelected =
+                    rowIds.length > 0 && rowIds.every(id => group.selected.includes(id));
+                  const selectedInGroup = rowIds.filter(id => group.selected.includes(id)).length;
+
                   return (
                     <div key={group.title} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                      <div className="mb-2 flex items-center gap-2 text-xs font-black text-slate-800">
-                        <Icon className="h-3.5 w-3.5 text-slate-500" />
-                        {group.title}
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs font-black text-slate-800">
+                          <Icon className="h-3.5 w-3.5 text-slate-500" />
+                          {group.title}
+                        </div>
+                        {group.rows.length > 1 && (
+                          <span className="text-[9px] font-bold text-slate-400">
+                            {selectedInGroup}/{group.rows.length}
+                          </span>
+                        )}
                       </div>
+
+                      {group.rows.length > 1 && (
+                        <label
+                          className={`mb-2 flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition ${
+                            allSelected
+                              ? 'border-brand-300 bg-brand-50 text-brand-700'
+                              : 'border-dashed border-slate-300 bg-white text-slate-600 hover:border-brand-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={() =>
+                              (
+                                group.setter as React.Dispatch<
+                                  React.SetStateAction<string[]>
+                                >
+                              )(current =>
+                                allSelected
+                                  ? current.filter(id => !rowIds.includes(id))
+                                  : Array.from(new Set([...current, ...rowIds]))
+                              )
+                            }
+                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          />
+                          <span className="text-[10px] font-black">
+                            All / Pilih Semua
+                          </span>
+                        </label>
+                      )}
 
                       <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
                         {group.rows.length === 0 ? (
