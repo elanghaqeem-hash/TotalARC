@@ -8,6 +8,7 @@ import {
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
 import { AUTH_LOGIN_RATE_LIMIT } from '@/lib/auth-security';
 import { canAdministerTenantUsers } from '@/lib/access-control';
+import { MFA_POLICY, MFA_REQUIRED_ROLES } from '@/lib/auth-mfa';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +90,18 @@ export async function GET(request: Request) {
           absoluteMinutes: 60,
           serverSideRevocation: true,
           activityTouchMinutes: 5
+        },
+        mfaPolicy: {
+          requiredRoles: MFA_REQUIRED_ROLES,
+          methods: [
+            'TOTP / Authenticator',
+            'WebAuthn / Passkey',
+            'Email OTP (bila email gateway dikonfigurasi)',
+            'SSO MFA (bila trusted SSO gateway dikonfigurasi)'
+          ],
+          challengeMinutes: MFA_POLICY.challengeTtlSeconds / 60,
+          maxAttempts: MFA_POLICY.maxAttempts,
+          architecture: 'Password + MFA → session → RBAC → tenant → transaction authorization'
         },
         loginRateLimitPolicy: {
           ipPerMinute: {
