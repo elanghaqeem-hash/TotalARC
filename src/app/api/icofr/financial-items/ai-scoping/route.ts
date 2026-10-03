@@ -540,12 +540,16 @@ export async function POST(request: Request) {
       fileName: file.name,
       fallbackUnitMultiplier: detectDocumentUnitMultiplier(extracted.text)
     });
+    const baseAnalysisId =
+      baseAnalysis && (baseAnalysis as Record<string, unknown>).id
+        ? String((baseAnalysis as Record<string, unknown>).id)
+        : null;
     const cumulativeResult = mergeScopingResults(
       (baseAnalysis?.result || normalized) as FinancialScopingAnalysisResult,
       normalized,
       {
         mode: analysisMode,
-        baseAnalysisId: baseAnalysis?.id ? String(baseAnalysis.id) : null,
+        baseAnalysisId,
         fileName: file.name
       }
     );
@@ -599,7 +603,7 @@ export async function POST(request: Request) {
           fileName: file.name
         },
         analysisMode,
-        baseAnalysisId: baseAnalysis?.id ? String(baseAnalysis.id) : null,
+        baseAnalysisId,
         message:
           analysisMode === 'COMPLEMENT'
             ? 'Dokumen tambahan selesai dianalisis dan hasilnya telah melengkapi analisis sebelumnya. Tinjau hasil kumulatif sebelum diterapkan.'
