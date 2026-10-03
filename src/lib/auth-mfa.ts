@@ -152,7 +152,12 @@ function safeEqual(left: string, right: string) {
 
 async function mfaMasterSecret() {
   const env = await runtimeEnv();
-  const secret = String(env.AUTH_MFA_MASTER_KEY || env.AUTH_TOKEN_SECRET || '');
+  const secret = String(
+    env.AUTH_MFA_MASTER_KEY ||
+    env.TOTAL_ARC_AUTH_SECRET ||
+    env.AUTH_TOKEN_SECRET ||
+    ''
+  );
   if (secret.length < 32) throw new Error('AUTH_MFA_SECRET_INVALID');
   return secret;
 }
