@@ -17,6 +17,12 @@ import {
   savePasswordHistory,
   validatePasswordPolicy
 } from '@/lib/auth-security';
+import {
+  consumeMfaChallenge,
+  isMfaRequiredForRole,
+  prepareMfaLogin,
+  type MfaMethod
+} from '@/lib/auth-mfa';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -713,6 +719,28 @@ export async function authenticateUser(input: {
     [now, now, row.id]
   );
 
+  const profile = await profileFromRow(db, row);
+
+  if (isMfaRequiredForRole(profile.role)) {
+    const mfa = await prepareMfaLogin({
+      userId: profile.id,
+      email: profile.email
+    });
+    await writeAuthEvent(db, {
+      userId: row.id,
+      institutionId: row.institutionId,
+      eventType: 'PASSWORD_VERIFIED_MFA_REQUIRED',
+      email: row.email,
+      role: row.role,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      detail: mfa.setupRequired
+        ? 'Password verified; mandatory MFA enrollment required before session issuance.'
+        : 'Password verified; mandatory MFA challenge required before session issuance.'
+    });
+    return { profile, token: null, mfa };
+  }
+
   await writeAuthEvent(db, {
     userId: row.id,
     institutionId: row.institutionId,
@@ -720,8 +748,51 @@ export async function authenticateUser(input: {
     email: row.email,
     role: row.role,
     ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    detail: 'Password authentication completed. MFA is not mandatory for this role.'
+  });
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const payload: SessionPayload = {
+    v: 1,
+    sub: profile.id,
+    email: profile.email,
+    name: profile.name,
+    role: profile.role,
+    institutionId: profile.institutionId,
+    orgUnitId: profile.orgUnitId,
+    department: profile.department || null,
+    mustChangePassword: profile.mustChangePassword,
+    amr: ['pwd'],
+    iat: nowSeconds,
+    exp: nowSeconds + AUTH_SESSION_SECONDS,
+    jti: crypto.randomUUID()
+  };
+
+  const secret = await getRuntimeAuthSecret();
+  const token = await signSessionToken(payload, secret);
+  await registerAuthSession(payload, {
+    ipAddress: input.ipAddress,
     userAgent: input.userAgent
   });
+  return { profile, token, mfa: null };
+}
+
+export async function completeMfaLogin(input: {
+  userId: string;
+  method: MfaMethod;
+  challengeId: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  const db = await ensureAuthSchema();
+  const row = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [input.userId]
+  );
+  if (!row || !row.active || !isUserRole(row.role)) throw new Error('ACCOUNT_DISABLED');
+  if (!isMfaRequiredForRole(row.role)) throw new Error('MFA_NOT_REQUIRED');
 
   const profile = await profileFromRow(db, row);
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -735,6 +806,8 @@ export async function authenticateUser(input: {
     orgUnitId: profile.orgUnitId,
     department: profile.department || null,
     mustChangePassword: profile.mustChangePassword,
+    amr: ['pwd', input.method.toLowerCase()],
+    mfaAt: nowSeconds,
     iat: nowSeconds,
     exp: nowSeconds + AUTH_SESSION_SECONDS,
     jti: crypto.randomUUID()
@@ -746,6 +819,18 @@ export async function authenticateUser(input: {
     ipAddress: input.ipAddress,
     userAgent: input.userAgent
   });
+  await consumeMfaChallenge(input.challengeId);
+  await writeAuthEvent(db, {
+    userId: row.id,
+    institutionId: row.institutionId,
+    eventType: 'LOGIN_SUCCESS_MFA',
+    email: row.email,
+    role: row.role,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    detail: 'Password + ' + input.method + ' MFA completed before session issuance.'
+  });
+
   return { profile, token };
 }
 
@@ -753,6 +838,7 @@ export async function getAuthenticatedProfile(token: string) {
   const secret = await getRuntimeAuthSecret();
   const session = await verifySessionToken(token, secret);
   if (!session) return null;
+  if (isMfaRequiredForRole(session.role) && !session.mfaAt) return null;
   if (!(await isAuthSessionActive(session, true))) return null;
 
   const db = await ensureAuthSchema();
