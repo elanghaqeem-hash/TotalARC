@@ -66,7 +66,7 @@ export async function GET(request: Request) {
     const context = await requireSystemAdmin(request);
     if (!context) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const configs = await listAiAdminProviderConfigs(context.institution.id);
+    const configs = await listAiAdminProviderConfigs(context.institution!.id);
     const configMap = new Map(configs.map(item => [item.provider, item]));
     const featureAssignments = AI_FEATURE_CATALOG.map(feature => {
       const candidates = configs
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       {
-        institution: { id: context.institution.id, name: context.institution.name },
+        institution: { id: context.institution!.id, name: context.institution!.name },
         vaultReady: aiKeyVaultReady(),
         levels: AI_LEVELS,
         features: AI_FEATURE_CATALOG,
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
     if (!provider) return NextResponse.json({ error: 'Provider AI tidak valid.' }, { status: 400 });
 
     if (action === 'TEST') {
-      const result = await testAiAdminProviderConfig(context.institution.id, provider);
+      const result = await testAiAdminProviderConfig(context.institution!.id, provider);
       return NextResponse.json(result, {
         status: result.ok ? 200 : 422,
         headers: { 'Cache-Control': 'no-store' }
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
 
     if (action === 'DELETE') {
       return NextResponse.json(
-        await deleteAiAdminProviderConfig(context.institution.id, provider),
+        await deleteAiAdminProviderConfig(context.institution!.id, provider),
         { headers: { 'Cache-Control': 'no-store' } }
       );
     }
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
     }
 
     const config = await saveAiAdminProviderConfig({
-      institutionId: context.institution.id,
+      institutionId: context.institution!.id,
       provider,
       enabled: body.enabled !== false,
       model: String(body.model || AI_PROVIDER_DEFAULTS[provider].model),
