@@ -81,16 +81,16 @@ export async function POST(request: Request) {
     const actionType = typeof body.actionType === 'string' ? body.actionType : '';
 
     if (
-      admin.role === 'InstitutionAdmin' &&
+      admin.role === 'Admin' &&
       typeof body.userId === 'string' &&
       body.userId.trim()
     ) {
       const managedUsers = await listManagedUsers(admin.institutionId);
       const target = managedUsers.find(item => item.id === body.userId.trim());
       if (!target) throw new Error('USER_NOT_FOUND');
-      if (target.role === 'Admin' || target.role === 'InstitutionAdmin') {
+      if (target.role === 'SystemAdmin' || target.role === 'Admin') {
         return NextResponse.json(
-          { error: 'Administrator institusi tidak dapat mengelola credential akun administrator tingkat sistem/institusi.' },
+          { error: 'Administrator institusi tidak dapat mengelola credential akun administrator SystemAdmin/Admin.' },
           { status: 403, headers: { 'Cache-Control': 'no-store' } }
         );
       }
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
     if (!isUserRole(body.role)) throw new Error('AUTH_ROLE_INVALID');
     if (!canAssignRole(admin.role, body.role)) {
       return NextResponse.json(
-        { error: 'Administrator institusi tidak dapat menetapkan role administrator tingkat sistem/institusi.' },
+        { error: 'Administrator institusi tidak dapat menetapkan role administrator SystemAdmin/Admin.' },
         { status: 403, headers: { 'Cache-Control': 'no-store' } }
       );
     }
@@ -165,17 +165,17 @@ export async function PATCH(request: Request) {
     const target = managedUsers.find(item => item.id === String(body.userId));
     if (!target) throw new Error('USER_NOT_FOUND');
     if (
-      admin.role === 'InstitutionAdmin' &&
-      (target.role === 'Admin' || target.role === 'InstitutionAdmin')
+      admin.role === 'Admin' &&
+      (target.role === 'SystemAdmin' || target.role === 'Admin')
     ) {
       return NextResponse.json(
-        { error: 'Administrator institusi tidak dapat mengubah akun administrator tingkat sistem/institusi.' },
+        { error: 'Administrator institusi tidak dapat mengubah akun administrator SystemAdmin/Admin.' },
         { status: 403, headers: { 'Cache-Control': 'no-store' } }
       );
     }
     if (body.role !== undefined && !canAssignRole(admin.role, body.role)) {
       return NextResponse.json(
-        { error: 'Administrator institusi tidak dapat menetapkan role administrator tingkat sistem/institusi.' },
+        { error: 'Administrator institusi tidak dapat menetapkan role administrator SystemAdmin/Admin.' },
         { status: 403, headers: { 'Cache-Control': 'no-store' } }
       );
     }
