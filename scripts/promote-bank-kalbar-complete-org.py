@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 LEGAL_NAME = "PT. Bank Pembangunan Daerah Kalimantan Barat"
-MIGRATION = "BANK_KALBAR_COMPLETE_ORG_20260922"
+MIGRATION = "BANK_KALBAR_BRANCH_PARENT_MARKETING_UUS_20261003"
 
 SOURCES = {
     "central": "AURA:1NWZMKg1JNPZlrd3hyPrwjziqqdx6doEG#DIR/PP-0003/2026 tanggal 29 Januari 2026 Lampiran halaman 11",
@@ -177,14 +177,10 @@ for child, parent in CENTRAL_PARENT_MAP.items():
         "UPDATE OrganizationUnit SET parentId="+q(str(by_code[parent]["id"]))+
         ",updatedAt="+q(now)+" WHERE institutionId="+q(institution_id)+" AND code="+q(child)+";"
     )
-for code in CONVENTIONAL:
+branch_parent_id = str(by_code["DIR-PEMASARAN-UUS"]["id"])
+for code in CONVENTIONAL + SHARIA:
     updates.append(
-        "UPDATE OrganizationUnit SET parentId="+q(direksi_id)+
-        ",updatedAt="+q(now)+" WHERE institutionId="+q(institution_id)+" AND code="+q(code)+";"
-    )
-for code in SHARIA:
-    updates.append(
-        "UPDATE OrganizationUnit SET parentId="+q(str(by_code["DIV-UUS"]["id"]))+
+        "UPDATE OrganizationUnit SET parentId="+q(branch_parent_id)+
         ",updatedAt="+q(now)+" WHERE institutionId="+q(institution_id)+" AND code="+q(code)+";"
     )
 execute("\n".join(updates), "/tmp/complete_org_parents.sql")
@@ -225,17 +221,11 @@ for child in CENTRAL_PARENT_MAP:
             [SOURCES["central"],SOURCES["seraya"]],
             "Parent is supported by the formal Kantor Pusat organization chart DIR/PP-0003/2026 dated 29 January 2026."
         ))
-for code in CONVENTIONAL:
+for code in CONVENTIONAL + SHARIA:
     evidence.append(evidence_sql(
-        code,"VERIFIED_CURRENT_OFFICE_AND_FORMAL_CLASS","VERIFIED_COLLEGIAL_PARENT",
-        [SOURCES["central"],SOURCES["branch"],SOURCES["network"]],
-        "The formal Kantor Pusat chart places conventional branch classes on the Direksi-collegial line. The single-parent model normalizes this to Direksi rather than assigning an unsupported single director."
-    ))
-for code in SHARIA:
-    evidence.append(evidence_sql(
-        code,"VERIFIED_CURRENT_OFFICE","VERIFIED_FUNCTIONAL_PARENT",
-        [SOURCES["central"],SOURCES["network"]],
-        "The formal Kantor Pusat chart places Cabang Syariah under Unit Usaha Syariah."
+        code,"USER_DIRECTED_CONFIGURATION","CONFIGURED_PARENT",
+        ["USER-INSTRUCTION:2026-10-03"],
+        "Total ARC configuration: all Bank Kalbar branches are placed directly under Direktur Pemasaran & UUS per user instruction dated 3 October 2026. This records the configured application hierarchy and does not assert that the relationship was independently verified from the formal organization source."
     ))
 execute("\n".join(evidence), "/tmp/complete_org_evidence.sql")
 
@@ -293,8 +283,7 @@ execute("\n".join(expansion_sql), "/tmp/complete_org_expansions.sql")
 summary = {
     "formerPendingParentsResolved": 33,
     "centralFormalParentMappings": 14,
-    "conventionalBranchesNormalizedToDireksi": 19,
-    "shariaBranchesUnderUUS": 4,
+    "allBranchesUnderDirekturPemasaranUUS": len(CONVENTIONAL) + len(SHARIA),
     "branchExpansions": 23,
     "conventionalNodesPerBranch": len(CONVENTIONAL_STRUCTURE),
     "shariaNodesPerBranch": len(SHARIA_STRUCTURE),
@@ -330,11 +319,20 @@ snapshot = rows(
     "ORDER BY c.code"
 )
 
+branch_parent_mismatch = rows(
+    "SELECT COUNT(*) AS n FROM OrganizationUnit c "
+    "LEFT JOIN OrganizationUnit p ON p.id=c.parentId "
+    "WHERE c.institutionId="+q(institution_id)+
+    " AND c.code IN ("+",".join(q(x) for x in CONVENTIONAL+SHARIA)+") "
+    " AND COALESCE(p.code,'') <> 'DIR-PEMASARAN-UUS'"
+)
+
 result = {
     "institutionId": institution_id,
     "pendingParentCount": int(pending[0]["n"]),
     "branchExpansionCount": int(expansions[0]["n"]),
     "dmrkCount": int(dmrk[0]["n"]),
+    "branchParentMismatchCount": int(branch_parent_mismatch[0]["n"]),
     "summary": summary,
     "snapshot": snapshot,
 }
@@ -347,3 +345,5 @@ if result["branchExpansionCount"] != 23:
     raise RuntimeError("BRANCH_EXPANSION_COUNT_"+str(result["branchExpansionCount"]))
 if result["dmrkCount"] != 0:
     raise RuntimeError("REMOVED_DMRK_REAPPEARED")
+if result["branchParentMismatchCount"] != 0:
+    raise RuntimeError("BRANCH_PARENT_MISMATCH_"+str(result["branchParentMismatchCount"]))
