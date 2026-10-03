@@ -58,7 +58,7 @@ const ICOFR_PAGES = [
 const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
   Admin: [{ path: '/' }],
   InstitutionAdmin: [
-    { path: '/' },
+    { path: '/', exact: true },
     { path: '/admin/users' },
     { path: '/admin/security' },
     { path: '/organization' },
