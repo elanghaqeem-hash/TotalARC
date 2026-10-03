@@ -267,7 +267,7 @@ async function writeAudit(
 }
 
 
-const BANK_KALBAR_ORG_MIGRATION = 'BANK_KALBAR_COMPLETE_ORG_20260922';
+const BANK_KALBAR_ORG_MIGRATION = 'BANK_KALBAR_BRANCH_PARENT_MARKETING_UUS_20261003';
 
 const CENTRAL_PARENT_MAP: Record<string, string> = {
   'DIV-UUS': 'DIR-PEMASARAN-UUS',
@@ -540,41 +540,22 @@ async function ensureBankKalbarOrganizationCompletion(
     }
   }
 
-  for (const branchCode of CONVENTIONAL_BRANCH_CODES) {
+  const branchParent = byCode.get('DIR-PEMASARAN-UUS')!;
+  for (const branchCode of [...CONVENTIONAL_BRANCH_CODES, ...SHARIA_BRANCH_CODES]) {
     const branch = byCode.get(branchCode)!;
-    const direksi = byCode.get('EXEC-DIREKSI')!;
     await run(
       db,
       'UPDATE OrganizationUnit SET parentId = ?, updatedAt = ? WHERE id = ?',
-      [direksi.id, nowIso(), branch.id]
+      [branchParent.id, nowIso(), branch.id]
     );
     await upsertHierarchyEvidence(
       db,
       institutionId,
       String(branch.id),
-      'VERIFIED_CURRENT_OFFICE_AND_FORMAL_CLASS',
-      'VERIFIED_COLLEGIAL_PARENT',
-      [sourceCentral, sourceBranch, sourceNetwork],
-      'The formal Kantor Pusat chart places conventional branch classes on the Direksi-collegial command line. The single-parent data model therefore normalizes the parent to Direksi rather than inventing one director.'
-    );
-  }
-
-  for (const branchCode of SHARIA_BRANCH_CODES) {
-    const branch = byCode.get(branchCode)!;
-    const uus = byCode.get('DIV-UUS')!;
-    await run(
-      db,
-      'UPDATE OrganizationUnit SET parentId = ?, updatedAt = ? WHERE id = ?',
-      [uus.id, nowIso(), branch.id]
-    );
-    await upsertHierarchyEvidence(
-      db,
-      institutionId,
-      String(branch.id),
-      'VERIFIED_CURRENT_OFFICE',
-      'VERIFIED_FUNCTIONAL_PARENT',
-      [sourceCentral, sourceNetwork],
-      'The formal Kantor Pusat chart places Cabang Syariah under Unit Usaha Syariah.'
+      'USER_DIRECTED_CONFIGURATION',
+      'CONFIGURED_PARENT',
+      ['USER-INSTRUCTION:2026-10-03'],
+      'Total ARC configuration: all Bank Kalbar branches are placed directly under Direktur Pemasaran & UUS per user instruction dated 3 October 2026. This records the configured application hierarchy and does not assert that the relationship was independently verified from the formal organization source.'
     );
   }
 
@@ -660,6 +641,8 @@ async function ensureBankKalbarOrganizationCompletion(
 
   const summary = {
     formerPendingParentsResolved: 33,
+    allBranchesUnderDirekturPemasaranUUS:
+      CONVENTIONAL_BRANCH_CODES.length + SHARIA_BRANCH_CODES.length,
     conventionalBranchesExpanded: CONVENTIONAL_BRANCH_CODES.length,
     shariaBranchesExpanded: SHARIA_BRANCH_CODES.length,
     conventionalNodesPerBranch: CONVENTIONAL_BRANCH_STRUCTURE.length,
@@ -685,7 +668,7 @@ async function ensureBankKalbarOrganizationCompletion(
     'OrganizationHierarchy',
     BANK_KALBAR_ORG_MIGRATION,
     summary,
-    'Completed source-governed Bank Kalbar parent hierarchy and branch structure expansion.'
+    'Completed Bank Kalbar hierarchy update with all branches configured under Direktur Pemasaran & UUS, while preserving source-governed metadata for other relationships.'
   );
 }
 
