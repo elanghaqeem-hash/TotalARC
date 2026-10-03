@@ -22,8 +22,12 @@ for (const marker of [
   "integrity: String(parsedIntegrity?.status || 'PENDING')"
 ]) requireMarker(core, marker);
 
+requireMarker('src/app/api/system/rcm-integrity/route.ts', "test: 'RCM_PRODUCTION_INTEGRITY'");
+requireMarker('src/app/api/system/rcm-integrity/route.ts', 'getRcmGovernanceData');
+
 const workflow = '.github/workflows/verify-production-d1.yml';
 for (const marker of [
+  '/api/system/rcm-integrity',
   '.summary.controls == 132',
   '.summary.uusControls == 42',
   '.summary.itgcControls == 10',
