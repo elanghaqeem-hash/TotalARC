@@ -305,10 +305,12 @@ export function AiRiskRegisterGenerator({ processes, onCreated }: Props) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 text-xs font-black text-white shadow-sm shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600"
+        className="group inline-flex min-h-12 w-full items-center justify-center gap-2.5 rounded-xl border border-sky-400/40 bg-gradient-to-r from-brand-600 to-sky-500 px-4 py-2.5 text-[11px] font-black text-white shadow-sm shadow-sky-100 transition-all hover:-translate-y-0.5 hover:from-brand-700 hover:to-sky-600 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 sm:text-xs"
       >
-        <Sparkles className="h-4 w-4" />
-        <span>AI Buat Register Risiko</span>
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/20 transition group-hover:bg-white/20">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <span className="whitespace-nowrap">Buat Risiko dengan AI</span>
       </button>
 
       {open && (
