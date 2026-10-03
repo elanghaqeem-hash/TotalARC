@@ -76,156 +76,6 @@ function TotalArcCarousel({ compact = false }: { compact?: boolean }) {
     setActiveSlide((index + 3) % 3);
   };
 
-  const mfaRequest = async (action: string, extra: Record<string, unknown> = {}) => {
-    if (!mfa) throw new Error('Challenge MFA tidak tersedia.');
-    const response = await fetch('/api/auth/mfa', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action,
-        challengeId: mfa.challengeId,
-        challengeToken: mfa.challengeToken,
-        ...extra
-      })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.error || 'Verifikasi MFA gagal.');
-    return payload;
-  };
-
-  const beginTotpSetup = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      const payload = await mfaRequest('BEGIN_TOTP_ENROLLMENT');
-      setTotpSetup({ secret: payload.secret, otpauthUri: payload.otpauthUri });
-      setMfaMode('TOTP');
-      setMfaMessage('Tambahkan secret berikut ke Google/Microsoft Authenticator atau aplikasi TOTP lain, lalu masukkan kode 6 digit.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Setup TOTP gagal.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const verifyCode = async () => {
-    if (!mfaMode || !mfaCode.trim()) return;
-    setSubmitting(true);
-    setError('');
-    try {
-      const action =
-        mfaMode === 'TOTP'
-          ? (mfa?.setupRequired ? 'CONFIRM_TOTP_ENROLLMENT' : 'VERIFY_TOTP')
-          : 'VERIFY_EMAIL_OTP';
-      await mfaRequest(action, { code: mfaCode });
-      window.location.assign(nextPath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verifikasi MFA gagal.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const sendEmailCode = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      const payload = await mfaRequest('SEND_EMAIL_OTP');
-      setMfaMode('EMAIL_OTP');
-      setMfaMessage('Kode OTP telah dikirim ke ' + (payload.maskedEmail || 'email terdaftar') + '.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Email OTP gagal dikirim.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const usePasskey = async () => {
-    if (!window.PublicKeyCredential || !navigator.credentials) {
-      setError('Browser/perangkat ini belum mendukung Passkey/WebAuthn.');
-      return;
-    }
-
-    setSubmitting(true);
-    setError('');
-    try {
-      if (mfa?.setupRequired) {
-        const payload = await mfaRequest('BEGIN_PASSKEY_ENROLLMENT');
-        const options = payload.publicKey;
-        const credential = (await navigator.credentials.create({
-          publicKey: {
-            ...options,
-            challenge: base64UrlToBytes(options.challenge),
-            user: {
-              ...options.user,
-              id: base64UrlToBytes(options.user.id)
-            }
-          }
-        })) as PublicKeyCredential | null;
-
-        if (!credential) throw new Error('Pendaftaran passkey dibatalkan.');
-        const response = credential.response as AuthenticatorAttestationResponse & {
-          getPublicKey?: () => ArrayBuffer | null;
-          getPublicKeyAlgorithm?: () => number;
-        };
-        const publicKey = response.getPublicKey?.();
-        const algorithm = response.getPublicKeyAlgorithm?.();
-        if (!publicKey || typeof algorithm !== 'number') {
-          throw new Error('Browser tidak dapat mengekspor public key passkey. Gunakan browser versi terbaru.');
-        }
-
-        await mfaRequest('CONFIRM_PASSKEY_ENROLLMENT', {
-          credentialId: bytesToBase64Url(credential.rawId),
-          publicKeySpki: bytesToBase64Url(publicKey),
-          algorithm,
-          clientDataJSON: bytesToBase64Url(response.clientDataJSON)
-        });
-      } else {
-        const payload = await mfaRequest('BEGIN_PASSKEY_AUTHENTICATION');
-        const options = payload.publicKey;
-        const credential = (await navigator.credentials.get({
-          publicKey: {
-            ...options,
-            challenge: base64UrlToBytes(options.challenge),
-            allowCredentials: (options.allowCredentials || []).map((item: any) => ({
-              ...item,
-              id: base64UrlToBytes(item.id)
-            }))
-          }
-        })) as PublicKeyCredential | null;
-
-        if (!credential) throw new Error('Verifikasi passkey dibatalkan.');
-        const response = credential.response as AuthenticatorAssertionResponse;
-        await mfaRequest('VERIFY_PASSKEY', {
-          credentialId: bytesToBase64Url(credential.rawId),
-          clientDataJSON: bytesToBase64Url(response.clientDataJSON),
-          authenticatorData: bytesToBase64Url(response.authenticatorData),
-          signature: bytesToBase64Url(response.signature)
-        });
-      }
-
-      window.location.assign(nextPath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Passkey tidak dapat diverifikasi.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const verifySso = async () => {
-    setSubmitting(true);
-    setError('');
-    try {
-      await mfaRequest('VERIFY_SSO_MFA');
-      window.location.assign(nextPath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'SSO MFA tidak dapat diverifikasi.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <div className={compact ? 'mt-8' : 'mt-7'}>
       <div
@@ -458,6 +308,157 @@ export default function LoginPage() {
       setSubmitting(false);
     }
   };
+
+  const mfaRequest = async (action: string, extra: Record<string, unknown> = {}) => {
+    if (!mfa) throw new Error('Challenge MFA tidak tersedia.');
+    const response = await fetch('/api/auth/mfa', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        challengeId: mfa.challengeId,
+        challengeToken: mfa.challengeToken,
+        ...extra
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || 'Verifikasi MFA gagal.');
+    return payload;
+  };
+
+  const beginTotpSetup = async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      const payload = await mfaRequest('BEGIN_TOTP_ENROLLMENT');
+      setTotpSetup({ secret: payload.secret, otpauthUri: payload.otpauthUri });
+      setMfaMode('TOTP');
+      setMfaMessage('Tambahkan secret berikut ke Google/Microsoft Authenticator atau aplikasi TOTP lain, lalu masukkan kode 6 digit.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Setup TOTP gagal.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const verifyCode = async () => {
+    if (!mfaMode || !mfaCode.trim()) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const action =
+        mfaMode === 'TOTP'
+          ? (mfa?.setupRequired ? 'CONFIRM_TOTP_ENROLLMENT' : 'VERIFY_TOTP')
+          : 'VERIFY_EMAIL_OTP';
+      await mfaRequest(action, { code: mfaCode });
+      window.location.assign(nextPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verifikasi MFA gagal.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const sendEmailCode = async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      const payload = await mfaRequest('SEND_EMAIL_OTP');
+      setMfaMode('EMAIL_OTP');
+      setMfaMessage('Kode OTP telah dikirim ke ' + (payload.maskedEmail || 'email terdaftar') + '.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Email OTP gagal dikirim.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const usePasskey = async () => {
+    if (!window.PublicKeyCredential || !navigator.credentials) {
+      setError('Browser/perangkat ini belum mendukung Passkey/WebAuthn.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+    try {
+      if (mfa?.setupRequired) {
+        const payload = await mfaRequest('BEGIN_PASSKEY_ENROLLMENT');
+        const options = payload.publicKey;
+        const credential = (await navigator.credentials.create({
+          publicKey: {
+            ...options,
+            challenge: base64UrlToBytes(options.challenge),
+            user: {
+              ...options.user,
+              id: base64UrlToBytes(options.user.id)
+            }
+          }
+        })) as PublicKeyCredential | null;
+
+        if (!credential) throw new Error('Pendaftaran passkey dibatalkan.');
+        const response = credential.response as AuthenticatorAttestationResponse & {
+          getPublicKey?: () => ArrayBuffer | null;
+          getPublicKeyAlgorithm?: () => number;
+        };
+        const publicKey = response.getPublicKey?.();
+        const algorithm = response.getPublicKeyAlgorithm?.();
+        if (!publicKey || typeof algorithm !== 'number') {
+          throw new Error('Browser tidak dapat mengekspor public key passkey. Gunakan browser versi terbaru.');
+        }
+
+        await mfaRequest('CONFIRM_PASSKEY_ENROLLMENT', {
+          credentialId: bytesToBase64Url(credential.rawId),
+          publicKeySpki: bytesToBase64Url(publicKey),
+          algorithm,
+          clientDataJSON: bytesToBase64Url(response.clientDataJSON)
+        });
+      } else {
+        const payload = await mfaRequest('BEGIN_PASSKEY_AUTHENTICATION');
+        const options = payload.publicKey;
+        const credential = (await navigator.credentials.get({
+          publicKey: {
+            ...options,
+            challenge: base64UrlToBytes(options.challenge),
+            allowCredentials: (options.allowCredentials || []).map((item: any) => ({
+              ...item,
+              id: base64UrlToBytes(item.id)
+            }))
+          }
+        })) as PublicKeyCredential | null;
+
+        if (!credential) throw new Error('Verifikasi passkey dibatalkan.');
+        const response = credential.response as AuthenticatorAssertionResponse;
+        await mfaRequest('VERIFY_PASSKEY', {
+          credentialId: bytesToBase64Url(credential.rawId),
+          clientDataJSON: bytesToBase64Url(response.clientDataJSON),
+          authenticatorData: bytesToBase64Url(response.authenticatorData),
+          signature: bytesToBase64Url(response.signature)
+        });
+      }
+
+      window.location.assign(nextPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Passkey tidak dapat diverifikasi.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const verifySso = async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      await mfaRequest('VERIFY_SSO_MFA');
+      window.location.assign(nextPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'SSO MFA tidak dapat diverifikasi.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_38%),linear-gradient(180deg,#f8fbff_0%,#f8fafc_100%)] px-4 py-6 sm:px-6 sm:py-8">
