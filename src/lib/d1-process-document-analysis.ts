@@ -142,10 +142,18 @@ async function ensureProcessDocumentAnalysisSchema() {
     const columns = await all<{ name?: string }>(db, 'PRAGMA table_info(ProcessDocumentAnalysis)');
     const columnNames = new Set(columns.map(column => String(column.name || '')));
     if (!columnNames.has('analysisMode')) {
-      await db.prepare("ALTER TABLE ProcessDocumentAnalysis ADD COLUMN analysisMode TEXT NOT NULL DEFAULT 'INITIAL'").run();
+      try {
+        await db.prepare("ALTER TABLE ProcessDocumentAnalysis ADD COLUMN analysisMode TEXT NOT NULL DEFAULT 'INITIAL'").run();
+      } catch (error) {
+        if (!String(error).toLowerCase().includes('duplicate column')) throw error;
+      }
     }
     if (!columnNames.has('baseAnalysisId')) {
-      await db.prepare('ALTER TABLE ProcessDocumentAnalysis ADD COLUMN baseAnalysisId TEXT').run();
+      try {
+        await db.prepare('ALTER TABLE ProcessDocumentAnalysis ADD COLUMN baseAnalysisId TEXT').run();
+      } catch (error) {
+        if (!String(error).toLowerCase().includes('duplicate column')) throw error;
+      }
     }
 
     return db;

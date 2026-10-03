@@ -52,6 +52,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
   const processId = String(process?.id || '');
   const existingActivityCount = Number(process?.activities?.length || 0);
   const draft = activeAnalysis?.draft || null;
+  const hasUsableAnalysis = analyses.some(item => item.status !== 'REJECTED');
 
   const loadHistory = async () => {
     if (!processId) return;
@@ -126,8 +127,8 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
     try {
       const form = new FormData();
       form.append('file', file);
-      form.append('analysisMode', analyses.length > 0 ? documentMode : 'INITIAL');
-      if (analyses.length > 0 && documentMode === 'COMPLEMENT' && baseAnalysisId) {
+      form.append('analysisMode', hasUsableAnalysis ? documentMode : 'INITIAL');
+      if (hasUsableAnalysis && documentMode === 'COMPLEMENT' && baseAnalysisId) {
         form.append('baseAnalysisId', baseAnalysisId);
       }
       const response = await fetch(
@@ -279,7 +280,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         </div>
       )}
 
-      {analyses.length > 0 && (
+      {hasUsableAnalysis && (
         <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -366,9 +367,9 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             )}
             {analyzing
               ? `Analyzing… ${analysisSeconds}s`
-              : analyses.length > 0 && documentMode === 'COMPLEMENT'
+              : hasUsableAnalysis && documentMode === 'COMPLEMENT'
                 ? 'Upload & Lengkapi Analisis'
-                : analyses.length > 0 && documentMode === 'REPLACE'
+                : hasUsableAnalysis && documentMode === 'REPLACE'
                   ? 'Upload & Ganti Analisis'
                   : 'Upload & Analyze'}
           </button>

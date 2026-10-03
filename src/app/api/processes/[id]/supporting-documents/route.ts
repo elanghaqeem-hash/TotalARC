@@ -292,14 +292,20 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const previousAnalyses = await listProcessDocumentAnalyses(processId, institutionId);
     const latestUsable = previousAnalyses.find(item => item.status !== 'REJECTED') || null;
     const analysisMode: ProcessDocumentAnalysisMode =
-      previousAnalyses.length === 0
+      !latestUsable
         ? 'INITIAL'
         : requestedMode === 'REPLACE'
           ? 'REPLACE'
           : 'COMPLEMENT';
+    const requestedBase =
+      requestedBaseAnalysisId
+        ? previousAnalyses.find(
+            item => item.id === requestedBaseAnalysisId && item.status !== 'REJECTED'
+          ) || null
+        : null;
     const baseAnalysis =
       analysisMode === 'COMPLEMENT'
-        ? previousAnalyses.find(item => item.id === requestedBaseAnalysisId) || latestUsable
+        ? requestedBase || latestUsable
         : null;
 
     if (analysisMode === 'COMPLEMENT' && (!baseAnalysis?.id || !baseAnalysis?.draft)) {
