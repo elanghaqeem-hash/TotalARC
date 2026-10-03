@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, CheckCircle2, Link2, Pencil, Plus, Save, ShieldCheck } from 'lucide-react';
+import { RichTextDisplay, RichTextEditor } from '@/components/common/RichTextEditor';
 
 type RecordItem = {
   id: string;
@@ -244,9 +245,17 @@ export function ControlDomainWorkspace(props: Props) {
             <label className="text-xs font-bold text-slate-700 md:col-span-2 xl:col-span-3">Control objective *
               <textarea required rows={2} value={form.objective} onChange={e=>setForm({...form,objective:e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5" />
             </label>
-            <label className="text-xs font-bold text-slate-700 md:col-span-2 xl:col-span-3">Financial reporting risk / failure mode
-              <textarea rows={2} value={form.riskDescription} onChange={e=>setForm({...form,riskDescription:e.target.value})} placeholder="Describe what could cause a material misstatement or reporting failure." className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5" />
-            </label>
+            <div className="md:col-span-2 xl:col-span-3">
+              <div className="text-xs font-bold text-slate-700">Risiko pelaporan keuangan / failure mode</div>
+              <p className="mt-0.5 text-[9px] leading-4 text-slate-500">
+                Gunakan toolbar untuk membuat teks tebal, miring, garis bawah, daftar bernomor, atau pointer agar uraian risiko lebih mudah dibaca.
+              </p>
+              <RichTextEditor
+                value={form.riskDescription}
+                onChange={riskDescription => setForm({ ...form, riskDescription })}
+                placeholder="Contoh: jelaskan kondisi yang dapat menyebabkan salah saji material atau kegagalan pelaporan."
+              />
+            </div>
             <label className="text-xs font-bold text-slate-700">Owner *
               <input required value={form.owner} onChange={e=>setForm({...form,owner:e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
             </label>
@@ -337,6 +346,17 @@ export function ControlDomainWorkspace(props: Props) {
                   <button type="button" onClick={()=>edit(item)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:text-brand-700"><Pencil className="h-3.5 w-3.5" /></button>
                 </div>
                 <div className="mt-2 text-[11px] leading-5 text-slate-600">{item.objective}</div>
+                {item.riskDescription && (
+                  <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2">
+                    <div className="mb-1 text-[9px] font-black uppercase tracking-wide text-slate-400">
+                      Risiko pelaporan keuangan / failure mode
+                    </div>
+                    <RichTextDisplay
+                      value={item.riskDescription}
+                      className="text-[10px] leading-5 text-slate-600"
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>

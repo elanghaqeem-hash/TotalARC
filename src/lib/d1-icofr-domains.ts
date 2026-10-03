@@ -1,6 +1,7 @@
 import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
+import { sanitizeLimitedRichText } from '@/lib/rich-text';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
@@ -378,7 +379,7 @@ export async function saveIcofrControl(input: Record<string, unknown>) {
     name,
     subcategory: clean(input.subcategory),
     objective,
-    riskDescription: clean(input.riskDescription),
+    riskDescription: sanitizeLimitedRichText(input.riskDescription) || null,
     owner,
     reviewer: clean(input.reviewer),
     frequency,
