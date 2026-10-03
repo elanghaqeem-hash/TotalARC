@@ -16,7 +16,7 @@ export async function GET() {
   } catch (error) {
     console.error('Failed to load ICOFR certification data:', error);
     return NextResponse.json(
-      { error: 'Failed to load ICOFR certification data from persistent database.' },
+      { error: 'Gagal memuat data sertifikasi ICOFR dari database persisten.' },
       { status: 503 }
     );
   }
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
       if (!attestationId || !role || !signatoryName || !declarationConfirmed) {
         return NextResponse.json(
-          { error: 'Attestation, role, signatory name and declaration confirmation are required.' },
+          { error: 'Atestasi, peran, nama penandatangan, dan konfirmasi deklarasi wajib diisi.' },
           { status: 400 }
         );
       }
@@ -64,34 +64,34 @@ export async function POST(request: Request) {
       return NextResponse.json(result, { status: 201 });
     }
 
-    return NextResponse.json({ error: 'Unsupported ICOFR certification action.' }, { status: 400 });
+    return NextResponse.json({ error: 'Aksi sertifikasi ICOFR tidak didukung.' }, { status: 400 });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const known: Record<string, [string, number]> = {
-      INSTITUTION_REQUIRED: ['Register an institution before using ICOFR certification.', 409],
-      SUBCERT_REQUIRED: ['Scope, period, subject, certifier name/role/email and declaration are required.', 400],
-      INVALID_CERTIFICATION_TYPE: ['Certification type must be Quarterly, Semi-Annual, Year-End, or Ad Hoc.', 400],
-      INVALID_SUBCERT_STATUS: ['Invalid sub-certification workflow status.', 400],
-      INVALID_SUBCERT_CONCLUSION: ['Invalid sub-certification conclusion.', 400],
-      INVALID_REVIEWER_DECISION: ['Invalid reviewer decision.', 400],
-      INVALID_SUBJECT_TYPE: ['Sub-certification subject must be a Legal Entity or Organization Unit.', 400],
-      SUBJECT_NOT_FOUND: ['Selected legal entity or organization unit was not found.', 400],
-      SCOPE_NOT_FOUND: ['Selected ICOFR scope was not found.', 400],
-      CYCLE_NOT_FOUND: ['Selected testing cycle does not belong to the selected scope.', 400],
-      SUBCERT_CONFLICT: ['A sub-certification already exists for this subject and period.', 409],
-      SUBCERT_DECLARATIONS_INCOMPLETE: ['All required representations, certification date, evidence reference and conclusion are required before submission/approval.', 400],
-      SUBCERT_EXCEPTION_RATIONALE_REQUIRED: ['Document the exception/basis when the conclusion is Effective with Exceptions or Ineffective.', 400],
-      SUBCERT_REVIEW_REQUIRED: ['Reviewer name, reviewer role and an Approved reviewer decision are required before approval.', 400],
-      ATTESTATION_REQUIRED: ['Scope, period, scope summary, management representation and preparer are required.', 400],
-      ATTESTATION_CONFLICT: ['A management attestation already exists for this scope and period.', 409],
-      OVERRIDE_REASON_REQUIRED: ['A documented reason is required when readiness override is enabled.', 400],
-      EVIDENCE_REQUIRED: ['Attestation, pack name, period, preparer and evidence index reference are required.', 400],
-      ATTESTATION_NOT_FOUND: ['Selected management attestation was not found.', 404],
-      EVIDENCE_CONFLICT: ['An evidence pack with this name already exists for the selected attestation.', 409],
-      SIGNOFF_REQUIRED: ['Signatory name and explicit declaration confirmation are required.', 400],
-      CONCLUSION_REQUIRED: ['Record management overall conclusion before executive sign-off.', 400],
-      READINESS_NOT_MET: ['Readiness gates are not fully met. Resolve the gaps or document an approved readiness override before sign-off.', 409],
-      PERIOD_CLOSED: ['This ICOFR period is closed. Certification, attestation and evidence-pack records are frozen until an approved temporary reopening is active.', 409]
+      INSTITUTION_REQUIRED: ['Daftarkan institusi terlebih dahulu sebelum menggunakan sertifikasi ICOFR.', 409],
+      SUBCERT_REQUIRED: ['Scope, periode, subjek, nama/jabatan/email pemberi sertifikasi, dan deklarasi wajib diisi.', 400],
+      INVALID_CERTIFICATION_TYPE: ['Jenis sertifikasi harus Triwulanan, Semesteran, Akhir Tahun, atau Ad Hoc.', 400],
+      INVALID_SUBCERT_STATUS: ['Status alur kerja sub-sertifikasi tidak valid.', 400],
+      INVALID_SUBCERT_CONCLUSION: ['Kesimpulan sub-sertifikasi tidak valid.', 400],
+      INVALID_REVIEWER_DECISION: ['Keputusan reviewer tidak valid.', 400],
+      INVALID_SUBJECT_TYPE: ['Subjek sub-sertifikasi harus berupa Entitas Hukum atau Unit Organisasi.', 400],
+      SUBJECT_NOT_FOUND: ['Entitas hukum atau unit organisasi yang dipilih tidak ditemukan.', 400],
+      SCOPE_NOT_FOUND: ['Scope ICOFR yang dipilih tidak ditemukan.', 400],
+      CYCLE_NOT_FOUND: ['Siklus pengujian yang dipilih tidak terkait dengan scope yang dipilih.', 400],
+      SUBCERT_CONFLICT: ['Sub-sertifikasi untuk subjek dan periode tersebut sudah ada.', 409],
+      SUBCERT_DECLARATIONS_INCOMPLETE: ['Seluruh representasi wajib, tanggal sertifikasi, referensi evidence, dan kesimpulan harus dilengkapi sebelum pengajuan/persetujuan.', 400],
+      SUBCERT_EXCEPTION_RATIONALE_REQUIRED: ['Dokumentasikan pengecualian/dasar apabila kesimpulan adalah Efektif dengan Pengecualian atau Tidak Efektif.', 400],
+      SUBCERT_REVIEW_REQUIRED: ['Nama reviewer, jabatan reviewer, dan keputusan reviewer Disetujui wajib diisi sebelum persetujuan.', 400],
+      ATTESTATION_REQUIRED: ['Scope, periode, ringkasan scope, representasi manajemen, dan penyusun wajib diisi.', 400],
+      ATTESTATION_CONFLICT: ['Atestasi manajemen untuk scope dan periode tersebut sudah ada.', 409],
+      OVERRIDE_REASON_REQUIRED: ['Alasan terdokumentasi wajib diisi ketika override kesiapan diaktifkan.', 400],
+      EVIDENCE_REQUIRED: ['Atestasi, nama paket, periode, penyusun, dan referensi indeks evidence wajib diisi.', 400],
+      ATTESTATION_NOT_FOUND: ['Atestasi manajemen yang dipilih tidak ditemukan.', 404],
+      EVIDENCE_CONFLICT: ['Paket evidence dengan nama tersebut sudah ada untuk atestasi yang dipilih.', 409],
+      SIGNOFF_REQUIRED: ['Nama penandatangan dan konfirmasi deklarasi eksplisit wajib diisi.', 400],
+      CONCLUSION_REQUIRED: ['Catat kesimpulan manajemen secara keseluruhan sebelum persetujuan eksekutif.', 400],
+      READINESS_NOT_MET: ['Pemeriksaan kesiapan belum seluruhnya terpenuhi. Selesaikan kesenjangan atau dokumentasikan override kesiapan yang telah disetujui sebelum persetujuan.', 409],
+      PERIOD_CLOSED: ['Periode ICOFR ini telah ditutup. Data sertifikasi, atestasi, dan paket evidence dibekukan sampai pembukaan kembali sementara yang telah disetujui aktif.', 409]
     };
 
     if (known[code]) {
@@ -99,6 +99,6 @@ export async function POST(request: Request) {
     }
 
     console.error('Failed to save ICOFR certification data:', error);
-    return NextResponse.json({ error: 'Failed to save ICOFR certification data.' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal menyimpan data sertifikasi ICOFR.' }, { status: 500 });
   }
 }
