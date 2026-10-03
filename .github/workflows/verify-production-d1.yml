@@ -204,11 +204,10 @@ jobs:
             (.controls | type) == "array"
           '
 
-          check_json "rcm" "/api/rcm" '
+          check_json "rcm-integrity" "/api/system/rcm-integrity" '
+            .ok == true and
             .storage == "cloudflare-d1" and
-            (.rcm | type) == "array" and
-            (.total | type) == "number" and
-            ([.rcm[] | select(has("inherentAssessmentStatus"))] | length) > 0 and
+            .test == "RCM_PRODUCTION_INTEGRITY" and
             .summary.controls == 132 and
             .summary.uusControls == 42 and
             .summary.itgcControls == 10 and
