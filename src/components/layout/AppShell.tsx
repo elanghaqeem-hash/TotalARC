@@ -68,6 +68,7 @@ const englishNavLabels: Record<string, string> = {
   '/organization': 'Organization Structure',
   '/admin/users': 'User & Role Management',
   '/admin/security': 'Authentication Security',
+  '/admin/ai-settings': 'AI & API Key Configuration',
   '/admin/data-hub': 'Data Integration Hub',
   '/processes': 'Process Architecture (BPM)',
   '/risks': 'Risk Universe & Heatmap',
@@ -114,6 +115,7 @@ const shellCopy = {
     indonesian: 'Indonesia',
     english: 'English',
     security: 'Administrasi Keamanan',
+    aiSettings: 'Konfigurasi AI & API Key',
     signOut: 'Keluar',
     navigation: 'Navigasi',
     more: 'Lainnya'
@@ -127,6 +129,7 @@ const shellCopy = {
     indonesian: 'Indonesia',
     english: 'English',
     security: 'Security Administration',
+    aiSettings: 'AI & API Key Configuration',
     signOut: 'Sign Out',
     navigation: 'Navigation',
     more: 'More'
@@ -145,6 +148,7 @@ const navGroups: NavGroup[] = [
       { name: 'Struktur Organisasi', href: '/organization', icon: FolderTree },
       { name: 'Manajemen Pengguna & Peran', href: '/admin/users', icon: Users, badge: 'RBAC' },
       { name: 'Keamanan Autentikasi', href: '/admin/security', icon: LockKeyhole, badge: 'AUTH' },
+      { name: 'Konfigurasi AI & API Key', href: '/admin/ai-settings', icon: Sparkles, badge: 'AI' },
       { name: 'Pusat Integrasi Data', href: '/admin/data-hub', icon: Database, badge: 'D1' },
       { name: 'Arsitektur Proses (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
       { name: 'Semesta Risiko & Peta Risiko', href: '/risks', icon: AlertTriangle },
@@ -683,6 +687,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         {copy.security}
                       </Link>
                     )}
+                    {currentUser.role === 'Admin' && (
+                      <Link
+                        href="/admin/ai-settings"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        {copy.aiSettings}
+                      </Link>
+                    )}
                   </div>
 
                   <button
@@ -782,6 +796,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <UserRound className="h-4 w-4" />
                   {copy.profile}
                 </Link>
+                {currentUser.role === 'Admin' && (
+                  <Link
+                    href="/admin/ai-settings"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {copy.aiSettings}
+                  </Link>
+                )}
 
                 <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
                   <div className="mb-2 flex items-center gap-2 px-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">
