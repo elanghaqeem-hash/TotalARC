@@ -48,16 +48,16 @@ function normalizeFindings(value: unknown): Finding[] {
     const item = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
     return {
       id: 'AI-FND-' + String(index + 1).padStart(3, '0'),
-      type: typeof item.type === 'string' ? item.type : 'Control Observation',
+      type: typeof item.type === 'string' ? item.type : 'Observasi Pengendalian',
       severity: normalizeSeverity(item.severity),
-      title: typeof item.title === 'string' ? item.title : 'Potential control observation',
-      category: typeof item.category === 'string' ? item.category : 'General',
+      title: typeof item.title === 'string' ? item.title : 'Potensi observasi pengendalian',
+      category: typeof item.category === 'string' ? item.category : 'Umum',
       description: typeof item.description === 'string' ? item.description : '',
       recommendation: typeof item.recommendation === 'string' ? item.recommendation : '',
       suggestedRisk: typeof item.suggestedRisk === 'string' ? item.suggestedRisk : '',
       suggestedControl: typeof item.suggestedControl === 'string' ? item.suggestedControl : '',
-      disclaimer: 'AI Suggested — Human Review Required',
-      status: 'Pending Review'
+      disclaimer: 'Saran AI — Memerlukan Reviu Manusia',
+      status: 'Menunggu Reviu'
     };
   });
 }
@@ -95,8 +95,8 @@ export async function POST(request: Request) {
     if (!registeredProcess && suppliedActivities.length === 0 && suppliedRisks.length === 0 && suppliedControls.length === 0) {
       return NextResponse.json(
         {
-          error: 'No registered BPM/RCM context found for AI analysis.',
-          detail: 'Provide a valid processId/processName or explicit activities, risks and controls.'
+          error: 'Konteks BPM/RCM terdaftar tidak ditemukan untuk analisis AI.',
+          detail: 'Gunakan processId/processName yang valid atau berikan aktivitas, risiko, dan kontrol secara eksplisit.'
         },
         { status: 404 }
       );
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       : {
           process: {
             processId: processId || null,
-            name: processName || 'Ad-hoc process analysis'
+            name: processName || 'Analisis proses ad-hoc'
           },
           activities: suppliedActivities,
           risks: suppliedRisks,
@@ -133,14 +133,16 @@ export async function POST(request: Request) {
         };
 
     const systemPrompt = [
-      'You are Total ARC AI, an enterprise Governance, Risk, Internal Control and Assurance copilot.',
-      'Analyze only the evidence supplied in the registered BPM/RCM context.',
-      'Never invent ERP roles, transaction thresholds, regulations, control failures, evidence, incidents, or system configurations that are not present in the input.',
-      'If evidence is insufficient to support a finding, do not create that finding.',
-      'Focus on risk coverage, control design gaps, segregation of duties, automation opportunities, key-control logic, ICOFR relevance, duplicated controls, missing controls and traceability.',
-      'AI output is advisory only. It never approves a process, changes a risk rating, changes ToD/ToE conclusions, closes an issue, or creates remediation without human approval.',
-      'Return JSON only with this shape: {"analysisNote":"string","findings":[{"type":"string","severity":"Critical|High|Medium|Low","title":"string","category":"string","description":"string","recommendation":"string","suggestedRisk":"string","suggestedControl":"string"}]}.',
-      'Maximum 12 findings. Use an empty findings array when there is no evidence-based gap.'
+      'Anda adalah AI Total ARC, kopilot enterprise untuk Tata Kelola, Risiko, Pengendalian Internal, dan Assurance.',
+      'Analisis hanya bukti yang tersedia dalam konteks BPM/RCM terdaftar.',
+      'Jangan pernah mengarang peran ERP, ambang transaksi, regulasi, kegagalan kontrol, bukti, insiden, atau konfigurasi sistem yang tidak terdapat dalam input.',
+      'Jika bukti tidak cukup untuk mendukung suatu temuan, jangan membuat temuan tersebut.',
+      'Fokus pada cakupan risiko, kesenjangan desain pengendalian, segregasi tugas, peluang otomasi, logika key control, relevansi ICOFR, kontrol duplikat, kontrol yang belum tersedia, dan ketertelusuran.',
+      'Output AI hanya bersifat advisori. AI tidak menyetujui proses, mengubah rating risiko, mengubah kesimpulan ToD/ToE, menutup isu, atau membuat remediasi tanpa persetujuan manusia.',
+      'WAJIB gunakan Bahasa Indonesia untuk semua teks yang ditampilkan kepada pengguna: analysisNote, type, title, category, description, recommendation, suggestedRisk, dan suggestedControl. Jangan gunakan judul atau uraian berbahasa Inggris, kecuali nama resmi sistem, singkatan, atau istilah teknis yang memang perlu dipertahankan.',
+      'Nilai severity tetap harus menggunakan enum internal Critical|High|Medium|Low agar kompatibel dengan sistem.',
+      'Kembalikan JSON saja dengan bentuk: {"analysisNote":"string","findings":[{"type":"string","severity":"Critical|High|Medium|Low","title":"string","category":"string","description":"string","recommendation":"string","suggestedRisk":"string","suggestedControl":"string"}]}.',
+      'Maksimum 12 temuan. Gunakan findings kosong jika tidak ada gap yang didukung bukti.'
     ].join(' ');
 
     const analysisSensitivity = 'confidential' as const;
@@ -149,7 +151,7 @@ export async function POST(request: Request) {
       task: 'process_analysis',
       sensitivity: analysisSensitivity,
       systemPrompt,
-      prompt: 'Analyze this Total ARC BPM/RCM context:\n' + JSON.stringify(context),
+      prompt: 'Analisis konteks BPM/RCM Total ARC berikut dan berikan seluruh narasi dalam Bahasa Indonesia:\n' + JSON.stringify(context),
       temperature: 0.15,
       maxOutputTokens: 4096,
       requireJson: true
@@ -161,8 +163,8 @@ export async function POST(request: Request) {
       typeof parsed.analysisNote === 'string'
         ? parsed.analysisNote
         : findings.length === 0
-          ? 'No evidence-based control gap was identified from the supplied context.'
-          : 'Evidence-based AI analysis completed.';
+          ? 'Tidak ditemukan kesenjangan pengendalian yang didukung bukti dari konteks yang tersedia.'
+          : 'Analisis AI berbasis bukti telah selesai.';
 
     if (registeredProcess) {
       try {
@@ -183,9 +185,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      processAnalyzed: (registeredProcess?.name as string | undefined) || processName || 'Ad-hoc process',
+      processAnalyzed: (registeredProcess?.name as string | undefined) || processName || 'Proses ad-hoc',
       processId: (registeredProcess?.processId as string | undefined) || processId || null,
-      disclaimer: 'AI Suggested — Human Review Required',
+      disclaimer: 'Saran AI — Memerlukan Reviu Manusia',
       analysisNote,
       findingsCount: findings.length,
       findings,
@@ -203,7 +205,7 @@ export async function POST(request: Request) {
     console.error('AI analysis failed:', error);
     return NextResponse.json(
       {
-        error: 'Failed to analyze process with configured AI providers.'
+        error: 'Analisis proses gagal dijalankan menggunakan provider AI yang dikonfigurasi.'
       },
       { status: 503 }
     );
