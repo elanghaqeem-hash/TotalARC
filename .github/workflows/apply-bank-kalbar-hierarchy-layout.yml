@@ -1,0 +1,126 @@
+name: Apply Bank Kalbar hierarchy layout
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-bank-kalbar-hierarchy-layout.yml'
+      - 'src/lib/d1-organization.ts'
+      - 'src/app/organization/page.tsx'
+      - 'scripts/promote-bank-kalbar-complete-org.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-bank-kalbar-hierarchy-layout
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Apply requested hierarchy to production D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, re, subprocess, tempfile
+          from datetime import datetime, timezone
+
+          LEGAL_NAME = "PT. Bank Pembangunan Daerah Kalimantan Barat"
+          EXPECTED = {
+              "DIR-UTAMA": "EXEC-DIREKSI",
+              "DIV-STRATEGI": "DIR-UTAMA",
+              "FUNC-CORSEC": "DIR-UTAMA",
+              "FUNC-SKAI": "DIR-UTAMA",
+              "FUNC-ICOFR": "DIV-MR",
+          }
+
+          def wr(args):
+              p = subprocess.run(["npx", "wrangler", *args], text=True, env=os.environ, capture_output=True)
+              if p.returncode != 0:
+                  print(p.stdout[-4000:])
+                  print(p.stderr[-4000:])
+                  raise RuntimeError("WRANGLER_COMMAND_FAILED")
+              return p.stdout
+
+          def q(v):
+              return "'" + str(v).replace("'", "''") + "'"
+
+          dbs = json.loads(wr(["d1", "list", "--json"]))
+          db = next((x for x in dbs if re.search(r"total.?arc", x["name"], re.I)), None)
+          if not db:
+              db = dbs[0] if len(dbs) == 1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB = db["name"]
+
+          def rows(sql):
+              raw = json.loads(wr(["d1", "execute", DB, "--remote", "--json", "--command", sql]))
+              raw = raw if isinstance(raw, list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          inst = rows("SELECT id FROM Institution WHERE legalName="+q(LEGAL_NAME)+" LIMIT 1")
+          if len(inst) != 1:
+              raise RuntimeError("BANK_KALBAR_INSTITUTION_NOT_FOUND")
+          institution_id = str(inst[0]["id"])
+
+          codes = sorted(set(EXPECTED.keys()) | set(EXPECTED.values()))
+          data = rows(
+              "SELECT id,code,name,parentId,type FROM OrganizationUnit WHERE institutionId="+q(institution_id)+
+              " AND code IN ("+",".join(q(x) for x in codes)+")"
+          )
+          by_code = {str(x["code"]): x for x in data}
+          missing = [code for code in codes if code not in by_code]
+          if missing:
+              raise RuntimeError("ORG_UNITS_MISSING_"+",".join(missing))
+
+          now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+          sql = []
+          for child_code, parent_code in EXPECTED.items():
+              sql.append(
+                  "UPDATE OrganizationUnit SET parentId="+q(str(by_code[parent_code]["id"]))+
+                  ",updatedAt="+q(now)+" WHERE institutionId="+q(institution_id)+
+                  " AND code="+q(child_code)+";"
+              )
+
+          with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False) as fh:
+              fh.write("\n".join(sql))
+              sql_path = fh.name
+          wr(["d1", "execute", DB, "--remote", "--file", sql_path])
+
+          check = rows(
+              "SELECT c.code,c.name,c.type,p.code AS parentCode,p.name AS parentName "
+              "FROM OrganizationUnit c LEFT JOIN OrganizationUnit p ON p.id=c.parentId "
+              "WHERE c.institutionId="+q(institution_id)+
+              " AND c.code IN ("+",".join(q(x) for x in EXPECTED.keys())+") ORDER BY c.code"
+          )
+          mismatches = [
+              x for x in check
+              if EXPECTED.get(str(x.get("code"))) != str(x.get("parentCode") or "")
+          ]
+
+          result = {
+              "institution": LEGAL_NAME,
+              "requestedHierarchy": EXPECTED,
+              "recordsChecked": len(check),
+              "mismatchCount": len(mismatches),
+              "snapshot": check,
+          }
+          print(json.dumps(result, indent=2, ensure_ascii=False))
+          if mismatches:
+              raise RuntimeError("HIERARCHY_MISMATCH_"+str(len(mismatches)))
+          PY
