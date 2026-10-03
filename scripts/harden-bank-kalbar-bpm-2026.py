@@ -119,8 +119,22 @@ ckpn_existing = rows(
 if len(ckpn_existing) > 1:
     raise RuntimeError("DUPLICATE_CKPN_MASTER")
 
-ckpn_id = str(ckpn_existing[0]["id"]) if ckpn_existing else hid(iid, "ICOFR-BPM-2026", "P-05", "CKPN")
-ckpn_tags = {
+ckpn_row = ckpn_existing[0] if ckpn_existing else None
+ckpn_id = str(ckpn_row["id"]) if ckpn_row else hid(iid, "ICOFR-BPM-2026", "P-05", "CKPN")
+ckpn_tags = json_tags(ckpn_row.get("tags")) if ckpn_row else {}
+ckpn_validation_status = str(ckpn_tags.get("sourceValidationStatus") or "")
+ckpn_status = str(ckpn_row.get("status") or "Draft") if ckpn_row else "Draft"
+
+# Human validation is authoritative and must survive source/master refreshes.
+if ckpn_validation_status == "USER_VALIDATED":
+    ckpn_status = "Approved"
+elif ckpn_validation_status == "REJECTED_BY_USER":
+    ckpn_status = "Rejected"
+elif ckpn_status not in ("Approved", "Rejected"):
+    ckpn_status = "Draft"
+    ckpn_tags["sourceValidationStatus"] = "PENDING_USER_VALIDATION"
+
+ckpn_tags.update({
     "sourceBacked": True,
     "feedBatch": BATCH,
     "icoFrScopingCode": "P-05",
@@ -136,12 +150,13 @@ ckpn_tags = {
     "activitiesFabricated": False,
     "sipocFabricated": False,
     "canonicalHierarchy": True,
-}
+})
 ckpn_description = (
     "Source-confirmed FY2026 ICOFR process P-05 for Cadangan Kerugian Penurunan Nilai (CKPN/ECL). "
     "The existing source-backed subprocess 'Perhitungan Expected Credit Loss' is retained beneath this L2 master. "
     "Detailed CKPN flow, model inputs/parameters, staging, validation, monthly movement analysis, management review, "
-    "and journal steps remain Draft pending readable Bank SOP PSAK 71 and ECL workpapers; no missing flow steps are fabricated."
+    "and journal steps remain detail-pending until readable Bank SOP PSAK 71 and ECL workpapers are available. "
+    "Approval of the BPM master does not imply that missing detailed flow evidence has been fabricated or completed."
 )
 
 if ckpn_existing:
@@ -157,7 +172,7 @@ SET legalEntityId=COALESCE(legalEntityId,{q(entity_id)}),
     criticality=COALESCE(NULLIF(criticality,''),'Not Assessed'),
     classification='Finance',
     isIcofrRelevant=1,
-    status='Draft',
+    status={q(ckpn_status)},
     tags={q(json.dumps(ckpn_tags,ensure_ascii=False,separators=(',',':')))},
     updatedAt={q(now)}
 WHERE id={q(ckpn_id)};
@@ -172,7 +187,7 @@ INSERT INTO BusinessProcess(
   {q(ckpn_id)},{q(iid)},{q(entity_id)},NULL,{q(cat_fin_id)},'CKPN',
   'Cadangan Kerugian Penurunan Nilai (CKPN/ECL)',2,NULL,
   {q(ckpn_description)},'',NULL,NULL,'Not Assessed','Finance',1,
-  'Draft','1.0',{q(effective_date)},NULL,
+  {q(ckpn_status)},'1.0',{q(effective_date)},NULL,
   {q(json.dumps(ckpn_tags,ensure_ascii=False,separators=(',',':')))},{q(now)},{q(now)}
 );
 """, "/tmp/bpm_ckpn_insert.sql")
