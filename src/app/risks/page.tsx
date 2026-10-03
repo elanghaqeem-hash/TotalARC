@@ -21,6 +21,30 @@ import { getRiskBadgeClasses } from '@/lib/utils';
 import { DataLoadingState } from '@/components/common/DataLoadingState';
 import { AiRiskRegisterGenerator } from '@/components/risks/AiRiskRegisterGenerator';
 
+function displayRiskRating(value: unknown) {
+  const raw = String(value || '').trim();
+  switch (raw.toLowerCase()) {
+    case 'critical':
+      return 'Kritis';
+    case 'high':
+      return 'Tinggi';
+    case 'medium':
+      return 'Sedang';
+    case 'low':
+      return 'Rendah';
+    case 'not assessed':
+    case '':
+      return 'Belum Dinilai';
+    default:
+      return raw;
+  }
+}
+
+function displayAssessmentStatus(value: unknown) {
+  const raw = String(value || '').trim();
+  return !raw || raw.toLowerCase() === 'not assessed' ? 'Belum Dinilai' : raw;
+}
+
 export default function RisksPage() {
   const [risks, setRisks] = useState<any[]>([]);
   const [processes, setProcesses] = useState<any[]>([]);
@@ -374,10 +398,10 @@ export default function RisksPage() {
 
                     <div className="flex max-w-full shrink-0 flex-wrap items-center gap-1.5 sm:max-w-[46%] sm:flex-col sm:items-end">
                       <span
-                        className={`inline-flex max-w-full items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-[9px] font-bold leading-none ${badge.bg} ${badge.text} ${badge.border}`}
+                        className={`inline-flex h-6 max-w-full shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 text-[9px] font-bold leading-none ${badge.bg} ${badge.text} ${badge.border}`}
                       >
                         {r.inherentScore > 0
-                          ? `Score ${r.inherentScore} · ${r.inherentRating}`
+                          ? `Skor ${r.inherentScore} · ${displayRiskRating(r.inherentRating)}`
                           : 'Belum Dinilai'}
                       </span>
                       {r.sourceMetadata?.sourceRiskRating && (
@@ -398,8 +422,8 @@ export default function RisksPage() {
                       <TrendingDown className="w-3.5 h-3.5" />
                       <span>
                         {r.residualScore > 0
-                          ? `Residual: ${r.residualScore} (${r.residualRating})`
-                          : 'Residual: Not Assessed'}
+                          ? `Residual: ${r.residualScore} (${displayRiskRating(r.residualRating)})`
+                          : 'Residual: Belum Dinilai'}
                       </span>
                     </span>
                   </div>
@@ -492,7 +516,7 @@ export default function RisksPage() {
                     <div className="text-3xl font-black text-rose-800">
                       {selectedRisk.inherentScore > 0 ? selectedRisk.inherentScore : '—'}
                     </div>
-                    <div className="text-xs font-bold text-rose-700">{selectedRisk.inherentRating}</div>
+                    <div className="text-xs font-bold text-rose-700">{displayRiskRating(selectedRisk.inherentRating)}</div>
                     <div className="text-[10px] text-rose-600">
                       {selectedRisk.inherentScore > 0
                         ? `Likelihood ${selectedRisk.inherentLikelihood} × Impact ${selectedRisk.inherentImpact}`
@@ -507,7 +531,7 @@ export default function RisksPage() {
                     <div className="text-3xl font-black text-emerald-800">
                       {selectedRisk.residualScore > 0 ? selectedRisk.residualScore : '—'}
                     </div>
-                    <div className="text-xs font-bold text-emerald-700">{selectedRisk.residualRating}</div>
+                    <div className="text-xs font-bold text-emerald-700">{displayRiskRating(selectedRisk.residualRating)}</div>
                     <div className="text-[10px] text-emerald-600">
                       Treatment: {selectedRisk.riskTreatment}
                     </div>
@@ -535,7 +559,7 @@ export default function RisksPage() {
                           </div>
                         </div>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          {m.control?.overallHealth || 'Not Assessed'}
+                          {displayAssessmentStatus(m.control?.overallHealth)}
                         </span>
                       </div>
                     ))
@@ -574,7 +598,7 @@ export default function RisksPage() {
                           ? risk.inherentScore || 0
                           : risk.residualScore || 0
                       ) === 0
-                    ).length} risk(s) currently Not Assessed.
+                    ).length} risiko saat ini Belum Dinilai.
                   </span>
                 </p>
               </div>
@@ -920,7 +944,7 @@ export default function RisksPage() {
                     onChange={e => setFormData({ ...formData, inherentLikelihood: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
-                    <option value={0}>Not Assessed</option>
+                    <option value={0}>Belum Dinilai</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
@@ -934,7 +958,7 @@ export default function RisksPage() {
                     onChange={e => setFormData({ ...formData, inherentImpact: parseInt(e.target.value) })}
                     className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
-                    <option value={0}>Not Assessed</option>
+                    <option value={0}>Belum Dinilai</option>
                     {[1, 2, 3, 4, 5].map(v => (
                       <option key={v} value={v}>Level {v}</option>
                     ))}
