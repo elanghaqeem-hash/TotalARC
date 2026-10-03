@@ -63,6 +63,152 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+export const AUTH_LOGIN_RATE_LIMIT = {
+  ipPerMinute: { scope: 'IP_1M', limit: 5, windowMs: 60 * 1000 },
+  accountPer15Minutes: { scope: 'ACCOUNT_15M', limit: 20, windowMs: 15 * 60 * 1000 },
+  ipPerHour: { scope: 'IP_1H', limit: 100, windowMs: 60 * 60 * 1000 }
+} as const;
+
+export type AuthLoginRateLimitResult = {
+  allowed: boolean;
+  retryAfterSeconds: number;
+  violatedScopes: string[];
+};
+
+async function hashRateLimitKey(value: string) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode('totalarc-auth-rate-limit-v1|' + value)
+  );
+  const bytes = new Uint8Array(digest);
+  let hex = '';
+  for (let index = 0; index < bytes.length; index += 1) {
+    hex += bytes[index].toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
+async function consumeLoginRateLimit(input: {
+  db: D1DatabaseLike;
+  scope: string;
+  rawKey: string;
+  limit: number;
+  windowMs: number;
+  nowMs: number;
+}) {
+  const keyHash = await hashRateLimitKey(input.rawKey);
+  const now = input.nowMs;
+  const updatedAt = new Date(now).toISOString();
+
+  await run(
+    input.db,
+    `INSERT INTO AuthLoginRateLimit (
+      scope,keyHash,windowStartedAt,count,updatedAt
+    ) VALUES (?,?,?,1,?)
+    ON CONFLICT(scope,keyHash) DO UPDATE SET
+      windowStartedAt = CASE
+        WHEN (? - AuthLoginRateLimit.windowStartedAt) >= ?
+          THEN ?
+        ELSE AuthLoginRateLimit.windowStartedAt
+      END,
+      count = CASE
+        WHEN (? - AuthLoginRateLimit.windowStartedAt) >= ?
+          THEN 1
+        ELSE AuthLoginRateLimit.count + 1
+      END,
+      updatedAt = ?`,
+    [
+      input.scope,
+      keyHash,
+      now,
+      updatedAt,
+      now,
+      input.windowMs,
+      now,
+      now,
+      input.windowMs,
+      updatedAt
+    ]
+  );
+
+  const row = await first<{ windowStartedAt?: number; count?: number }>(
+    input.db,
+    'SELECT windowStartedAt,count FROM AuthLoginRateLimit WHERE scope=? AND keyHash=? LIMIT 1',
+    [input.scope, keyHash]
+  );
+
+  const count = Number(row?.count || 0);
+  const startedAt = Number(row?.windowStartedAt || now);
+  const retryAfterSeconds = Math.max(
+    1,
+    Math.ceil((startedAt + input.windowMs - now) / 1000)
+  );
+
+  return {
+    scope: input.scope,
+    blocked: count > input.limit,
+    retryAfterSeconds
+  };
+}
+
+export async function enforceAuthLoginRateLimit(input: {
+  ipAddress?: string | null;
+  email?: string | null;
+}): Promise<AuthLoginRateLimitResult> {
+  try {
+    const db = await ensureAuthSecuritySchema();
+    const nowMs = Date.now();
+    const checks: Array<Promise<{
+      scope: string;
+      blocked: boolean;
+      retryAfterSeconds: number;
+    }>> = [];
+
+    const ipAddress = String(input.ipAddress || '').trim();
+    if (ipAddress) {
+      checks.push(
+        consumeLoginRateLimit({
+          db,
+          rawKey: ipAddress,
+          nowMs,
+          ...AUTH_LOGIN_RATE_LIMIT.ipPerMinute
+        }),
+        consumeLoginRateLimit({
+          db,
+          rawKey: ipAddress,
+          nowMs,
+          ...AUTH_LOGIN_RATE_LIMIT.ipPerHour
+        })
+      );
+    }
+
+    const account = String(input.email || '').trim().toLowerCase();
+    if (account) {
+      checks.push(
+        consumeLoginRateLimit({
+          db,
+          rawKey: account,
+          nowMs,
+          ...AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes
+        })
+      );
+    }
+
+    const results = await Promise.all(checks);
+    const blocked = results.filter(item => item.blocked);
+    return {
+      allowed: blocked.length === 0,
+      retryAfterSeconds: blocked.length
+        ? Math.max(...blocked.map(item => item.retryAfterSeconds))
+        : 0,
+      violatedScopes: blocked.map(item => item.scope)
+    };
+  } catch (error) {
+    console.error('AUTH_LOGIN_RATE_LIMIT unavailable:', error);
+    throw new Error('AUTH_LOGIN_RATE_LIMIT_UNAVAILABLE');
+  }
+}
+
 const CLOUDFLARE_PBKDF2_MAX_ITERATIONS = 100000;
 
 let schemaReady: Promise<D1DatabaseLike> | null = null;
@@ -111,6 +257,20 @@ export async function ensureAuthSecuritySchema() {
           ON AuthPasswordHistory(userId,createdAt DESC);
       `);
     }
+
+    await executeSchemaScript(db, `
+      CREATE TABLE IF NOT EXISTS AuthLoginRateLimit (
+        scope TEXT NOT NULL,
+        keyHash TEXT NOT NULL,
+        windowStartedAt INTEGER NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        updatedAt TEXT NOT NULL,
+        PRIMARY KEY (scope,keyHash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_auth_login_rate_limit_updated
+        ON AuthLoginRateLimit(updatedAt);
+    `);
+
     return db;
   })().catch(error => {
     schemaReady = null;

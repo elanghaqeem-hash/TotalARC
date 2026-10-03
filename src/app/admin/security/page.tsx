@@ -78,6 +78,7 @@ export default function SecurityAdministrationPage() {
   const metrics = data?.metrics || {};
   const passwordPolicy = data?.passwordPolicy || {};
   const sessionPolicy = data?.sessionPolicy || {};
+  const loginRateLimitPolicy = data?.loginRateLimitPolicy || {};
 
   return (
     <div className="space-y-5">
@@ -157,6 +158,26 @@ export default function SecurityAdministrationPage() {
             <div className="rounded-xl bg-slate-50 p-3"><span className="block text-slate-400">Server revocation</span><strong>{sessionPolicy.serverSideRevocation ? 'Enabled' : '—'}</strong></div>
             <div className="rounded-xl bg-slate-50 p-3"><span className="block text-slate-400">Activity checkpoint</span><strong>{sessionPolicy.activityTouchMinutes || 5} minutes</strong></div>
             <div className="rounded-xl bg-slate-50 p-3"><span className="block text-slate-400">Role/password reset</span><strong>Revokes sessions</strong></div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/60 p-3">
+            <div className="text-[9px] font-black uppercase tracking-wide text-sky-700">
+              AUTH_LOGIN_RATE_LIMIT
+            </div>
+            <div className="mt-2 grid gap-2 text-[10px] sm:grid-cols-3">
+              <div className="rounded-lg bg-white p-2.5 ring-1 ring-sky-100">
+                <span className="block text-slate-400">Per IP</span>
+                <strong>{loginRateLimitPolicy.ipPerMinute?.requests || 5} request / menit</strong>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 ring-1 ring-sky-100">
+                <span className="block text-slate-400">Per Account</span>
+                <strong>{loginRateLimitPolicy.accountPer15Minutes?.requests || 20} request / 15 menit</strong>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 ring-1 ring-sky-100">
+                <span className="block text-slate-400">Per IP</span>
+                <strong>{loginRateLimitPolicy.ipPerHour?.requests || 100} request / jam</strong>
+              </div>
+            </div>
           </div>
         </div>
       </section>

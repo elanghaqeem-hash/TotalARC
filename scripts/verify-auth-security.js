@@ -26,6 +26,14 @@ const requirements = [
   ['src/lib/auth-security.ts', 'executeSchemaScript'],
   ['src/lib/auth-security.ts', 'CREATE TABLE IF NOT EXISTS AuthSession'],
   ['src/lib/auth-security.ts', 'CREATE TABLE IF NOT EXISTS AuthPasswordHistory'],
+  ['src/lib/auth-security.ts', 'CREATE TABLE IF NOT EXISTS AuthLoginRateLimit'],
+  ['src/lib/auth-security.ts', 'AUTH_LOGIN_RATE_LIMIT'],
+  ['src/lib/auth-security.ts', "limit: 5, windowMs: 60 * 1000"],
+  ['src/lib/auth-security.ts', "limit: 20, windowMs: 15 * 60 * 1000"],
+  ['src/lib/auth-security.ts', "limit: 100, windowMs: 60 * 60 * 1000"],
+  ['src/app/api/auth/login/route.ts', 'enforceAuthLoginRateLimit'],
+  ['src/app/api/auth/login/route.ts', "code: 'AUTH_LOGIN_RATE_LIMIT'"],
+  ['src/app/api/auth/login/route.ts', "'Retry-After'"],
   ['src/lib/auth-security.ts', 'LIMIT 5'],
   ['src/lib/auth-security.ts', 'validatePasswordPolicy'],
   ['src/lib/auth-security.ts', 'revokeUserSessions'],
@@ -70,7 +78,7 @@ for (const code of ['PASSWORD_POLICY', 'PASSWORD_REUSE']) {
 }
 
 console.log(
-  'Authentication security integrity verified: revocable D1 sessions, forced password change, password history, profile security, and administrator session controls are present.'
+  'Authentication security integrity verified: revocable D1 sessions, login rate limiting, forced password change, password history, profile security, and administrator session controls are present.'
 );
 
 

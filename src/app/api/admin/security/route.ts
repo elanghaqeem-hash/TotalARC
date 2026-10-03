@@ -6,6 +6,7 @@ import {
   revokeManagedSession
 } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
+import { AUTH_LOGIN_RATE_LIMIT } from '@/lib/auth-security';
 import { canAdministerTenantUsers } from '@/lib/access-control';
 
 export const dynamic = 'force-dynamic';
@@ -88,6 +89,20 @@ export async function GET(request: Request) {
           absoluteMinutes: 60,
           serverSideRevocation: true,
           activityTouchMinutes: 5
+        },
+        loginRateLimitPolicy: {
+          ipPerMinute: {
+            requests: AUTH_LOGIN_RATE_LIMIT.ipPerMinute.limit,
+            windowSeconds: AUTH_LOGIN_RATE_LIMIT.ipPerMinute.windowMs / 1000
+          },
+          accountPer15Minutes: {
+            requests: AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes.limit,
+            windowSeconds: AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes.windowMs / 1000
+          },
+          ipPerHour: {
+            requests: AUTH_LOGIN_RATE_LIMIT.ipPerHour.limit,
+            windowSeconds: AUTH_LOGIN_RATE_LIMIT.ipPerHour.windowMs / 1000
+          }
         },
         storage: 'cloudflare-d1'
       },

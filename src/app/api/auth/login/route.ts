@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth';
 import { AUTH_COOKIE_NAME, AUTH_SESSION_SECONDS } from '@/lib/auth-token';
+import { enforceAuthLoginRateLimit } from '@/lib/auth-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,11 +18,33 @@ export async function POST(request: Request) {
     const body = await request.json();
     const email = typeof body.email === 'string' ? body.email : '';
     const password = typeof body.password === 'string' ? body.password : '';
+    const ipAddress = requestIp(request);
+
+    const rateLimit = await enforceAuthLoginRateLimit({
+      ipAddress,
+      email
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Terlalu banyak permintaan login. Coba kembali setelah beberapa saat.',
+          code: 'AUTH_LOGIN_RATE_LIMIT'
+        },
+        {
+          status: 429,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Retry-After': String(rateLimit.retryAfterSeconds),
+            'X-RateLimit-Policy': '5;w=60;key=ip, 20;w=900;key=account, 100;w=3600;key=ip'
+          }
+        }
+      );
+    }
 
     const { profile, token } = await authenticateUser({
       email,
       password,
-      ipAddress: requestIp(request),
+      ipAddress,
       userAgent: request.headers.get('user-agent')
     });
 
@@ -80,6 +103,16 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Database authentication sedang tidak tersedia.' },
         { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    if (code === 'AUTH_LOGIN_RATE_LIMIT_UNAVAILABLE') {
+      return NextResponse.json(
+        {
+          error: 'Proteksi rate limit login sedang tidak tersedia. Login dinonaktifkan sementara untuk keamanan.',
+          code
+        },
+        { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' } }
       );
     }
 
