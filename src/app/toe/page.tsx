@@ -2,7 +2,18 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, FileCheck, FlaskConical, Plus, Save, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  FileCheck,
+  FlaskConical,
+  Plus,
+  Save,
+  Search,
+  ShieldCheck,
+  X
+} from 'lucide-react';
 import { TraceabilityFlow } from '@/components/common/TraceabilityFlow';
 
 const EMPTY_TEST_FORM = {
@@ -36,6 +47,8 @@ export default function ToEPage() {
   const [exceptionSample, setExceptionSample] = useState<any | null>(null);
   const [exceptionForm, setExceptionForm] = useState({ severity: 'High', description: '' });
   const [saving, setSaving] = useState(false);
+  const [controlPickerOpen, setControlPickerOpen] = useState(false);
+  const [controlSearch, setControlSearch] = useState('');
   const [testForm, setTestForm] = useState(EMPTY_TEST_FORM);
   const [sampleForm, setSampleForm] = useState(EMPTY_SAMPLE_FORM);
   const [sampleDrafts, setSampleDrafts] = useState<
@@ -102,6 +115,36 @@ export default function ToEPage() {
     return rows;
   }, [test, filter]);
 
+  const selectedControl =
+    controls.find((control: any) => String(control.id) === String(testForm.controlId)) || null;
+
+  const filteredControls = useMemo(() => {
+    const query = controlSearch.trim().toLowerCase();
+    if (!query) return controls;
+
+    return controls.filter((control: any) =>
+      [
+        control.controlId,
+        control.name,
+        control.type,
+        control.nature,
+        control.frequency,
+        control.process?.name,
+        control.controlOwner
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [controls, controlSearch]);
+
+  const selectControl = (controlId: string) => {
+    setTestForm(current => ({ ...current, controlId }));
+    setControlPickerOpen(false);
+    setControlSearch('');
+  };
+
   const createTest = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -135,6 +178,8 @@ export default function ToEPage() {
       setTests(current => [createdTest, ...current]);
       setSelectedId(payload.id || '');
       setTestModal(false);
+      setControlPickerOpen(false);
+      setControlSearch('');
       setTestForm({
         ...EMPTY_TEST_FORM,
         controlId: controls[0]?.id || ''
@@ -538,7 +583,11 @@ export default function ToEPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setTestModal(false)}
+                onClick={() => {
+                  setTestModal(false);
+                  setControlPickerOpen(false);
+                  setControlSearch('');
+                }}
                 className="p-1.5 text-slate-400 hover:text-slate-700"
               >
                 <X className="w-5 h-5" />
@@ -547,19 +596,197 @@ export default function ToEPage() {
 
             <form onSubmit={createTest} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Control *</label>
-                <select
-                  required
-                  value={testForm.controlId}
-                  onChange={event => setTestForm({ ...testForm, controlId: event.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200"
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="block font-bold text-slate-700">
+                    Kontrol yang akan diuji <span className="text-rose-600">*</span>
+                  </label>
+                  <span className="text-[9px] font-medium text-slate-400">
+                    {controls.length} kontrol tersedia
+                  </span>
+                </div>
+                <p className="mb-2 text-[10px] leading-4 text-slate-500">
+                  Pilih kontrol berdasarkan ID, nama, proses, atau karakteristik kontrol.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setControlPickerOpen(current => !current)}
+                  className={
+                    'flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-3 text-left transition ' +
+                    (controlPickerOpen
+                      ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100'
+                      : 'border-slate-200 bg-white hover:border-sky-200 hover:bg-slate-50')
+                  }
+                  aria-expanded={controlPickerOpen}
                 >
-                  {controls.map(control => (
-                    <option key={control.id} value={control.id}>
-                      {control.controlId} — {control.name}
-                    </option>
-                  ))}
-                </select>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
+                      <ShieldCheck className="h-4 w-4" />
+                    </span>
+                    {selectedControl ? (
+                      <div className="min-w-0">
+                        <div className="font-mono text-[10px] font-black text-brand-700">
+                          {selectedControl.controlId}
+                        </div>
+                        <div className="mt-0.5 truncate text-xs font-bold text-slate-900">
+                          {selectedControl.name}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5 text-[8px] font-bold text-slate-500">
+                          {selectedControl.process?.name && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                              {selectedControl.process.name}
+                            </span>
+                          )}
+                          {selectedControl.frequency && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                              {selectedControl.frequency}
+                            </span>
+                          )}
+                          {selectedControl.isKeyControl && (
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                              Key Control
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="text-xs font-bold text-slate-700">Pilih kontrol</div>
+                        <div className="mt-0.5 text-[10px] text-slate-400">
+                          Klik untuk membuka daftar kontrol
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={
+                      'h-4 w-4 shrink-0 text-slate-400 transition-transform ' +
+                      (controlPickerOpen ? 'rotate-180' : '')
+                    }
+                  />
+                </button>
+
+                {controlPickerOpen && (
+                  <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                    <div className="border-b border-slate-100 p-2.5">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input
+                          autoFocus
+                          value={controlSearch}
+                          onChange={event => setControlSearch(event.target.value)}
+                          placeholder="Cari ID kontrol, nama, proses, frekuensi..."
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-xs outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto p-2">
+                      {filteredControls.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center">
+                          <div className="text-xs font-bold text-slate-600">Kontrol tidak ditemukan</div>
+                          <div className="mt-1 text-[10px] text-slate-400">
+                            Coba gunakan ID kontrol, nama proses, atau kata kunci lain.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {filteredControls.map((control: any) => {
+                            const selected = String(control.id) === String(testForm.controlId);
+                            return (
+                              <button
+                                key={control.id}
+                                type="button"
+                                onClick={() => selectControl(control.id)}
+                                className={
+                                  'group flex w-full items-start gap-3 rounded-xl border p-3 text-left transition ' +
+                                  (selected
+                                    ? 'border-sky-300 bg-sky-50 ring-1 ring-sky-100'
+                                    : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50')
+                                }
+                              >
+                                <span
+                                  className={
+                                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' +
+                                    (selected
+                                      ? 'border-sky-600 bg-sky-600 text-white'
+                                      : 'border-slate-300 bg-white text-transparent group-hover:border-sky-300')
+                                  }
+                                >
+                                  <Check className="h-3 w-3" />
+                                </span>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-mono text-[10px] font-black text-brand-700">
+                                      {control.controlId}
+                                    </span>
+                                    {control.isKeyControl && (
+                                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[8px] font-black text-emerald-700">
+                                        KEY
+                                      </span>
+                                    )}
+                                    {control.type && (
+                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[8px] font-bold text-slate-500">
+                                        {control.type}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="mt-1 text-[11px] font-bold leading-4 text-slate-900">
+                                    {control.name}
+                                  </div>
+
+                                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500">
+                                    {control.process?.name && (
+                                      <span>
+                                        <strong className="text-slate-600">Proses:</strong>{' '}
+                                        {control.process.name}
+                                      </span>
+                                    )}
+                                    {control.frequency && (
+                                      <span>
+                                        <strong className="text-slate-600">Frekuensi:</strong>{' '}
+                                        {control.frequency}
+                                      </span>
+                                    )}
+                                    {control.controlOwner && (
+                                      <span>
+                                        <strong className="text-slate-600">Pemilik:</strong>{' '}
+                                        {control.controlOwner}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-3 py-2 text-[9px] text-slate-500">
+                      <span>{filteredControls.length} hasil ditampilkan</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setControlPickerOpen(false);
+                          setControlSearch('');
+                        }}
+                        className="font-bold text-slate-600 hover:text-slate-900"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <input
+                  required
+                  type="hidden"
+                  value={testForm.controlId}
+                  readOnly
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
