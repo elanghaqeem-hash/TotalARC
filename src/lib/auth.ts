@@ -778,6 +778,17 @@ export async function authenticateUser(input: {
   return { profile, token, mfa: null };
 }
 
+export async function getAuthProfileById(userId: string) {
+  const db = await ensureAuthSchema();
+  const row = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [userId]
+  );
+  if (!row || !row.active || !isUserRole(row.role)) throw new Error('ACCOUNT_DISABLED');
+  return profileFromRow(db, row);
+}
+
 export async function completeMfaLogin(input: {
   userId: string;
   method: MfaMethod;
