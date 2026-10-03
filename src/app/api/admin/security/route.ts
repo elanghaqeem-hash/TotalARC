@@ -31,7 +31,7 @@ function errorResponse(error: unknown) {
   }
   if (code === 'PRIVILEGED_SESSION_PROTECTED') {
     return NextResponse.json(
-      { error: 'Administrator institusi tidak dapat mencabut sesi administrator tingkat sistem/institusi.', code },
+      { error: 'Administrator institusi tidak dapat mencabut sesi administrator SystemAdmin/Admin.', code },
       { status: 403, headers: { 'Cache-Control': 'no-store' } }
     );
   }
@@ -54,13 +54,13 @@ export async function GET(request: Request) {
 
     const data = await loadSecurityAdministration(admin.institutionId);
     const effectiveData =
-      admin.role === 'InstitutionAdmin'
+      admin.role === 'Admin'
         ? (() => {
             const activeSessions = (data.activeSessions || []).filter(
-              item => !['Admin', 'InstitutionAdmin'].includes(String(item.role || ''))
+              item => !['SystemAdmin', 'Admin'].includes(String(item.role || ''))
             );
             const events = (data.events || []).filter(
-              item => !['Admin', 'InstitutionAdmin'].includes(String(item.role || ''))
+              item => !['SystemAdmin', 'Admin'].includes(String(item.role || ''))
             );
             return {
               ...data,

@@ -19,7 +19,7 @@ const PROVIDERS: AiProvider[] = ['cloudflare', 'gemini', 'groq', 'openrouter'];
 
 async function requireSystemAdmin(request: Request) {
   const context = await resolveInstitutionAccess(request);
-  if (!context?.institution || context.profile.role !== 'Admin') return null;
+  if (!context?.institution || context.profile.role !== 'SystemAdmin') return null;
   return context;
 }
 

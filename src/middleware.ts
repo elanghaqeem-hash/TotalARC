@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import { canAccessApi, canAccessPage } from '@/lib/access-control';
+import { canAccessApi, canAccessPage, isUserRole } from '@/lib/access-control';
 import { AUTH_COOKIE_NAME, isAuthSecretUsable, verifySessionToken } from '@/lib/auth-token';
 import { isAuthSessionActive } from '@/lib/auth-security';
 
@@ -114,8 +114,14 @@ export async function middleware(request: NextRequest) {
 
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value || '';
   const session = token ? await verifySessionToken(token, secret) : null;
+  const sessionRoleValid = session ? isUserRole(session.role) : false;
 
   if (pathname === '/login') {
+    if (session && !sessionRoleValid) {
+      const response = NextResponse.next();
+      response.cookies.delete(AUTH_COOKIE_NAME);
+      return response;
+    }
     if (session) {
       try {
         if (await isAuthSessionActive(session, false)) {
@@ -128,7 +134,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!session) return unauthorized(request);
+  if (!session || !sessionRoleValid) return unauthorized(request);
 
   let activeSession = false;
   try {

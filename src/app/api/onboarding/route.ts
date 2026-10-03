@@ -55,9 +55,9 @@ export async function POST(request: Request) {
     if (!context) {
       return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
     }
-    if (context.profile.role !== 'Admin') {
+    if (!['SystemAdmin', 'Admin'].includes(context.profile.role)) {
       return NextResponse.json(
-        { error: 'Administrator access is required to register or update an institution.' },
+        { error: 'Administrator access is required to configure an institution.' },
         { status: 403 }
       );
     }
@@ -75,6 +75,21 @@ export async function POST(request: Request) {
         { error: 'name, legalName, institutionType, and country are required.' },
         { status: 400 }
       );
+    }
+
+    if (context.profile.role === 'Admin') {
+      if (!context.institution) {
+        return NextResponse.json(
+          { error: 'Admin must be assigned to an institution before changing institution configuration.' },
+          { status: 409 }
+        );
+      }
+      if (String(legalName).trim() !== String(context.institution.legalName).trim()) {
+        return NextResponse.json(
+          { error: 'Admin cannot create another institution or change the legal identity of the assigned institution.' },
+          { status: 403 }
+        );
+      }
     }
 
     const institution = await upsertInstitution({

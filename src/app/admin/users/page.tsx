@@ -13,7 +13,7 @@ import {
   UserCog,
   Users
 } from 'lucide-react';
-import { ROLE_TITLES, USER_ROLES, type UserRole } from '@/lib/access-control';
+import { canAssignRole, ROLE_TITLES, USER_ROLES, type UserRole } from '@/lib/access-control';
 import { useRole } from '@/context/RoleContext';
 
 type ManagedUser = {
@@ -122,6 +122,11 @@ export default function UserManagementPage() {
   const unitMap = useMemo(
     () => new Map(orgUnits.map(unit => [unit.id, unit])),
     [orgUnits]
+  );
+
+  const assignableRoles = useMemo(
+    () => USER_ROLES.filter(role => canAssignRole(currentUser.role, role)),
+    [currentUser.role]
   );
 
   const submitNewUser = async (event: FormEvent) => {
@@ -309,7 +314,7 @@ export default function UserManagementPage() {
                 onChange={event => setForm(current => ({ ...current, role: event.target.value as UserRole }))}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-400"
               >
-                {USER_ROLES.map(role => (
+                {assignableRoles.map(role => (
                   <option key={role} value={role}>{ROLE_TITLES[role]}</option>
                 ))}
               </select>
@@ -402,6 +407,8 @@ export default function UserManagementPage() {
               users.map(user => {
                 const unit = user.orgUnitId ? unitMap.get(user.orgUnitId) : null;
                 const isSelf = user.id === currentUser.id;
+                const canManageUser = !isSelf && canAssignRole(currentUser.role, user.role);
+                const roleOptions = Array.from(new Set([user.role, ...assignableRoles]));
                 const locked = Boolean(user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now());
 
                 return (
@@ -436,18 +443,18 @@ export default function UserManagementPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <select
                           value={user.role}
-                          disabled={isSelf}
+                          disabled={!canManageUser}
                           onChange={event => void updateUser(user.id, { role: event.target.value as UserRole })}
                           className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
                         >
-                          {USER_ROLES.map(role => (
+                          {roleOptions.map(role => (
                             <option key={role} value={role}>{ROLE_TITLES[role]}</option>
                           ))}
                         </select>
 
                         <button
                           type="button"
-                          disabled={isSelf}
+                          disabled={!canManageUser}
                           onClick={() => void updateUser(user.id, { active: !user.active })}
                           aria-label={user.active ? 'Deactivate user' : 'Activate user'}
                           title={user.active ? 'Deactivate user' : 'Activate user'}
@@ -463,7 +470,7 @@ export default function UserManagementPage() {
                         {locked && (
                           <button
                             type="button"
-                            disabled={isSelf || credentialBusyUserId === user.id}
+                            disabled={!canManageUser || credentialBusyUserId === user.id}
                             onClick={() => void credentialAction(user, 'UNLOCK_USER')}
                             aria-label="Unlock user"
                             title="Unlock user"
@@ -474,7 +481,7 @@ export default function UserManagementPage() {
                         )}
                         <button
                           type="button"
-                          disabled={isSelf || credentialBusyUserId === user.id}
+                          disabled={!canManageUser || credentialBusyUserId === user.id}
                           onClick={() => void credentialAction(user, 'FORCE_PASSWORD_CHANGE')}
                           aria-label="Force password change"
                           title="Force password change"
@@ -484,7 +491,7 @@ export default function UserManagementPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={isSelf || credentialBusyUserId === user.id}
+                          disabled={!canManageUser || credentialBusyUserId === user.id}
                           onClick={() => void credentialAction(user, 'RESET_CREDENTIAL')}
                           aria-label="Reset credential"
                           title="Reset credential"

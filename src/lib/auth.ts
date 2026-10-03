@@ -188,6 +188,44 @@ export async function ensureAuthSchema() {
       await executeSchemaScript(db, 'ALTER TABLE AuthUser ADD COLUMN temporaryCredentialExpiresAt TEXT;');
     }
 
+    await executeSchemaScript(db, `
+      CREATE TABLE IF NOT EXISTS AuthSchemaMigration (
+        id TEXT PRIMARY KEY NOT NULL,
+        appliedAt TEXT NOT NULL
+      );
+    `);
+
+    const roleSplitMigration = await db
+      .prepare('SELECT id FROM AuthSchemaMigration WHERE id = ? LIMIT 1')
+      .bind('20261004_ADMIN_ROLE_SPLIT')
+      .first<{ id?: string }>();
+
+    if (!roleSplitMigration) {
+      const sessionTable = await db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AuthSession' LIMIT 1")
+        .first<{ name?: string }>();
+      const migratedAt = new Date().toISOString();
+
+      if (sessionTable) {
+        await db.prepare(
+          `UPDATE AuthSession
+              SET revokedAt = COALESCE(revokedAt, ?),
+                  revokedReason = COALESCE(revokedReason, 'RBAC role migration'),
+                  revokedBy = COALESCE(revokedBy, 'SYSTEM')
+            WHERE revokedAt IS NULL
+              AND userId IN (
+                SELECT id FROM AuthUser WHERE role IN ('Admin','InstitutionAdmin')
+              )`
+        ).bind(migratedAt).run();
+      }
+
+      await db.prepare("UPDATE AuthUser SET role = 'SystemAdmin' WHERE role = 'Admin'").run();
+      await db.prepare("UPDATE AuthUser SET role = 'Admin' WHERE role = 'InstitutionAdmin'").run();
+      await db.prepare(
+        'INSERT OR IGNORE INTO AuthSchemaMigration (id, appliedAt) VALUES (?, ?)'
+      ).bind('20261004_ADMIN_ROLE_SPLIT', migratedAt).run();
+    }
+
     return db;
   })().catch(error => {
     authSchemaReady = null;
@@ -359,7 +397,7 @@ export async function provisionBootstrapAdministrator(
     const configuredAdmin = await first<AuthUserRow>(
       db,
       `SELECT * FROM AuthUser
-       WHERE role = 'Admin' AND emailNormalized = ?
+       WHERE role = 'SystemAdmin' AND emailNormalized = ?
        ORDER BY createdAt ASC
        LIMIT 1`,
       [bootstrapEmail]
@@ -408,7 +446,7 @@ export async function provisionBootstrapAdministrator(
         institutionId: configuredAdmin.institutionId || institution?.id || null,
         eventType: 'BOOTSTRAP_ADMIN_RECOVERED',
         email: bootstrapEmail,
-        role: 'Admin',
+        role: 'SystemAdmin',
         detail:
           'Bootstrap administrator credential recovered from deployment secrets; sessions revoked and password change required.'
       });
@@ -427,7 +465,7 @@ export async function provisionBootstrapAdministrator(
         passwordHash, passwordSalt, passwordIterations, role, department,
         active, mustChangePassword, failedLoginCount, lockedUntil,
         lastLoginAt, createdAt, updatedAt
-      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'Admin', NULL, 1, 1, 0, NULL, NULL, ?, ?)`,
+      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'SystemAdmin', NULL, 1, 1, 0, NULL, NULL, ?, ?)`,
       [
         id,
         institution?.id || null,
@@ -448,7 +486,7 @@ export async function provisionBootstrapAdministrator(
       institutionId: institution?.id || null,
       eventType: 'BOOTSTRAP_ADMIN_CREATED',
       email: bootstrapEmail,
-      role: 'Admin',
+      role: 'SystemAdmin',
       detail: 'Initial administrator provisioned from deployment secrets. Password change is required at first sign-in.'
     });
 
@@ -458,7 +496,7 @@ export async function provisionBootstrapAdministrator(
   let candidate = await first<AuthUserRow>(
     db,
     `SELECT * FROM AuthUser
-     WHERE role = 'Admin' AND lastLoginAt IS NULL AND emailNormalized = ?
+     WHERE role = 'SystemAdmin' AND lastLoginAt IS NULL AND emailNormalized = ?
      ORDER BY createdAt ASC
      LIMIT 1`,
     [bootstrapEmail]
@@ -468,7 +506,7 @@ export async function provisionBootstrapAdministrator(
     candidate = await first<AuthUserRow>(
       db,
       `SELECT * FROM AuthUser
-       WHERE role = 'Admin' AND lastLoginAt IS NULL
+       WHERE role = 'SystemAdmin' AND lastLoginAt IS NULL
        ORDER BY createdAt ASC
        LIMIT 1`
     );
@@ -527,7 +565,7 @@ export async function provisionBootstrapAdministrator(
       institutionId: candidate.institutionId || institution?.id || null,
       eventType: 'BOOTSTRAP_ADMIN_RECONCILED',
       email: bootstrapEmail,
-      role: 'Admin',
+      role: 'SystemAdmin',
       detail: 'Pre-login bootstrap administrator credentials reconciled from deployment secrets. Password change is required at first sign-in.'
     });
 
@@ -565,7 +603,7 @@ async function ensureBootstrapAdministratorForLogin(
     const pendingConfiguredAdmin = await first<{ id: string }>(
       db,
       `SELECT id FROM AuthUser
-       WHERE id = ? AND role = 'Admin' AND lastLoginAt IS NULL
+       WHERE id = ? AND role = 'SystemAdmin' AND lastLoginAt IS NULL
        LIMIT 1`,
       [configuredAdmin.id]
     );
@@ -579,7 +617,7 @@ async function ensureBootstrapAdministratorForLogin(
   const pendingAdmin = await first<{ id: string }>(
     db,
     `SELECT id FROM AuthUser
-     WHERE role = 'Admin' AND lastLoginAt IS NULL
+     WHERE role = 'SystemAdmin' AND lastLoginAt IS NULL
      ORDER BY createdAt ASC
      LIMIT 1`
   );
@@ -1461,8 +1499,8 @@ export async function revokeManagedSession(input: {
     [String(session.userId)]
   );
   if (
-    input.actorRole === 'InstitutionAdmin' &&
-    (user?.role === 'Admin' || user?.role === 'InstitutionAdmin')
+    input.actorRole === 'Admin' &&
+    (user?.role === 'SystemAdmin' || user?.role === 'Admin')
   ) {
     throw new Error('PRIVILEGED_SESSION_PROTECTED');
   }
