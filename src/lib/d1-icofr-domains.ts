@@ -679,6 +679,8 @@ export type FinancialScopingCandidate = {
   qualitativeFactors: string[];
 };
 
+export type FinancialScopingAnalysisMode = 'INITIAL' | 'COMPLEMENT' | 'REPLACE';
+
 export type FinancialScopingAnalysisResult = {
   documentTitle: string | null;
   reportingPeriod: string | null;
@@ -688,6 +690,9 @@ export type FinancialScopingAnalysisResult = {
   sourceSummary: string | null;
   gaps: string[];
   candidates: FinancialScopingCandidate[];
+  analysisMode?: FinancialScopingAnalysisMode;
+  baseAnalysisId?: string | null;
+  sourceFiles?: string[];
 };
 
 export async function saveFinancialScopingAnalysis(input: {

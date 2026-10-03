@@ -10,6 +10,7 @@ import {
   saveFinancialItem,
   saveFinancialScopingAnalysis,
   setFinancialScopingAnalysisStatus,
+  type FinancialScopingAnalysisMode,
   type FinancialScopingAnalysisResult,
   type FinancialScopingCandidate
 } from '@/lib/d1-icofr-domains';
@@ -18,7 +19,7 @@ import { extractProcessSupportingDocument } from '@/lib/process-document-extract
 
 export const dynamic = 'force-dynamic';
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['pdf', 'xlsx', 'docx', 'txt', 'jpg', 'jpeg', 'png']);
 
 function extOf(name: string) {
@@ -212,6 +213,73 @@ function normalizeAiResult(
   };
 }
 
+function candidateNameKey(value: unknown) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9À-ɏ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sameCandidate(a: FinancialScopingCandidate, b: FinancialScopingCandidate) {
+  if (a.recordType !== b.recordType) return false;
+  const aDocumentCode = a.codeSource === 'DOCUMENT' ? String(a.itemCode || '').trim().toUpperCase() : '';
+  const bDocumentCode = b.codeSource === 'DOCUMENT' ? String(b.itemCode || '').trim().toUpperCase() : '';
+  if (aDocumentCode && bDocumentCode && aDocumentCode === bDocumentCode) return true;
+  const aName = candidateNameKey(a.name);
+  const bName = candidateNameKey(b.name);
+  return Boolean(aName && bName && aName === bName);
+}
+
+function mergeScopingResults(
+  base: FinancialScopingAnalysisResult,
+  incoming: FinancialScopingAnalysisResult,
+  input: { mode: FinancialScopingAnalysisMode; baseAnalysisId?: string | null; fileName: string }
+): FinancialScopingAnalysisResult {
+  if (input.mode !== 'COMPLEMENT') {
+    return {
+      ...incoming,
+      analysisMode: input.mode,
+      baseAnalysisId: input.baseAnalysisId || null,
+      sourceFiles: [input.fileName]
+    };
+  }
+
+  const merged = [...(base.candidates || [])];
+  for (const candidate of incoming.candidates || []) {
+    const index = merged.findIndex(existing => sameCandidate(existing, candidate));
+    if (index >= 0) merged[index] = candidate;
+    else merged.push(candidate);
+  }
+
+  const sourceFiles = Array.from(
+    new Set([...(base.sourceFiles || []), input.fileName].filter(Boolean))
+  ).slice(-12);
+  const gaps = Array.from(
+    new Set([...(base.gaps || []), ...(incoming.gaps || [])].filter(Boolean))
+  ).slice(0, 30);
+
+  return {
+    ...base,
+    documentTitle: incoming.documentTitle || base.documentTitle,
+    reportingPeriod: incoming.reportingPeriod || base.reportingPeriod,
+    documentCurrency: incoming.documentCurrency || base.documentCurrency,
+    documentUnit: incoming.documentUnit || base.documentUnit,
+    documentUnitMultiplier:
+      incoming.documentUnitMultiplier || base.documentUnitMultiplier,
+    sourceSummary: [base.sourceSummary, incoming.sourceSummary]
+      .filter(Boolean)
+      .join(' | ')
+      .slice(0, 2200) || null,
+    gaps,
+    candidates: merged.slice(0, 400),
+    analysisMode: 'COMPLEMENT',
+    baseAnalysisId: input.baseAnalysisId || null,
+    sourceFiles
+  };
+}
+
 function noStore<T>(body: T, init?: ResponseInit) {
   return NextResponse.json(body, {
     ...init,
@@ -286,7 +354,11 @@ export async function POST(request: Request) {
     const context = await access(request);
     if (!context) return noStore({ error: 'Institusi aktif diperlukan.' }, { status: 409 });
 
-    const guarded = await guardAiMultipart(request, 'AI_ANALYZE_RATE_LIMIT');
+    const guarded = await guardAiMultipart(
+      request,
+      'AI_ANALYZE_RATE_LIMIT',
+      MAX_FILE_BYTES + 1024 * 1024
+    );
     if (guarded) return guarded;
 
     const { data, scope } = await activeScope();
@@ -314,6 +386,15 @@ export async function POST(request: Request) {
 
     const form = await request.formData();
     const file = form.get('file');
+    const requestedModeRaw = clean(form.get('analysisMode'), 30).toUpperCase();
+    const requestedMode: FinancialScopingAnalysisMode =
+      requestedModeRaw === 'REPLACE'
+        ? 'REPLACE'
+        : requestedModeRaw === 'COMPLEMENT'
+          ? 'COMPLEMENT'
+          : 'INITIAL';
+    const requestedBaseAnalysisId = clean(form.get('baseAnalysisId'), 120);
+
     if (!(file instanceof File)) {
       return noStore({ error: 'Dokumen laporan keuangan wajib diunggah.' }, { status: 400 });
     }
@@ -329,19 +410,52 @@ export async function POST(request: Request) {
       return noStore({ error: 'Dokumen laporan keuangan kosong.' }, { status: 400 });
     }
     if (file.size > MAX_FILE_BYTES) {
-      return noStore({ error: 'Ukuran dokumen melebihi batas 8 MB.' }, { status: 413 });
+      return noStore({ error: 'Ukuran dokumen melebihi batas 10 MB.' }, { status: 413 });
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     const actor = context.profile.name || context.profile.email;
     const institutionId = context.institution!.id;
 
+    const previousAnalyses = await listFinancialScopingAnalyses(institutionId, 50);
+    const latestUsable =
+      previousAnalyses.find((item: any) => String(item.status || '') !== 'REJECTED') || null;
+    const analysisMode: FinancialScopingAnalysisMode =
+      !latestUsable
+        ? 'INITIAL'
+        : requestedMode === 'REPLACE'
+          ? 'REPLACE'
+          : 'COMPLEMENT';
+    const requestedBase =
+      requestedBaseAnalysisId
+        ? previousAnalyses.find(
+            (item: any) =>
+              String(item.id || '') === requestedBaseAnalysisId &&
+              String(item.status || '') !== 'REJECTED'
+          ) || null
+        : null;
+    const baseAnalysis =
+      analysisMode === 'COMPLEMENT'
+        ? requestedBase || latestUsable
+        : null;
+
+    if (analysisMode === 'COMPLEMENT' && !baseAnalysis?.result) {
+      return noStore(
+        { error: 'Analisis pelengkap memerlukan hasil analisis dokumen sebelumnya sebagai dasar.' },
+        { status: 409 }
+      );
+    }
+
     const uploaded = await uploadEvidenceVersion({
       institutionId,
       documentId: null,
       title: 'ICOFR Significant Account Scoping – ' + file.name,
       description:
-        'Dokumen laporan keuangan untuk penetapan akun signifikan berbasis PM dengan bantuan AI Total ARC.',
+        analysisMode === 'COMPLEMENT'
+          ? 'Dokumen tambahan untuk melengkapi analisis akun signifikan berbasis PM dengan bantuan AI Total ARC.'
+          : analysisMode === 'REPLACE'
+            ? 'Dokumen pengganti untuk analisis akun signifikan berbasis PM dengan bantuan AI Total ARC.'
+            : 'Dokumen laporan keuangan untuk penetapan akun signifikan berbasis PM dengan bantuan AI Total ARC.',
       category: 'ICOFR Financial Statement Scoping',
       sensitivity: 'Confidential',
       retentionClass: '7 Years',
@@ -366,7 +480,11 @@ export async function POST(request: Request) {
       entityId: String(scope.id),
       relationship: 'SUPPORTS',
       notes:
-        'Sumber laporan keuangan untuk penetapan akun signifikan berbasis Performance Materiality.',
+        analysisMode === 'COMPLEMENT'
+          ? 'Dokumen pelengkap untuk analisis akun signifikan berbasis Performance Materiality.'
+          : analysisMode === 'REPLACE'
+            ? 'Dokumen pengganti untuk analisis akun signifikan berbasis Performance Materiality.'
+            : 'Sumber laporan keuangan untuk penetapan akun signifikan berbasis Performance Materiality.',
       evidenceOwner: actor
     });
 
@@ -387,6 +505,7 @@ export async function POST(request: Request) {
       'qualitativeSignificant boleh true hanya jika dokumen mendukung indikator seperti estimasi/judgement signifikan, pihak berelasi, transaksi tidak biasa, sensitivitas regulasi, potensi fraud, kompleksitas, atau pengungkapan penting.',
       'Jika bukti kualitatif tidak jelas, set false dan jelaskan gap.',
       'Pertahankan nama akun sesuai dokumen dan cantumkan sourceReference berupa halaman/catatan/baris bila tersedia.',
+      'Analisis hanya dokumen yang sedang diunggah pada eksekusi ini. Penggabungan dengan hasil dokumen sebelumnya dilakukan secara deterministik oleh Total ARC setelah analisis dokumen selesai.',
       'Kembalikan JSON saja dengan struktur:',
       '{"documentTitle":string|null,"reportingPeriod":string|null,"documentCurrency":string|null,"documentUnit":string|null,"documentUnitMultiplier":number|null,"sourceSummary":string|null,"gaps":[string],"candidates":[{"recordType":"Account|Disclosure","itemCode":string|null,"name":string,"financialStatement":string|null,"documentAmount":number|null,"unitMultiplier":number|null,"currency":string|null,"sourceReference":string|null,"qualitativeSignificant":boolean,"qualitativeFactors":[string],"assertions":string|null,"riskFactors":string|null,"processReference":string|null,"owner":string|null,"rationale":string|null,"confidence":"High|Medium|Low"}]}.'
     ].join(' ');
@@ -421,6 +540,15 @@ export async function POST(request: Request) {
       fileName: file.name,
       fallbackUnitMultiplier: detectDocumentUnitMultiplier(extracted.text)
     });
+    const cumulativeResult = mergeScopingResults(
+      (baseAnalysis?.result || normalized) as FinancialScopingAnalysisResult,
+      normalized,
+      {
+        mode: analysisMode,
+        baseAnalysisId: baseAnalysis?.id ? String(baseAnalysis.id) : null,
+        fileName: file.name
+      }
+    );
 
     const analysis = await saveFinancialScopingAnalysis({
       institutionId,
@@ -433,7 +561,7 @@ export async function POST(request: Request) {
       sourceTextTruncated: extracted.truncated,
       performanceMaterialityAmount: pmAmount,
       currency,
-      result: normalized,
+      result: cumulativeResult,
       aiProvider: result.provider,
       aiModel: result.model,
       aiRequestId: result.requestId,
@@ -447,7 +575,12 @@ export async function POST(request: Request) {
       entityType: 'ICOFR_FINANCIAL_SCOPING_ANALYSIS',
       entityId: analysis.id,
       relationship: 'SOURCE_FOR',
-      notes: 'Dokumen sumber analisis akun signifikan yang menunggu validasi pengguna.',
+      notes:
+        analysisMode === 'COMPLEMENT'
+          ? 'Dokumen pelengkap analisis akun signifikan; hasil kumulatif menunggu validasi pengguna.'
+          : analysisMode === 'REPLACE'
+            ? 'Dokumen pengganti analisis akun signifikan; hasil baru menunggu validasi pengguna.'
+            : 'Dokumen sumber analisis akun signifikan yang menunggu validasi pengguna.',
       evidenceOwner: actor
     });
 
@@ -465,8 +598,14 @@ export async function POST(request: Request) {
           versionId: uploaded.versionId,
           fileName: file.name
         },
+        analysisMode,
+        baseAnalysisId: baseAnalysis?.id ? String(baseAnalysis.id) : null,
         message:
-          'Analisis selesai. Tinjau rekomendasi akun signifikan sebelum menerapkannya ke register.'
+          analysisMode === 'COMPLEMENT'
+            ? 'Dokumen tambahan selesai dianalisis dan hasilnya telah melengkapi analisis sebelumnya. Tinjau hasil kumulatif sebelum diterapkan.'
+            : analysisMode === 'REPLACE'
+              ? 'Dokumen baru selesai dianalisis sebagai pengganti analisis sebelumnya. Riwayat lama tetap tersimpan.'
+              : 'Dokumen pertama selesai dianalisis. Anda dapat menambah dokumen untuk melengkapi atau menggantinya sebelum menerapkan hasil.'
       },
       { status: 201 }
     );

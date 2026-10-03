@@ -58,6 +58,9 @@ type Analysis = {
     sourceSummary?: string | null;
     gaps?: string[];
     candidates: Candidate[];
+    analysisMode?: 'INITIAL' | 'COMPLEMENT' | 'REPLACE';
+    baseAnalysisId?: string | null;
+    sourceFiles?: string[];
   };
 };
 
@@ -72,7 +75,7 @@ type Scope = {
   status: string;
 };
 
-const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_BYTES = 10 * 1024 * 1024;
 
 function formatAmount(value: number | null | undefined, currency = '') {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'Nilai belum terbaca';
@@ -104,6 +107,8 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisMode, setAnalysisMode] = useState<'INITIAL' | 'COMPLEMENT' | 'REPLACE'>('INITIAL');
+  const [baseAnalysisId, setBaseAnalysisId] = useState('');
   const [applying, setApplying] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [error, setError] = useState('');
@@ -121,9 +126,20 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
       const nextAnalyses = Array.isArray(payload.analyses) ? payload.analyses : [];
       setScope(payload.scope || null);
       setAnalyses(nextAnalyses);
+      const latestUsable =
+        nextAnalyses.find((item: Analysis) => item.status !== 'REJECTED') || null;
+      setBaseAnalysisId(current =>
+        current && nextAnalyses.some((item: Analysis) => item.id === current)
+          ? current
+          : latestUsable?.id || ''
+      );
+      setAnalysisMode(current => {
+        if (!latestUsable) return 'INITIAL';
+        return current === 'INITIAL' ? 'COMPLEMENT' : current;
+      });
       setActive(current => {
         if (current && nextAnalyses.some((item: Analysis) => item.id === current.id)) return current;
-        return nextAnalyses.find((item: Analysis) => item.status === 'PENDING_USER_VALIDATION') || null;
+        return nextAnalyses.find((item: Analysis) => item.status === 'PENDING_USER_VALIDATION') || latestUsable;
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal memuat alat analisis akun signifikan.');
@@ -164,11 +180,12 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
       ).length,
     [candidates]
   );
+  const hasUsableAnalysis = analyses.some(item => item.status !== 'REJECTED');
 
   const analyze = async () => {
     if (!file || !scope || analyzing) return;
     if (file.size > MAX_BYTES) {
-      setError('Ukuran dokumen melebihi batas 8 MB.');
+      setError('Ukuran dokumen melebihi batas 10 MB.');
       return;
     }
 
@@ -178,6 +195,10 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
     try {
       const form = new FormData();
       form.append('file', file);
+      form.append('analysisMode', hasUsableAnalysis ? analysisMode : 'INITIAL');
+      if (hasUsableAnalysis && analysisMode === 'COMPLEMENT' && baseAnalysisId) {
+        form.append('baseAnalysisId', baseAnalysisId);
+      }
       const response = await fetch('/api/icofr/financial-items/ai-scoping', {
         method: 'POST',
         body: form
@@ -189,11 +210,38 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
         payload.analysis,
         ...current.filter(item => item.id !== payload.analysis.id)
       ]);
+      setBaseAnalysisId(String(payload.analysis?.id || ''));
+      setAnalysisMode('COMPLEMENT');
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setMessage(payload.message || 'Analisis selesai. Tinjau rekomendasi sebelum diterapkan.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analisis AI belum dapat diselesaikan.');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const chooseNextDocument = (
+    mode: 'COMPLEMENT' | 'REPLACE',
+    analysisId?: string
+  ) => {
+    setAnalysisMode(mode);
+    setBaseAnalysisId(
+      mode === 'COMPLEMENT'
+        ? String(analysisId || active?.id || baseAnalysisId || '')
+        : ''
+    );
+    setFile(null);
+    setError('');
+    setMessage(
+      mode === 'COMPLEMENT'
+        ? 'Pilih dokumen berikutnya. Hasilnya akan melengkapi analisis kumulatif yang dipilih.'
+        : 'Pilih dokumen pengganti. Dokumen baru akan dianalisis sebagai sumber utama; riwayat lama tetap tersimpan.'
+    );
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      window.setTimeout(() => fileInputRef.current?.click(), 0);
     }
   };
 
@@ -274,9 +322,10 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
               Analisis laporan keuangan berdasarkan Performance Materiality
             </h2>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
-              Unggah laporan keuangan. AI mengekstrak akun dan faktor kualitatif, sedangkan
-              perbandingan terhadap PM dihitung oleh Total ARC. Hasil tetap berupa draf dan
-              harus dipilih pengguna sebelum masuk ke register.
+              Unggah dan analisis dokumen satu per satu. Setelah satu dokumen selesai,
+              dokumen berikutnya dapat <strong>melengkapi</strong> hasil kumulatif atau
+              <strong> menggantikan</strong> dokumen sebelumnya. Perbandingan terhadap PM
+              tetap dihitung oleh Total ARC dan hasil akhir harus divalidasi pengguna.
             </p>
           </div>
 
@@ -323,6 +372,59 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-sky-200 bg-sky-50/40 p-4">
+            {hasUsableAnalysis && (
+              <div className="mb-3 rounded-xl border border-sky-100 bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-black text-slate-800">Dokumen berikutnya</div>
+                    <div className="mt-0.5 text-[9px] leading-4 text-slate-500">
+                      Analisis dilakukan bertahap satu dokumen per eksekusi. Pilih perlakuan dokumen baru.
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-sky-50 px-2 py-1 text-[8px] font-black text-sky-700">
+                    {analyses.filter(item => item.status !== 'REJECTED').length} DOKUMEN
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnalysisMode('COMPLEMENT');
+                      setBaseAnalysisId(String(active?.id || analyses.find(item => item.status !== 'REJECTED')?.id || ''));
+                    }}
+                    className={
+                      'rounded-xl border p-2.5 text-left transition ' +
+                      (analysisMode === 'COMPLEMENT'
+                        ? 'border-sky-300 bg-sky-50 ring-1 ring-sky-200'
+                        : 'border-slate-200 bg-white hover:bg-slate-50')
+                    }
+                  >
+                    <div className="text-[10px] font-black text-slate-800">Lengkapi analisis sebelumnya</div>
+                    <div className="mt-1 text-[9px] leading-4 text-slate-500">
+                      Tambahkan akun/disclosure dari dokumen baru dan perbarui item yang sama jika ditemukan.
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnalysisMode('REPLACE');
+                      setBaseAnalysisId('');
+                    }}
+                    className={
+                      'rounded-xl border p-2.5 text-left transition ' +
+                      (analysisMode === 'REPLACE'
+                        ? 'border-amber-300 bg-amber-50 ring-1 ring-amber-200'
+                        : 'border-slate-200 bg-white hover:bg-slate-50')
+                    }
+                  >
+                    <div className="text-[10px] font-black text-slate-800">Ganti dengan dokumen baru</div>
+                    <div className="mt-1 text-[9px] leading-4 text-slate-500">
+                      Gunakan dokumen baru sebagai sumber utama tanpa membawa hasil sebelumnya.
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <button
                 type="button"
@@ -337,7 +439,7 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                     {file ? file.name : 'Pilih dokumen laporan keuangan'}
                   </span>
                   <span className="mt-0.5 block text-[10px] text-slate-400">
-                    PDF, XLSX, DOCX, TXT, JPG/PNG · maksimum 8 MB
+                    PDF, XLSX, DOCX, TXT, JPG/PNG · maksimum 10 MB · 1 dokumen per analisis
                   </span>
                 </span>
               </button>
@@ -359,7 +461,13 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                 ) : (
                   <FileSearch className="h-4 w-4" />
                 )}
-                {analyzing ? 'Menganalisis…' : 'Analisis dengan AI'}
+                {analyzing
+                  ? 'Menganalisis…'
+                  : hasUsableAnalysis && analysisMode === 'COMPLEMENT'
+                    ? 'Analisis & Lengkapi'
+                    : hasUsableAnalysis && analysisMode === 'REPLACE'
+                      ? 'Analisis & Ganti'
+                      : 'Analisis dengan AI'}
               </button>
             </div>
           </div>
@@ -388,6 +496,13 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                     <span className="text-sm font-black text-slate-900">
                       {active.result?.documentTitle || active.fileName}
                     </span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[8px] font-black text-slate-600">
+                      {active.result?.analysisMode === 'COMPLEMENT'
+                        ? 'KUMULATIF'
+                        : active.result?.analysisMode === 'REPLACE'
+                          ? 'PENGGANTI'
+                          : 'DOKUMEN AWAL'}
+                    </span>
                     <span
                       className={
                         'rounded-full border px-2 py-0.5 text-[9px] font-black ' +
@@ -405,6 +520,9 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                     {active.fileName}
                     {active.result?.reportingPeriod ? ' · ' + active.result.reportingPeriod : ''}
                     {active.aiProvider ? ' · AI ' + active.aiProvider : ''}
+                    {active.result?.sourceFiles?.length
+                      ? ' · ' + active.result.sourceFiles.length + ' dokumen sumber'
+                      : ''}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-[9px] font-black">
@@ -536,6 +654,25 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
               })}
             </div>
 
+            <div className="grid grid-cols-1 gap-2 border-t border-slate-100 p-4 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={analyzing}
+                onClick={() => chooseNextDocument('COMPLEMENT', active.id)}
+                className="min-h-10 rounded-xl border border-sky-200 bg-sky-50 px-4 text-[10px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
+              >
+                + Tambah Dokumen untuk Melengkapi
+              </button>
+              <button
+                type="button"
+                disabled={analyzing}
+                onClick={() => chooseNextDocument('REPLACE')}
+                className="min-h-10 rounded-xl border border-amber-200 bg-amber-50 px-4 text-[10px] font-black text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+              >
+                Ganti dengan Dokumen Baru
+              </button>
+            </div>
+
             {active.status === 'PENDING_USER_VALIDATION' && (
               <div className="flex flex-col gap-2 border-t border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-[10px] leading-4 text-slate-500">
@@ -592,6 +729,13 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                           dateStyle: 'medium',
                           timeStyle: 'short'
                         })}
+                      </div>
+                      <div className="mt-1 text-[8px] font-black text-slate-500">
+                        {item.result?.analysisMode === 'COMPLEMENT'
+                          ? 'Melengkapi hasil sebelumnya'
+                          : item.result?.analysisMode === 'REPLACE'
+                            ? 'Mengganti hasil sebelumnya'
+                            : 'Dokumen awal'}
                       </div>
                       <span
                         className={
