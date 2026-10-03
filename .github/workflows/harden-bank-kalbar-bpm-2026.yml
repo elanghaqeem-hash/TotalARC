@@ -71,7 +71,7 @@ jobs:
               .processId == "CKPN" and
               .name == "Cadangan Kerugian Penurunan Nilai (CKPN/ECL)" and
               .level == 2 and
-              .status == "Draft" and
+              (.status == "Draft" or .status == "Approved") and
               .isIcofrRelevant == true
             )][0].id // empty
           ')"
