@@ -109,6 +109,13 @@ jobs:
               "repaired": False,
           }
 
+          supporting = tags.get("supportingDocumentAnalysis")
+          supporting_applied = (
+              isinstance(supporting, dict)
+              and supporting.get("status") == "VALIDATED_APPLIED"
+          )
+
+          target_status = None
           if audits:
               audit = audits[0]
               action = str(audit.get("action") or "")
@@ -123,7 +130,18 @@ jobs:
                   tags["sourceValidatedAt"] = audit.get("timestamp")
                   tags["sourceValidatedBy"] = audit.get("userName") or "Authenticated user"
                   target_status = "Rejected"
+          elif supporting_applied:
+              # Legacy behaviour marked the supporting-document analysis as
+              # VALIDATED_APPLIED but left BusinessProcess.status as Draft.
+              # Recover the explicit user validation from the persisted tag.
+              tags["sourceValidationStatus"] = "USER_VALIDATED"
+              tags["sourceValidatedAt"] = supporting.get("appliedAt")
+              tags["sourceValidatedBy"] = supporting.get("appliedBy") or "Authenticated user"
+              tags["reviewRequired"] = False
+              target_status = "Approved"
+              result["repairSource"] = "supportingDocumentAnalysis.VALIDATED_APPLIED"
 
+          if target_status:
               now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
               sql = (
                   "UPDATE BusinessProcess SET status="+q(target_status)+
@@ -150,7 +168,10 @@ jobs:
           result["afterValidationStatus"] = after_tags.get("sourceValidationStatus")
           print(json.dumps(result, indent=2, ensure_ascii=False))
 
-          if audits and audits[0].get("action") == "APPROVE_SOURCE_DRAFT":
+          if (
+              (audits and audits[0].get("action") == "APPROVE_SOURCE_DRAFT")
+              or supporting_applied
+          ):
               if result["afterStatus"] != "Approved" or result["afterValidationStatus"] != "USER_VALIDATED":
                   raise RuntimeError("CKPN_APPROVAL_REPAIR_FAILED")
           PY
