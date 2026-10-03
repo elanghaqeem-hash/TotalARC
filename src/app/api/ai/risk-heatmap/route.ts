@@ -256,6 +256,8 @@ export async function POST(request: Request) {
 
     const result = await runAiGateway({
       task: 'summarization',
+      institutionId: context.institution.id,
+      feature: 'risk_heatmap',
       sensitivity: 'confidential',
       systemPrompt,
       prompt:

@@ -512,6 +512,8 @@ export async function POST(request: Request) {
 
     const result = await runAiGateway({
       task: 'classification',
+      institutionId,
+      feature: 'significant_accounts',
       sensitivity: 'confidential',
       systemPrompt,
       prompt:

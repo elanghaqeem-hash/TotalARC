@@ -383,6 +383,8 @@ export async function POST(request: Request, routeContext: RouteContext) {
 
     const result = await runAiGateway({
       task: 'process_document_analysis',
+      institutionId,
+      feature: 'process_document',
       sensitivity: 'confidential',
       systemPrompt,
       prompt:

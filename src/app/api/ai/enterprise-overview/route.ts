@@ -418,6 +418,8 @@ export async function POST(request: Request) {
     try {
       const result = await runAiGateway({
         task: 'summarization',
+        institutionId: context.institution.id,
+        feature: 'enterprise_overview',
         sensitivity: 'confidential',
         systemPrompt,
         prompt:

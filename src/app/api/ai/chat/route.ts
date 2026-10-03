@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runAiGateway } from '@/lib/ai/gateway';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { guardAiPost } from '@/lib/ai/http-security';
 import type { AiTask } from '@/lib/ai/types';
 
@@ -29,6 +30,7 @@ function taskFrom(value: unknown): AiTask {
 
 export async function POST(request: Request) {
   try {
+    const institutionContext = await resolveInstitutionAccess(request);
     const guarded = await guardAiPost(request, 'AI_CHAT_RATE_LIMIT');
     if (!guarded.ok) return guarded.response;
 
@@ -46,6 +48,8 @@ export async function POST(request: Request) {
 
     const result = await runAiGateway({
       task: taskFrom(body.task),
+      institutionId: institutionContext?.institution?.id,
+      feature: 'assistant_chat',
       sensitivity: 'confidential',
       systemPrompt: [
         'You are Total ARC AI, a Governance, Risk, Compliance, ICOFR and Internal Control copilot.',

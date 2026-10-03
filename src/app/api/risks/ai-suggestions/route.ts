@@ -267,6 +267,8 @@ export async function POST(request: Request) {
 
     const result = await runAiGateway({
       task: 'risk_identification',
+      institutionId: context.institution!.id,
+      feature: 'risk_register',
       sensitivity: 'confidential',
       systemPrompt,
       prompt: 'Buat usulan Register Risiko yang dapat dipilih pengguna dari BPM berikut, seluruh teks naratif harus dalam Bahasa Indonesia:\n' + JSON.stringify(bpmContext),

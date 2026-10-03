@@ -217,6 +217,8 @@ export async function POST(request: Request) {
 
     const result = await runAiGateway({
       task: 'process_analysis',
+      institutionId,
+      feature: 'process_analysis',
       sensitivity: analysisSensitivity,
       systemPrompt,
       prompt: 'Analisis konteks BPM/RCM Total ARC berikut dan berikan seluruh narasi dalam Bahasa Indonesia:\n' + JSON.stringify(context),
