@@ -130,12 +130,18 @@ function OrganizationNode({
   const children = units
     .filter(item => item.parentId === unit.id)
     .sort((a, b) => {
-      // Direksi must always show Direktur Utama first. Keep the existing
-      // relative order for the remaining directorates/units.
+      // Immediately below Direksi, Direktur Utama is always rendered first.
+      // Its own divisions are then rendered before functions so the hierarchy
+      // reads top-down on mobile without another director interrupting it.
       if (unit.code === 'EXEC-DIREKSI') {
         const aPriority = a.code === 'DIR-UTAMA' ? 0 : 1;
         const bPriority = b.code === 'DIR-UTAMA' ? 0 : 1;
         return aPriority - bPriority;
+      }
+      if (unit.code === 'DIR-UTAMA') {
+        const typePriority = (item: OrganizationUnit) =>
+          item.type === 'Division' ? 0 : item.type === 'Function' ? 1 : 2;
+        return typePriority(a) - typePriority(b);
       }
       return 0;
     });
