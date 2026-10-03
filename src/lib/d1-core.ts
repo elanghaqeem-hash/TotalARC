@@ -1282,7 +1282,8 @@ export async function listBusinessProcesses(institutionId?: string | null) {
 export async function applyRcmDerivedBpmDraft(
   processId: string,
   expectedFingerprint?: string,
-  institutionId?: string | null
+  institutionId?: string | null,
+  validatedBy?: string | null
 ) {
   const db = await ensureCoreDomainSchema();
   const tenantId = String(institutionId || '').trim();
@@ -1468,6 +1469,9 @@ export async function applyRcmDerivedBpmDraft(
   if (!refreshed) throw new Error('PROCESS_NOT_FOUND');
 
   const tags = parseJsonObject(refreshed.tags);
+  const validationActor =
+    String(validatedBy || 'Authenticated user').trim() || 'Authenticated user';
+
   tags.rcmDerivedBpm = {
     status: 'VALIDATED_APPLIED',
     derivedFrom: 'RCM',
@@ -1476,19 +1480,30 @@ export async function applyRcmDerivedBpmDraft(
     sourceControlIds: draft.sourceSummary?.controlIds || [],
     appliedSections,
     validatedAt: now,
-    validationActor: 'Interactive user (authenticated identity unavailable in current BPM flow)'
+    validationActor
   };
+
+  // "Validasi & Terapkan" is an explicit user approval of the BPM draft.
+  // Therefore the BusinessProcess master must no longer remain Draft.
+  // For a source-backed BPM, converge the source-validation marker as well
+  // while retaining detail/source-gap metadata independently.
+  if (tags.sourceBacked) {
+    tags.sourceValidationStatus = 'USER_VALIDATED';
+    tags.sourceValidatedAt = now;
+    tags.sourceValidatedBy = validationActor;
+    tags.reviewRequired = false;
+  }
 
   await run(
     db,
-    'UPDATE BusinessProcess SET tags = ?, updatedAt = ? WHERE id = ?',
-    [JSON.stringify(tags), now, processId]
+    'UPDATE BusinessProcess SET status = ?, tags = ?, updatedAt = ? WHERE id = ?',
+    ['Approved', JSON.stringify(tags), now, processId]
   );
 
   await writeAudit(db, {
     institutionId: String(process.institutionId),
-    userName: 'Interactive User',
-    userRole: 'Unverified session',
+    userName: validationActor,
+    userRole: 'Process Owner / Reviewer',
     action: 'VALIDATE_APPLY',
     entityType: 'Process',
     recordId: processId,
@@ -1497,6 +1512,8 @@ export async function applyRcmDerivedBpmDraft(
       sourceFingerprint: draft.sourceFingerprint
     },
     newValue: {
+      processStatus: 'Approved',
+      sourceValidationStatus: tags.sourceBacked ? 'USER_VALIDATED' : null,
       rcmDraftStatus: 'VALIDATED_APPLIED',
       sourceFingerprint: draft.sourceFingerprint,
       appliedSections
