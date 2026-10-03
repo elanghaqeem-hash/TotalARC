@@ -176,6 +176,69 @@ export async function POST(request: Request) {
       }
     };
 
+    // Zero-coverage heatmaps are deterministic: there is no assessed distribution for
+    // AI to interpret. Return a factual Indonesian readout immediately so the UI never
+    // shows stale/English/generated claims that exceed the available data.
+    if (assessed === 0) {
+      const viewLabel = mode === 'inherent' ? 'inheren' : 'residual';
+      const topCategory = heatmapContext.categoryDistribution[0];
+      const topProcess = heatmapContext.processDistribution[0];
+
+      const concentrationInsights = [
+        `Belum ada risiko yang terpetakan pada sel heatmap ${viewLabel} meskipun terdapat ${total} risiko terdaftar.`,
+        'Distribusi kategori saat ini menunjukkan jumlah risiko dalam register, bukan tingkat eksposur risiko karena assessment belum tersedia.',
+        topProcess
+          ? `Proses dengan jumlah risiko terdaftar terbanyak adalah "${topProcess.name}" sebanyak ${topProcess.count} risiko; hal ini belum menunjukkan tingkat risiko karena belum ada assessment tervalidasi.`
+          : 'Belum tersedia distribusi proses yang dapat digunakan sebagai konteks tambahan.',
+        'Seluruh rentang Likelihood × Impact 1–5 masih kosong karena belum ada assessment yang tervalidasi.',
+        mode === 'residual'
+          ? 'Perbandingan perubahan risiko inheren ke residual belum dapat dilakukan sampai kedua assessment tersedia.'
+          : 'Prioritisasi berdasarkan heatmap inheren belum dapat dilakukan sampai assessment Likelihood dan Impact dilengkapi.'
+      ];
+
+      const managementActions = [
+        'Lengkapi assessment Likelihood dan Impact 1–5 untuk setiap risiko prioritas.',
+        'Validasi metodologi, kriteria penilaian, dan bukti pendukung sebelum skor digunakan dalam pengambilan keputusan.',
+        topCategory
+          ? `Mulai penyelesaian assessment pada kategori dengan volume risiko tinggi, termasuk "${topCategory.name}" yang memiliki ${topCategory.count} risiko terdaftar.`
+          : 'Prioritaskan penyelesaian assessment berdasarkan materialitas proses dan kebutuhan manajemen.',
+        'Tetapkan mekanisme reviu berkala untuk menjaga kelengkapan dan konsistensi data heatmap.',
+        'Gunakan distribusi proses dan kategori sebagai panduan urutan assessment, bukan sebagai pengganti penilaian tingkat risiko.'
+      ];
+
+      return NextResponse.json({
+        mode,
+        generatedAt: new Date().toISOString(),
+        metrics: {
+          total,
+          assessed,
+          unassessed,
+          coveragePct,
+          bandCounts,
+          comparisonEligible,
+          improved,
+          unchanged,
+          worsened
+        },
+        analysis: {
+          headline:
+            mode === 'inherent'
+              ? 'Analisis Heatmap Risiko Inheren: Cakupan Assessment Belum Tersedia'
+              : 'Analisis Heatmap Risiko Residual: Kesenjangan Assessment Teridentifikasi',
+          executiveSummary:
+            `Heatmap risiko ${viewLabel} belum memiliki assessment yang tervalidasi. Seluruh ${total} risiko masih berstatus belum dinilai untuk tampilan ini sehingga belum ada data yang dapat ditempatkan pada sel Likelihood × Impact. Heatmap belum dapat digunakan untuk prioritisasi risiko sampai assessment diselesaikan.`,
+          dataQuality:
+            `Cakupan assessment saat ini 0%: ${unassessed} dari ${total} risiko belum memiliki penilaian ${viewLabel} yang tervalidasi. Kondisi ini menunjukkan kesenjangan kelengkapan data assessment, bukan tingkat risiko yang rendah.`,
+          concentrationInsights,
+          managementActions,
+          caution:
+            'Interpretasi ini hanya menggambarkan kelengkapan data Risk Master yang tersimpan dan bukan kesimpulan mengenai tingkat risiko masing-masing proses.'
+        },
+        ai: null,
+        disclaimer: 'Analisis Sistem — Memerlukan Reviu Manusia'
+      });
+    }
+
     const systemPrompt = [
       'You are Total ARC AI, an enterprise risk management and internal control copilot.',
       'Explain the supplied 5x5 risk heatmap using only the supplied database-derived statistics.',
