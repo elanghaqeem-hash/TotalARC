@@ -2,7 +2,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 
 export type ProcessSupportingDocumentExtraction = {
   text: string;
-  method: 'plain-text' | 'workers-ai-markdown' | 'pptx-internal';
+  method: 'plain-text' | 'workers-ai-markdown' | 'pptx-internal' | 'docx-internal';
   truncated: boolean;
 };
 
@@ -152,6 +152,58 @@ async function extractPptx(bytes: Uint8Array) {
   return sections.join('\n\n');
 }
 
+async function extractDocx(bytes: Uint8Array) {
+  let entries: Array<{ name: string; data: Uint8Array }>;
+  try {
+    entries = await unzipEntries(bytes);
+  } catch {
+    throw new Error('DOCX_INVALID_ZIP');
+  }
+
+  const decoder = new TextDecoder();
+  const ordered = entries
+    .filter(item =>
+      item.name === 'word/document.xml' ||
+      /^word\/(header|footer)\d+\.xml$/i.test(item.name) ||
+      /^word\/(footnotes|endnotes)\.xml$/i.test(item.name)
+    )
+    .sort((a, b) => {
+      const rank = (name: string) => {
+        if (name === 'word/document.xml') return 0;
+        if (/^word\/header\d+\.xml$/i.test(name)) return 1;
+        if (/^word\/footer\d+\.xml$/i.test(name)) return 2;
+        if (/^word\/footnotes\.xml$/i.test(name)) return 3;
+        return 4;
+      };
+      return rank(a.name) - rank(b.name) || a.name.localeCompare(b.name);
+    });
+
+  const sections: string[] = [];
+  for (const item of ordered) {
+    let xml = decoder.decode(item.data);
+    xml = xml
+      .replace(/<w:tab\s*\/?\s*>/gi, '\t')
+      .replace(/<w:(?:br|cr)\s*\/?\s*>/gi, '\n')
+      .replace(/<\/w:p>/gi, '\n')
+      .replace(/<\/w:tr>/gi, '\n')
+      .replace(/<\/w:tc>/gi, '\t')
+      .replace(/<w:t(?:\s[^>]*)?>/gi, '')
+      .replace(/<\/w:t>/gi, '')
+      .replace(/<[^>]+>/g, '');
+
+    const text = decodeXmlEntities(xml)
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n\s*\n+/g, '\n')
+      .trim();
+
+    if (text) sections.push(text);
+  }
+
+  if (!sections.length) throw new Error('DOCX_TEXT_NOT_FOUND');
+  return sections.join('\n\n');
+}
+
 async function workersAiToText(fileName: string, mimeType: string, bytes: Uint8Array) {
   const { env } = await getCloudflareContext({ async: true });
   const ai = (env as unknown as { AI?: WorkersAiBinding }).AI;
@@ -191,6 +243,12 @@ export async function extractProcessSupportingDocument(input: {
     const clipped = clip(new TextDecoder().decode(input.bytes));
     if (!clipped.text) throw new Error('DOCUMENT_TEXT_EMPTY');
     return { ...clipped, method: 'plain-text' };
+  }
+
+  if (ext === 'docx') {
+    const clipped = clip(await extractDocx(input.bytes));
+    if (!clipped.text) throw new Error('DOCUMENT_TEXT_EMPTY');
+    return { ...clipped, method: 'docx-internal' };
   }
 
   if (ext === 'pptx') {

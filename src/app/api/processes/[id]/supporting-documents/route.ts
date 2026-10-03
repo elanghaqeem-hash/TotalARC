@@ -23,7 +23,20 @@ type RouteContext = {
 };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const AI_SOURCE_CHAR_LIMIT = 36000;
 const ALLOWED_EXTENSIONS = new Set(['docx', 'pdf', 'txt', 'pptx', 'jpg', 'jpeg', 'png', 'xlsx']);
+
+function compactAiSource(value: string) {
+  if (value.length <= AI_SOURCE_CHAR_LIMIT) return value;
+
+  const headChars = 26000;
+  const tailChars = AI_SOURCE_CHAR_LIMIT - headChars;
+  return (
+    value.slice(0, headChars) +
+    '\n\n[...bagian tengah dokumen diringkas untuk mempercepat analisis...]\n\n' +
+    value.slice(-tailChars)
+  );
+}
 
 function extOf(name: string) {
   const match = name.toLowerCase().match(/\.([a-z0-9]+)$/);
@@ -296,6 +309,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
       mimeType: file.type || 'application/octet-stream',
       bytes
     });
+    const aiSourceText = compactAiSource(extracted.text);
 
     const systemPrompt = [
       'You are Total ARC AI assisting a Process Owner to define a business process from an uploaded supporting document.',
@@ -328,9 +342,9 @@ export async function POST(request: Request, routeContext: RouteContext) {
           isIcofrRelevant: process.isIcofrRelevant
         }) +
         '\n\nUPLOADED DOCUMENT TEXT\n' +
-        extracted.text,
+        aiSourceText,
       temperature: 0.1,
-      maxOutputTokens: 5500,
+      maxOutputTokens: 3200,
       requireJson: true
     });
 
@@ -383,6 +397,8 @@ export async function POST(request: Request, routeContext: RouteContext) {
       DOCUMENT_CONVERTER_UNAVAILABLE: ['Document conversion is temporarily unavailable.', 503],
       DOCUMENT_CONVERSION_FAILED: ['The document could not be converted to readable text.', 422],
       DOCUMENT_TEXT_EMPTY: ['No readable text or process information could be extracted from this file.', 422],
+      DOCX_INVALID_ZIP: ['The DOCX file is not a valid Word package.', 422],
+      DOCX_TEXT_NOT_FOUND: ['No readable text was found in the DOCX file.', 422],
       PPTX_INVALID_ZIP: ['The PPTX file is not a valid PowerPoint package.', 422],
       PPTX_TEXT_NOT_FOUND: ['No readable slide text was found in the PPTX file.', 422],
       AI_DOCUMENT_DRAFT_INVALID: ['AI returned an invalid business-process draft. The source file remains stored.', 502],

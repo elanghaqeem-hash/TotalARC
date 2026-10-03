@@ -39,6 +39,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
   const [activeAnalysis, setActiveAnalysis] = useState<any>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisSeconds, setAnalysisSeconds] = useState(0);
   const [applying, setApplying] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [replaceActivities, setReplaceActivities] = useState(false);
@@ -84,6 +85,18 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
     if (fileRef.current) fileRef.current.value = '';
     void loadHistory();
   }, [processId]);
+
+  useEffect(() => {
+    if (!analyzing) {
+      setAnalysisSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setAnalysisSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [analyzing]);
 
   const analyze = async () => {
     if (!file || !processId || analyzing) return;
@@ -257,9 +270,14 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             ) : (
               <Sparkles className="h-3.5 w-3.5" />
             )}
-            {analyzing ? 'Analyzing…' : 'Upload & Analyze'}
+            {analyzing ? `Analyzing… ${analysisSeconds}s` : 'Upload & Analyze'}
           </button>
         </div>
+        {analyzing && (
+          <div className="mt-2 text-[8px] leading-3.5 text-sky-700">
+            Ekstraksi dokumen dipercepat secara lokal untuk DOCX/PPTX. ARC AI sedang menyusun draft BPM dan flowchart.
+          </div>
+        )}
       </div>
 
       {draft && activeAnalysis && (
