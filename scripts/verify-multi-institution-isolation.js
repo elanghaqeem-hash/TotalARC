@@ -67,11 +67,11 @@ requireText(core, 'if (!tenantId) return null;', 'AI BPM lookup fails closed wit
 requireText(core, 'AND institutionId = ?', 'AI BPM lookup is tenant constrained');
 
 const institutionApi = 'src/app/api/institutions/route.ts';
-requireText(institutionApi, 'Only administrators can switch institution context.', 'Institution switching is admin-only');
+requireText(institutionApi, 'Only SystemAdmin can switch institution context.', 'Institution switching is SystemAdmin-only');
 requireText(institutionApi, 'context.institutions.find', 'Institution switch validates accessible tenant');
 
 const institutionContext = 'src/lib/institution-context.ts';
-requireText(institutionContext, "profile.role === 'Admin'", 'Institution context distinguishes administrator access');
+requireText(institutionContext, "profile.role === 'SystemAdmin'", 'Institution context reserves cross-institution access for SystemAdmin');
 requireText(institutionContext, 'allInstitutions.filter(item => item.id === profile.institutionId)', 'Non-admin users are locked to assigned institution');
 
 const nttImporter = 'scripts/promote-bank-ntt-source-data.py';
