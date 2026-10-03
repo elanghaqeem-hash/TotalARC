@@ -208,7 +208,14 @@ jobs:
             .storage == "cloudflare-d1" and
             (.rcm | type) == "array" and
             (.total | type) == "number" and
-            ([.rcm[] | select(has("inherentAssessmentStatus"))] | length) > 0
+            ([.rcm[] | select(has("inherentAssessmentStatus"))] | length) > 0 and
+            .summary.controls == 132 and
+            .summary.uusControls == 42 and
+            .summary.itgcControls == 10 and
+            .summary.ckpnRequirements == 9 and
+            .summary.reverseRepoRequirements == 1 and
+            .summary.elcDraftReferences == 63 and
+            .summary.integrity == "PASS"
           '
 
           echo "RCM inherent assessment evidence:"
@@ -331,6 +338,16 @@ jobs:
           check_json "icofr-traceability" "/api/icofr/traceability" '
             .storage == "cloudflare-d1" and
             (.chains | type) == "array"
+          '
+
+          check_json "icofr-referential-integrity" "/api/system/icofr-integrity" '
+            .ok == true and
+            .storage == "cloudflare-d1" and
+            .test == "ICOFR_END_TO_END_REFERENTIAL_INTEGRITY" and
+            .checkedInstitutions >= 1 and
+            .orphanCount == 0 and
+            .crossTenantCount == 0 and
+            ([.checks[] | select(.count != 0)] | length) == 0
           '
 
           check_json "icofr-coverage" "/api/icofr/coverage" '

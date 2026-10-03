@@ -6,12 +6,13 @@ import {
   revokeManagedSession
 } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
+import { canAdministerTenantUsers } from '@/lib/access-control';
 
 export const dynamic = 'force-dynamic';
 
 async function requireAdmin(request: Request) {
   const context = await resolveInstitutionAccess(request);
-  if (!context || context.profile.role !== 'Admin' || !context.institution) return null;
+  if (!context || !canAdministerTenantUsers(context.profile.role) || !context.institution) return null;
   return {
     ...context.profile,
     institutionId: context.institution.id,
@@ -25,6 +26,12 @@ function errorResponse(error: unknown) {
     return NextResponse.json(
       { error: 'Session tidak ditemukan.', code },
       { status: 404, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+  if (code === 'PRIVILEGED_SESSION_PROTECTED') {
+    return NextResponse.json(
+      { error: 'Administrator institusi tidak dapat mencabut sesi administrator tingkat sistem/institusi.', code },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
     );
   }
   console.error('Security administration failed:', error);
@@ -45,9 +52,32 @@ export async function GET(request: Request) {
     }
 
     const data = await loadSecurityAdministration(admin.institutionId);
+    const effectiveData =
+      admin.role === 'InstitutionAdmin'
+        ? (() => {
+            const activeSessions = (data.activeSessions || []).filter(
+              item => !['Admin', 'InstitutionAdmin'].includes(String(item.role || ''))
+            );
+            const events = (data.events || []).filter(
+              item => !['Admin', 'InstitutionAdmin'].includes(String(item.role || ''))
+            );
+            return {
+              ...data,
+              activeSessions,
+              events,
+              metrics: {
+                ...data.metrics,
+                activeSessions: activeSessions.length,
+                failedLoginEvents: events.filter(item =>
+                  ['LOGIN_FAILED', 'ACCOUNT_LOCKED'].includes(String(item.eventType))
+                ).length
+              }
+            };
+          })()
+        : data;
     return NextResponse.json(
       {
-        ...data,
+        ...effectiveData,
         passwordPolicy: {
           minimumLength: 12,
           maximumLength: 128,
@@ -89,6 +119,7 @@ export async function POST(request: Request) {
     const result = await revokeManagedSession({
       actorUserId: admin.id,
       actorInstitutionId: admin.institutionId,
+      actorRole: admin.role,
       sessionId: String(body.sessionId)
     });
     return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });

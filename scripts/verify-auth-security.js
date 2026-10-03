@@ -40,7 +40,22 @@ const requirements = [
   ['src/app/api/admin/security/route.ts', 'REVOKE_SESSION'],
   ['src/app/admin/security/page.tsx', '/api/admin/security'],
   ['src/components/layout/AppShell.tsx', '/admin/security'],
-  ['src/components/layout/AppShell.tsx', '/profile']
+  ['src/components/layout/AppShell.tsx', '/profile'],
+  ['src/lib/access-control.ts', "'InstitutionAdmin'"],
+  ['src/lib/access-control.ts', "'RiskManager'"],
+  ['src/lib/access-control.ts', "'ComplianceOfficer'"],
+  ['src/lib/access-control.ts', "'InternalAuditor'"],
+  ['src/lib/access-control.ts', "'ICOFRCoordinator'"],
+  ['src/lib/access-control.ts', "'RCSACoordinator'"],
+  ['src/lib/access-control.ts', "'EvidenceContributor'"],
+  ['src/lib/access-control.ts', "'ReadOnlyAuditor'"],
+  ['src/lib/access-control.ts', 'canAdministerTenantUsers'],
+  ['src/lib/access-control.ts', 'canAssignRole'],
+  ['src/app/api/admin/users/route.ts', 'canAssignRole(admin.role'],
+  ['src/app/api/admin/users/route.ts', "admin.role === 'InstitutionAdmin'"],
+  ['src/app/api/admin/security/route.ts', 'canAdministerTenantUsers'],
+  ['src/app/api/admin/security/route.ts', 'actorRole: admin.role'],
+  ['src/lib/auth.ts', 'PRIVILEGED_SESSION_PROTECTED']
 ];
 
 for (const [file, marker] of requirements) {

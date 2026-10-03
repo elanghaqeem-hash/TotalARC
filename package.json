@@ -26,7 +26,11 @@
     "verify:ai-risk-register": "node scripts/verify-ai-risk-register.js",
     "verify:ai-significant-accounts": "node scripts/verify-ai-significant-account-scoping.js",
     "verify:ai-materiality": "node scripts/verify-ai-materiality.js",
-    "verify:rcsa-campaign-units": "node scripts/verify-rcsa-campaign-units.js"
+    "verify:rcsa-campaign-units": "node scripts/verify-rcsa-campaign-units.js",
+    "typecheck": "tsc --noEmit",
+    "verify:rcm-integrity": "node scripts/verify-rcm-integrity.js",
+    "verify:ai-security": "node scripts/verify-ai-security.js",
+    "verify:icofr-traceability": "node scripts/verify-icofr-traceability.js"
   },
   "keywords": [],
   "author": "",
