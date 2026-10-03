@@ -775,7 +775,7 @@ export default function CertificationPage() {
                         rows={2}
                         value={subCertForm.evidenceReference}
                         onChange={e => setSubCertForm({ ...subCertForm, evidenceReference: e.target.value })}
-                        placeholder="Cantumkan referensi RCM, kertas kerja ToD/ToE, register isu, paket evidence, rekonsiliasi, atau ID dokumen pendukung. Wajib sebelum Submit/Approve."
+                        placeholder="Cantumkan referensi RCM, kertas kerja ToD/ToE, register isu, paket evidence, rekonsiliasi, atau ID dokumen pendukung. Wajib sebelum Diajukan/Disetujui."
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
                       />
                     </label>
@@ -1081,7 +1081,7 @@ export default function CertificationPage() {
                     required
                     value={attestationForm.period}
                     onChange={e => setAttestationForm({ ...attestationForm, period: e.target.value })}
-                    placeholder="e.g. FY2027"
+                    placeholder="mis. FY2027"
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                   />
                 </label>
