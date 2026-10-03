@@ -60,8 +60,8 @@ The pull-request workflow blocks known dummy operational-data signatures and ver
 
 Total ARC separates multi-institution administration from institution-level administration and operational assurance roles. Server-side authorization recognizes:
 
-- **Admin** — system / multi-institution administrator.
-- **InstitutionAdmin** — administrator restricted to the active institution; cannot create, elevate, reset, or revoke privileged system/institution administrator accounts.
+- **SystemAdmin** — system / multi-institution administrator with cross-institution administration and global system configuration.
+- **Admin** — institution administrator limited to User Administration, Organization, Institution Configuration, and Security Administration. It cannot switch institutions or create/elevate/revoke privileged SystemAdmin/Admin accounts.
 - **RiskManager** — risk-management workspace and risk/control maintenance.
 - **ComplianceOfficer** — compliance oversight with read-focused access until dedicated compliance mutation workflows are approved.
 - **InternalAuditor** — SKAI/internal-audit assurance and testing access with segregation from management scoping/control-design maintenance.
@@ -74,7 +74,7 @@ Total ARC separates multi-institution administration from institution-level admi
 - **Executive** — management/executive read and certification view.
 - **ReadOnlyAuditor** — broad read-only assurance access.
 
-Role checks are applied to pages and API methods. Institution switching remains restricted to the multi-institution **Admin** role.
+Role checks are applied to pages and API methods. Institution switching remains restricted to the multi-institution **SystemAdmin** role.
 
 ## AI Gateway
 
