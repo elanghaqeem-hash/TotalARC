@@ -11,7 +11,9 @@ import {
   Shield,
   Layers,
   Sparkles,
+  Check,
   CheckCircle2,
+  ChevronDown,
   TrendingDown,
   X,
   FileSpreadsheet,
@@ -103,6 +105,182 @@ function NumberedRiskText({
         </li>
       ))}
     </ol>
+  );
+}
+
+
+function BusinessProcessPicker({
+  value,
+  processes,
+  onChange
+}: {
+  value: string;
+  processes: any[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = processes.find(process => String(process.id) === String(value)) || null;
+  const normalized = query.trim().toLowerCase();
+  const filtered = normalized
+    ? processes.filter(process =>
+        [process.processId, process.name, process.classification, process.ownerName]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(normalized)
+      )
+    : processes;
+
+  const close = () => {
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div>
+      <label className="mb-1 block font-bold text-slate-700">Proses Bisnis *</label>
+      <button
+        type="button"
+        onClick={() => processes.length > 0 && setOpen(true)}
+        disabled={processes.length === 0}
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-brand-300 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-50"
+      >
+        <span className="min-w-0 flex-1">
+          {selected ? (
+            <>
+              <span className="mr-2 inline-flex rounded-md bg-brand-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-brand-700">
+                {selected.processId}
+              </span>
+              <span className="align-middle text-[11px] font-bold text-slate-800">
+                {selected.name}
+              </span>
+            </>
+          ) : (
+            <span className="text-[11px] text-slate-400">
+              {processes.length > 0 ? 'Pilih proses bisnis' : 'Daftarkan proses bisnis terlebih dahulu'}
+            </span>
+          )}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end bg-slate-950/50 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pilih Proses Bisnis"
+          onMouseDown={event => {
+            if (event.currentTarget === event.target) close();
+          }}
+        >
+          <div className="flex max-h-[84dvh] w-full flex-col overflow-hidden rounded-t-[26px] bg-white shadow-2xl sm:max-h-[78vh] sm:max-w-2xl sm:rounded-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-4">
+              <div>
+                <div className="text-sm font-black text-slate-900">Pilih Proses Bisnis</div>
+                <div className="mt-0.5 text-[10px] text-slate-500">{processes.length} proses tersedia</div>
+              </div>
+              <button type="button" onClick={close} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-100 bg-slate-50/70 p-3">
+              <label className="relative block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  placeholder="Cari CKPN, DPK, ITGC, kredit, treasury..."
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                />
+              </label>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+              {filtered.length === 0 ? (
+                <div className="px-4 py-10 text-center">
+                  <Search className="mx-auto h-6 w-6 text-slate-300" />
+                  <div className="mt-2 text-xs font-black text-slate-700">Proses tidak ditemukan</div>
+                  <div className="mt-1 text-[10px] text-slate-500">Gunakan kode atau kata kunci lain.</div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {filtered.map(process => {
+                    const active = String(process.id) === String(value);
+                    return (
+                      <button
+                        key={process.id}
+                        type="button"
+                        onClick={() => {
+                          onChange(String(process.id));
+                          close();
+                        }}
+                        className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition ${
+                          active
+                            ? 'border-brand-300 bg-brand-50 shadow-sm'
+                            : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                            active
+                              ? 'border-brand-600 bg-brand-600 text-white'
+                              : 'border-slate-300 text-transparent'
+                          }`}
+                        >
+                          <Check className="h-3 w-3" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-600">
+                              {process.processId || 'BPM'}
+                            </span>
+                            {active && (
+                              <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-brand-700">
+                                Dipilih
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-1 block text-[12px] font-bold leading-5 text-slate-800">
+                            {process.name}
+                          </span>
+                          {(process.classification || process.ownerName) && (
+                            <span className="mt-0.5 block text-[10px] text-slate-500">
+                              {[process.classification, process.ownerName ? 'Pemilik: ' + process.ownerName : '']
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-white px-4 py-3 text-[10px] text-slate-500">
+              <span>{filtered.length} dari {processes.length} proses</span>
+              {value && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange('');
+                    close();
+                  }}
+                  className="font-black text-rose-600"
+                >
+                  Hapus pilihan
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -917,25 +1095,11 @@ export default function RisksPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Business Process *</label>
-                <select
-                  required
-                  value={formData.processId}
-                  onChange={e => setFormData({ ...formData, processId: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  {processes.length === 0 ? (
-                    <option value="">Register a business process first</option>
-                  ) : (
-                    processes.map(process => (
-                      <option key={process.id} value={process.id}>
-                        {process.processId} — {process.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
+              <BusinessProcessPicker
+                value={formData.processId}
+                processes={processes}
+                onChange={processId => setFormData({ ...formData, processId })}
+              />
 
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Risk Owner *</label>
