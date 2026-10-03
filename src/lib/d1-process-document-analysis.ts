@@ -382,11 +382,22 @@ export async function applyProcessDocumentAnalysis(input: {
     confidence: draft.confidence
   };
 
+  // The UI action is explicitly labelled "Validate & Apply BPM". Once the
+  // authenticated user applies the supporting-document BPM draft, the process
+  // master is operationally approved rather than remaining in Draft.
+  if (tags.sourceBacked) {
+    tags.sourceValidationStatus = 'USER_VALIDATED';
+    tags.sourceValidatedAt = now;
+    tags.sourceValidatedBy = input.actor;
+    tags.reviewRequired = false;
+  }
+
   await run(
     db,
     `UPDATE BusinessProcess
         SET name = ?, description = ?, ownerName = ?, criticality = ?,
-            classification = ?, isIcofrRelevant = ?, tags = ?, updatedAt = ?
+            classification = ?, isIcofrRelevant = ?, status = 'Approved',
+            tags = ?, updatedAt = ?
       WHERE id = ? AND institutionId = ?`,
     [
       name,
@@ -541,10 +552,13 @@ export async function applyProcessDocumentAnalysis(input: {
       input.analysisId,
       JSON.stringify({
         processName: process.name,
+        processStatus: process.status,
         activityCount: Number(existingActivityCount?.count || 0)
       }),
       JSON.stringify({
         processName: name,
+        processStatus: 'Approved',
+        sourceValidationStatus: tags.sourceBacked ? 'USER_VALIDATED' : null,
         activitiesApplied,
         activityCount: draft.activities.length,
         objectiveApplied: Boolean(draft.objective?.objective),
@@ -552,6 +566,32 @@ export async function applyProcessDocumentAnalysis(input: {
         flowVersionNo: flow?.versionNo || null
       }),
       'User explicitly validated an AI draft derived from a stored supporting business-process document.',
+      now
+    ]
+  );
+
+  await run(
+    db,
+    `INSERT INTO AuditLog (
+      id, institutionId, userName, userRole, action, entityType, recordId,
+      oldValue, newValue, reason, ipAddress, timestamp
+    ) VALUES (?, ?, ?, ?, 'APPROVE_SOURCE_DRAFT', 'Process', ?, ?, ?, ?, NULL, ?)`,
+    [
+      crypto.randomUUID(),
+      input.institutionId,
+      input.actor,
+      'Process Owner / Reviewer',
+      input.processId,
+      JSON.stringify({
+        status: process.status || 'Draft',
+        sourceValidationStatus: parseTags(process.tags).sourceValidationStatus || null
+      }),
+      JSON.stringify({
+        status: 'Approved',
+        sourceValidationStatus: tags.sourceBacked ? 'USER_VALIDATED' : null,
+        supportingDocumentAnalysisId: input.analysisId
+      }),
+      'Supporting-document BPM draft validated and applied to the process master.',
       now
     ]
   );
