@@ -183,85 +183,139 @@ export default function RisksPage() {
     );
   });
 
+  const assessedRiskCount = risks.filter(r => Number(r.inherentScore || 0) > 0).length;
+  const unassessedRiskCount = Math.max(0, risks.length - assessedRiskCount);
+  const draftRiskCount = risks.filter(r => String(r.status || '').toLowerCase() === 'draft').length;
+  const elevatedRiskCount = risks.filter(r =>
+    ['High', 'Critical'].includes(String(r.inherentRating || ''))
+  ).length;
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2 text-xs font-bold text-amber-600 uppercase tracking-wider">
-            <AlertTriangle className="w-4 h-4" />
-            <span>Risk Universe (MANAGE)</span>
+      {/* Desktop-first header */}
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="bg-gradient-to-r from-slate-50 via-white to-sky-50/60 px-5 py-5 xl:px-7 xl:py-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 max-w-3xl">
+              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-amber-600">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                </span>
+                <span>Risk Universe · Manage</span>
+              </div>
+              <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 xl:text-[28px]">
+                Enterprise Risk Register &amp; Heatmaps
+              </h1>
+              <p className="mt-1.5 max-w-2xl text-[11px] leading-5 text-slate-500 xl:text-xs">
+                Kelola artikulasi Cause → Event → Impact, assessment inherent/residual, dan pemetaan risiko
+                dalam satu workspace yang konsisten.
+              </p>
+              <div className="mt-3 inline-flex max-w-full items-start gap-2 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-[10px] leading-4 text-slate-500">
+                <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span>
+                  Risiko dari sumber tetap berstatus <strong className="text-slate-700">Draft / Belum Dinilai</strong>{' '}
+                  sampai assessment Likelihood × Impact 1–5 tervalidasi.
+                </span>
+              </div>
+            </div>
+
+            <div className="grid w-full grid-cols-2 gap-2 lg:w-auto lg:min-w-[340px]">
+              <AiRiskRegisterGenerator processes={processes} onCreated={loadRisks} />
+              <button
+                onClick={() => setNewRiskModal(true)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-[11px] font-black text-white shadow-sm transition hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Identifikasi Risiko</span>
+              </button>
+            </div>
           </div>
-          <h1 className="text-2xl font-black text-slate-900 mt-1 tracking-tight">
-            Enterprise Risk Register & Heatmaps
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Structured Cause → Event → Impact risk articulation. Interactive 5x5 Likelihood × Impact matrices.
-          </p>
-          <p className="mt-2 text-[11px] text-slate-400">
-            Source-fed risks remain Draft / Not Assessed until a validated 1–5 likelihood and impact assessment is completed.
-            Unassessed risks are excluded from the 5×5 heatmap.
-          </p>
         </div>
 
-        <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">
-          <AiRiskRegisterGenerator processes={processes} onCreated={loadRisks} />
-          <button
-            onClick={() => setNewRiskModal(true)}
-            className="inline-flex min-h-10 items-center justify-center space-x-2 rounded-xl bg-slate-900 px-4 text-xs font-bold text-white shadow-sm transition-all hover:bg-slate-800"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Identify New Risk</span>
-          </button>
+        <div className="grid grid-cols-2 border-t border-slate-100 bg-white md:grid-cols-4">
+          {[
+            ['Total Risiko', riskLoading ? '…' : risks.length, 'Register aktif'],
+            ['Belum Dinilai', riskLoading ? '…' : unassessedRiskCount, 'Perlu assessment'],
+            ['Draft', riskLoading ? '…' : draftRiskCount, 'Perlu validasi'],
+            ['High / Critical', riskLoading ? '…' : elevatedRiskCount, 'Prioritas review']
+          ].map(([label, value, hint], index) => (
+            <div
+              key={String(label)}
+              className={`px-5 py-3.5 xl:px-6 ${index > 0 ? 'border-l border-slate-100' : ''} ${
+                index > 1 ? 'border-t border-slate-100 md:border-t-0' : ''
+              }`}
+            >
+              <div className="text-[9px] font-black uppercase tracking-[0.08em] text-slate-400">{label}</div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-xl font-black tracking-tight text-slate-900">{value}</span>
+                <span className="text-[9px] font-medium text-slate-400">{hint}</span>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
+      </section>
 
-      {/* View Switcher & Search Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by Risk ID, Category, or Title..."
-            className="w-full text-xs pl-9 pr-4 py-2 rounded-lg bg-slate-100 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-          />
-        </div>
+      {/* Search & view toolbar */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm xl:p-3.5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="relative min-w-0 flex-1 xl:max-w-xl">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Cari Risk ID, kategori, atau nama risiko..."
+              className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Hapus pencarian"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
 
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setActiveTab('register')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === 'register'
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Risk Register ({riskLoading ? '…' : risks.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('inherent_heatmap')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === 'inherent_heatmap'
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            5×5 Inherent Heatmap
-          </button>
-          <button
-            onClick={() => setActiveTab('residual_heatmap')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === 'residual_heatmap'
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            5×5 Residual Heatmap
-          </button>
+          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              onClick={() => setActiveTab('register')}
+              className={`min-h-9 shrink-0 rounded-lg px-3.5 text-[10px] font-black transition xl:text-[11px] ${
+                activeTab === 'register'
+                  ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Risk Register · {riskLoading ? '…' : risks.length}
+            </button>
+            <button
+              onClick={() => setActiveTab('inherent_heatmap')}
+              className={`min-h-9 shrink-0 rounded-lg px-3.5 text-[10px] font-black transition xl:text-[11px] ${
+                activeTab === 'inherent_heatmap'
+                  ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Inherent Heatmap
+            </button>
+            <button
+              onClick={() => setActiveTab('residual_heatmap')}
+              className={`min-h-9 shrink-0 rounded-lg px-3.5 text-[10px] font-black transition xl:text-[11px] ${
+                activeTab === 'residual_heatmap'
+                  ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Residual Heatmap
+            </button>
+          </div>
         </div>
-      </div>
+        <div className="mt-2 px-1 text-[9px] font-medium text-slate-400">
+          {search ? `${filtered.length} dari ${risks.length} risiko sesuai pencarian` : 'Pilih risiko di daftar untuk membuka profil 360° di panel kanan.'}
+        </div>
+      </section>
 
       {riskLoadError && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
@@ -272,9 +326,9 @@ export default function RisksPage() {
 
       {/* Main Content Area */}
       {activeTab === 'register' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: Risk List (5 cols) */}
-          <div className="lg:col-span-5 space-y-3">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(360px,430px)_minmax(0,1fr)] xl:items-start">
+          {/* Desktop register navigator */}
+          <aside className="space-y-3 xl:max-h-[calc(100vh-210px)] xl:overflow-y-auto xl:pr-1.5 [scrollbar-width:thin]">
             {riskLoading ? (
               <DataLoadingState label="Loading risks..." variant="list" rows={4} />
             ) : (
@@ -285,12 +339,16 @@ export default function RisksPage() {
                 <div
                   key={r.id}
                   onClick={() => setSelectedRisk(r)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                  className={`group relative overflow-hidden rounded-2xl border p-4 transition-all cursor-pointer xl:p-4.5 ${
+
                     isSelected
-                      ? 'bg-amber-50/50 border-amber-500 shadow-md ring-1 ring-amber-400'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                      ? 'border-amber-300 bg-amber-50/70 shadow-sm ring-1 ring-amber-200'
+                      : 'border-slate-200 bg-white hover:border-brand-200 hover:shadow-md hover:shadow-slate-200/60'
                   }`}
                 >
+                  {isSelected && (
+                    <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-amber-400" />
+                  )}
                   <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -327,11 +385,11 @@ export default function RisksPage() {
                     </div>
                   </div>
 
-                  <p className="text-xs text-slate-600 mt-2 line-clamp-2 leading-relaxed">
+                  <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-slate-500">
                     {r.description}
                   </p>
 
-                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
                     <span>Process: <strong>{r.process?.name || 'Unassigned'}</strong></span>
                     <span className="text-emerald-700 font-semibold flex items-center space-x-1">
                       <TrendingDown className="w-3.5 h-3.5" />
@@ -346,15 +404,15 @@ export default function RisksPage() {
               );
             })
             )}
-          </div>
+          </aside>
 
-          {/* Right: Risk 360 View (7 cols) */}
-          <div className="lg:col-span-7">
+          {/* Risk 360 workspace */}
+          <div className="min-w-0">
             {riskLoading ? (
               <DataLoadingState label="Loading risk profile..." variant="profile" className="min-h-[220px]" />
             ) : selectedRisk ? (
-              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6">
-                <div className="border-b border-slate-100 pb-4">
+              <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:p-6">
+                <div className="rounded-xl border border-slate-100 bg-gradient-to-r from-slate-50 to-white p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <span className="font-mono text-sm font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded border border-amber-200">
