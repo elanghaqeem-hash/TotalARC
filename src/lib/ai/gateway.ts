@@ -3,11 +3,14 @@ import type {
   AiGatewayRequest,
   AiGatewayResult,
   AiGatewayStatus,
+  AiFeature,
+  AiLevel,
   AiProvider,
   AiSensitivity,
   AiTask
 } from './types';
 import { redactBankingSensitiveData } from './redaction';
+import { getAiRuntimeRouting } from './admin-config';
 
 type WorkersAiBinding = {
   run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
@@ -16,6 +19,15 @@ type WorkersAiBinding = {
 type ProviderConfig = {
   model: string;
   role: string;
+};
+
+type RuntimeProvider = {
+  provider: AiProvider;
+  model: string;
+  role: string;
+  apiKey: string | null;
+  aiLevel?: AiLevel;
+  routingSource: 'admin' | 'default';
 };
 
 class ProviderError extends Error {
@@ -95,6 +107,67 @@ function configured(provider: AiProvider): boolean {
   if (provider === 'groq') return Boolean(process.env.GROQ_API_KEY);
   if (provider === 'openrouter') return Boolean(process.env.OPENROUTER_API_KEY);
   return false;
+}
+
+function defaultRuntime(provider: AiProvider): RuntimeProvider {
+  return {
+    provider,
+    model: PROVIDER_CONFIG[provider].model,
+    role: PROVIDER_CONFIG[provider].role,
+    apiKey:
+      provider === 'gemini'
+        ? process.env.GEMINI_API_KEY || null
+        : provider === 'groq'
+          ? process.env.GROQ_API_KEY || null
+          : provider === 'openrouter'
+            ? process.env.OPENROUTER_API_KEY || null
+            : null,
+    routingSource: 'default'
+  };
+}
+
+function runtimeConfigured(runtime: RuntimeProvider): boolean {
+  if (runtime.provider === 'cloudflare') return Boolean(getWorkersAiBinding());
+  return Boolean(runtime.apiKey);
+}
+
+async function runtimeProviders(input: {
+  task: AiTask;
+  sensitivity: AiSensitivity;
+  institutionId?: string;
+  feature?: AiFeature;
+}): Promise<RuntimeProvider[]> {
+  if (input.institutionId && input.feature) {
+    try {
+      const routing = await getAiRuntimeRouting({
+        institutionId: input.institutionId,
+        feature: input.feature,
+        sensitivity: input.sensitivity
+      });
+
+      if (routing.managed) {
+        return routing.providers.map(item => ({
+          provider: item.provider,
+          model: item.model,
+          role: PROVIDER_CONFIG[item.provider].role,
+          apiKey: item.apiKey,
+          aiLevel: item.aiLevel,
+          routingSource: 'admin' as const
+        }));
+      }
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: 'totalarc.ai.admin_routing_unavailable',
+          feature: input.feature,
+          institutionId: input.institutionId,
+          message: error instanceof Error ? error.message : 'unknown'
+        })
+      );
+    }
+  }
+
+  return providerOrder(input.task, input.sensitivity).map(defaultRuntime);
 }
 
 function providerCooldownRemainingMs(provider: AiProvider): number {
@@ -224,16 +297,17 @@ function parseOpenAiText(data: Record<string, unknown>): string {
 }
 
 async function callGemini(
+  runtime: RuntimeProvider,
   systemPrompt: string,
   prompt: string,
   temperature: number,
   maxOutputTokens: number,
   requireJson: boolean
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = runtime.apiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) throw new ProviderError('Gemini API key is not configured');
 
-  const model = PROVIDER_CONFIG.gemini.model;
+  const model = runtime.model || PROVIDER_CONFIG.gemini.model;
   const url =
     'https://generativelanguage.googleapis.com/v1beta/models/' +
     encodeURIComponent(model) +
@@ -285,6 +359,7 @@ async function callGemini(
 }
 
 async function callOpenAiCompatible(
+  runtime: RuntimeProvider,
   provider: 'groq' | 'openrouter',
   systemPrompt: string,
   prompt: string,
@@ -293,7 +368,9 @@ async function callOpenAiCompatible(
   requireJson: boolean
 ): Promise<string> {
   const isGroq = provider === 'groq';
-  const apiKey = isGroq ? process.env.GROQ_API_KEY : process.env.OPENROUTER_API_KEY;
+  const apiKey =
+    runtime.apiKey ||
+    (isGroq ? process.env.GROQ_API_KEY : process.env.OPENROUTER_API_KEY);
 
   if (!apiKey) throw new ProviderError(provider + ' API key is not configured');
 
@@ -310,7 +387,7 @@ async function callOpenAiCompatible(
   }
 
   const body: Record<string, unknown> = {
-    model: PROVIDER_CONFIG[provider].model,
+    model: runtime.model || PROVIDER_CONFIG[provider].model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt }
@@ -423,6 +500,7 @@ function extractWorkersAiText(result: unknown): string | null {
 }
 
 async function callCloudflare(
+  runtime: RuntimeProvider,
   systemPrompt: string,
   prompt: string,
   temperature: number,
@@ -433,7 +511,7 @@ async function callCloudflare(
     throw new ProviderError('Cloudflare Workers AI binding is not available');
   }
 
-  const result = await ai.run(PROVIDER_CONFIG.cloudflare.model, {
+  const result = await ai.run(runtime.model || PROVIDER_CONFIG.cloudflare.model, {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt }
@@ -453,13 +531,14 @@ async function callCloudflare(
 }
 
 async function callProvider(
-  provider: AiProvider,
+  runtime: RuntimeProvider,
   systemPrompt: string,
   prompt: string,
   temperature: number,
   maxOutputTokens: number,
   requireJson: boolean
 ): Promise<string> {
+  const provider = runtime.provider;
   const cooldownRemaining = providerCooldownRemainingMs(provider);
   if (cooldownRemaining > 0) {
     throw new ProviderError(
@@ -471,12 +550,13 @@ async function callProvider(
 
   try {
     if (provider === 'cloudflare') {
-      return await callCloudflare(systemPrompt, prompt, temperature, maxOutputTokens);
+      return await callCloudflare(runtime, systemPrompt, prompt, temperature, maxOutputTokens);
     }
     if (provider === 'gemini') {
-      return await callGemini(systemPrompt, prompt, temperature, maxOutputTokens, requireJson);
+      return await callGemini(runtime, systemPrompt, prompt, temperature, maxOutputTokens, requireJson);
     }
     return await callOpenAiCompatible(
+      runtime,
       provider,
       systemPrompt,
       prompt,
@@ -528,7 +608,7 @@ export async function probeAiProviders(): Promise<AiProviderProbe[]> {
     try {
       await withRetry(() =>
         callProvider(
-          provider,
+          defaultRuntime(provider),
           'You are a Total ARC production connectivity probe. Reply briefly.',
           'Return the word OK.',
           0,
@@ -578,7 +658,12 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
   const requestId = crypto.randomUUID();
   const start = Date.now();
   const sensitivity = request.sensitivity || DEFAULT_SENSITIVITY;
-  const providers = providerOrder(request.task, sensitivity);
+  const providers = await runtimeProviders({
+    task: request.task,
+    sensitivity,
+    institutionId: request.institutionId,
+    feature: request.feature
+  });
   const attemptedProviders: AiProvider[] = [];
   const temperature = Math.min(1, Math.max(0, request.temperature ?? 0.2));
   const maxOutputTokens = Math.min(
@@ -591,8 +676,9 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
   let totalRedactions = 0;
   let lastError: unknown;
 
-  for (const provider of providers) {
-    if (!configured(provider)) continue;
+  for (const runtime of providers) {
+    const provider = runtime.provider;
+    if (!runtimeConfigured(runtime)) continue;
 
     attemptedProviders.push(provider);
 
@@ -610,7 +696,7 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
     try {
       const text = await withRetry(() =>
         callProvider(
-          provider,
+          runtime,
           systemResult.text,
           promptResult.text,
           temperature,
@@ -629,7 +715,7 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
           task: request.task,
           sensitivity,
           provider,
-          model: PROVIDER_CONFIG[provider].model,
+          model: runtime.model,
           attemptedProviders,
           fallbackUsed: attemptedProviders.length > 1,
           redactions,
@@ -641,11 +727,13 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
         requestId,
         text,
         provider,
-        model: PROVIDER_CONFIG[provider].model,
+        model: runtime.model,
         attemptedProviders,
         fallbackUsed: attemptedProviders.length > 1,
         redactions,
-        durationMs
+        durationMs,
+        aiLevel: runtime.aiLevel,
+        routingSource: runtime.routingSource
       };
     } catch (error) {
       lastError = error;
@@ -662,7 +750,7 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
     }
   }
 
-  const configuredProviders = providers.filter(configured);
+  const configuredProviders = providers.filter(runtimeConfigured);
   const reason =
     configuredProviders.length === 0
       ? 'No eligible AI provider is configured for sensitivity=' + sensitivity
