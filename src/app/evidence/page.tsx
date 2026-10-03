@@ -4,10 +4,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
-  Archive,
+  Arsipkan,
   CheckCircle2,
   Download,
-  FileArchive,
+  FileArsipkan,
   FileCheck,
   FilePlus2,
   Fingerprint,
@@ -64,13 +64,76 @@ function tone(value: string) {
   if (['Active', 'Accepted', 'Verified', 'Internal'].includes(value)) {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   }
-  if (['Restricted', 'Archived'].includes(value)) {
+  if (['Restricted', 'Arsipkand'].includes(value)) {
     return 'border-rose-200 bg-rose-50 text-rose-700';
   }
   if (['Confidential', 'Pending'].includes(value)) {
     return 'border-amber-200 bg-amber-50 text-amber-700';
   }
   return 'border-slate-200 bg-slate-50 text-slate-600';
+}
+
+const STATUS_LABEL_ID: Record<string, string> = {
+  Active: 'Aktif',
+  Arsipkand: 'Diarsipkan',
+  Accepted: 'Diterima',
+  Verified: 'Terverifikasi',
+  Pending: 'Menunggu'
+};
+
+const SENSITIVITY_LABEL_ID: Record<string, string> = {
+  Public: 'Publik',
+  Internal: 'Internal',
+  Confidential: 'Rahasia',
+  Restricted: 'Terbatas'
+};
+
+const ENTITY_TYPE_LABEL_ID: Record<string, string> = {
+  WORKPAPER_REVIEW: 'Reviu Kertas Kerja',
+  WORKPAPER_EVIDENCE: 'Indeks Bukti Kertas Kerja',
+  TOD: 'Test of Design (ToD)',
+  TOE: 'Test of Effectiveness (ToE)',
+  TOE_SAMPLE: 'Sampel ToE',
+  SAMPLING_PLAN: 'Rencana Sampling',
+  PBC_REQUEST: 'Permintaan PBC',
+  SUB_CERTIFICATION: 'Sub-Sertifikasi',
+  ATTESTATION: 'Atestasi Manajemen',
+  EVIDENCE_PACK: 'Paket Bukti',
+  DEFICIENCY: 'Defisiensi Pengendalian',
+  MAP: 'Management Action Plan (MAP)',
+  CONTROL: 'Pengendalian',
+  RISK: 'Risiko',
+  PROCESS: 'Proses Bisnis',
+  SCOPE: 'Scope ICOFR',
+  TESTING_PLAN_ITEM: 'Item Rencana Pengujian'
+};
+
+function statusLabel(value: string) {
+  return STATUS_LABEL_ID[value] || value;
+}
+
+function sensitivityLabel(value: string) {
+  return SENSITIVITY_LABEL_ID[value] || value;
+}
+
+function retentionLabel(value: string) {
+  if (value === 'Custom') return 'Kustom';
+  if (value === 'Permanent') return 'Permanen';
+  const years = value.match(/^(\d+) Years?$/);
+  if (years) return years[1] + ' Tahun';
+  const months = value.match(/^(\d+) Months?$/);
+  if (months) return months[1] + ' Bulan';
+  return value;
+}
+
+function entityTypeLabel(value: string) {
+  return ENTITY_TYPE_LABEL_ID[value] || value;
+}
+
+function relationshipLabel(value: string) {
+  if (value === 'SUPPORTS') return 'Mendukung';
+  if (value === 'BACKS_INDEX_ITEM') return 'Mendukung Item Indeks';
+  return value;
 }
 
 export default function EvidenceRepositoryPage() {
@@ -104,7 +167,7 @@ export default function EvidenceRepositoryPage() {
         cache: force ? 'no-store' : 'default'
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Evidence repository unavailable.');
+      if (!response.ok) throw new Error(body.error || 'Repositori bukti tidak tersedia.');
       setData(body);
 
       const currentId =
@@ -131,7 +194,7 @@ export default function EvidenceRepositoryPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Evidence repository unavailable.');
+      setError(err instanceof Error ? err.message : 'Repositori bukti tidak tersedia.');
     } finally {
       setLoading(false);
     }
@@ -181,12 +244,12 @@ export default function EvidenceRepositoryPage() {
         body: JSON.stringify(payload)
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Evidence action failed.');
+      if (!response.ok) throw new Error(body.error || 'Tindakan pada bukti gagal.');
       setMessage(success);
       await load(true);
       return body;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Evidence action failed.');
+      setError(err instanceof Error ? err.message : 'Tindakan pada bukti gagal.');
       return null;
     } finally {
       setSaving(false);
@@ -196,7 +259,7 @@ export default function EvidenceRepositoryPage() {
   const upload = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!file) {
-      setError('Select a real evidence file before uploading.');
+      setError('Pilih file bukti yang valid sebelum mengunggah.');
       return;
     }
 
@@ -215,13 +278,13 @@ export default function EvidenceRepositoryPage() {
         body: form
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Evidence upload failed.');
+      if (!response.ok) throw new Error(body.error || 'Unggah bukti gagal.');
 
       setSelectedDocumentId(body.documentId);
       setMessage(
         body.linkWarning
-          ? `Evidence stored as ${body.evidenceId} v${body.versionNo}. File is safe in the repository, but target linking needs attention: ${body.linkWarning}`
-          : `Evidence stored as ${body.evidenceId} v${body.versionNo}; SHA-256 ${body.sha256.slice(0, 16)}…`
+          ? `Bukti disimpan sebagai ${body.evidenceId} v${body.versionNo}. File aman di repositori, tetapi pengaitan ke target memerlukan perhatian: ${body.linkWarning}`
+          : `Bukti disimpan sebagai ${body.evidenceId} v${body.versionNo}; SHA-256 ${body.sha256.slice(0, 16)}…`
       );
       setFile(null);
       if (fileRef.current) fileRef.current.value = '';
@@ -238,7 +301,7 @@ export default function EvidenceRepositoryPage() {
       }));
       await load(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Evidence upload failed.');
+      setError(err instanceof Error ? err.message : 'Unggah bukti gagal.');
     } finally {
       setSaving(false);
     }
@@ -297,13 +360,13 @@ export default function EvidenceRepositoryPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-cyan-700">
-              <FileArchive className="h-4 w-4" /> Repositori Evidence Terpusat
+              <FileArsipkan className="h-4 w-4" /> Repositori Bukti Terpusat
             </div>
             <h1 className="mt-1 text-2xl font-black text-slate-900">
-              File Evidence, Version Control, Integritas Dokumen & Retensi
+              File Bukti, Kontrol Versi, Integritas SHA-256 & Retensi
             </h1>
             <p className="mt-1 max-w-5xl text-xs leading-5 text-slate-500">
-              Simpan file evidence aktual, kelola riwayat versi yang tidak dapat diubah, kaitkan versi evidence ke record assurance,
+              Simpan file bukti aktual, kelola riwayat versi yang tidak dapat diubah, kaitkan versi bukti ke catatan assurance,
               verifikasi integritas dokumen sebelum digunakan atau diunduh, serta kelola sensitivitas, retensi, dan legal hold.
               SHA-256 digunakan sebagai sidik jari digital untuk memastikan file tetap identik dengan versi yang tersimpan.
             </p>
@@ -314,17 +377,17 @@ export default function EvidenceRepositoryPage() {
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-[10px] font-bold text-slate-600 disabled:opacity-50"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Muat Ulang
           </button>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-bold">
-          <Link href="/icofr/sampling-evidence" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Sampling & Evidence</Link>
-          <Link href="/icofr/workpaper-review" className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-700">Workpaper Review</Link>
+          <Link href="/icofr/sampling-evidence" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Sampling & Bukti</Link>
+          <Link href="/icofr/workpaper-review" className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-700">Reviu Kertas Kerja</Link>
           <Link href="/tod" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToD</Link>
           <Link href="/toe" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToE</Link>
-          <Link href="/certification" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Certification</Link>
-          <Link href="/icofr/reporting" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">PBC / Audit Reliance</Link>
+          <Link href="/certification" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Sertifikasi</Link>
+          <Link href="/icofr/reporting" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">PBC / Reliance Audit</Link>
         </div>
       </section>
 
@@ -341,29 +404,29 @@ export default function EvidenceRepositoryPage() {
 
       {!loading && data?.security?.authenticatedIdentityAvailable === false && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-4 text-amber-800">
-          <strong>Identity control status:</strong> repository versioning, institution scoping, SHA-256 integrity, audit metadata,
-          retention and legal hold are active. The current Total ARC role switcher is not authentication, so this module does not
-          present role labels as authoritative access control. Identity-backed RBAC must be implemented before production-sensitive
-          download authorization can be claimed.
+          <strong>Status kontrol identitas:</strong> versi repositori, pembatasan per institusi, integritas SHA-256, metadata audit,
+          retensi dan legal hold aktif. Pemilih peran Total ARC saat ini bukan mekanisme autentikasi, sehingga modul ini tidak
+          menyajikan label peran sebagai kontrol akses yang otoritatif. RBAC berbasis identitas harus diterapkan sebelum otorisasi
+          unduhan data produksi sensitif dapat dinyatakan memadai.
         </div>
       )}
 
       {!loading && !data?.institution ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-xs text-slate-500">
-          Register an institution before storing evidence.
+          Daftarkan institusi sebelum menyimpan bukti.
         </div>
       ) : (
         <>
           <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
             {[
-              ['Documents', data?.metrics?.documents || 0],
-              ['Active', data?.metrics?.active || 0],
-              ['Versions', data?.metrics?.versions || 0],
-              ['Linked', data?.metrics?.linkedDocuments || 0],
+              ['Dokumen', data?.metrics?.documents || 0],
+              ['Aktif', data?.metrics?.active || 0],
+              ['Versi', data?.metrics?.versions || 0],
+              ['Tertaut', data?.metrics?.linkedDocuments || 0],
               ['Legal hold', data?.metrics?.legalHold || 0],
-              ['Retention due', data?.metrics?.retentionDue || 0],
-              ['Archived', data?.metrics?.archived || 0],
-              ['Stored bytes', formatBytes(Number(data?.metrics?.totalBytes || 0))]
+              ['Jatuh Tempo Retensi', data?.metrics?.retentionDue || 0],
+              ['Diarsipkan', data?.metrics?.archived || 0],
+              ['Ukuran Tersimpan', formatBytes(Number(data?.metrics?.totalBytes || 0))]
             ].map(([label, value]) => (
               <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                 <div className="text-[8px] font-black uppercase tracking-wide text-slate-400">{label}</div>
@@ -382,10 +445,10 @@ export default function EvidenceRepositoryPage() {
                 <Upload className="h-4 w-4 text-brand-600" />
                 <div>
                   <h2 className="text-sm font-black text-slate-900">
-                    {uploadForm.documentId ? 'Upload New Version' : '1. Register & Upload Evidence'}
+                    {uploadForm.documentId ? 'Unggah Versi Baru' : '1. Daftarkan & Unggah Bukti'}
                   </h2>
                   <p className="text-[10px] text-slate-500">
-                    Actual file bytes are stored; duplicate current versions are blocked by SHA-256.
+                    File asli disimpan; versi aktif yang duplikat diblokir berdasarkan SHA-256.
                   </p>
                 </div>
               </div>
@@ -399,58 +462,58 @@ export default function EvidenceRepositoryPage() {
                   }}
                   className="text-[10px] font-bold text-slate-500"
                 >
-                  Switch to new document
+                  Beralih ke dokumen baru
                 </button>
               )}
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <label className="text-xs font-bold text-slate-700 xl:col-span-2">
-                Evidence title *
+                Judul bukti *
                 <input required value={uploadForm.title} onChange={e => setUploadForm({ ...uploadForm, title: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
               </label>
               <label className="text-xs font-bold text-slate-700">
-                Category *
+                Kategori *
                 <input required value={uploadForm.category} onChange={e => setUploadForm({ ...uploadForm, category: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
               </label>
               <label className="text-xs font-bold text-slate-700">
-                Sensitivity *
+                Sensitivitas *
                 <select value={uploadForm.sensitivity} onChange={e => setUploadForm({ ...uploadForm, sensitivity: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                  {(data?.sensitivities || []).map((item: string) => <option key={item}>{item}</option>)}
+                  {(data?.sensitivities || []).map((item: string) => <option key={item} value={item}>{sensitivityLabel(item)}</option>)}
                 </select>
               </label>
 
               <label className="text-xs font-bold text-slate-700 md:col-span-2 xl:col-span-4">
-                Description
+                Deskripsi
                 <textarea rows={2} value={uploadForm.description} onChange={e => setUploadForm({ ...uploadForm, description: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
               </label>
 
               <label className="text-xs font-bold text-slate-700">
-                Evidence owner *
+                Pemilik bukti *
                 <input required value={uploadForm.ownerName} onChange={e => setUploadForm({ ...uploadForm, ownerName: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
               </label>
               <label className="text-xs font-bold text-slate-700">
-                Source system / repository
-                <input value={uploadForm.sourceSystem} onChange={e => setUploadForm({ ...uploadForm, sourceSystem: e.target.value })} placeholder="ERP / Core Banking / GRC / shared drive" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
+                Sistem sumber / repositori
+                <input value={uploadForm.sourceSystem} onChange={e => setUploadForm({ ...uploadForm, sourceSystem: e.target.value })} placeholder="ERP / Core Banking / GRC / folder bersama" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
               </label>
               <label className="text-xs font-bold text-slate-700">
-                Retention class *
+                Kelas retensi *
                 <select value={uploadForm.retentionClass} onChange={e => setUploadForm({ ...uploadForm, retentionClass: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                  {(data?.retentionClasses || []).map((item: string) => <option key={item}>{item}</option>)}
+                  {(data?.retentionClasses || []).map((item: string) => <option key={item} value={item}>{retentionLabel(item)}</option>)}
                 </select>
               </label>
               <label className="text-xs font-bold text-slate-700">
-                Retention until {uploadForm.retentionClass === 'Custom' ? '*' : ''}
+                Retensi sampai {uploadForm.retentionClass === 'Custom' ? '*' : ''}
                 <input type="date" required={uploadForm.retentionClass === 'Custom'} value={uploadForm.retentionUntil} onChange={e => setUploadForm({ ...uploadForm, retentionUntil: e.target.value })} disabled={uploadForm.retentionClass !== 'Custom'} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal disabled:bg-slate-50" />
               </label>
 
               <label className="text-xs font-bold text-slate-700">
-                Uploaded by *
-                <input required value={uploadForm.uploadedBy} onChange={e => setUploadForm({ ...uploadForm, uploadedBy: e.target.value })} placeholder="Actual uploader name" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
+                Diunggah oleh *
+                <input required value={uploadForm.uploadedBy} onChange={e => setUploadForm({ ...uploadForm, uploadedBy: e.target.value })} placeholder="Nama pengunggah sebenarnya" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
               </label>
               <label className="text-xs font-bold text-slate-700 xl:col-span-2">
-                Version note {uploadForm.documentId ? '*' : ''}
-                <input required={Boolean(uploadForm.documentId)} value={uploadForm.versionNote} onChange={e => setUploadForm({ ...uploadForm, versionNote: e.target.value })} placeholder={uploadForm.documentId ? 'What changed and why' : 'Optional for version 1'} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
+                Catatan versi {uploadForm.documentId ? '*' : ''}
+                <input required={Boolean(uploadForm.documentId)} value={uploadForm.versionNote} onChange={e => setUploadForm({ ...uploadForm, versionNote: e.target.value })} placeholder={uploadForm.documentId ? 'Apa yang berubah dan alasannya' : 'Opsional untuk versi 1'} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
               </label>
               <label className="flex items-center gap-2 self-end rounded-xl border border-slate-200 p-3 text-xs font-bold text-slate-700">
                 <input type="checkbox" checked={uploadForm.legalHold} onChange={e => setUploadForm({ ...uploadForm, legalHold: e.target.checked })} />
@@ -458,7 +521,7 @@ export default function EvidenceRepositoryPage() {
               </label>
 
               <label className="text-xs font-bold text-slate-700 md:col-span-2 xl:col-span-4">
-                Evidence file * · max {formatBytes(Number(data?.limits?.maxFileBytes || 0))}
+                File bukti * · maks. {formatBytes(Number(data?.limits?.maxFileBytes || 0))}
                 <input
                   ref={fileRef}
                   type="file"
@@ -468,50 +531,52 @@ export default function EvidenceRepositoryPage() {
                   className="mt-1 block w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-normal"
                 />
                 <span className="mt-1 block text-[9px] font-normal text-slate-400">
-                  Allowed: {(data?.limits?.allowedExtensions || []).join(', ')}. Macro-enabled/executable formats are intentionally rejected.
+                  Diizinkan: {(data?.limits?.allowedExtensions || []).join(', ')}. Format ber-macro/dapat dieksekusi ditolak demi keamanan.
                 </span>
               </label>
             </div>
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Optional assurance link on upload</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Tautan assurance opsional saat unggah</div>
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <label className="text-xs font-bold text-slate-700">
-                  Target type
+                  Jenis target
                   <select
                     value={uploadForm.entityType}
                     onChange={e => setUploadForm({ ...uploadForm, entityType: e.target.value, entityId: '' })}
                     className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
                   >
-                    <option value="">No link now</option>
-                    {Array.from(new Set((data?.linkTargets || []).map((item: any) => item.entityType))).map((item: any) => <option key={String(item)}>{String(item)}</option>)}
+                    <option value="">Belum ditautkan</option>
+                    {Array.from(new Set((data?.linkTargets || []).map((item: any) => item.entityType))).map((item: any) => <option key={String(item)} value={String(item)}>{entityTypeLabel(String(item))}</option>)}
                   </select>
                 </label>
                 <label className="text-xs font-bold text-slate-700 xl:col-span-2">
-                  Target record
+                  Catatan target
                   <select value={uploadForm.entityId} disabled={!uploadForm.entityType} onChange={e => setUploadForm({ ...uploadForm, entityId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal disabled:bg-slate-100">
-                    <option value="">Select target</option>
+                    <option value="">Pilih target</option>
                     {uploadTargets.map((item: any) => <option key={item.entityType + item.entityId} value={item.entityId}>{item.label}</option>)}
                   </select>
                 </label>
                 <label className="text-xs font-bold text-slate-700">
-                  Relationship
-                  <input value={uploadForm.relationship} onChange={e => setUploadForm({ ...uploadForm, relationship: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" />
+                  Hubungan
+                  <select value={uploadForm.relationship} onChange={e => setUploadForm({ ...uploadForm, relationship: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal">
+                    <option value="SUPPORTS">{relationshipLabel('SUPPORTS')}</option>
+                  </select>
                 </label>
                 {uploadForm.entityType === 'WORKPAPER_REVIEW' && (
                   <>
                     <label className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 p-3 text-[10px] font-bold text-violet-700">
                       <input type="checkbox" checked={uploadForm.syncWorkpaperIndex} onChange={e => setUploadForm({ ...uploadForm, syncWorkpaperIndex: e.target.checked })} />
-                      Also create workpaper evidence-index item
+                      Juga buat item indeks bukti kertas kerja
                     </label>
                     {uploadForm.syncWorkpaperIndex && (
                       <>
                         <label className="text-xs font-bold text-slate-700">
-                          Workpaper evidence type *
+                          Jenis bukti kertas kerja *
                           <input value={uploadForm.workpaperEvidenceType} onChange={e => setUploadForm({ ...uploadForm, workpaperEvidenceType: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" />
                         </label>
                         <label className="text-xs font-bold text-slate-700">
-                          Evidence owner *
+                          Pemilik bukti *
                           <input value={uploadForm.workpaperEvidenceOwner || uploadForm.ownerName} onChange={e => setUploadForm({ ...uploadForm, workpaperEvidenceOwner: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" />
                         </label>
                       </>
@@ -523,7 +588,7 @@ export default function EvidenceRepositoryPage() {
 
             <div className="mt-4 flex justify-end">
               <button disabled={saving || !file} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-xs font-black text-white disabled:opacity-40">
-                <FilePlus2 className="h-4 w-4" /> {saving ? 'Storing…' : uploadForm.documentId ? 'Store New Version' : 'Store Evidence'}
+                <FilePlus2 className="h-4 w-4" /> {saving ? 'Menyimpan…' : uploadForm.documentId ? 'Simpan Versi Baru' : 'Simpan Bukti'}
               </button>
             </div>
           </form>
@@ -532,12 +597,12 @@ export default function EvidenceRepositoryPage() {
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-sm font-black text-slate-900">Evidence Register</h2>
-                  <p className="mt-1 text-[10px] text-slate-500">Institution-scoped documents and current versions.</p>
+                  <h2 className="text-sm font-black text-slate-900">Register Bukti</h2>
+                  <p className="mt-1 text-[10px] text-slate-500">Dokumen per institusi beserta versi aktifnya.</p>
                 </div>
                 <select value={filter} onChange={e => setFilter(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px]">
                   <option>Active</option>
-                  <option>Archived</option>
+                  <option>Arsipkand</option>
                   <option>Legal Hold</option>
                   <option>All</option>
                 </select>
@@ -546,7 +611,7 @@ export default function EvidenceRepositoryPage() {
               <div className="mt-4 space-y-2">
                 {filteredDocuments.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
-                    No evidence documents for this filter.
+                    Tidak ada dokumen bukti untuk filter ini.
                   </div>
                 ) : (
                   filteredDocuments.map((item: any) => (
@@ -561,12 +626,12 @@ export default function EvidenceRepositoryPage() {
                           <div className="font-mono text-[10px] font-black text-cyan-700">{item.evidenceId}</div>
                           <div className="truncate text-xs font-black text-slate-900">{item.title}</div>
                           <div className="mt-1 text-[9px] text-slate-500">
-                            v{item.currentVersion?.versionNo || '—'} · {item.currentVersion ? formatBytes(Number(item.currentVersion.sizeBytes || 0)) : 'No file'} · {item.ownerName}
+                            v{item.currentVersion?.versionNo || '—'} · {item.currentVersion ? formatBytes(Number(item.currentVersion.sizeBytes || 0)) : 'Tidak ada file'} · {item.ownerName}
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-1">
-                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(item.status)}`}>{item.status}</span>
-                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(item.sensitivity)}`}>{item.sensitivity}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(item.status)}`}>{statusLabel(item.status)}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(item.sensitivity)}`}>{sensitivityLabel(item.sensitivity)}</span>
                           {item.legalHold && <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[9px] font-bold text-rose-700">LEGAL HOLD</span>}
                         </div>
                       </div>
@@ -583,27 +648,27 @@ export default function EvidenceRepositoryPage() {
                     <div className="font-mono text-[10px] font-black text-cyan-700">{selectedDocument.evidenceId}</div>
                     <h2 className="text-lg font-black text-slate-900">{selectedDocument.title}</h2>
                     <div className="mt-1 flex flex-wrap gap-1.5">
-                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(selectedDocument.status)}`}>{selectedDocument.status}</span>
-                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(selectedDocument.sensitivity)}`}>{selectedDocument.sensitivity}</span>
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold text-slate-600">{selectedDocument.retentionClass}</span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(selectedDocument.status)}`}>{statusLabel(selectedDocument.status)}</span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${tone(selectedDocument.sensitivity)}`}>{sensitivityLabel(selectedDocument.sensitivity)}</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold text-slate-600">{retentionLabel(selectedDocument.retentionClass)}</span>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {selectedDocument.status === 'Active' && (
                       <button type="button" onClick={() => startNewVersion(selectedDocument)} className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-[10px] font-bold text-brand-700">
-                        <Upload className="h-3.5 w-3.5" /> New version
+                        <Upload className="h-3.5 w-3.5" /> Versi baru
                       </button>
                     )}
                     {selectedDocument.status === 'Active' && !selectedDocument.legalHold && (
                       <button
                         type="button"
                         onClick={() => {
-                          const reason = window.prompt('Documented archive reason') || '';
-                          if (reason) void post({ actionType: 'ARCHIVE', documentId: selectedDocument.id, reason }, 'Evidence document archived. Binary versions remain preserved.');
+                          const reason = window.prompt('Alasan pengarsipan yang terdokumentasi') || '';
+                          if (reason) void post({ actionType: 'ARCHIVE', documentId: selectedDocument.id, reason }, 'Dokumen bukti telah diarsipkan. Seluruh versi file tetap dipertahankan.');
                         }}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-600"
                       >
-                        <Archive className="h-3.5 w-3.5" /> Archive
+                        <Arsipkan className="h-3.5 w-3.5" /> Arsipkan
                       </button>
                     )}
                   </div>
@@ -611,7 +676,7 @@ export default function EvidenceRepositoryPage() {
 
                 <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
                   <div>
-                    <h3 className="text-xs font-black text-slate-800">Version History</h3>
+                    <h3 className="text-xs font-black text-slate-800">Riwayat Versi</h3>
                     <div className="mt-2 space-y-2">
                       {(selectedDocument.versions || []).map((version: any) => (
                         <div key={version.id} className="rounded-xl border border-slate-200 p-3">
@@ -621,7 +686,7 @@ export default function EvidenceRepositoryPage() {
                                 v{version.versionNo} · {version.fileName}
                               </div>
                               <div className="mt-1 text-[9px] text-slate-500">
-                                {formatBytes(Number(version.sizeBytes || 0))} · {version.mimeType} · uploaded by {version.uploadedBy}
+                                {formatBytes(Number(version.sizeBytes || 0))} · {version.mimeType} · diunggah oleh {version.uploadedBy}
                               </div>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <span
@@ -653,7 +718,7 @@ export default function EvidenceRepositoryPage() {
                               </div>
                               {version.versionNote && <div className="mt-1 text-[9px] text-slate-600">Catatan perubahan: {version.versionNote}</div>}
                             </div>
-                            {version.isCurrent && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[8px] font-black text-emerald-700">CURRENT</span>}
+                            {version.isCurrent && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[8px] font-black text-emerald-700">VERSI AKTIF</span>}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             <a href={`/api/evidence/download?versionId=${encodeURIComponent(version.id)}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[9px] font-bold text-slate-600">
@@ -696,27 +761,27 @@ export default function EvidenceRepositoryPage() {
                   <form
                     onSubmit={event => {
                       event.preventDefault();
-                      void post({ actionType: 'UPDATE_GOVERNANCE', ...governanceForm }, 'Evidence governance metadata updated.');
+                      void post({ actionType: 'UPDATE_GOVERNANCE', ...governanceForm }, 'Metadata tata kelola bukti diperbarui.');
                     }}
                   >
-                    <h3 className="text-xs font-black text-slate-800">Governance Metadata</h3>
+                    <h3 className="text-xs font-black text-slate-800">Metadata Tata Kelola</h3>
                     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <label className="text-[10px] font-bold text-slate-700 sm:col-span-2">Title<input required value={governanceForm.title} onChange={e => setGovernanceForm({ ...governanceForm, title: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
-                      <label className="text-[10px] font-bold text-slate-700 sm:col-span-2">Description<textarea rows={2} value={governanceForm.description} onChange={e => setGovernanceForm({ ...governanceForm, description: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
-                      <label className="text-[10px] font-bold text-slate-700">Category<input required value={governanceForm.category} onChange={e => setGovernanceForm({ ...governanceForm, category: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
-                      <label className="text-[10px] font-bold text-slate-700">Owner<input required value={governanceForm.ownerName} onChange={e => setGovernanceForm({ ...governanceForm, ownerName: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
-                      <label className="text-[10px] font-bold text-slate-700">Sensitivity<select value={governanceForm.sensitivity} onChange={e => setGovernanceForm({ ...governanceForm, sensitivity: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal">{(data?.sensitivities || []).map((item: string) => <option key={item}>{item}</option>)}</select></label>
-                      <label className="text-[10px] font-bold text-slate-700">Retention<select value={governanceForm.retentionClass} onChange={e => setGovernanceForm({ ...governanceForm, retentionClass: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal">{(data?.retentionClasses || []).map((item: string) => <option key={item}>{item}</option>)}</select></label>
-                      <label className="text-[10px] font-bold text-slate-700">Retention until<input type="date" disabled={governanceForm.retentionClass !== 'Custom'} value={governanceForm.retentionUntil} onChange={e => setGovernanceForm({ ...governanceForm, retentionUntil: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal disabled:bg-slate-50" /></label>
-                      <label className="text-[10px] font-bold text-slate-700">Source system<input value={governanceForm.sourceSystem} onChange={e => setGovernanceForm({ ...governanceForm, sourceSystem: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
+                      <label className="text-[10px] font-bold text-slate-700 sm:col-span-2">Judul<input required value={governanceForm.title} onChange={e => setGovernanceForm({ ...governanceForm, title: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
+                      <label className="text-[10px] font-bold text-slate-700 sm:col-span-2">Deskripsi<textarea rows={2} value={governanceForm.description} onChange={e => setGovernanceForm({ ...governanceForm, description: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
+                      <label className="text-[10px] font-bold text-slate-700">Kategori<input required value={governanceForm.category} onChange={e => setGovernanceForm({ ...governanceForm, category: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
+                      <label className="text-[10px] font-bold text-slate-700">Pemilik<input required value={governanceForm.ownerName} onChange={e => setGovernanceForm({ ...governanceForm, ownerName: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
+                      <label className="text-[10px] font-bold text-slate-700">Sensitivitas<select value={governanceForm.sensitivity} onChange={e => setGovernanceForm({ ...governanceForm, sensitivity: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal">{(data?.sensitivities || []).map((item: string) => <option key={item} value={item}>{sensitivityLabel(item)}</option>)}</select></label>
+                      <label className="text-[10px] font-bold text-slate-700">Retensi<select value={governanceForm.retentionClass} onChange={e => setGovernanceForm({ ...governanceForm, retentionClass: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal">{(data?.retentionClasses || []).map((item: string) => <option key={item} value={item}>{retentionLabel(item)}</option>)}</select></label>
+                      <label className="text-[10px] font-bold text-slate-700">Retensi sampai<input type="date" disabled={governanceForm.retentionClass !== 'Custom'} value={governanceForm.retentionUntil} onChange={e => setGovernanceForm({ ...governanceForm, retentionUntil: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal disabled:bg-slate-50" /></label>
+                      <label className="text-[10px] font-bold text-slate-700">Sistem sumber<input value={governanceForm.sourceSystem} onChange={e => setGovernanceForm({ ...governanceForm, sourceSystem: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 font-normal" /></label>
                       <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 text-[10px] font-bold text-slate-700 sm:col-span-2">
                         <input type="checkbox" checked={governanceForm.legalHold} onChange={e => setGovernanceForm({ ...governanceForm, legalHold: e.target.checked })} />
-                        Legal hold — prevents archive operation
+                        Legal hold — mencegah proses pengarsipan
                       </label>
                     </div>
                     <div className="mt-3 flex justify-end">
                       <button disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-black text-white disabled:opacity-40">
-                        <Save className="h-3.5 w-3.5" /> Save governance
+                        <Save className="h-3.5 w-3.5" /> Simpan tata kelola
                       </button>
                     </div>
                   </form>
@@ -724,7 +789,7 @@ export default function EvidenceRepositoryPage() {
               </section>
             ) : (
               <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-xs text-slate-500">
-                Upload or select an evidence document.
+                Unggah atau pilih dokumen bukti.
               </section>
             )}
           </div>
@@ -734,9 +799,9 @@ export default function EvidenceRepositoryPage() {
               <div className="flex items-center gap-2">
                 <Link2 className="h-4 w-4 text-violet-600" />
                 <div>
-                  <h2 className="text-sm font-black text-slate-900">Assurance Traceability Links</h2>
+                  <h2 className="text-sm font-black text-slate-900">Tautan Ketertelusuran Assurance</h2>
                   <p className="text-[10px] text-slate-500">
-                    Links are version-pinned so later document revisions do not silently change historical workpaper evidence.
+                    Tautan dikunci ke versi tertentu agar revisi dokumen berikutnya tidak mengubah bukti kertas kerja historis secara diam-diam.
                   </p>
                 </div>
               </div>
@@ -752,7 +817,7 @@ export default function EvidenceRepositoryPage() {
                         versionId: selectedDocument.currentVersionId,
                         ...linkForm
                       },
-                      'Evidence version linked to assurance record.'
+                      'Versi bukti berhasil ditautkan ke catatan assurance.'
                     );
                     if (result) {
                       setLinkForm({
@@ -768,40 +833,42 @@ export default function EvidenceRepositoryPage() {
                   }}
                   className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
                 >
-                  <div className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Add link for current version</div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Tambahkan tautan untuk versi aktif</div>
                   <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="text-xs font-bold text-slate-700">
-                      Target type *
+                      Jenis target *
                       <select required value={linkForm.entityType} onChange={e => setLinkForm({ ...linkForm, entityType: e.target.value, entityId: '' })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal">
-                        <option value="">Select type</option>
-                        {Array.from(new Set((data?.linkTargets || []).map((item: any) => item.entityType))).map((item: any) => <option key={String(item)}>{String(item)}</option>)}
+                        <option value="">Pilih jenis</option>
+                        {Array.from(new Set((data?.linkTargets || []).map((item: any) => item.entityType))).map((item: any) => <option key={String(item)} value={String(item)}>{entityTypeLabel(String(item))}</option>)}
                       </select>
                     </label>
                     <label className="text-xs font-bold text-slate-700">
-                      Relationship *
-                      <input required value={linkForm.relationship} onChange={e => setLinkForm({ ...linkForm, relationship: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" />
+                      Hubungan *
+                      <select required value={linkForm.relationship} onChange={e => setLinkForm({ ...linkForm, relationship: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal">
+                         <option value="SUPPORTS">{relationshipLabel('SUPPORTS')}</option>
+                       </select>
                     </label>
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      Target record *
+                      Catatan target *
                       <select required value={linkForm.entityId} disabled={!linkForm.entityType} onChange={e => setLinkForm({ ...linkForm, entityId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal disabled:bg-slate-100">
-                        <option value="">Select target</option>
+                        <option value="">Pilih target</option>
                         {linkTargets.map((item: any) => <option key={item.entityType + item.entityId} value={item.entityId}>{item.label}</option>)}
                       </select>
                     </label>
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      Link notes
+                      Catatan tautan
                       <textarea rows={2} value={linkForm.notes} onChange={e => setLinkForm({ ...linkForm, notes: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" />
                     </label>
                     {linkForm.entityType === 'WORKPAPER_REVIEW' && (
                       <>
                         <label className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 p-3 text-[10px] font-bold text-violet-700 sm:col-span-2">
                           <input type="checkbox" checked={linkForm.syncWorkpaperIndex} onChange={e => setLinkForm({ ...linkForm, syncWorkpaperIndex: e.target.checked })} />
-                          Create workpaper evidence-index item from this repository version
+                          Buat item indeks bukti kertas kerja dari versi repositori ini
                         </label>
                         {linkForm.syncWorkpaperIndex && (
                           <>
-                            <label className="text-xs font-bold text-slate-700">Evidence type *<input value={linkForm.evidenceType} onChange={e => setLinkForm({ ...linkForm, evidenceType: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" /></label>
-                            <label className="text-xs font-bold text-slate-700">Evidence owner *<input value={linkForm.evidenceOwner} onChange={e => setLinkForm({ ...linkForm, evidenceOwner: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" /></label>
+                            <label className="text-xs font-bold text-slate-700">Jenis bukti *<input value={linkForm.evidenceType} onChange={e => setLinkForm({ ...linkForm, evidenceType: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" /></label>
+                            <label className="text-xs font-bold text-slate-700">Pemilik bukti *<input value={linkForm.evidenceOwner} onChange={e => setLinkForm({ ...linkForm, evidenceOwner: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal" /></label>
                           </>
                         )}
                       </>
@@ -809,17 +876,17 @@ export default function EvidenceRepositoryPage() {
                   </div>
                   <div className="mt-3 flex justify-end">
                     <button disabled={saving || !linkForm.entityId} className="rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">
-                      Link evidence
+                      Tautkan bukti
                     </button>
                   </div>
                 </form>
 
                 <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Persisted links</div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Tautan tersimpan</div>
                   <div className="mt-3 space-y-2">
                     {(selectedDocument.links || []).length === 0 ? (
                       <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
-                        This evidence is not yet linked to an assurance record.
+                        Bukti ini belum ditautkan ke catatan assurance.
                       </div>
                     ) : (
                       (selectedDocument.links || []).map((item: any) => {
@@ -830,17 +897,17 @@ export default function EvidenceRepositoryPage() {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <div className="text-[10px] font-black text-slate-800">
-                                  {item.entityType} · {item.relationship}
+                                  {entityTypeLabel(item.entityType)} · {relationshipLabel(item.relationship)}
                                 </div>
                                 <div className="mt-1 text-[9px] text-slate-500">
-                                  {target?.label || item.entityId} · pinned to v{version?.versionNo || '—'}
+                                  {target?.label || item.entityId} · dikunci ke v{version?.versionNo || '—'}
                                 </div>
                                 {item.notes && <div className="mt-1 text-[9px] text-slate-600">{item.notes}</div>}
                               </div>
                               <button
                                 type="button"
                                 disabled={saving}
-                                onClick={() => window.confirm('Remove this evidence traceability link? The file and version remain preserved.') && void post({ actionType: 'UNLINK', id: item.id }, 'Evidence link removed; document and version preserved.')}
+                                onClick={() => window.confirm('Hapus tautan ketertelusuran bukti ini? File dan versinya tetap dipertahankan.') && void post({ actionType: 'UNLINK', id: item.id }, 'Tautan bukti dihapus; dokumen dan versi tetap dipertahankan.')}
                                 className="rounded-lg border border-rose-200 p-1.5 text-rose-600 disabled:opacity-40"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
