@@ -124,10 +124,20 @@ ckpn_id = str(ckpn_row["id"]) if ckpn_row else hid(iid, "ICOFR-BPM-2026", "P-05"
 ckpn_tags = json_tags(ckpn_row.get("tags")) if ckpn_row else {}
 ckpn_validation_status = str(ckpn_tags.get("sourceValidationStatus") or "")
 ckpn_status = str(ckpn_row.get("status") or "Draft") if ckpn_row else "Draft"
+supporting_validation = ckpn_tags.get("supportingDocumentAnalysis") or {}
+supporting_applied = (
+    isinstance(supporting_validation, dict)
+    and supporting_validation.get("status") == "VALIDATED_APPLIED"
+)
 
 # Human validation is authoritative and must survive source/master refreshes.
-if ckpn_validation_status == "USER_VALIDATED":
+if ckpn_validation_status == "USER_VALIDATED" or supporting_applied:
     ckpn_status = "Approved"
+    ckpn_tags["sourceValidationStatus"] = "USER_VALIDATED"
+    ckpn_tags["reviewRequired"] = False
+    if supporting_applied:
+        ckpn_tags.setdefault("sourceValidatedAt", supporting_validation.get("appliedAt"))
+        ckpn_tags.setdefault("sourceValidatedBy", supporting_validation.get("appliedBy"))
 elif ckpn_validation_status == "REJECTED_BY_USER":
     ckpn_status = "Rejected"
 elif ckpn_status not in ("Approved", "Rejected"):
@@ -458,10 +468,16 @@ SELECT
     if has_detail:
         process_tags = json_tags(process_row.get("tags"))
         rcm_validation = process_tags.get("rcmDerivedBpm") or {}
-        if (
-            not isinstance(rcm_validation, dict)
-            or rcm_validation.get("status") != "VALIDATED_APPLIED"
-        ):
+        supporting_validation = process_tags.get("supportingDocumentAnalysis") or {}
+        rcm_validated = (
+            isinstance(rcm_validation, dict)
+            and rcm_validation.get("status") == "VALIDATED_APPLIED"
+        )
+        supporting_validated = (
+            isinstance(supporting_validation, dict)
+            and supporting_validation.get("status") == "VALIDATED_APPLIED"
+        )
+        if not (rcm_validated or supporting_validated):
             raise RuntimeError(label + "_UNVALIDATED_DETAIL_DETECTED")
 
 scope_processes = rows(
