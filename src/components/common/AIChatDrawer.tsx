@@ -52,6 +52,26 @@ type ContextError = {
   message: string;
 };
 
+const SEVERITY_LABEL_ID: Record<string, string> = {
+  Critical: 'Kritis',
+  High: 'Tinggi',
+  Medium: 'Sedang',
+  Low: 'Rendah'
+};
+
+const FINDING_TYPE_LABEL_ID: Record<string, string> = {
+  'Control Design Gap': 'Kesenjangan Desain Pengendalian',
+  'Control Observation': 'Observasi Pengendalian',
+  'Segregation of Duties': 'Segregasi Tugas',
+  'Missing Control': 'Kontrol Belum Tersedia',
+  'Duplicate Control': 'Kontrol Duplikat',
+  'Automation Opportunity': 'Peluang Otomasi'
+};
+
+function findingTypeLabel(value: string) {
+  return FINDING_TYPE_LABEL_ID[value] || value;
+}
+
 export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [processes, setProcesses] = useState<ProcessOption[]>([]);
   const [selectedProcessId, setSelectedProcessId] = useState('');
@@ -333,7 +353,7 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           {aiMeta && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 flex items-center justify-between gap-3">
               <span>
-                Provider: <strong className="text-slate-800">{aiMeta.provider}</strong>
+                Penyedia: <strong className="text-slate-800">{aiMeta.provider}</strong>
                 {' · '}
                 {aiMeta.model}
                 {aiMeta.fallbackUsed ? ' · menggunakan fallback' : ''}
@@ -371,9 +391,9 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                               : 'bg-amber-50 text-amber-700 border-amber-200')
                       }
                     >
-                      {finding.severity}
+                      {SEVERITY_LABEL_ID[finding.severity] || finding.severity}
                     </span>
-                    <span className="text-[11px] font-semibold text-slate-500">{finding.type}</span>
+                    <span className="text-[11px] font-semibold text-slate-500">{findingTypeLabel(finding.type)}</span>
                   </div>
                   <h4 className="text-sm font-bold text-slate-900 mt-1.5">{finding.title}</h4>
                 </div>
