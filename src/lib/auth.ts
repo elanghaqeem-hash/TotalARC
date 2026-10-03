@@ -1339,6 +1339,7 @@ export async function loadSecurityAdministration(actorInstitutionId: string | nu
 export async function revokeManagedSession(input: {
   actorUserId: string;
   actorInstitutionId: string | null;
+  actorRole?: UserRole;
   sessionId: string;
 }) {
   const db = await ensureAuthSchema();
@@ -1357,17 +1358,24 @@ export async function revokeManagedSession(input: {
     throw new Error('SESSION_NOT_FOUND');
   }
 
+  const user = await first<AuthUserRow>(
+    db,
+    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
+    [String(session.userId)]
+  );
+  if (
+    input.actorRole === 'InstitutionAdmin' &&
+    (user?.role === 'Admin' || user?.role === 'InstitutionAdmin')
+  ) {
+    throw new Error('PRIVILEGED_SESSION_PROTECTED');
+  }
+
   await revokeSession(
     input.sessionId,
     'Session revoked by administrator',
     input.actorUserId
   );
 
-  const user = await first<AuthUserRow>(
-    db,
-    'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
-    [String(session.userId)]
-  );
   await writeAuthEvent(db, {
     userId: user?.id || String(session.userId || ''),
     institutionId: user?.institutionId || (session.institutionId ? String(session.institutionId) : null),
