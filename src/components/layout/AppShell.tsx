@@ -511,7 +511,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-            {currentUser.role === 'Admin' && institutionOptions.length > 0 && (
+            {currentUser.role === 'SystemAdmin' && institutionOptions.length > 0 && (
               <div className="relative min-w-0">
                 <button
                   type="button"
@@ -677,7 +677,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </button>
                       </div>
                     </div>
-                    {currentUser.role === 'Admin' && (
+                    {['SystemAdmin', 'Admin'].includes(currentUser.role) && (
                       <Link
                         href="/admin/security"
                         onClick={() => setAccountMenuOpen(false)}
@@ -687,7 +687,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         {copy.security}
                       </Link>
                     )}
-                    {currentUser.role === 'Admin' && (
+                    {currentUser.role === 'SystemAdmin' && (
                       <Link
                         href="/admin/ai-settings"
                         onClick={() => setAccountMenuOpen(false)}
@@ -796,7 +796,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <UserRound className="h-4 w-4" />
                   {copy.profile}
                 </Link>
-                {currentUser.role === 'Admin' && (
+                {currentUser.role === 'SystemAdmin' && (
                   <Link
                     href="/admin/ai-settings"
                     onClick={() => setMobileMenuOpen(false)}
