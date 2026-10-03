@@ -41,6 +41,71 @@ function normalizeSeverity(value: unknown): Finding['severity'] {
   return 'Medium';
 }
 
+const FINDING_TYPE_LABEL_ID: Record<string, string> = {
+  'Control Design Gap': 'Kesenjangan Desain Pengendalian',
+  'Control Observation': 'Observasi Pengendalian',
+  'Segregation of Duties': 'Segregasi Tugas',
+  'Automation Opportunity': 'Peluang Otomasi',
+  'Traceability Gap': 'Kesenjangan Ketertelusuran',
+  'Key-Control Logic': 'Logika Key Control',
+  'Missing Control': 'Kontrol Belum Tersedia',
+  'Duplicate Control': 'Kontrol Duplikat'
+};
+
+const LEGACY_TITLE_LABEL_ID: Record<string, string> = {
+  'Missing Controls for CKPN Calculation Accuracy': 'Kontrol untuk Akurasi Perhitungan CKPN Belum Tersedia',
+  'Concentration of Duties in CKPN Process': 'Konsentrasi Tugas dalam Proses CKPN',
+  'Limited Automation in CKPN Validation': 'Otomasi dalam Validasi CKPN Masih Terbatas',
+  'Lack of Audit Trail for CKPN Inputs': 'Jejak Audit atas Input CKPN Belum Memadai',
+  'Missing Control for Objective Evidence Verification': 'Kontrol Verifikasi Bukti Objektif Belum Tersedia'
+};
+
+function localizedFindingType(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return 'Observasi Pengendalian';
+  return FINDING_TYPE_LABEL_ID[value.trim()] || value.trim();
+}
+
+function localizedFindingTitle(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return 'Potensi observasi pengendalian';
+  return LEGACY_TITLE_LABEL_ID[value.trim()] || value.trim();
+}
+
+function likelyContainsEnglish(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const text = ' ' + value.toLowerCase().replace(/[^a-z0-9/ -]+/g, ' ') + ' ';
+  const englishMarkers = [
+    ' the ', ' and ', ' for ', ' with ', ' without ', ' no ', ' missing ', ' controls ',
+    ' control ', ' calculation ', ' accuracy ', ' assign ', ' separate ', ' roles ',
+    ' ensure ', ' validation ', ' lack ', ' evidence ', ' implement ', ' automated ',
+    ' manual ', ' review ', ' limited ', ' concentration ', ' duties ', ' traceability ',
+    ' audit ', ' trail ', ' inputs ', ' outputs ', ' against ', ' performed ', ' increasing '
+  ];
+  return englishMarkers.some(marker => text.includes(marker));
+}
+
+function outputNeedsLanguageRepair(parsed: Record<string, unknown>) {
+  const parts: string[] = [];
+  if (typeof parsed.analysisNote === 'string') parts.push(parsed.analysisNote);
+  if (Array.isArray(parsed.findings)) {
+    for (const raw of parsed.findings) {
+      if (!raw || typeof raw !== 'object') continue;
+      const item = raw as Record<string, unknown>;
+      for (const key of [
+        'type',
+        'title',
+        'category',
+        'description',
+        'recommendation',
+        'suggestedRisk',
+        'suggestedControl'
+      ]) {
+        if (typeof item[key] === 'string') parts.push(String(item[key]));
+      }
+    }
+  }
+  return likelyContainsEnglish(parts.join(' '));
+}
+
 function normalizeFindings(value: unknown): Finding[] {
   if (!Array.isArray(value)) return [];
 
@@ -48,10 +113,13 @@ function normalizeFindings(value: unknown): Finding[] {
     const item = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
     return {
       id: 'AI-FND-' + String(index + 1).padStart(3, '0'),
-      type: typeof item.type === 'string' ? item.type : 'Observasi Pengendalian',
+      type: localizedFindingType(item.type),
       severity: normalizeSeverity(item.severity),
-      title: typeof item.title === 'string' ? item.title : 'Potensi observasi pengendalian',
-      category: typeof item.category === 'string' ? item.category : 'Umum',
+      title: localizedFindingTitle(item.title),
+      category:
+        typeof item.category === 'string' && item.category.trim()
+          ? (item.category.trim() === 'General' ? 'Umum' : item.category.trim())
+          : 'Umum',
       description: typeof item.description === 'string' ? item.description : '',
       recommendation: typeof item.recommendation === 'string' ? item.recommendation : '',
       suggestedRisk: typeof item.suggestedRisk === 'string' ? item.suggestedRisk : '',
@@ -67,7 +135,7 @@ export async function POST(request: Request) {
     const institutionContext = await resolveInstitutionAccess(request);
     if (!institutionContext?.institution) {
       return NextResponse.json(
-        { error: 'Active institution is required.' },
+        { error: 'Institusi aktif diperlukan.' },
         { status: institutionContext ? 409 : 401 }
       );
     }
@@ -157,7 +225,44 @@ export async function POST(request: Request) {
       requireJson: true
     });
 
-    const parsed = parseJsonObject(result.text);
+    let parsed = parseJsonObject(result.text);
+    let languageRepairApplied = false;
+    let languageRepairProvider: string | null = null;
+
+    // Some providers may still return English even when the primary prompt asks
+    // for Indonesian. Detect that case and perform one translation-only pass.
+    // The repair pass is prohibited from changing facts, severity, counts, or
+    // recommendations; it may only translate user-visible narrative fields.
+    if (outputNeedsLanguageRepair(parsed)) {
+      try {
+        const languageRepair = await runAiGateway({
+          task: 'process_analysis',
+          sensitivity: analysisSensitivity,
+          systemPrompt: [
+            'Anda adalah penerjemah JSON untuk Total ARC.',
+            'Terjemahkan HANYA nilai teks yang terlihat pengguna ke Bahasa Indonesia.',
+            'Jangan menambah, menghapus, menyimpulkan, memperkuat, atau mengubah fakta apa pun.',
+            'Pertahankan struktur JSON, jumlah temuan, urutan temuan, dan severity persis seperti input.',
+            'Pertahankan singkatan resmi dan istilah yang perlu tetap asli seperti CKPN, ECL, PSAK, PD/LGD, NPV, ICOFR, ToD, ToE, ERP, dan nama sistem.',
+            'Field yang harus diterjemahkan bila berbahasa Inggris: analysisNote, type, title, category, description, recommendation, suggestedRisk, suggestedControl.',
+            'Kembalikan JSON saja.'
+          ].join(' '),
+          prompt:
+            'Terjemahkan JSON berikut ke Bahasa Indonesia tanpa mengubah substansi:\n' +
+            JSON.stringify(parsed),
+          temperature: 0,
+          maxOutputTokens: 4096,
+          requireJson: true
+        });
+
+        parsed = parseJsonObject(languageRepair.text);
+        languageRepairApplied = true;
+        languageRepairProvider = languageRepair.provider;
+      } catch (languageRepairError) {
+        console.warn('AI Indonesian language repair failed; using primary analysis output.', languageRepairError);
+      }
+    }
+
     const findings = normalizeFindings(parsed.findings);
     const analysisNote =
       typeof parsed.analysisNote === 'string'
@@ -198,7 +303,9 @@ export async function POST(request: Request) {
         attemptedProviders: result.attemptedProviders,
         fallbackUsed: result.fallbackUsed,
         redactions: result.redactions,
-        durationMs: result.durationMs
+        durationMs: result.durationMs,
+        languageRepairApplied,
+        languageRepairProvider
       }
     });
   } catch (error) {
