@@ -61,8 +61,12 @@ export async function GET(request: Request) {
     }
 
     const users = await listManagedUsers(admin.institutionId);
+    const visibleUsers =
+      admin.role === 'InstitutionAdmin'
+        ? users.filter(user => user.role !== 'Admin' && user.role !== 'InstitutionAdmin')
+        : users;
     return NextResponse.json(
-      { users },
+      { users: visibleUsers },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
