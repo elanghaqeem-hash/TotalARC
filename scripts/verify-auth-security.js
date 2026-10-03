@@ -37,6 +37,23 @@ const requirements = [
   ['src/lib/auth-security.ts', 'LIMIT 5'],
   ['src/lib/auth-security.ts', 'validatePasswordPolicy'],
   ['src/lib/auth-security.ts', 'revokeUserSessions'],
+  ['src/lib/auth-mfa.ts', 'CREATE TABLE IF NOT EXISTS AuthMfaCredential'],
+  ['src/lib/auth-mfa.ts', 'CREATE TABLE IF NOT EXISTS AuthMfaChallenge'],
+  ['src/lib/auth-mfa.ts', "'SystemAdmin'"],
+  ['src/lib/auth-mfa.ts', "'Admin'"],
+  ['src/lib/auth-mfa.ts', "'InternalAuditor'"],
+  ['src/lib/auth-mfa.ts', "'ICOFRCoordinator'"],
+  ['src/lib/auth-mfa.ts', "'Reviewer'"],
+  ['src/lib/auth-mfa.ts', "'Executive'"],
+  ['src/lib/auth-mfa.ts', 'verifyTotpLogin'],
+  ['src/lib/auth-mfa.ts', 'verifyPasskeyAuthentication'],
+  ['src/lib/auth-mfa.ts', 'verifyEmailOtp'],
+  ['src/lib/auth-mfa.ts', 'verifySsoMfaGateway'],
+  ['src/app/api/auth/mfa/route.ts', 'CONFIRM_TOTP_ENROLLMENT'],
+  ['src/app/api/auth/mfa/route.ts', 'BEGIN_PASSKEY_AUTHENTICATION'],
+  ['src/lib/auth.ts', 'LOGIN_SUCCESS_MFA'],
+  ['src/lib/auth-token.ts', 'mfaAt?: number'],
+  ['src/middleware.ts', 'isMfaRequiredForRole'],
   ['src/lib/auth.ts', 'registerAuthSession'],
   ['src/lib/auth.ts', 'assertPasswordNotReused'],
   ['src/lib/auth.ts', 'mustChangePassword = 1'],
@@ -81,7 +98,7 @@ for (const code of ['PASSWORD_POLICY', 'PASSWORD_REUSE']) {
 }
 
 console.log(
-  'Authentication security integrity verified: revocable D1 sessions, login rate limiting, forced password change, password history, profile security, and administrator session controls are present.'
+  'Authentication security integrity verified: mandatory MFA, revocable D1 sessions, login rate limiting, forced password change, password history, profile security, and administrator session controls are present.'
 );
 
 
