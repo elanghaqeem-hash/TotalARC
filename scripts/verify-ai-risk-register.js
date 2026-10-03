@@ -13,6 +13,13 @@ function requireText(path, value, label) {
   }
 }
 
+function forbidText(path, value, label) {
+  const content = read(path);
+  if (content.includes(value)) {
+    findings.push(label + ': unexpected legacy marker "' + value + '" in ' + path);
+  }
+}
+
 const route = 'src/app/api/risks/ai-suggestions/route.ts';
 requireText(route, 'resolveInstitutionAccess(request)', 'Active institution guard');
 requireText(route, 'BPM_SELECTION_REQUIRED', 'BPM selection required before AI');
@@ -41,10 +48,14 @@ requireText(persistence, "action: 'APPLY_SELECTION'", 'Selection audit');
 const ui = 'src/components/risks/AiRiskRegisterGenerator.tsx';
 requireText(ui, "Operational: 'Operasional'", 'Risk category localization');
 requireText(ui, "High: 'Tinggi'", 'Confidence localization');
-requireText(ui, 'AI Buat Register Risiko', 'AI risk entry point');
-requireText(ui, '— Pilih BPM sebelum membuat risiko dengan AI —', 'Empty BPM selection');
+requireText(ui, 'ARC AI · BPM ke Register Risiko', 'AI risk entry point');
+requireText(ui, 'Pilih BPM sebelum membuat risiko dengan AI', 'Empty BPM selection');
+requireText(ui, 'processPickerOpen', 'Searchable BPM picker state');
+requireText(ui, 'Cari CKPN, DPK, ITGC, kredit, treasury...', 'Searchable BPM picker input');
+requireText(ui, 'filteredProcesses.map', 'Searchable BPM result rendering');
 requireText(ui, 'disabled={!processId || generating}', 'Generate disabled before BPM selection');
 requireText(ui, 'Buat Risiko dengan AI', 'Generate action');
+forbidText(ui, '<select\n                  value={processId}', 'Legacy native BPM select removed');
 requireText(ui, 'Pilih semua', 'Category-level selection');
 requireText(ui, "'Buat ' + selected.size + ' Risiko Terpilih'", 'Selected risk creation action');
 requireText(ui, 'Draf / Belum Dinilai', 'Human assessment state');
