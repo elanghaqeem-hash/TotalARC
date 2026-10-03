@@ -1,0 +1,86 @@
+name: Production Integrity Audit V2
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  production-integrity-audit:
+    name: Production Integrity Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+      TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+    steps:
+      - name: Verify production ICOFR and RCM integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is not configured."
+            exit 1
+          fi
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+
+          probe_json() {
+            local name="$1"
+            local path="$2"
+            local expression="$3"
+            local output="/tmp/${name}.json"
+            local success=false
+
+            for attempt in $(seq 1 30); do
+              code="$(curl --silent --show-error --location --max-time 25                 --output "$output"                 --write-out "%{http_code}"                 --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"                 "$BASE_URL$path" || true)"
+              if [ "$code" = "200" ] && jq -e "$expression" "$output" >/dev/null 2>&1; then
+                success=true
+                break
+              fi
+              echo "$name not ready/passing yet (HTTP ${code:-unknown}, attempt $attempt/30)."
+              sleep 10
+            done
+
+            if [ "$success" != "true" ]; then
+              echo "::error::$name production verification failed."
+              jq '.' "$output" 2>/dev/null || cat "$output" 2>/dev/null || true
+              exit 1
+            fi
+
+            echo "$name: PASS"
+            jq '.' "$output"
+          }
+
+          probe_json "icofr_integrity" "/api/system/icofr-integrity" '
+            .ok == true and
+            .storage == "cloudflare-d1" and
+            .test == "ICOFR_END_TO_END_REFERENTIAL_INTEGRITY" and
+            .checkedInstitutions >= 1 and
+            .orphanCount == 0 and
+            .crossTenantCount == 0 and
+            ([.checks[] | select(.count != 0)] | length) == 0
+          '
+
+          probe_json "rcm_integrity" "/api/system/rcm-integrity" '
+            .ok == true and
+            .storage == "cloudflare-d1" and
+            .test == "RCM_PRODUCTION_INTEGRITY" and
+            .summary.controls == 132 and
+            .summary.uusControls == 42 and
+            .summary.itgcControls == 10 and
+            .summary.ckpnRequirements == 9 and
+            .summary.reverseRepoRequirements == 1 and
+            .summary.elcDraftReferences == 63 and
+            .summary.integrity == "PASS"
+          '
+
+          echo "### Production integrity audit" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ICOFR referential integrity: PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Orphan references: 0" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cross-tenant references: 0" >> "$GITHUB_STEP_SUMMARY"
+          echo "- RCM 132/42/10/9/1/63 + integrity PASS: PASS" >> "$GITHUB_STEP_SUMMARY"
