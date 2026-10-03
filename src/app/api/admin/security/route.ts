@@ -52,9 +52,32 @@ export async function GET(request: Request) {
     }
 
     const data = await loadSecurityAdministration(admin.institutionId);
+    const effectiveData =
+      admin.role === 'InstitutionAdmin'
+        ? (() => {
+            const activeSessions = (data.activeSessions || []).filter(
+              item => !['Admin', 'InstitutionAdmin'].includes(String(item.role || ''))
+            );
+            const events = (data.events || []).filter(
+              item => !['Admin', 'InstitutionAdmin'].includes(String(item.role || ''))
+            );
+            return {
+              ...data,
+              activeSessions,
+              events,
+              metrics: {
+                ...data.metrics,
+                activeSessions: activeSessions.length,
+                failedLoginEvents: events.filter(item =>
+                  ['LOGIN_FAILED', 'ACCOUNT_LOCKED'].includes(String(item.eventType))
+                ).length
+              }
+            };
+          })()
+        : data;
     return NextResponse.json(
       {
-        ...data,
+        ...effectiveData,
         passwordPolicy: {
           minimumLength: 12,
           maximumLength: 128,
