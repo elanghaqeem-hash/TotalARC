@@ -4,10 +4,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
-  Arsipkan,
+  Archive,
   CheckCircle2,
   Download,
-  FileArsipkan,
+  FileArchive,
   FileCheck,
   FilePlus2,
   Fingerprint,
@@ -64,7 +64,7 @@ function tone(value: string) {
   if (['Active', 'Accepted', 'Verified', 'Internal'].includes(value)) {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   }
-  if (['Restricted', 'Arsipkand'].includes(value)) {
+  if (['Restricted', 'Archived'].includes(value)) {
     return 'border-rose-200 bg-rose-50 text-rose-700';
   }
   if (['Confidential', 'Pending'].includes(value)) {
@@ -75,7 +75,7 @@ function tone(value: string) {
 
 const STATUS_LABEL_ID: Record<string, string> = {
   Active: 'Aktif',
-  Arsipkand: 'Diarsipkan',
+  Archived: 'Diarsipkan',
   Accepted: 'Diterima',
   Verified: 'Terverifikasi',
   Pending: 'Menunggu'
@@ -360,7 +360,7 @@ export default function EvidenceRepositoryPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-cyan-700">
-              <FileArsipkan className="h-4 w-4" /> Repositori Bukti Terpusat
+              <FileArchive className="h-4 w-4" /> Repositori Bukti Terpusat
             </div>
             <h1 className="mt-1 text-2xl font-black text-slate-900">
               File Bukti, Kontrol Versi, Integritas SHA-256 & Retensi
@@ -602,7 +602,7 @@ export default function EvidenceRepositoryPage() {
                 </div>
                 <select value={filter} onChange={e => setFilter(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px]">
                   <option>Active</option>
-                  <option>Arsipkand</option>
+                  <option value="Archived">Diarsipkan</option>
                   <option>Legal Hold</option>
                   <option>All</option>
                 </select>
@@ -668,7 +668,7 @@ export default function EvidenceRepositoryPage() {
                         }}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-600"
                       >
-                        <Arsipkan className="h-3.5 w-3.5" /> Arsipkan
+                        <Archive className="h-3.5 w-3.5" /> Arsipkan
                       </button>
                     )}
                   </div>
