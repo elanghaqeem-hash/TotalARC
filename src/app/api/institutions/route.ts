@@ -75,9 +75,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (context.profile.role !== 'Admin' && institutionId !== context.profile.institutionId) {
+    if (context.profile.role !== 'SystemAdmin' && institutionId !== context.profile.institutionId) {
       return NextResponse.json(
-        { error: 'Only administrators can switch institution context.' },
+        { error: 'Only SystemAdmin can switch institution context.' },
         { status: 403 }
       );
     }
