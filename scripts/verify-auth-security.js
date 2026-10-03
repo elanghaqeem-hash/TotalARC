@@ -41,7 +41,7 @@ const requirements = [
   ['src/app/admin/security/page.tsx', '/api/admin/security'],
   ['src/components/layout/AppShell.tsx', '/admin/security'],
   ['src/components/layout/AppShell.tsx', '/profile'],
-  ['src/lib/access-control.ts', "'InstitutionAdmin'"],
+  ['src/lib/access-control.ts', "'SystemAdmin'"],
   ['src/lib/access-control.ts', "'RiskManager'"],
   ['src/lib/access-control.ts', "'ComplianceOfficer'"],
   ['src/lib/access-control.ts', "'InternalAuditor'"],
@@ -52,10 +52,13 @@ const requirements = [
   ['src/lib/access-control.ts', 'canAdministerTenantUsers'],
   ['src/lib/access-control.ts', 'canAssignRole'],
   ['src/app/api/admin/users/route.ts', 'canAssignRole(admin.role'],
-  ['src/app/api/admin/users/route.ts', "admin.role === 'InstitutionAdmin'"],
+  ['src/app/api/admin/users/route.ts', "admin.role === 'Admin'"],
   ['src/app/api/admin/security/route.ts', 'canAdministerTenantUsers'],
   ['src/app/api/admin/security/route.ts', 'actorRole: admin.role'],
-  ['src/lib/auth.ts', 'PRIVILEGED_SESSION_PROTECTED']
+  ['src/lib/auth.ts', 'PRIVILEGED_SESSION_PROTECTED'],
+  ['src/lib/auth.ts', '20261004_ADMIN_ROLE_SPLIT'],
+  ['src/lib/institution-context.ts', "profile.role === 'SystemAdmin'"],
+  ['src/app/api/admin/ai-settings/route.ts', "context.profile.role !== 'SystemAdmin'"]
 ];
 
 for (const [file, marker] of requirements) {
