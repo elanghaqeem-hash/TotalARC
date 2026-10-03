@@ -33,7 +33,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const process = await applyRcmDerivedBpmDraft(processId, sourceFingerprint, profile.institutionId);
+    const process = await applyRcmDerivedBpmDraft(
+      processId,
+      sourceFingerprint,
+      profile.institutionId,
+      profile.name || profile.email
+    );
     return NextResponse.json({
       applied: true,
       process,
