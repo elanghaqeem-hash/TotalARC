@@ -127,7 +127,18 @@ function OrganizationNode({
   entities: LegalEntity[];
   depth?: number;
 }) {
-  const children = units.filter(item => item.parentId === unit.id);
+  const children = units
+    .filter(item => item.parentId === unit.id)
+    .sort((a, b) => {
+      // Direksi must always show Direktur Utama first. Keep the existing
+      // relative order for the remaining directorates/units.
+      if (unit.code === 'EXEC-DIREKSI') {
+        const aPriority = a.code === 'DIR-UTAMA' ? 0 : 1;
+        const bPriority = b.code === 'DIR-UTAMA' ? 0 : 1;
+        return aPriority - bPriority;
+      }
+      return 0;
+    });
   const entity = entities.find(item => item.id === unit.legalEntityId);
 
   return (
