@@ -79,6 +79,7 @@ export default function SecurityAdministrationPage() {
   const passwordPolicy = data?.passwordPolicy || {};
   const sessionPolicy = data?.sessionPolicy || {};
   const loginRateLimitPolicy = data?.loginRateLimitPolicy || {};
+  const mfaPolicy = data?.mfaPolicy || {};
 
   return (
     <div className="space-y-5">
@@ -177,6 +178,25 @@ export default function SecurityAdministrationPage() {
                 <span className="block text-slate-400">Per IP</span>
                 <strong>{loginRateLimitPolicy.ipPerHour?.requests || 100} request / jam</strong>
               </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+            <div className="text-[9px] font-black uppercase tracking-wide text-emerald-700">
+              Mandatory MFA
+            </div>
+            <div className="mt-2 text-[10px] leading-5 text-slate-600">
+              <strong>Role wajib:</strong> {(mfaPolicy.requiredRoles || []).join(', ') || '—'}
+            </div>
+            <div className="mt-2 grid gap-2 text-[10px] sm:grid-cols-2">
+              {(mfaPolicy.methods || []).map((method: string) => (
+                <div key={method} className="rounded-lg bg-white p-2.5 ring-1 ring-emerald-100">
+                  <strong>{method}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 rounded-lg bg-white px-3 py-2 text-[9px] font-bold text-slate-600 ring-1 ring-emerald-100">
+              {mfaPolicy.architecture || 'Password + MFA → session → RBAC → tenant → transaction authorization'}
             </div>
           </div>
         </div>
