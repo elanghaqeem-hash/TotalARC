@@ -17,6 +17,8 @@ type D1DatabaseLike = {
   prepare: (sql: string) => D1Prepared;
 };
 
+export type ProcessDocumentAnalysisMode = 'INITIAL' | 'COMPLEMENT' | 'REPLACE';
+
 export type ProcessDocumentDraft = {
   master: {
     name: string | null;
@@ -117,6 +119,8 @@ async function ensureProcessDocumentAnalysisSchema() {
         extractionMethod TEXT NOT NULL,
         sourceTextPreview TEXT,
         sourceTextTruncated INTEGER NOT NULL DEFAULT 0,
+        analysisMode TEXT NOT NULL DEFAULT 'INITIAL',
+        baseAnalysisId TEXT,
         draftJson TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'PENDING_USER_VALIDATION',
         aiProvider TEXT,
@@ -134,6 +138,16 @@ async function ensureProcessDocumentAnalysisSchema() {
         ON ProcessDocumentAnalysis(institutionId, status, createdAt)`
     ];
     for (const statement of statements) await db.prepare(statement).run();
+
+    const columns = await all<{ name?: string }>(db, 'PRAGMA table_info(ProcessDocumentAnalysis)');
+    const columnNames = new Set(columns.map(column => String(column.name || '')));
+    if (!columnNames.has('analysisMode')) {
+      await db.prepare("ALTER TABLE ProcessDocumentAnalysis ADD COLUMN analysisMode TEXT NOT NULL DEFAULT 'INITIAL'").run();
+    }
+    if (!columnNames.has('baseAnalysisId')) {
+      await db.prepare('ALTER TABLE ProcessDocumentAnalysis ADD COLUMN baseAnalysisId TEXT').run();
+    }
+
     return db;
   })().catch(error => {
     schemaReady = null;
@@ -163,6 +177,8 @@ function rowToAnalysis(row: Record<string, unknown>) {
     extractionMethod: String(row.extractionMethod || ''),
     sourceTextPreview: String(row.sourceTextPreview || ''),
     sourceTextTruncated: Number(row.sourceTextTruncated || 0) === 1,
+    analysisMode: String(row.analysisMode || 'INITIAL') as ProcessDocumentAnalysisMode,
+    baseAnalysisId: row.baseAnalysisId ? String(row.baseAnalysisId) : null,
     draft: parseDraft(row.draftJson),
     status: String(row.status || ''),
     aiProvider: row.aiProvider ? String(row.aiProvider) : null,
@@ -204,6 +220,8 @@ export async function saveProcessDocumentAnalysis(input: {
   extractionMethod: string;
   sourceTextPreview: string;
   sourceTextTruncated: boolean;
+  analysisMode?: ProcessDocumentAnalysisMode;
+  baseAnalysisId?: string | null;
   draft: ProcessDocumentDraft;
   aiProvider: string;
   aiModel: string;
@@ -225,9 +243,9 @@ export async function saveProcessDocumentAnalysis(input: {
     `INSERT INTO ProcessDocumentAnalysis (
       id, institutionId, processId, evidenceDocumentId, evidenceVersionId,
       fileName, mimeType, extractionMethod, sourceTextPreview, sourceTextTruncated,
-      draftJson, status, aiProvider, aiModel, aiRequestId, createdBy,
+      analysisMode, baseAnalysisId, draftJson, status, aiProvider, aiModel, aiRequestId, createdBy,
       appliedBy, appliedAt, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_USER_VALIDATION', ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_USER_VALIDATION', ?, ?, ?, ?, NULL, NULL, ?, ?)`,
     [
       id,
       input.institutionId,
@@ -239,6 +257,8 @@ export async function saveProcessDocumentAnalysis(input: {
       input.extractionMethod,
       input.sourceTextPreview.slice(0, 5000),
       input.sourceTextTruncated ? 1 : 0,
+      input.analysisMode || 'INITIAL',
+      input.baseAnalysisId || null,
       JSON.stringify(input.draft),
       input.aiProvider,
       input.aiModel,
@@ -375,6 +395,8 @@ export async function applyProcessDocumentAnalysis(input: {
     evidenceDocumentId: String(analysisRow.evidenceDocumentId),
     evidenceVersionId: String(analysisRow.evidenceVersionId),
     fileName: String(analysisRow.fileName || ''),
+    analysisMode: String(analysisRow.analysisMode || 'INITIAL'),
+    baseAnalysisId: analysisRow.baseAnalysisId ? String(analysisRow.baseAnalysisId) : null,
     status: 'VALIDATED_APPLIED',
     appliedBy: input.actor,
     appliedAt: now,

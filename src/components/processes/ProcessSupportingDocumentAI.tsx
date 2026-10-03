@@ -40,6 +40,8 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisSeconds, setAnalysisSeconds] = useState(0);
+  const [documentMode, setDocumentMode] = useState<'INITIAL' | 'COMPLEMENT' | 'REPLACE'>('INITIAL');
+  const [baseAnalysisId, setBaseAnalysisId] = useState('');
   const [applying, setApplying] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [replaceActivities, setReplaceActivities] = useState(false);
@@ -63,6 +65,16 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
       if (!response.ok) throw new Error(payload.error || 'Unable to load supporting documents.');
       const next = Array.isArray(payload.analyses) ? payload.analyses : [];
       setAnalyses(next);
+      const latestUsable = next.find((item: any) => item.status !== 'REJECTED') || null;
+      setBaseAnalysisId(current =>
+        current && next.some((item: any) => item.id === current)
+          ? current
+          : latestUsable?.id || ''
+      );
+      setDocumentMode(current => {
+        if (!latestUsable) return 'INITIAL';
+        return current === 'INITIAL' ? 'COMPLEMENT' : current;
+      });
       setActiveAnalysis((current: any) => {
         if (current?.id && next.some((item: any) => item.id === current.id)) {
           return next.find((item: any) => item.id === current.id) || current;
@@ -81,6 +93,8 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
     setActiveAnalysis(null);
     setError('');
     setMessage('');
+    setDocumentMode('INITIAL');
+    setBaseAnalysisId('');
     setReplaceActivities(existingActivityCount === 0);
     if (fileRef.current) fileRef.current.value = '';
     void loadHistory();
@@ -112,6 +126,10 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
     try {
       const form = new FormData();
       form.append('file', file);
+      form.append('analysisMode', analyses.length > 0 ? documentMode : 'INITIAL');
+      if (analyses.length > 0 && documentMode === 'COMPLEMENT' && baseAnalysisId) {
+        form.append('baseAnalysisId', baseAnalysisId);
+      }
       const response = await fetch(
         '/api/processes/' + encodeURIComponent(processId) + '/supporting-documents',
         { method: 'POST', body: form }
@@ -131,13 +149,37 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         payload.analysis,
         ...current.filter(item => item.id !== payload.analysis?.id)
       ]);
+      setBaseAnalysisId(String(payload.analysis?.id || ''));
+      setDocumentMode('COMPLEMENT');
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = '';
       setMessage(
-        'Dokumen tersimpan di Evidence Repository. Draft AI siap direview; belum ada data BPM yang diubah.'
+        payload.analysis?.analysisMode === 'COMPLEMENT'
+          ? 'Dokumen selesai dianalisis dan melengkapi draft sebelumnya. Anda dapat menambah dokumen lagi atau melakukan validasi.'
+          : payload.analysis?.analysisMode === 'REPLACE'
+            ? 'Dokumen selesai dianalisis sebagai pengganti draft sebelumnya. Riwayat lama tetap tersimpan.'
+            : 'Dokumen pertama selesai dianalisis. Anda dapat menambah dokumen lain untuk melengkapi atau menggantinya.'
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload dan analisis gagal.');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const chooseNextDocument = (mode: 'COMPLEMENT' | 'REPLACE', analysisId?: string) => {
+    setDocumentMode(mode);
+    setBaseAnalysisId(mode === 'COMPLEMENT' ? String(analysisId || activeAnalysis?.id || baseAnalysisId || '') : '');
+    setFile(null);
+    setError('');
+    setMessage(
+      mode === 'COMPLEMENT'
+        ? 'Pilih dokumen berikutnya. Hasilnya akan digabungkan ke draft analisis yang dipilih.'
+        : 'Pilih dokumen pengganti. Dokumen baru akan dianalisis mandiri; riwayat lama tetap tersimpan.'
+    );
+    if (fileRef.current) {
+      fileRef.current.value = '';
+      window.setTimeout(() => fileRef.current?.click(), 0);
     }
   };
 
@@ -217,8 +259,8 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             </span>
           </div>
           <p className="mt-1 text-[9px] leading-4 text-slate-500">
-            Upload SOP atau catatan proses. File asli disimpan sebagai evidence; ARC AI membuat draft BPM
-            dan flowchart tanpa langsung menimpa Process Master.
+            Upload dokumen satu per satu. Setelah satu dokumen selesai dianalisis, dokumen berikutnya dapat
+            melengkapi draft sebelumnya atau menggantikannya. Semua file tetap tersimpan sebagai evidence.
           </p>
         </div>
       </div>
@@ -234,6 +276,58 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[9px] leading-4 text-emerald-700">
           <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {message}
+        </div>
+      )}
+
+      {analyses.length > 0 && (
+        <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[9px] font-black text-slate-800">Dokumen berikutnya</div>
+              <div className="mt-0.5 text-[8px] leading-3.5 text-slate-500">
+                {analyses.length} dokumen sudah dianalisis. Pilih cara menggunakan dokumen baru.
+              </div>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[7px] font-black text-slate-500">
+              BERTAHAP
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDocumentMode('COMPLEMENT');
+                setBaseAnalysisId(String(activeAnalysis?.id || analyses[0]?.id || ''));
+              }}
+              className={`rounded-xl border p-2.5 text-left transition ${
+                documentMode === 'COMPLEMENT'
+                  ? 'border-sky-300 bg-sky-50 ring-1 ring-sky-200'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-[9px] font-black text-slate-800">Lengkapi analisis sebelumnya</div>
+              <div className="mt-1 text-[8px] leading-3.5 text-slate-500">
+                Gabungkan informasi baru ke draft kumulatif tanpa membuang data sebelumnya.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDocumentMode('REPLACE');
+                setBaseAnalysisId('');
+              }}
+              className={`rounded-xl border p-2.5 text-left transition ${
+                documentMode === 'REPLACE'
+                  ? 'border-amber-300 bg-amber-50 ring-1 ring-amber-200'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-[9px] font-black text-slate-800">Ganti dengan dokumen baru</div>
+              <div className="mt-1 text-[8px] leading-3.5 text-slate-500">
+                Analisis dokumen baru sebagai sumber utama. Analisis lama tetap ada di riwayat.
+              </div>
+            </button>
+          </div>
         </div>
       )}
 
@@ -270,7 +364,13 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             ) : (
               <Sparkles className="h-3.5 w-3.5" />
             )}
-            {analyzing ? `Analyzing… ${analysisSeconds}s` : 'Upload & Analyze'}
+            {analyzing
+              ? `Analyzing… ${analysisSeconds}s`
+              : analyses.length > 0 && documentMode === 'COMPLEMENT'
+                ? 'Upload & Lengkapi Analisis'
+                : analyses.length > 0 && documentMode === 'REPLACE'
+                  ? 'Upload & Ganti Analisis'
+                  : 'Upload & Analyze'}
           </button>
         </div>
         {analyzing && (
@@ -284,7 +384,16 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         <div className="mt-3 space-y-3 rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="text-[10px] font-black text-slate-900">AI BPM Draft</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div className="text-[10px] font-black text-slate-900">AI BPM Draft</div>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[7px] font-black text-slate-600">
+                  {activeAnalysis.analysisMode === 'COMPLEMENT'
+                    ? 'KUMULATIF'
+                    : activeAnalysis.analysisMode === 'REPLACE'
+                      ? 'PENGGANTI'
+                      : 'DOKUMEN AWAL'}
+                </span>
+              </div>
               <div className="mt-0.5 text-[8px] text-slate-400">
                 {activeAnalysis.fileName} · confidence {draft.confidence || 'Not Assessed'} ·{' '}
                 {activeAnalysis.extractionMethod}
@@ -403,6 +512,25 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
             </label>
           )}
 
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => chooseNextDocument('COMPLEMENT', activeAnalysis.id)}
+              disabled={analyzing}
+              className="min-h-9 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[9px] font-black text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+            >
+              + Tambah Dokumen untuk Melengkapi
+            </button>
+            <button
+              type="button"
+              onClick={() => chooseNextDocument('REPLACE')}
+              disabled={analyzing}
+              className="min-h-9 rounded-lg border border-amber-200 bg-amber-50 px-3 text-[9px] font-black text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+            >
+              Ganti dengan Dokumen Baru
+            </button>
+          </div>
+
           {activeAnalysis.status === 'PENDING_USER_VALIDATION' ? (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
@@ -467,7 +595,12 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[8px] font-bold text-slate-700">{item.fileName}</div>
                   <div className="mt-0.5 text-[7px] text-slate-400">
-                    {item.aiProvider || 'AI'} · {new Date(item.createdAt).toLocaleDateString('id-ID')}
+                    {item.analysisMode === 'COMPLEMENT'
+                      ? 'Melengkapi'
+                      : item.analysisMode === 'REPLACE'
+                        ? 'Pengganti'
+                        : 'Dokumen awal'}{' '}
+                    · {item.aiProvider || 'AI'} · {new Date(item.createdAt).toLocaleDateString('id-ID')}
                   </div>
                 </div>
                 <span className={`rounded-full border px-1.5 py-0.5 text-[7px] font-black ${statusTone(item.status)}`}>

@@ -13,6 +13,7 @@ import {
   listProcessDocumentAnalyses,
   rejectProcessDocumentAnalysis,
   saveProcessDocumentAnalysis,
+  type ProcessDocumentAnalysisMode,
   type ProcessDocumentDraft
 } from '@/lib/d1-process-document-analysis';
 
@@ -26,16 +27,23 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const AI_SOURCE_CHAR_LIMIT = 36000;
 const ALLOWED_EXTENSIONS = new Set(['docx', 'pdf', 'txt', 'pptx', 'jpg', 'jpeg', 'png', 'xlsx']);
 
-function compactAiSource(value: string) {
-  if (value.length <= AI_SOURCE_CHAR_LIMIT) return value;
-
-  const headChars = 26000;
-  const tailChars = AI_SOURCE_CHAR_LIMIT - headChars;
+function compactText(value: string, maxChars: number, headChars: number) {
+  if (value.length <= maxChars) return value;
+  const safeHead = Math.min(headChars, maxChars);
+  const tailChars = Math.max(0, maxChars - safeHead);
   return (
-    value.slice(0, headChars) +
-    '\n\n[...bagian tengah dokumen diringkas untuk mempercepat analisis...]\n\n' +
-    value.slice(-tailChars)
+    value.slice(0, safeHead) +
+    '\n\n[...bagian tengah diringkas oleh Total ARC...]\n\n' +
+    (tailChars ? value.slice(-tailChars) : '')
   );
+}
+
+function compactAiSource(value: string) {
+  return compactText(value, AI_SOURCE_CHAR_LIMIT, 26000);
+}
+
+function compactPreviousDraft(value: unknown) {
+  return compactText(JSON.stringify(value || {}), 18000, 12000);
 }
 
 function extOf(name: string) {
@@ -252,6 +260,15 @@ export async function POST(request: Request, routeContext: RouteContext) {
     ) as Record<string, any>;
     const form = await request.formData();
     const file = form.get('file');
+    const requestedModeRaw = clean(form.get('analysisMode'), 30).toUpperCase();
+    const requestedMode: ProcessDocumentAnalysisMode =
+      requestedModeRaw === 'REPLACE'
+        ? 'REPLACE'
+        : requestedModeRaw === 'COMPLEMENT'
+          ? 'COMPLEMENT'
+          : 'INITIAL';
+    const requestedBaseAnalysisId = clean(form.get('baseAnalysisId'), 120);
+
     if (!(file instanceof File)) {
       return noStore({ error: 'Supporting document file is required.' }, { status: 400 });
     }
@@ -271,6 +288,23 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const actor = context.profile.name || context.profile.email;
     const institutionId = context.institution!.id;
+
+    const previousAnalyses = await listProcessDocumentAnalyses(processId, institutionId);
+    const latestUsable = previousAnalyses.find(item => item.status !== 'REJECTED') || null;
+    const analysisMode: ProcessDocumentAnalysisMode =
+      previousAnalyses.length === 0
+        ? 'INITIAL'
+        : requestedMode === 'REPLACE'
+          ? 'REPLACE'
+          : 'COMPLEMENT';
+    const baseAnalysis =
+      analysisMode === 'COMPLEMENT'
+        ? previousAnalyses.find(item => item.id === requestedBaseAnalysisId) || latestUsable
+        : null;
+
+    if (analysisMode === 'COMPLEMENT' && (!baseAnalysis?.id || !baseAnalysis?.draft)) {
+      throw new Error('DOCUMENT_ANALYSIS_BASE_REQUIRED');
+    }
 
     const uploaded = await uploadEvidenceVersion({
       institutionId,
@@ -300,7 +334,12 @@ export async function POST(request: Request, routeContext: RouteContext) {
       entityType: 'PROCESS',
       entityId: processId,
       relationship: 'SUPPORTS',
-      notes: 'Source document for AI-assisted business-process definition.',
+      notes:
+        analysisMode === 'COMPLEMENT'
+          ? 'Additional source document used to complement a prior AI-assisted business-process draft.'
+          : analysisMode === 'REPLACE'
+            ? 'Replacement source document used to create a new AI-assisted business-process draft.'
+            : 'Initial source document for AI-assisted business-process definition.',
       evidenceOwner: String(process.ownerName || actor)
     });
 
@@ -310,6 +349,14 @@ export async function POST(request: Request, routeContext: RouteContext) {
       bytes
     });
     const aiSourceText = compactAiSource(extracted.text);
+    const previousDraftContext =
+      analysisMode === 'COMPLEMENT' && baseAnalysis?.draft
+        ? compactPreviousDraft({
+            analysisId: baseAnalysis.id,
+            fileName: baseAnalysis.fileName,
+            draft: baseAnalysis.draft
+          })
+        : '';
 
     const systemPrompt = [
       'You are Total ARC AI assisting a Process Owner to define a business process from an uploaded supporting document.',
@@ -321,6 +368,9 @@ export async function POST(request: Request, routeContext: RouteContext) {
       'A decision node is allowed only for an explicit approval, authorization, validation, condition, or yes/no branch.',
       'Do not change Process ID. Category is a suggestion only and is not automatically applied.',
       'ICOFR relevance may be true/false only when reasonably supported; otherwise null.',
+      'Every response must be a complete working BPM draft, not a delta.',
+      'If ANALYSIS MODE is COMPLEMENT, preserve supported content from the previous cumulative draft, merge supported additions from the new document, and only supersede prior details when the new evidence clearly supports the change. Record material conflicts in assumptions or gaps instead of silently dropping prior content.',
+      'If ANALYSIS MODE is REPLACE, analyze the new document as the new primary source and do not carry forward unsupported details from prior drafts. Prior analyses remain audit history only.',
       'Return JSON only with this shape:',
       '{"master":{"name":string|null,"description":string|null,"ownerName":string|null,"categorySuggestion":string|null,"criticality":"Critical|High|Medium|Low|Not Assessed"|null,"classification":"Core|Finance|Technology|Governance|Support|Management"|null,"isIcofrRelevant":boolean|null},"objective":{"objective":string,"strategicGoal":string|null,"expectedOutcome":string|null,"kpi":string|null,"kri":string|null,"sla":string|null}|null,"sipoc":{"suppliers":string|null,"inputs":string|null,"processSteps":string|null,"outputs":string|null,"customers":string|null}|null,"activities":[{"activityId":string|null,"name":string,"description":string|null,"performer":string|null,"nature":string|null,"frequency":string|null,"inputData":string|null,"outputData":string|null,"systemUsed":string|null,"sla":string|null,"kind":"task|decision","flowNote":string|null}],"sourceSummary":string,"confidence":"High|Medium|Low","assumptions":[string],"gaps":[string]}.'
     ].join(' ');
@@ -330,7 +380,9 @@ export async function POST(request: Request, routeContext: RouteContext) {
       sensitivity: 'confidential',
       systemPrompt,
       prompt:
-        'CURRENT PROCESS CONTEXT\n' +
+        'ANALYSIS MODE\n' +
+        analysisMode +
+        '\n\nCURRENT PROCESS CONTEXT\n' +
         JSON.stringify({
           id: process.id,
           processId: process.processId,
@@ -341,7 +393,10 @@ export async function POST(request: Request, routeContext: RouteContext) {
           classification: process.classification,
           isIcofrRelevant: process.isIcofrRelevant
         }) +
-        '\n\nUPLOADED DOCUMENT TEXT\n' +
+        (previousDraftContext
+          ? '\n\nPREVIOUS CUMULATIVE DRAFT TO COMPLEMENT\n' + previousDraftContext
+          : '') +
+        '\n\nNEW UPLOADED DOCUMENT\n' +
         aiSourceText,
       temperature: 0.1,
       maxOutputTokens: 3200,
@@ -360,6 +415,8 @@ export async function POST(request: Request, routeContext: RouteContext) {
       extractionMethod: extracted.method,
       sourceTextPreview: extracted.text,
       sourceTextTruncated: extracted.truncated,
+      analysisMode,
+      baseAnalysisId: baseAnalysis?.id || null,
       draft,
       aiProvider: result.provider,
       aiModel: result.model,
@@ -384,7 +441,14 @@ export async function POST(request: Request, routeContext: RouteContext) {
           truncated: extracted.truncated
         },
         applyRequired: true,
-        message: 'File stored and analyzed. Review the AI draft before applying it to the Business Process.'
+        analysisMode,
+        baseAnalysisId: baseAnalysis?.id || null,
+        message:
+          analysisMode === 'COMPLEMENT'
+            ? 'Dokumen tambahan selesai dianalisis dan digabungkan ke draft sebelumnya. Review draft kumulatif sebelum diterapkan.'
+            : analysisMode === 'REPLACE'
+              ? 'Dokumen baru selesai dianalisis sebagai pengganti draft sebelumnya. Riwayat dokumen lama tetap tersimpan.'
+              : 'Dokumen pertama selesai dianalisis. Review draft AI atau tambahkan dokumen berikutnya.'
       },
       { status: 201 }
     );
@@ -403,7 +467,8 @@ export async function POST(request: Request, routeContext: RouteContext) {
       PPTX_TEXT_NOT_FOUND: ['No readable slide text was found in the PPTX file.', 422],
       AI_DOCUMENT_DRAFT_INVALID: ['AI returned an invalid business-process draft. The source file remains stored.', 502],
       AI_DOCUMENT_DRAFT_NO_ACTIVITIES: ['AI could not identify a defensible activity sequence. The source file remains stored.', 422],
-      AI_DOCUMENT_DRAFT_INVALID_ACTIVITY: ['AI returned an invalid activity. The source file remains stored.', 502]
+      AI_DOCUMENT_DRAFT_INVALID_ACTIVITY: ['AI returned an invalid activity. The source file remains stored.', 502],
+      DOCUMENT_ANALYSIS_BASE_REQUIRED: ['Dokumen pelengkap membutuhkan hasil analisis dokumen sebelumnya sebagai dasar.', 409]
     };
 
     if (known[code]) {
