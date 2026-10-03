@@ -56,6 +56,26 @@ npm run build
 The pull-request workflow blocks known dummy operational-data signatures and verifies the Cloudflare Worker artifact.
 
 
+## Banking RBAC
+
+Total ARC separates multi-institution administration from institution-level administration and operational assurance roles. Server-side authorization recognizes:
+
+- **Admin** — system / multi-institution administrator.
+- **InstitutionAdmin** — administrator restricted to the active institution; cannot create, elevate, reset, or revoke privileged system/institution administrator accounts.
+- **RiskManager** — risk-management workspace and risk/control maintenance.
+- **ComplianceOfficer** — compliance oversight with read-focused access until dedicated compliance mutation workflows are approved.
+- **InternalAuditor** — SKAI/internal-audit assurance and testing access with segregation from management scoping/control-design maintenance.
+- **ICOFRCoordinator** — ICOFR lifecycle coordination.
+- **RCSACoordinator** — RCSA/CSA campaign coordination.
+- **ProcessOwner** and **ControlOwner** — first-line ownership roles.
+- **EvidenceContributor** — controlled evidence contribution.
+- **Tester** — independent test execution.
+- **Reviewer** — review/approval workflow.
+- **Executive** — management/executive read and certification view.
+- **ReadOnlyAuditor** — broad read-only assurance access.
+
+Role checks are applied to pages and API methods. Institution switching remains restricted to the multi-institution **Admin** role.
+
 ## AI Gateway
 
 Total ARC includes a server-side multi-provider AI Gateway. API keys are never exposed to client-side code.
@@ -67,7 +87,7 @@ Total ARC includes a server-side multi-provider AI Gateway. API keys are never e
 - **Groq** handles fast chat, classification, summarization, and lightweight inference.
 - **OpenRouter** is the last-resort free-model fallback.
 
-The gateway caps request size, applies timeout and retry logic, fails over on provider/quota errors, redacts common identifiers and secrets before eligible external-provider calls, and logs provider metadata without logging prompts or model output.
+The gateway caps request size, applies timeout and retry logic, fails over on provider/quota errors, redacts banking-sensitive identifiers and secrets before eligible external-provider calls, including CIF, bank-account numbers, payment-card numbers, NIK, NPWP, loan-account identifiers, internal employee IDs, and confidential-document metadata, and logs provider metadata without logging prompts or model output.
 
 Default privacy controls:
 
@@ -153,4 +173,4 @@ Total ARC protects the inference endpoints independently from model-provider quo
 - Chat and analysis are forced to `confidential` sensitivity server-side until authenticated server-side data classification is implemented.
 - Upstream provider error details are logged server-side and are not returned verbatim to clients.
 
-These controls are an interim production protection layer. They do not represent user authentication or tenant authorization. The current browser RoleContext is presentation state only and must not be treated as an authenticated identity.
+These AI controls are independent of user authentication and tenant authorization. Browser RoleContext remains presentation state only; authenticated identity, revocable sessions, role authorization, forced password-change gates, and tenant isolation are enforced server-side by middleware and the institution access layer.
