@@ -10,13 +10,13 @@ import {
   updateManagedUser
 } from '@/lib/auth';
 import { AUTH_COOKIE_NAME } from '@/lib/auth-token';
-import { isUserRole } from '@/lib/access-control';
+import { canAdministerTenantUsers, canAssignRole, isUserRole } from '@/lib/access-control';
 
 export const dynamic = 'force-dynamic';
 
 async function requireAdmin(request: Request) {
   const context = await resolveInstitutionAccess(request);
-  if (!context || context.profile.role !== 'Admin' || !context.institution) return null;
+  if (!context || !canAdministerTenantUsers(context.profile.role) || !context.institution) return null;
   return {
     ...context.profile,
     institutionId: context.institution.id,
@@ -108,6 +108,12 @@ export async function POST(request: Request) {
     }
 
     if (!isUserRole(body.role)) throw new Error('AUTH_ROLE_INVALID');
+    if (!canAssignRole(admin.role, body.role)) {
+      return NextResponse.json(
+        { error: 'Administrator institusi tidak dapat menetapkan role administrator tingkat sistem/institusi.' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
     const user = await createManagedUser({
       actorUserId: admin.id,
@@ -139,6 +145,24 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     if (!body.userId) throw new Error('USER_NOT_FOUND');
     if (body.role !== undefined && !isUserRole(body.role)) throw new Error('AUTH_ROLE_INVALID');
+    const managedUsers = await listManagedUsers(admin.institutionId);
+    const target = managedUsers.find(item => item.id === String(body.userId));
+    if (!target) throw new Error('USER_NOT_FOUND');
+    if (
+      admin.role === 'InstitutionAdmin' &&
+      (target.role === 'Admin' || target.role === 'InstitutionAdmin')
+    ) {
+      return NextResponse.json(
+        { error: 'Administrator institusi tidak dapat mengubah akun administrator tingkat sistem/institusi.' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+    if (body.role !== undefined && !canAssignRole(admin.role, body.role)) {
+      return NextResponse.json(
+        { error: 'Administrator institusi tidak dapat menetapkan role administrator tingkat sistem/institusi.' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
     const user = await updateManagedUser({
       actorUserId: admin.id,
