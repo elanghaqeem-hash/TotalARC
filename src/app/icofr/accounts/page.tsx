@@ -45,6 +45,51 @@ const blank = {
   status: 'Draft'
 };
 
+const ASSERTION_OPTIONS = [
+  {
+    value: 'Eksistensi',
+    label: 'Eksistensi',
+    description: 'Memastikan aset, kewajiban, atau saldo yang dicatat benar-benar ada pada tanggal laporan.'
+  },
+  {
+    value: 'Kelengkapan',
+    label: 'Kelengkapan',
+    description: 'Memastikan seluruh transaksi dan saldo yang seharusnya dicatat sudah masuk ke laporan.'
+  },
+  {
+    value: 'Akurasi',
+    label: 'Akurasi',
+    description: 'Memastikan angka, perhitungan, dan data pendukung dicatat secara benar.'
+  },
+  {
+    value: 'Valuasi',
+    label: 'Valuasi',
+    description: 'Memastikan saldo dinilai atau diukur dengan metode dan jumlah yang tepat.'
+  },
+  {
+    value: 'Hak & Kewajiban',
+    label: 'Hak & Kewajiban',
+    description: 'Memastikan Bank memiliki hak atas aset dan benar-benar memiliki kewajiban yang dicatat.'
+  },
+  {
+    value: 'Cut-off',
+    label: 'Cut-off',
+    description: 'Memastikan transaksi dicatat pada periode pelaporan yang benar.'
+  },
+  {
+    value: 'Penyajian & Pengungkapan',
+    label: 'Penyajian & Pengungkapan',
+    description: 'Memastikan klasifikasi, penyajian, dan catatan laporan keuangan sudah tepat dan memadai.'
+  }
+] as const;
+
+function parseAssertions(value: unknown) {
+  return String(value || '')
+    .split(/[,;]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
 function formatAmount(value: number | null | undefined, currency?: string | null) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
   return (
@@ -91,6 +136,32 @@ export default function Page() {
     }),
     [records]
   );
+
+  const selectedAssertions = parseAssertions(form.assertions);
+  const allAssertionsSelected = ASSERTION_OPTIONS.every(option =>
+    selectedAssertions.includes(option.value)
+  );
+
+  const toggleAssertion = (value: string) => {
+    const current = parseAssertions(form.assertions);
+    const next = current.includes(value)
+      ? current.filter(item => item !== value)
+      : [...current, value];
+
+    setForm({
+      ...form,
+      assertions: next.join(', ')
+    });
+  };
+
+  const toggleAllAssertions = () => {
+    setForm({
+      ...form,
+      assertions: allAssertionsSelected
+        ? ''
+        : ASSERTION_OPTIONS.map(option => option.value).join(', ')
+    });
+  };
 
   const reset = () => {
     setForm(blank);
@@ -290,15 +361,62 @@ export default function Page() {
               />
             </label>
 
-            <label className="text-xs font-bold text-slate-700 md:col-span-2">
-              Asersi relevan
-              <input
-                value={form.assertions}
-                onChange={event => setForm({ ...form, assertions: event.target.value })}
-                placeholder="Eksistensi, Kelengkapan, Akurasi, Valuasi, Hak & Kewajiban, Cut-off, Penyajian & Pengungkapan"
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-              />
-            </label>
+            <div className="md:col-span-2 xl:col-span-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-xs font-bold text-slate-700">Asersi relevan</div>
+                  <p className="mt-0.5 text-[10px] leading-4 text-slate-500">
+                    Pilih satu atau beberapa asersi yang benar-benar perlu dibuktikan untuk akun/disclosure ini.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleAllAssertions}
+                  className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-[10px] font-black text-slate-600 transition hover:bg-slate-100"
+                >
+                  {allAssertionsSelected ? 'Hapus Semua' : 'Pilih Semua'}
+                </button>
+              </div>
+
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {ASSERTION_OPTIONS.map(option => {
+                  const selected = selectedAssertions.includes(option.value);
+                  return (
+                    <label
+                      key={option.value}
+                      className={
+                        'cursor-pointer rounded-xl border p-3 transition ' +
+                        (selected
+                          ? 'border-sky-300 bg-sky-50 ring-1 ring-sky-100'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50')
+                      }
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleAssertion(option.value)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-sky-600"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-black text-slate-800">
+                            {option.label}
+                          </div>
+                          <div className="mt-1 text-[9px] leading-4 text-slate-500">
+                            {option.description}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[9px] leading-4 text-slate-500">
+                <strong className="text-slate-700">Panduan:</strong> tidak harus memilih semua asersi.
+                Pilih hanya yang relevan dengan sifat akun, transaksi, atau pengungkapan yang sedang diuji.
+              </div>
+            </div>
 
             <label className="flex items-center gap-2 self-end rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700">
               <input
