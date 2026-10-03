@@ -222,7 +222,11 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const context = await access(request);
     if (!context) return noStore({ error: 'Active institution is required.' }, { status: 409 });
 
-    const guarded = await guardAiMultipart(\n      request,\n      'AI_ANALYZE_RATE_LIMIT',\n      MAX_FILE_BYTES + 1024 * 1024\n    );
+    const guarded = await guardAiMultipart(
+      request,
+      'AI_ANALYZE_RATE_LIMIT',
+      MAX_FILE_BYTES + 1024 * 1024
+    );
     if (guarded) return guarded;
 
     const { id } = await routeContext.params;
