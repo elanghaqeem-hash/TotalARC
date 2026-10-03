@@ -1,6 +1,6 @@
 export const USER_ROLES = [
+  'SystemAdmin',
   'Admin',
-  'InstitutionAdmin',
   'RiskManager',
   'ComplianceOfficer',
   'InternalAuditor',
@@ -18,8 +18,8 @@ export const USER_ROLES = [
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const ROLE_TITLES: Record<UserRole, string> = {
-  Admin: 'Administrator Sistem / Multi-Institusi',
-  InstitutionAdmin: 'Administrator Institusi',
+  SystemAdmin: 'Administrator Sistem / Multi-Institusi',
+  Admin: 'Admin',
   RiskManager: 'Manajemen Risiko',
   ComplianceOfficer: 'Kepatuhan',
   InternalAuditor: 'Audit Internal / SKAI',
@@ -56,9 +56,9 @@ const ICOFR_PAGES = [
 ] satisfies AccessRule[];
 
 const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
-  Admin: [{ path: '/' }],
-  InstitutionAdmin: [
-    { path: '/' },
+  SystemAdmin: [{ path: '/' }],
+  Admin: [
+    { path: '/', exact: true },
     { path: '/admin/users' },
     { path: '/admin/security' },
     { path: '/organization' },
@@ -206,18 +206,18 @@ export function isUserRole(value: unknown): value is UserRole {
 
 export function canAccessPage(role: UserRole, pathname: string) {
   if (pathname === '/profile') return true;
-  if (role === 'Admin') return true;
+  if (role === 'SystemAdmin') return true;
   return PAGE_ACCESS[role].some(rule => matches(rule, pathname));
 }
 
 export function canAdministerTenantUsers(role: UserRole) {
-  return role === 'Admin' || role === 'InstitutionAdmin';
+  return role === 'SystemAdmin' || role === 'Admin';
 }
 
 export function canAssignRole(actorRole: UserRole, targetRole: UserRole) {
-  if (actorRole === 'Admin') return true;
-  if (actorRole !== 'InstitutionAdmin') return false;
-  return targetRole !== 'Admin' && targetRole !== 'InstitutionAdmin';
+  if (actorRole === 'SystemAdmin') return true;
+  if (actorRole !== 'Admin') return false;
+  return targetRole !== 'SystemAdmin' && targetRole !== 'Admin';
 }
 
 const API_PAGE_MAP: Array<{ api: string; page: string }> = [
@@ -265,19 +265,19 @@ function isReadOnlyMethod(method: string) {
 
 export function canAccessApi(role: UserRole, pathname: string, method: string) {
   if (pathname === '/api/auth/profile') return true;
-  if (role === 'Admin') return true;
+  if (role === 'SystemAdmin') return true;
 
   if (pathname.startsWith('/api/ai/')) return true;
   if (pathname === '/api/assurance') {
     if (isReadOnlyMethod(method)) {
       return [
-        'InstitutionAdmin', 'RiskManager', 'ComplianceOfficer', 'InternalAuditor',
+        'RiskManager', 'ComplianceOfficer', 'InternalAuditor',
         'ICOFRCoordinator', 'RCSACoordinator', 'ProcessOwner', 'ControlOwner',
         'Tester', 'Reviewer', 'ReadOnlyAuditor'
       ].includes(role);
     }
     return [
-      'InstitutionAdmin', 'RiskManager', 'InternalAuditor', 'ICOFRCoordinator',
+      'RiskManager', 'InternalAuditor', 'ICOFRCoordinator',
       'RCSACoordinator', 'ProcessOwner', 'ControlOwner', 'Tester', 'Reviewer'
     ].includes(role);
   }
@@ -290,7 +290,7 @@ export function canAccessApi(role: UserRole, pathname: string, method: string) {
     return false;
   }
 
-  if (role === 'InstitutionAdmin') return true;
+  if (role === 'Admin') return true;
 
   if (role === 'RiskManager') {
     return (
