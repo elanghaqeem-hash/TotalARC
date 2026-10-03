@@ -576,15 +576,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
-            <button
-              onClick={() => setAiDrawerOpen(true)}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 p-0 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:min-h-10 sm:w-auto sm:rounded-2xl sm:px-3.5 sm:py-2.5 sm:text-[11px]"
-              aria-label="Buka ARC AI"
-              title="ARC AI"
-            >
-              <Sparkles className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-              <span className="hidden sm:inline">ARC AI</span>
-            </button>
+            {currentUser.role !== 'Admin' && (
+              <button
+                onClick={() => setAiDrawerOpen(true)}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 p-0 text-[10px] font-black text-white shadow-md shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 sm:min-h-10 sm:w-auto sm:rounded-2xl sm:px-3.5 sm:py-2.5 sm:text-[11px]"
+                aria-label="Buka ARC AI"
+                title="ARC AI"
+              >
+                <Sparkles className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline">ARC AI</span>
+              </button>
+            )}
 
             <div className="relative hidden sm:block">
               <button
