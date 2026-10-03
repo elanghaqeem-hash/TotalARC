@@ -1,0 +1,150 @@
+name: Repair source BPM validation state
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-source-bpm-validation.yml'
+      - 'scripts/harden-bank-kalbar-bpm-2026.py'
+      - '.github/workflows/harden-bank-kalbar-bpm-2026.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-repair-source-bpm-validation
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Restore validated CKPN status from audit trail
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, re, subprocess, tempfile
+          from datetime import datetime, timezone
+
+          LEGAL_NAME = "PT. Bank Pembangunan Daerah Kalimantan Barat"
+
+          def wr(args):
+              p = subprocess.run(["npx", "wrangler", *args], text=True, env=os.environ, capture_output=True)
+              if p.returncode != 0:
+                  print(p.stdout[-4000:])
+                  print(p.stderr[-4000:])
+                  raise RuntimeError("WRANGLER_COMMAND_FAILED")
+              return p.stdout
+
+          def q(v):
+              if v is None:
+                  return "NULL"
+              return "'" + str(v).replace("'", "''") + "'"
+
+          dbs = json.loads(wr(["d1", "list", "--json"]))
+          db = next((x for x in dbs if re.search(r"total.?arc", x["name"], re.I)), None)
+          if not db:
+              db = dbs[0] if len(dbs) == 1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB = db["name"]
+
+          def rows(sql):
+              raw = json.loads(wr(["d1", "execute", DB, "--remote", "--json", "--command", sql]))
+              raw = raw if isinstance(raw, list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          inst = rows("SELECT id FROM Institution WHERE legalName="+q(LEGAL_NAME)+" LIMIT 1")
+          if len(inst) != 1:
+              raise RuntimeError("BANK_KALBAR_INSTITUTION_NOT_FOUND")
+          iid = str(inst[0]["id"])
+
+          proc = rows(
+              "SELECT id,processId,name,status,tags,updatedAt FROM BusinessProcess "
+              "WHERE institutionId="+q(iid)+" AND processId='CKPN' LIMIT 1"
+          )
+          if len(proc) != 1:
+              raise RuntimeError("CKPN_PROCESS_NOT_FOUND")
+          process = proc[0]
+          pid = str(process["id"])
+
+          audits = rows(
+              "SELECT action,userName,timestamp,newValue FROM AuditLog "
+              "WHERE institutionId="+q(iid)+" AND recordId="+q(pid)+
+              " AND action IN ('APPROVE_SOURCE_DRAFT','REJECT_SOURCE_DRAFT') "
+              "ORDER BY timestamp DESC LIMIT 1"
+          )
+
+          try:
+              tags = json.loads(process.get("tags") or "{}")
+              if not isinstance(tags, dict):
+                  tags = {}
+          except Exception:
+              tags = {}
+
+          result = {
+              "processId": process.get("processId"),
+              "name": process.get("name"),
+              "beforeStatus": process.get("status"),
+              "latestValidationAudit": audits[0] if audits else None,
+              "repaired": False,
+          }
+
+          if audits:
+              audit = audits[0]
+              action = str(audit.get("action") or "")
+              if action == "APPROVE_SOURCE_DRAFT":
+                  tags["sourceValidationStatus"] = "USER_VALIDATED"
+                  tags["sourceValidatedAt"] = audit.get("timestamp")
+                  tags["sourceValidatedBy"] = audit.get("userName") or "Authenticated user"
+                  tags["reviewRequired"] = False
+                  target_status = "Approved"
+              else:
+                  tags["sourceValidationStatus"] = "REJECTED_BY_USER"
+                  tags["sourceValidatedAt"] = audit.get("timestamp")
+                  tags["sourceValidatedBy"] = audit.get("userName") or "Authenticated user"
+                  target_status = "Rejected"
+
+              now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+              sql = (
+                  "UPDATE BusinessProcess SET status="+q(target_status)+
+                  ",tags="+q(json.dumps(tags, ensure_ascii=False, separators=(',', ':')))+
+                  ",updatedAt="+q(now)+
+                  " WHERE id="+q(pid)+" AND institutionId="+q(iid)+";"
+              )
+              with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False) as fh:
+                  fh.write(sql)
+                  sql_path = fh.name
+              wr(["d1", "execute", DB, "--remote", "--file", sql_path])
+              result["repaired"] = True
+              result["targetStatus"] = target_status
+
+          after = rows(
+              "SELECT processId,name,status,tags,updatedAt FROM BusinessProcess "
+              "WHERE id="+q(pid)+" AND institutionId="+q(iid)+" LIMIT 1"
+          )[0]
+          result["afterStatus"] = after.get("status")
+          try:
+              after_tags = json.loads(after.get("tags") or "{}")
+          except Exception:
+              after_tags = {}
+          result["afterValidationStatus"] = after_tags.get("sourceValidationStatus")
+          print(json.dumps(result, indent=2, ensure_ascii=False))
+
+          if audits and audits[0].get("action") == "APPROVE_SOURCE_DRAFT":
+              if result["afterStatus"] != "Approved" or result["afterValidationStatus"] != "USER_VALIDATED":
+                  raise RuntimeError("CKPN_APPROVAL_REPAIR_FAILED")
+          PY
