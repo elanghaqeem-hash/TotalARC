@@ -80,6 +80,22 @@ export async function POST(request: Request) {
     const body = await request.json();
     const actionType = typeof body.actionType === 'string' ? body.actionType : '';
 
+    if (
+      admin.role === 'InstitutionAdmin' &&
+      typeof body.userId === 'string' &&
+      body.userId.trim()
+    ) {
+      const managedUsers = await listManagedUsers(admin.institutionId);
+      const target = managedUsers.find(item => item.id === body.userId.trim());
+      if (!target) throw new Error('USER_NOT_FOUND');
+      if (target.role === 'Admin' || target.role === 'InstitutionAdmin') {
+        return NextResponse.json(
+          { error: 'Administrator institusi tidak dapat mengelola credential akun administrator tingkat sistem/institusi.' },
+          { status: 403, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
+    }
+
     if (actionType === 'RESET_CREDENTIAL') {
       const result = await resetManagedUserCredential({
         actorUserId: admin.id,
