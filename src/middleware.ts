@@ -119,7 +119,7 @@ export async function middleware(request: NextRequest) {
   const sessionRoleValid = session ? isUserRole(session.role) : false;
 
   if (pathname === '/login') {
-    if (session && !sessionRoleValid) {
+    if (session && (!sessionRoleValid || (sessionRoleValid && isMfaRequiredForRole(session.role) && !session.mfaAt))) {
       const response = NextResponse.next();
       response.cookies.delete(AUTH_COOKIE_NAME);
       return response;
