@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 async function requireAdmin(request: Request) {
   const context = await resolveInstitutionAccess(request);
-  if (!context || context.profile.role !== 'Admin' || !context.institution) return null;
+  if (!context || context.profile.role !== 'SystemAdmin' || !context.institution) return null;
   return {
     ...context.profile,
     institutionId: context.institution.id,
