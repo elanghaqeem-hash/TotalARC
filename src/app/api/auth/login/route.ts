@@ -41,17 +41,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const { profile, token } = await authenticateUser({
+    const result = await authenticateUser({
       email,
       password,
       ipAddress,
       userAgent: request.headers.get('user-agent')
     });
 
-    const response = NextResponse.json({ user: profile });
+    if (result.mfa?.required || !result.token) {
+      return NextResponse.json(
+        {
+          user: result.profile,
+          mfaRequired: true,
+          mfa: result.mfa
+        },
+        { status: 200, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    const response = NextResponse.json({ user: result.profile, mfaRequired: false });
     response.cookies.set({
       name: AUTH_COOKIE_NAME,
-      value: token,
+      value: result.token,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
