@@ -30,7 +30,8 @@
     "typecheck": "tsc --noEmit",
     "verify:rcm-integrity": "node scripts/verify-rcm-integrity.js",
     "verify:ai-security": "node scripts/verify-ai-security.js",
-    "verify:icofr-traceability": "node scripts/verify-icofr-traceability.js"
+    "verify:icofr-traceability": "node scripts/verify-icofr-traceability.js",
+    "verify:security-headers": "node scripts/verify-security-headers.js"
   },
   "keywords": [],
   "author": "",

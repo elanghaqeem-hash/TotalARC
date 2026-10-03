@@ -125,6 +125,9 @@ jobs:
       - name: Verify authentication security integrity
         run: npm run verify:auth-security
 
+      - name: Verify HTTP security headers configuration
+        run: npm run verify:security-headers
+
       - name: Verify D1 schema stability
         run: npm run verify:d1-schema-stability
 
@@ -170,6 +173,60 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+
+      - name: Verify production security headers
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          FALLBACK_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL="${DEPLOYMENT_URL:-${FALLBACK_URL:-https://totalarc.elang-haqeem.workers.dev}}"
+          BASE_URL="${BASE_URL%/}"
+          HEADER_FILE="/tmp/totalarc-security-headers.txt"
+
+          success=false
+          for attempt in $(seq 1 12); do
+            if curl --silent --show-error --location --max-time 20 --dump-header "$HEADER_FILE" --output /dev/null "$BASE_URL/login"; then
+              lower_headers="$(tr '[:upper:]' '[:lower:]' < "$HEADER_FILE")"
+              missing=0
+
+              for header in                 "content-security-policy:"                 "strict-transport-security:"                 "x-content-type-options:"                 "referrer-policy:"                 "permissions-policy:"                 "x-frame-options:"; do
+                if ! printf '%s' "$lower_headers" | grep -q "^$header"; then
+                  missing=1
+                  echo "Security header not observed yet: $header"
+                fi
+              done
+
+              if ! printf '%s' "$lower_headers" | grep -q "frame-ancestors 'none'"; then
+                missing=1
+                echo "CSP frame-ancestors 'none' not observed yet."
+              fi
+
+              if [ "$missing" -eq 0 ]; then
+                success=true
+                break
+              fi
+            fi
+
+            echo "Security headers not fully propagated yet (attempt $attempt/12)."
+            sleep 5
+          done
+
+          if [ "$success" != "true" ]; then
+            echo "::error::Production security header verification failed."
+            sed -n '1,120p' "$HEADER_FILE" 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "### HTTP security headers" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Content-Security-Policy: present" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Strict-Transport-Security: present" >> "$GITHUB_STEP_SUMMARY"
+          echo "- X-Content-Type-Options: present" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Referrer-Policy: present" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Permissions-Policy: present" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frame protection: CSP frame-ancestors none + X-Frame-Options DENY" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Sync runtime secrets
         env:
