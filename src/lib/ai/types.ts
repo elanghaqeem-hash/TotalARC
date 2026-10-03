@@ -1,5 +1,17 @@
 export type AiProvider = 'cloudflare' | 'gemini' | 'groq' | 'openrouter';
 
+export type AiLevel = 'FAST' | 'STANDARD' | 'ADVANCED';
+
+export type AiFeature =
+  | 'assistant_chat'
+  | 'process_analysis'
+  | 'process_document'
+  | 'risk_register'
+  | 'risk_heatmap'
+  | 'materiality'
+  | 'significant_accounts'
+  | 'enterprise_overview';
+
 export type AiSensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
 
 export type AiTask =
@@ -28,6 +40,8 @@ export interface AiGatewayRequest {
   temperature?: number;
   maxOutputTokens?: number;
   requireJson?: boolean;
+  institutionId?: string;
+  feature?: AiFeature;
 }
 
 export interface AiGatewayResult {
@@ -39,6 +53,8 @@ export interface AiGatewayResult {
   fallbackUsed: boolean;
   redactions: number;
   durationMs: number;
+  aiLevel?: AiLevel;
+  routingSource?: 'admin' | 'default';
 }
 
 export interface AiProviderStatus {
