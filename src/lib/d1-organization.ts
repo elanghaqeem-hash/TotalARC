@@ -284,7 +284,7 @@ const CENTRAL_PARENT_MAP: Record<string, string> = {
   'DIV-STRATEGI': 'DIR-UTAMA',
   'FUNC-SKAI': 'DIR-UTAMA',
   'FUNC-CORSEC': 'DIR-UTAMA',
-  'FUNC-ICOFR': 'EXEC-DIREKSI'
+  'FUNC-ICOFR': 'DIV-MR'
 };
 
 const CONVENTIONAL_BRANCH_CODES = [
@@ -522,10 +522,10 @@ async function ensureBankKalbarOrganizationCompletion(
         db,
         institutionId,
         String(child.id),
-        'VERIFIED_GOVERNANCE_FUNCTION',
-        'VERIFIED_GOVERNANCE_PARENT',
-        [sourceSeraya, sourceIcofr],
-        'Fungsi/UKK ICOFR is source-confirmed as a Line-2 governance function. Because DIR/PP-0003/2026 does not draw it as a separate formal structural box, Total ARC uses Direksi as the accountable governance parent and does not invent a specific director reporting line.'
+        'USER_DIRECTED_CONFIGURATION',
+        'CONFIGURED_PARENT',
+        ['USER-INSTRUCTION:2026-10-03', sourceSeraya, sourceIcofr],
+        'Total ARC configuration places Fungsi ICOFR directly under Divisi Manajemen Risiko per user instruction dated 3 October 2026. This records the configured application hierarchy while retaining the ICOFR source references.'
       );
     } else {
       await upsertHierarchyEvidence(
