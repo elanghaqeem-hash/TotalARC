@@ -413,7 +413,9 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
   const headerTitleHeight = headerTitleLines.length * 36;
   const subheadingY = headerTitleY + headerTitleHeight + 10;
   const startPillY = subheadingY + 30;
-  const startY = startPillY + 76;
+  // Give the MULAI connector enough vertical clearance so the arrowhead
+  // never visually collides with the start pill.
+  const startY = startPillY + 92;
 
   const stepLayouts = definition.steps.map(step => {
     const titleLines = wrap(step.title || step.sourceTitle, 48, 2);
@@ -587,7 +589,7 @@ function buildSvg(definition: ProcessFlowDefinition, versionNo: number) {
 
   <rect x="410" y="${startPillY}" width="180" height="48" rx="24" fill="#0284c7" />
   <text x="500" y="${startPillY + 30}" text-anchor="middle" class="startEnd">MULAI</text>
-  <line x1="500" y1="${startPillY + 48}" x2="500" y2="${startY - 14}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />
+  <line x1="500" y1="${startPillY + 58}" x2="500" y2="${startY - 14}" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)" />
 
   ${arrows.join('')}
   ${cards.join('')}
