@@ -291,37 +291,37 @@ export default function RisksPage() {
                       : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+                  <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 font-mono text-xs font-bold text-amber-800">
                           {r.riskId}
                         </span>
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                        <span className="max-w-full truncate rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
                           {r.category}
                         </span>
                         {r.status === 'Draft' && (
-                          <span className="text-[9px] font-black text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded">
+                          <span className="shrink-0 rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[9px] font-black text-sky-700">
                             Draft
                           </span>
                         )}
                       </div>
-                      <h3 className="font-bold text-sm text-slate-900 mt-1.5">
+                      <h3 className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-900">
                         {r.name}
                       </h3>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1">
+                    <div className="flex max-w-full shrink-0 flex-wrap items-center gap-1.5 sm:max-w-[46%] sm:flex-col sm:items-end">
                       <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}
+                        className={`inline-flex max-w-full items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-[9px] font-bold leading-none ${badge.bg} ${badge.text} ${badge.border}`}
                       >
                         {r.inherentScore > 0
-                          ? `Score: ${r.inherentScore} (${r.inherentRating})`
-                          : 'Not Assessed'}
+                          ? `Score ${r.inherentScore} · ${r.inherentRating}`
+                          : 'Belum Dinilai'}
                       </span>
                       {r.sourceMetadata?.sourceRiskRating && (
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
-                          Source rating: {r.sourceMetadata.sourceRiskRating}
+                        <span className="inline-flex max-w-full items-center whitespace-nowrap rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[9px] font-bold leading-none text-violet-700">
+                          Sumber · {r.sourceMetadata.sourceRiskRating}
                         </span>
                       )}
                     </div>
