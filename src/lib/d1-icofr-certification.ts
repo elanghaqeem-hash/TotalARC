@@ -1040,56 +1040,56 @@ async function readinessForAttestation(
   const gates = [
     {
       key: 'SCOPE_APPROVED',
-      label: 'ICOFR scope approved/finalized',
+      label: 'Scope ICOFR telah disetujui/final',
       passed: scopeReady,
-      detail: scope ? `Scope status: ${String(scope.status)}` : 'Scope not found.'
+      detail: scope ? `Status scope: ${String(scope.status)}` : 'Scope tidak ditemukan.'
     },
     {
       key: 'KEY_CONTROLS_PLANNED',
-      label: 'All key ICOFR controls included in testing cycle',
+      label: 'Seluruh kontrol kunci ICOFR tercakup dalam siklus pengujian',
       passed: planReady,
       detail: testingCycleId
-        ? `${keyControls.length - missingKeyControlPlans.length} of ${keyControls.length} key controls planned.`
-        : 'Testing cycle not linked.'
+        ? `${keyControls.length - missingKeyControlPlans.length} dari ${keyControls.length} kontrol kunci telah direncanakan.`
+        : 'Siklus pengujian belum terhubung.'
     },
     {
       key: 'TOD_COMPLETE',
-      label: 'Required Test of Design completed',
+      label: 'Test of Design (ToD) yang diwajibkan telah selesai',
       passed: todReady,
-      detail: `${completedTod} of ${requiredTod} required ToD workpapers completed.`
+      detail: `${completedTod} dari ${requiredTod} kertas kerja ToD yang diwajibkan telah selesai.`
     },
     {
       key: 'TOE_COMPLETE',
-      label: 'Required Test of Operating Effectiveness completed',
+      label: 'Test of Operating Effectiveness (ToE) yang diwajibkan telah selesai',
       passed: toeReady,
-      detail: `${completedToe} of ${requiredToe} required ToE workpapers completed.`
+      detail: `${completedToe} dari ${requiredToe} kertas kerja ToE yang diwajibkan telah selesai.`
     },
     {
       key: 'WORKPAPER_QUALITY_REVIEW',
-      label: 'Required ToD/ToE workpapers passed independent quality review',
+      label: 'Kertas kerja ToD/ToE yang diwajibkan telah lulus reviu kualitas independen',
       passed: workpaperReviewReady,
-      detail: `${approvedWorkpaperReviews} of ${requiredWorkpaperReviews} required workpaper review(s) approved.`
+      detail: `${approvedWorkpaperReviews} dari ${requiredWorkpaperReviews} reviu kertas kerja yang diwajibkan telah disetujui.`
     },
     {
       key: 'NO_UNRESOLVED_SIGNIFICANT_DEFICIENCY',
-      label: 'No unresolved significant deficiency/material weakness',
+      label: 'Tidak ada defisiensi signifikan/kelemahan material yang belum terselesaikan',
       passed: deficiencyReady,
-      detail: `${unresolvedDeficiencies.length} unresolved significant deficiency/material weakness record(s).`
+      detail: `${unresolvedDeficiencies.length} defisiensi signifikan/kelemahan material belum terselesaikan.`
     },
     {
       key: 'HIGH_PRIORITY_GAPS',
-      label: 'No open Critical/High ICOFR gap actions',
+      label: 'Tidak ada tindakan kesenjangan ICOFR Critical/High yang masih terbuka',
       passed: gapReady,
-      detail: `${highPriorityOpenActions.length} open Critical/High gap action(s).`
+      detail: `${highPriorityOpenActions.length} tindakan kesenjangan Critical/High masih terbuka.`
     },
     {
       key: 'SUBCERTIFICATIONS',
-      label: 'Existing sub-certifications submitted/approved',
+      label: 'Sub-sertifikasi yang ada telah diajukan/disetujui',
       passed: subCertificationReady,
       detail:
         subCerts.length === 0
-          ? 'No sub-certification perimeter has been registered for this period.'
-          : `${subCerts.length - pendingSubCerts.length} of ${subCerts.length} existing sub-certifications submitted/approved.`
+          ? 'Belum ada perimeter sub-sertifikasi yang didaftarkan untuk periode ini.'
+          : `${subCerts.length - pendingSubCerts.length} dari ${subCerts.length} sub-sertifikasi yang ada telah diajukan/disetujui.`
     }
   ];
 
