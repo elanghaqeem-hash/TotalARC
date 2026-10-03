@@ -38,7 +38,7 @@ export async function resolveInstitutionAccess(
   if (includeInstitutions) {
     const allInstitutions = await listInstitutions();
     const institutions =
-      profile.role === 'Admin'
+      profile.role === 'SystemAdmin'
         ? allInstitutions
         : allInstitutions.filter(item => item.id === profile.institutionId);
 
@@ -52,7 +52,7 @@ export async function resolveInstitutionAccess(
       profile,
       institution,
       institutions,
-      canSwitch: profile.role === 'Admin' && institutions.length > 1
+      canSwitch: profile.role === 'SystemAdmin' && institutions.length > 1
     };
   }
 
@@ -60,7 +60,7 @@ export async function resolveInstitutionAccess(
   // instead of reading the complete institution register on every request.
   let institution: InstitutionRecord | null = null;
 
-  if (profile.role === 'Admin' && requestedId) {
+  if (profile.role === 'SystemAdmin' && requestedId) {
     institution = await getInstitutionById(requestedId);
   }
 
@@ -68,7 +68,7 @@ export async function resolveInstitutionAccess(
     institution = await getInstitutionById(profile.institutionId);
   }
 
-  if (!institution && profile.role === 'Admin') {
+  if (!institution && profile.role === 'SystemAdmin') {
     institution = await getPrimaryInstitution();
   }
 
@@ -92,7 +92,7 @@ export async function resolveServerActiveInstitutionId(): Promise<string | null>
 
     const requestedId = cookieStore.get(ACTIVE_INSTITUTION_COOKIE_NAME)?.value || '';
 
-    if (profile.role === 'Admin' && requestedId) {
+    if (profile.role === 'SystemAdmin' && requestedId) {
       const requested = await getInstitutionById(requestedId);
       if (requested) return requested.id;
     }
@@ -102,7 +102,7 @@ export async function resolveServerActiveInstitutionId(): Promise<string | null>
       if (assigned) return assigned.id;
     }
 
-    if (profile.role === 'Admin') {
+    if (profile.role === 'SystemAdmin') {
       const primary = await getPrimaryInstitution();
       return primary?.id || null;
     }
