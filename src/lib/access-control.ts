@@ -305,8 +305,11 @@ export function canAccessApi(role: UserRole, pathname: string, method: string) {
   if (role === 'InternalAuditor') {
     return (
       pathname.startsWith('/api/assurance') ||
-      pathname.startsWith('/api/assure/') ||
-      pathname.startsWith('/api/icofr/') ||
+      pathname.startsWith('/api/assure/toe') ||
+      pathname.startsWith('/api/icofr/testing-plan') ||
+      pathname.startsWith('/api/icofr/sampling-evidence') ||
+      pathname.startsWith('/api/icofr/workpaper-review') ||
+      pathname.startsWith('/api/icofr/deficiencies') ||
       pathname.startsWith('/api/evidence')
     );
   }
