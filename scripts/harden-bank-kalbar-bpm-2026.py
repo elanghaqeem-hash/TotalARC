@@ -442,15 +442,27 @@ if not reverse or str(reverse[0].get("parentProcessId") or "") != str(try_master
 if not p05 or str(p05[0].get("sourceId") or "") != ckpn_id:
     raise RuntimeError("P05_SCOPE_LINK_VERIFY_FAILED")
 
-for pid, label in [(ckpn_id,"CKPN"),(reverse_id,"REVERSE_REPO")]:
+for pid, label, process_row in [
+    (ckpn_id,"CKPN",ckpn[0] if ckpn else {}),
+    (reverse_id,"REVERSE_REPO",reverse[0] if reverse else {}),
+]:
     detail = rows(f"""
 SELECT
  (SELECT COUNT(*) FROM ProcessObjective WHERE processId={q(pid)}) AS objectives,
  (SELECT COUNT(*) FROM SIPOC WHERE processId={q(pid)}) AS sipoc,
  (SELECT COUNT(*) FROM ProcessActivity WHERE processId={q(pid)}) AS activities
 """)
-    if detail and any(int(detail[0].get(k) or 0) for k in ("objectives","sipoc","activities")):
-        raise RuntimeError(label + "_FABRICATED_DETAIL_DETECTED")
+    has_detail = bool(
+        detail and any(int(detail[0].get(k) or 0) for k in ("objectives","sipoc","activities"))
+    )
+    if has_detail:
+        process_tags = json_tags(process_row.get("tags"))
+        rcm_validation = process_tags.get("rcmDerivedBpm") or {}
+        if (
+            not isinstance(rcm_validation, dict)
+            or rcm_validation.get("status") != "VALIDATED_APPLIED"
+        ):
+            raise RuntimeError(label + "_UNVALIDATED_DETAIL_DETECTED")
 
 scope_processes = rows(
     "SELECT code,sourceId FROM ICOFRScopeItem WHERE scopeId=" + q(scope_id) +
