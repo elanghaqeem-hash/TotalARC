@@ -65,11 +65,48 @@ const FINDING_TYPE_LABEL_ID: Record<string, string> = {
   'Segregation of Duties': 'Segregasi Tugas',
   'Missing Control': 'Kontrol Belum Tersedia',
   'Duplicate Control': 'Kontrol Duplikat',
-  'Automation Opportunity': 'Peluang Otomasi'
+  'Automation Opportunity': 'Peluang Otomasi',
+  'Traceability Gap': 'Kesenjangan Ketertelusuran',
+  'Key-Control Logic': 'Logika Key Control'
+};
+
+const LEGACY_AI_TEXT_ID: Record<string, string> = {
+  'Missing Controls for CKPN Calculation Accuracy':
+    'Kontrol untuk Akurasi Perhitungan CKPN Belum Tersedia',
+  'No controls are documented to ensure the accuracy of CKPN calculations (individual/kolektif) or validation of estimations against PSAK 50-55 standards.':
+    'Belum terdapat kontrol yang terdokumentasi untuk memastikan akurasi perhitungan CKPN (individual/kolektif) maupun validasi estimasi terhadap standar PSAK 50–55.',
+  'Implement automated validation rules and manual review checkpoints for CKPN calculations, aligned with PSAK 50-55 and ECL methodologies.':
+    'Terapkan aturan validasi otomatis dan titik reviu manual atas perhitungan CKPN yang selaras dengan PSAK 50–55 dan metodologi ECL.',
+  'Concentration of Duties in CKPN Process':
+    'Konsentrasi Tugas dalam Proses CKPN',
+  "All critical activities (e.g., estimation, validation, reporting) are performed by 'Kantor Pusat (Divisi Usaha Syariah)', increasing risk of errors or fraud.":
+    "Seluruh aktivitas kritis (misalnya estimasi, validasi, dan pelaporan) dilakukan oleh 'Kantor Pusat (Divisi Usaha Syariah)', sehingga meningkatkan risiko kesalahan atau fraud.",
+  'Assign separate roles for estimation, validation, and reporting to ensure segregation of duties.':
+    'Pisahkan peran untuk proses estimasi, validasi, dan pelaporan guna memastikan segregasi tugas yang memadai.',
+  'Limited Automation in CKPN Validation':
+    'Otomasi dalam Validasi CKPN Masih Terbatas',
+  'Manual validation of CKPN results lacks consistency and auditability, increasing reliance on human judgment.':
+    'Validasi manual atas hasil CKPN belum memiliki konsistensi dan auditabilitas yang memadai sehingga meningkatkan ketergantungan pada pertimbangan manusia.',
+  'Automate validation of CKPN outputs against predefined thresholds (e.g., PD/LGD models, NPV discrepancies).':
+    'Otomatiskan validasi output CKPN terhadap ambang yang telah ditetapkan, misalnya model PD/LGD dan selisih NPV.',
+  'Lack of Audit Trail for CKPN Inputs':
+    'Jejak Audit atas Input CKPN Belum Memadai',
+  "No evidence of documented audit trails for input data (e.g., 'Data nasabah', 'estimasi kerugian') used in CKPN calculations.":
+    "Belum terdapat bukti jejak audit yang terdokumentasi atas data input, misalnya 'Data nasabah' dan 'estimasi kerugian', yang digunakan dalam perhitungan CKPN.",
+  'Implement system-level logging and version control of all CKPN input data and model parameters.':
+    'Terapkan logging pada tingkat sistem dan kontrol versi atas seluruh data input CKPN serta parameter model.',
+  'Missing Control for Objective Evidence Verification':
+    'Kontrol Verifikasi Bukti Objektif Belum Tersedia',
+  'AI Suggested — Human Review Required':
+    'Saran AI — Memerlukan Reviu Manusia'
 };
 
 function findingTypeLabel(value: string) {
   return FINDING_TYPE_LABEL_ID[value] || value;
+}
+
+function legacyAiText(value: string) {
+  return LEGACY_AI_TEXT_ID[value] || value;
 }
 
 export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -395,23 +432,23 @@ export function AIChatDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                     </span>
                     <span className="text-[11px] font-semibold text-slate-500">{findingTypeLabel(finding.type)}</span>
                   </div>
-                  <h4 className="text-sm font-bold text-slate-900 mt-1.5">{finding.title}</h4>
+                  <h4 className="text-sm font-bold text-slate-900 mt-1.5">{legacyAiText(finding.title)}</h4>
                 </div>
                 <span className="text-[10px] font-mono text-slate-400">{finding.id}</span>
               </div>
 
-              <p className="text-xs text-slate-600 leading-relaxed">{finding.description}</p>
+              <p className="text-xs text-slate-600 leading-relaxed">{legacyAiText(finding.description)}</p>
 
               {finding.recommendation && (
                 <div className="rounded-lg bg-slate-50 border border-slate-100 p-3">
                   <div className="text-[10px] font-bold uppercase text-slate-500">Rekomendasi</div>
-                  <p className="text-xs text-slate-800 mt-1 leading-relaxed">{finding.recommendation}</p>
+                  <p className="text-xs text-slate-800 mt-1 leading-relaxed">{legacyAiText(finding.recommendation)}</p>
                 </div>
               )}
 
               <div className="pt-2 border-t border-slate-100 text-[10px] font-bold text-amber-800 flex items-center gap-1.5">
                 <AlertCircle className="w-3.5 h-3.5" />
-                <span>{finding.disclaimer}</span>
+                <span>{legacyAiText(finding.disclaimer)}</span>
               </div>
             </div>
           ))}
