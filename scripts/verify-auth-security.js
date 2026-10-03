@@ -52,7 +52,10 @@ const requirements = [
   ['src/lib/access-control.ts', 'canAdministerTenantUsers'],
   ['src/lib/access-control.ts', 'canAssignRole'],
   ['src/app/api/admin/users/route.ts', 'canAssignRole(admin.role'],
-  ['src/app/api/admin/users/route.ts', "admin.role === 'InstitutionAdmin'"]
+  ['src/app/api/admin/users/route.ts', "admin.role === 'InstitutionAdmin'"],
+  ['src/app/api/admin/security/route.ts', 'canAdministerTenantUsers'],
+  ['src/app/api/admin/security/route.ts', 'actorRole: admin.role'],
+  ['src/lib/auth.ts', 'PRIVILEGED_SESSION_PROTECTED']
 ];
 
 for (const [file, marker] of requirements) {
