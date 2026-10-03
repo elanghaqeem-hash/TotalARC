@@ -22,7 +22,7 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['docx', 'pdf', 'txt', 'pptx', 'jpg', 'jpeg', 'png', 'xlsx']);
 
 function extOf(name: string) {
@@ -222,7 +222,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const context = await access(request);
     if (!context) return noStore({ error: 'Active institution is required.' }, { status: 409 });
 
-    const guarded = await guardAiMultipart(request, 'AI_ANALYZE_RATE_LIMIT');
+    const guarded = await guardAiMultipart(\n      request,\n      'AI_ANALYZE_RATE_LIMIT',\n      MAX_FILE_BYTES + 1024 * 1024\n    );
     if (guarded) return guarded;
 
     const { id } = await routeContext.params;
@@ -248,7 +248,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
     }
     if (file.size <= 0) return noStore({ error: 'The supporting document is empty.' }, { status: 400 });
     if (file.size > MAX_FILE_BYTES) {
-      return noStore({ error: 'Supporting document exceeds the current 8 MB limit.' }, { status: 413 });
+      return noStore({ error: 'Supporting document exceeds the current 10 MB limit.' }, { status: 413 });
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -375,7 +375,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const known: Record<string, [string, number]> = {
       PROCESS_NOT_FOUND: ['Business process was not found in the active institution.', 404],
       FILE_TYPE_NOT_ALLOWED: ['This supporting document type is not allowed by the Evidence Repository.', 415],
-      FILE_TOO_LARGE: ['Supporting document exceeds the current 8 MB limit.', 413],
+      FILE_TOO_LARGE: ['Supporting document exceeds the current 10 MB limit.', 413],
       DOCUMENT_CONVERTER_UNAVAILABLE: ['Document conversion is temporarily unavailable.', 503],
       DOCUMENT_CONVERSION_FAILED: ['The document could not be converted to readable text.', 422],
       DOCUMENT_TEXT_EMPTY: ['No readable text or process information could be extracted from this file.', 422],

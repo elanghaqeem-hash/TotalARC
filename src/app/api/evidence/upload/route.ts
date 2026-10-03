@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       CUSTOM_RETENTION_DATE_REQUIRED: ['A retention date is required for Custom retention.', 400],
       FILE_TYPE_NOT_ALLOWED: ['This file type is not permitted for enterprise evidence storage.', 415],
       FILE_EMPTY: ['The evidence file is empty.', 400],
-      FILE_TOO_LARGE: ['Evidence file exceeds the current 8 MB per-version storage limit.', 413],
+      FILE_TOO_LARGE: ['Evidence file exceeds the current 10 MB per-version storage limit.', 413],
       DOCUMENT_NOT_FOUND: ['Selected evidence document was not found.', 404],
       DOCUMENT_ARCHIVED: ['Archived evidence documents cannot receive new versions.', 409],
       DUPLICATE_FILE_VERSION: ['The uploaded file is identical to the current evidence version.', 409],
