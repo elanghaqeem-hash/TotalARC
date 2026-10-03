@@ -13,6 +13,8 @@ export type SessionPayload = {
   orgUnitId: string | null;
   department: string | null;
   mustChangePassword: boolean;
+  amr?: string[];
+  mfaAt?: number;
   iat: number;
   exp: number;
   jti: string;
