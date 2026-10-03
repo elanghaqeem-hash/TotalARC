@@ -43,6 +43,24 @@ jobs:
       - name: Verify D1 schema stability
         run: npm run verify:d1-schema-stability
 
+      - name: Verify tenant isolation
+        run: npm run verify:tenant-isolation
+
+      - name: Verify RCM integrity
+        run: npm run verify:rcm-integrity
+
+      - name: Verify AI security
+        run: npm run verify:ai-security
+
+      - name: Verify ICOFR traceability integrity
+        run: npm run verify:icofr-traceability
+
+      - name: Verify TypeScript
+        run: npm run typecheck
+
+      - name: Build Next.js application
+        run: npm run build:next
+
       - name: Build OpenNext Cloudflare artifact
         run: npm run build
 
