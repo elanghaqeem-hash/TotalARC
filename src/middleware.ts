@@ -3,6 +3,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { canAccessApi, canAccessPage, isUserRole } from '@/lib/access-control';
 import { AUTH_COOKIE_NAME, isAuthSecretUsable, verifySessionToken } from '@/lib/auth-token';
 import { isAuthSessionActive } from '@/lib/auth-security';
+import { isMfaRequiredForRole } from '@/lib/auth-mfa';
 
 async function runtimeValue(name: string) {
   const fromProcess = process.env[name];
@@ -86,6 +87,7 @@ export async function middleware(request: NextRequest) {
 
   if (
     pathname === '/api/auth/login' ||
+    pathname === '/api/auth/mfa' ||
     pathname === '/api/auth/logout' ||
     pathname === '/api/auth/me' ||
     pathname === '/api/auth/bootstrap' ||
@@ -135,6 +137,11 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!session || !sessionRoleValid) return unauthorized(request);
+  if (isMfaRequiredForRole(session.role) && !session.mfaAt) {
+    const response = unauthorized(request);
+    response.cookies.delete(AUTH_COOKIE_NAME);
+    return response;
+  }
 
   let activeSession = false;
   try {
