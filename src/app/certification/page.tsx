@@ -90,11 +90,47 @@ const emptyEvidence = {
   notes: ''
 };
 
+function displayStatus(value: string) {
+  const labels: Record<string, string> = {
+    Draft: 'Draft',
+    Submitted: 'Diajukan',
+    'Under Review': 'Dalam Reviu',
+    Approved: 'Disetujui',
+    Rejected: 'Ditolak',
+    'Returned for Revision': 'Dikembalikan untuk Revisi',
+    'Ready for Sign-Off': 'Siap untuk Persetujuan',
+    Blocked: 'Diblokir',
+    Complete: 'Lengkap',
+    Archived: 'Diarsipkan',
+    Signed: 'Ditandatangani',
+    Final: 'Final',
+    Closed: 'Ditutup'
+  };
+  return labels[value] || value;
+}
+
+function displayConclusion(value: string) {
+  const labels: Record<string, string> = {
+    'Not Concluded': 'Belum Disimpulkan',
+    Effective: 'Efektif',
+    'Effective with Exceptions': 'Efektif dengan Pengecualian',
+    'Effective with Disclosed Exceptions': 'Efektif dengan Pengecualian yang Diungkapkan',
+    Ineffective: 'Tidak Efektif'
+  };
+  return labels[value] || value;
+}
+
+function displaySubjectType(value: string) {
+  if (value === 'Legal Entity') return 'Entitas Hukum';
+  if (value === 'Organization Unit') return 'Unit Organisasi';
+  return value;
+}
+
 function statusTone(status: string) {
   if (['Approved', 'Signed', 'Final', 'Closed'].includes(status)) {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   }
-  if (['Submitted', 'Under Review', 'Awaiting CEO Sign-Off', 'Awaiting CFO Sign-Off'].includes(status)) {
+  if (['Submitted', 'Under Review', 'Awaiting Persetujuan CEO', 'Awaiting Persetujuan CFO'].includes(status)) {
     return 'border-sky-200 bg-sky-50 text-sky-700';
   }
   if (['Rejected', 'Blocked'].includes(status)) {
@@ -123,7 +159,7 @@ export default function CertificationPage() {
     try {
       const response = await fetch('/api/icofr/certification', { cache: 'no-store' });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Certification data unavailable.');
+      if (!response.ok) throw new Error(payload.error || 'Data sertifikasi tidak tersedia.');
       setData(payload);
 
       const scopeId = payload.scopes?.[0]?.id || '';
@@ -173,7 +209,7 @@ export default function CertificationPage() {
           : attestationId
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Certification data unavailable.');
+      setError(err instanceof Error ? err.message : 'Data sertifikasi tidak tersedia.');
     } finally {
       setLoading(false);
     }
@@ -258,12 +294,12 @@ export default function CertificationPage() {
         body: JSON.stringify({ actionType: 'SAVE_SUBCERTIFICATION', ...subCertForm })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to save sub-certification.');
-      setMessage(subCertForm.id ? 'Sub-certification updated in Cloudflare D1.' : 'Sub-certification saved in Cloudflare D1.');
+      if (!response.ok) throw new Error(payload.error || 'Sub-sertifikasi tidak dapat disimpan.');
+      setMessage(subCertForm.id ? 'Sub-sertifikasi berhasil diperbarui di Cloudflare D1.' : 'Sub-sertifikasi berhasil disimpan di Cloudflare D1.');
       setSubCertForm(current => ({ ...current, id: payload.id }));
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save sub-certification.');
+      setError(err instanceof Error ? err.message : 'Sub-sertifikasi tidak dapat disimpan.');
     } finally {
       setSaving(false);
     }
@@ -281,13 +317,13 @@ export default function CertificationPage() {
         body: JSON.stringify({ actionType: 'SAVE_ATTESTATION', ...attestationForm })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to save management attestation.');
-      setMessage(attestationForm.id ? 'Management attestation updated in Cloudflare D1.' : 'Management attestation saved in Cloudflare D1.');
+      if (!response.ok) throw new Error(payload.error || 'Atestasi manajemen tidak dapat disimpan.');
+      setMessage(attestationForm.id ? 'Atestasi manajemen berhasil diperbarui di Cloudflare D1.' : 'Atestasi manajemen berhasil disimpan di Cloudflare D1.');
       setAttestationForm(current => ({ ...current, id: payload.id }));
       setSelectedAttestationId(payload.id);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save management attestation.');
+      setError(err instanceof Error ? err.message : 'Atestasi manajemen tidak dapat disimpan.');
     } finally {
       setSaving(false);
     }
@@ -305,12 +341,12 @@ export default function CertificationPage() {
         body: JSON.stringify({ actionType: 'SAVE_EVIDENCE_PACK', ...evidenceForm })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to save evidence pack.');
-      setMessage(evidenceForm.id ? 'Evidence pack updated in Cloudflare D1.' : 'Evidence pack saved in Cloudflare D1.');
+      if (!response.ok) throw new Error(payload.error || 'Paket evidence tidak dapat disimpan.');
+      setMessage(evidenceForm.id ? 'Paket evidence berhasil diperbarui di Cloudflare D1.' : 'Paket evidence berhasil disimpan di Cloudflare D1.');
       setEvidenceForm(current => ({ ...current, id: payload.id }));
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save evidence pack.');
+      setError(err instanceof Error ? err.message : 'Paket evidence tidak dapat disimpan.');
     } finally {
       setSaving(false);
     }
@@ -335,13 +371,13 @@ export default function CertificationPage() {
         })
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to record executive sign-off.');
-      setMessage(`${signoffRole} sign-off recorded with readiness snapshot and audit trail.`);
+      if (!response.ok) throw new Error(payload.error || 'Persetujuan eksekutif tidak dapat dicatat.');
+      setMessage(`${signoffRole} persetujuan berhasil dicatat beserta snapshot kesiapan dan audit trail.`);
       setSignatoryName('');
       setDeclarationConfirmed(false);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to record executive sign-off.');
+      setError(err instanceof Error ? err.message : 'Persetujuan eksekutif tidak dapat dicatat.');
     } finally {
       setSaving(false);
     }
@@ -438,12 +474,12 @@ export default function CertificationPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-emerald-600">
-              <BadgeCheck className="h-4 w-4" /> ICOFR Certification & Year-End Close
+              <BadgeCheck className="h-4 w-4" /> Sertifikasi ICOFR & Penutupan Akhir Tahun
             </div>
-            <h1 className="mt-1 text-2xl font-black text-slate-900">Management Certification, Readiness & Sign-Off</h1>
+            <h1 className="mt-1 text-2xl font-black text-slate-900">Sertifikasi Manajemen, Kesiapan & Persetujuan</h1>
             <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
-              Capture entity/unit sub-certifications, management representations, year-end readiness gates,
-              evidence-pack references and recorded CFO/CEO sign-offs. No effectiveness conclusion or executive sign-off is inferred.
+              Catat sub-sertifikasi entitas/unit, representasi manajemen, pemeriksaan kesiapan akhir tahun,
+              referensi paket evidence, serta persetujuan CFO/CEO yang terdokumentasi. Kesimpulan efektivitas dan persetujuan eksekutif tidak ditetapkan secara otomatis.
             </p>
           </div>
           <button
@@ -459,13 +495,13 @@ export default function CertificationPage() {
 
         <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-bold">
           <Link href="/icofr/scoping" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Scoping</Link>
-          <Link href="/icofr/testing-plan" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Testing Plan</Link>
+          <Link href="/icofr/testing-plan" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Rencana Pengujian</Link>
           <Link href="/tod" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToD</Link>
           <Link href="/toe" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">ToE</Link>
-          <Link href="/icofr/workpaper-review" className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-700">Workpaper Review</Link>
-          <Link href="/evidence" className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-700">Evidence Repository</Link>
-          <Link href="/remediation" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Remediation</Link>
-          <Link href="/icofr/coverage" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Coverage & Gaps</Link>
+          <Link href="/icofr/workpaper-review" className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-violet-700">Reviu Kertas Kerja</Link>
+          <Link href="/evidence" className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-700">Repositori Evidence</Link>
+          <Link href="/remediation" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Remediasi</Link>
+          <Link href="/icofr/coverage" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">Cakupan & Kesenjangan</Link>
         </div>
       </div>
 
@@ -482,7 +518,7 @@ export default function CertificationPage() {
 
       {!loading && !data?.institution ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-xs text-slate-500">
-          Register an institution before using ICOFR certification.
+          Daftarkan institusi terlebih dahulu sebelum menggunakan modul sertifikasi ICOFR.
         </div>
       ) : (
         <>
@@ -491,8 +527,8 @@ export default function CertificationPage() {
               <div className="mb-4 flex items-center gap-2">
                 <Users className="h-4 w-4 text-brand-600" />
                 <div>
-                  <h2 className="text-sm font-black text-slate-900">1. Entity / Unit Sub-Certification</h2>
-                  <p className="text-[10px] text-slate-500">Active form persisted to Cloudflare D1.</p>
+                  <h2 className="text-sm font-black text-slate-900">1. Sub-Sertifikasi Entitas / Unit</h2>
+                  <p className="text-[10px] text-slate-500">Form aktif disimpan ke Cloudflare D1.</p>
                 </div>
               </div>
 
@@ -500,25 +536,25 @@ export default function CertificationPage() {
                 <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
                   <div className="mb-3">
                     <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
-                      A. Certification Perimeter
+                      A. Perimeter Sertifikasi
                     </div>
                     <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      Link the declaration to the approved ICOFR scope, testing cycle, reporting period and accountable entity/unit.
+                      Hubungkan deklarasi dengan scope ICOFR yang telah disetujui, siklus pengujian, periode pelaporan, serta entitas/unit yang bertanggung jawab.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      Certification reference
+                      Referensi sertifikasi
                       <input
                         readOnly
-                        value={subCertForm.certificationRef || 'Generated automatically after first save'}
+                        value={subCertForm.certificationRef || 'Dibuat otomatis setelah penyimpanan pertama'}
                         className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 font-mono text-[11px] font-normal text-slate-500"
                       />
                     </label>
 
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      ICOFR scope *
+                      Scope ICOFR *
                       <select
                         required
                         value={subCertForm.scopeId}
@@ -537,23 +573,23 @@ export default function CertificationPage() {
                         }}
                         className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
                       >
-                        <option value="">Select scope</option>
+                        <option value="">Pilih scope</option>
                         {(data?.scopes || []).map((item: any) => (
                           <option key={item.id} value={item.id}>
-                            {item.scopeName} · FY{item.fiscalYear} · {item.status}
+                            {item.scopeName} · FY{item.fiscalYear} · {displayStatus(item.status)}
                           </option>
                         ))}
                       </select>
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Testing cycle
+                      Siklus pengujian
                       <select
                         value={subCertForm.testingCycleId}
                         onChange={e => setSubCertForm({ ...subCertForm, testingCycleId: e.target.value })}
                         className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
                       >
-                        <option value="">No cycle linked</option>
+                        <option value="">Belum ada siklus yang terhubung</option>
                         {subCertCycles.map((item: any) => (
                           <option key={item.id} value={item.id}>{item.cycleName}</option>
                         ))}
@@ -561,32 +597,32 @@ export default function CertificationPage() {
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Period *
+                      Periode *
                       <input
                         required
                         value={subCertForm.period}
                         onChange={e => setSubCertForm({ ...subCertForm, period: e.target.value })}
-                        placeholder="e.g. FY2027 / 2027 Q4"
+                        placeholder="mis. FY2027 / 2027 Q4"
                         className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
                       />
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Certification type *
+                      Jenis sertifikasi *
                       <select
                         value={subCertForm.certificationType}
                         onChange={e => setSubCertForm({ ...subCertForm, certificationType: e.target.value })}
                         className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
                       >
-                        <option>Quarterly</option>
-                        <option>Semi-Annual</option>
-                        <option>Year-End</option>
-                        <option>Ad Hoc</option>
+                        <option value="Quarterly">Triwulanan</option>
+                        <option value="Semi-Annual">Semesteran</option>
+                        <option value="Year-End">Akhir Tahun</option>
+                        <option value="Ad Hoc">Ad Hoc</option>
                       </select>
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Certification date *
+                      Tanggal sertifikasi *
                       <input
                         type="date"
                         required
@@ -597,7 +633,7 @@ export default function CertificationPage() {
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Certification level *
+                      Tingkat sertifikasi *
                       <select
                         value={subCertForm.subjectType}
                         onChange={e => {
@@ -610,20 +646,20 @@ export default function CertificationPage() {
                         }}
                         className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
                       >
-                        <option>Legal Entity</option>
-                        <option>Organization Unit</option>
+                        <option value="Legal Entity">Entitas Hukum</option>
+                        <option value="Organization Unit">Unit Organisasi</option>
                       </select>
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Entity / unit *
+                      Entitas / unit *
                       <select
                         required
                         value={subCertForm.subjectId}
                         onChange={e => selectSubject(subCertForm.subjectType, e.target.value)}
                         className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
                       >
-                        <option value="">Select entity / unit</option>
+                        <option value="">Pilih entitas / unit</option>
                         {subjects.map((item: any) => (
                           <option key={item.id} value={item.id}>
                             {item.code} · {item.name}
@@ -638,33 +674,33 @@ export default function CertificationPage() {
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
                           <div className="text-[10px] font-black uppercase tracking-wide text-sky-700">
-                            Linked subject context
+                            Konteks subjek terhubung
                           </div>
                           <div className="mt-1 text-xs font-black text-slate-900">
                             {selectedSubject.code} · {selectedSubject.name}
                           </div>
                           <div className="mt-1 text-[10px] leading-4 text-slate-500">
-                            {selectedSubject.type || subCertForm.subjectType}
+                            {selectedSubject.type || displaySubjectType(subCertForm.subjectType)}
                             {selectedSubject.headName ? ` · Head: ${selectedSubject.headName}` : ''}
                             {selectedSubject.headEmail ? ` · ${selectedSubject.headEmail}` : ''}
                           </div>
                         </div>
                         <div className="text-right text-[9px] leading-4 text-slate-400">
-                          {selectedScope ? `Scope: ${selectedScope.status}` : 'Scope not selected'}
+                          {selectedScope ? `Scope: ${displayStatus(selectedScope.status)}` : 'Scope belum dipilih'}
                           <br />
-                          {selectedCycle ? `Cycle: ${selectedCycle.cycleName}` : 'Cycle not linked'}
+                          {selectedCycle ? `Cycle: ${selectedCycle.cycleName}` : 'Siklus belum terhubung'}
                         </div>
                       </div>
 
                       {subjectContext && (
                         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                           {[
-                            ['Processes', subjectContext.processCount],
-                            ['ICOFR key controls', subjectContext.icofrKeyControlCount],
-                            ['ToD completed', `${subjectContext.todCompleted}/${subjectContext.todCount}`],
-                            ['ToE completed', `${subjectContext.toeCompleted}/${subjectContext.toeCount}`],
-                            ['Open H/C issues', subjectContext.openHighCriticalIssues],
-                            ['Overdue MAP', subjectContext.overdueActionPlans]
+                            ['Proses', subjectContext.processCount],
+                            ['Kontrol kunci ICOFR', subjectContext.icofrKeyControlCount],
+                            ['ToD selesai', `${subjectContext.todCompleted}/${subjectContext.todCount}`],
+                            ['ToE selesai', `${subjectContext.toeCompleted}/${subjectContext.toeCount}`],
+                            ['Isu H/C terbuka', subjectContext.openHighCriticalIssues],
+                            ['MAP lewat jatuh tempo', subjectContext.overdueActionPlans]
                           ].map(([label, value]) => (
                             <div key={String(label)} className="rounded-xl bg-slate-50 px-3 py-2">
                               <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</div>
@@ -680,16 +716,16 @@ export default function CertificationPage() {
                 <section className="rounded-2xl border border-slate-200 p-3.5">
                   <div className="mb-3">
                     <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
-                      B. Certifier & Declaration
+                      B. Pemberi Sertifikasi & Deklarasi
                     </div>
                     <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      Identify the accountable management certifier and record the approved certification statement.
+                      Identifikasi pejabat manajemen yang bertanggung jawab sebagai pemberi sertifikasi dan catat pernyataan sertifikasi yang telah disetujui.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="text-xs font-bold text-slate-700">
-                      Certifier name *
+                      Nama pemberi sertifikasi *
                       <input
                         required
                         value={subCertForm.certifierName}
@@ -699,18 +735,18 @@ export default function CertificationPage() {
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Certifier role / position *
+                      Jabatan pemberi sertifikasi *
                       <input
                         required
                         value={subCertForm.certifierRole}
                         onChange={e => setSubCertForm({ ...subCertForm, certifierRole: e.target.value })}
-                        placeholder="e.g. Division Head / Entity CFO"
+                        placeholder="mis. Kepala Divisi / CFO Entitas"
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                       />
                     </label>
 
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      Certifier email *
+                      Email pemberi sertifikasi *
                       <input
                         type="email"
                         required
@@ -722,24 +758,24 @@ export default function CertificationPage() {
                     </label>
 
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      Certification declaration *
+                      Deklarasi sertifikasi *
                       <textarea
                         required
                         rows={4}
                         value={subCertForm.declarationText}
                         onChange={e => setSubCertForm({ ...subCertForm, declarationText: e.target.value })}
-                        placeholder="Enter the actual management certification statement approved for this period. Do not use assumed or simulated conclusions."
+                        placeholder="Masukkan pernyataan sertifikasi manajemen yang benar-benar telah disetujui untuk periode ini. Jangan menggunakan kesimpulan asumsi atau simulasi."
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
                       />
                     </label>
 
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      Evidence / workpaper reference
+                      Referensi evidence / kertas kerja
                       <textarea
                         rows={2}
                         value={subCertForm.evidenceReference}
                         onChange={e => setSubCertForm({ ...subCertForm, evidenceReference: e.target.value })}
-                        placeholder="Reference supporting RCM, ToD/ToE workpapers, issue register, evidence pack, reconciliation or document IDs. Required before Submit/Approve."
+                        placeholder="Cantumkan referensi RCM, kertas kerja ToD/ToE, register isu, paket evidence, rekonsiliasi, atau ID dokumen pendukung. Wajib sebelum Submit/Approve."
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
                       />
                     </label>
@@ -749,25 +785,25 @@ export default function CertificationPage() {
                 <section className="rounded-2xl border border-slate-200 p-3.5">
                   <div className="mb-3">
                     <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
-                      C. Management Representations
+                      C. Representasi Manajemen
                     </div>
                     <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      All representations below must be confirmed before the record can be Submitted or Approved.
+                      Seluruh representasi berikut harus dikonfirmasi sebelum data dapat diajukan atau disetujui.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {[
-                      ['scopeComplete', 'ICOFR scope for this entity/unit is complete and appropriately represented'],
-                      ['controlsPerformed', 'Key controls were performed as represented'],
-                      ['evidenceComplete', 'Supporting evidence is complete, accurate and available for review'],
-                      ['changesDisclosed', 'Material process, system and control changes were disclosed'],
-                      ['deficienciesDisclosed', 'Known control deficiencies and exceptions were disclosed'],
-                      ['fraudDisclosed', 'Known fraud or suspected fraud matters affecting financial reporting were disclosed'],
-                      ['remediationAccurate', 'Remediation and management action status is reported accurately'],
-                      ['judgmentsDisclosed', 'Significant accounting judgments, estimates and manual adjustments were disclosed'],
-                      ['subsequentEventsDisclosed', 'Relevant subsequent events after the reporting cut-off were disclosed'],
-                      ['managementOverrideDisclosed', 'Known management override or control override matters were disclosed']
+                      ['scopeComplete', 'Scope ICOFR untuk entitas/unit ini telah lengkap dan disajikan secara tepat'],
+                      ['controlsPerformed', 'Kontrol kunci telah dilaksanakan sebagaimana direpresentasikan'],
+                      ['evidenceComplete', 'Evidence pendukung lengkap, akurat, dan tersedia untuk direviu'],
+                      ['changesDisclosed', 'Perubahan material pada proses, sistem, dan kontrol telah diungkapkan'],
+                      ['deficienciesDisclosed', 'Defisiensi kontrol dan pengecualian yang diketahui telah diungkapkan'],
+                      ['fraudDisclosed', 'Fraud atau dugaan fraud yang diketahui dan memengaruhi pelaporan keuangan telah diungkapkan'],
+                      ['remediationAccurate', 'Status remediasi dan tindakan manajemen telah dilaporkan secara akurat'],
+                      ['judgmentsDisclosed', 'Pertimbangan akuntansi signifikan, estimasi, dan penyesuaian manual telah diungkapkan'],
+                      ['subsequentEventsDisclosed', 'Peristiwa setelah tanggal pelaporan yang relevan telah diungkapkan'],
+                      ['managementOverrideDisclosed', 'Override manajemen atau override kontrol yang diketahui telah diungkapkan']
                     ].map(([key, label]) => (
                       <label
                         key={key}
@@ -793,23 +829,23 @@ export default function CertificationPage() {
                 <section className="rounded-2xl border border-slate-200 p-3.5">
                   <div className="mb-3">
                     <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
-                      D. Disclosures, Exceptions & Supporting Narrative
+                      D. Pengungkapan, Pengecualian & Narasi Pendukung
                     </div>
                     <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      Use these fields to document the facts behind the representations. State “None identified” only when that is the actual conclusion.
+                      Gunakan bagian ini untuk mendokumentasikan fakta yang mendasari representasi. Nyatakan “Tidak ada yang teridentifikasi” hanya apabila memang merupakan kesimpulan aktual.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {[
-                      ['materialChangeDetails', 'Material process / system / control changes', 'Describe material changes, effective dates and impact on controls.'],
-                      ['deficiencyDetails', 'Control deficiencies / exceptions', 'List relevant deficiencies, classifications, owners and current status.'],
-                      ['fraudDetails', 'Fraud / suspected fraud disclosure', 'Record actual disclosed fraud matters or state the reviewed result.'],
-                      ['remediationDetails', 'Remediation status', 'Summarize open, overdue or completed actions relevant to this certification.'],
-                      ['judgmentDetails', 'Significant judgments / estimates', 'Record material judgments, estimates, manual adjustments or unusual transactions reviewed.'],
-                      ['subsequentEventDetails', 'Subsequent events', 'Record relevant events after the reporting cut-off through the certification date.'],
-                      ['managementOverrideDetails', 'Management override matters', 'Record identified override matters, compensating controls and escalation where applicable.'],
-                      ['additionalComments', 'Additional comments', 'Add other facts, limitations, dependencies or cross-references.']
+                      ['materialChangeDetails', 'Perubahan material proses / sistem / kontrol', 'Jelaskan perubahan material, tanggal efektif, dan dampaknya terhadap kontrol.'],
+                      ['deficiencyDetails', 'Defisiensi kontrol / pengecualian', 'Cantumkan defisiensi yang relevan, klasifikasi, penanggung jawab, dan status terkini.'],
+                      ['fraudDetails', 'Pengungkapan fraud / dugaan fraud', 'Catat fraud yang benar-benar diungkapkan atau nyatakan hasil reviu yang terdokumentasi.'],
+                      ['remediationDetails', 'Status remediasi', 'Ringkas tindakan yang masih terbuka, terlambat, atau telah selesai yang relevan dengan sertifikasi ini.'],
+                      ['judgmentDetails', 'Pertimbangan / estimasi signifikan', 'Catat pertimbangan material, estimasi, penyesuaian manual, atau transaksi tidak biasa yang telah direviu.'],
+                      ['subsequentEventDetails', 'Peristiwa setelah periode pelaporan', 'Catat peristiwa relevan setelah batas pelaporan sampai dengan tanggal sertifikasi.'],
+                      ['managementOverrideDetails', 'Hal terkait override manajemen', 'Catat override yang teridentifikasi, kontrol kompensasi, dan eskalasi bila relevan.'],
+                      ['additionalComments', 'Komentar tambahan', 'Tambahkan fakta, keterbatasan, dependensi, atau referensi silang lainnya.']
                     ].map(([key, label, placeholder]) => (
                       <label key={key} className="text-xs font-bold text-slate-700">
                         {label}
@@ -833,52 +869,52 @@ export default function CertificationPage() {
                 <section className="rounded-2xl border border-slate-200 p-3.5">
                   <div className="mb-3">
                     <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
-                      E. Conclusion & Workflow
+                      E. Kesimpulan & Alur Kerja
                     </div>
                     <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      The certifier records the conclusion. Total ARC does not infer an effectiveness conclusion.
+                      Pemberi sertifikasi menetapkan kesimpulan. Total ARC tidak menyimpulkan efektivitas secara otomatis.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="text-xs font-bold text-slate-700">
-                      Unit conclusion *
+                      Kesimpulan unit *
                       <select
                         value={subCertForm.conclusion}
                         onChange={e => setSubCertForm({ ...subCertForm, conclusion: e.target.value })}
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                       >
-                        <option>Not Concluded</option>
-                        <option>Effective</option>
-                        <option>Effective with Exceptions</option>
-                        <option>Ineffective</option>
+                        <option value="Not Concluded">Belum Disimpulkan</option>
+                        <option value="Effective">Efektif</option>
+                        <option value="Effective with Exceptions">Efektif dengan Pengecualian</option>
+                        <option value="Ineffective">Tidak Efektif</option>
                       </select>
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Workflow status
+                      Status alur kerja
                       <select
                         value={subCertForm.status}
                         onChange={e => setSubCertForm({ ...subCertForm, status: e.target.value })}
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                       >
-                        <option>Draft</option>
-                        <option>Submitted</option>
-                        <option>Under Review</option>
-                        <option>Approved</option>
-                        <option>Rejected</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Submitted">Diajukan</option>
+                        <option value="Under Review">Dalam Reviu</option>
+                        <option value="Approved">Disetujui</option>
+                        <option value="Rejected">Ditolak</option>
                       </select>
                     </label>
 
                     {['Effective with Exceptions', 'Ineffective'].includes(subCertForm.conclusion) && (
                       <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                        Exception / conclusion rationale *
+                        Alasan pengecualian / kesimpulan *
                         <textarea
                           required
                           rows={3}
                           value={subCertForm.exceptionRationale}
                           onChange={e => setSubCertForm({ ...subCertForm, exceptionRationale: e.target.value })}
-                          placeholder="Explain the exception, impact, compensating controls, escalation and basis for the selected conclusion."
+                          placeholder="Jelaskan pengecualian, dampak, kontrol kompensasi, eskalasi, dan dasar atas kesimpulan yang dipilih."
                           className="mt-1 w-full rounded-xl border border-amber-200 bg-amber-50/40 px-3 py-2.5 font-normal leading-5"
                         />
                       </label>
@@ -889,16 +925,16 @@ export default function CertificationPage() {
                 <section className="rounded-2xl border border-slate-200 p-3.5">
                   <div className="mb-3">
                     <div className="text-[10px] font-black uppercase tracking-[0.12em] text-brand-600">
-                      F. Reviewer & Approval
+                      F. Reviewer & Persetujuan
                     </div>
                     <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      An Approved workflow status requires an identified reviewer, reviewer role and an Approved decision.
+                      Status alur kerja Disetujui memerlukan reviewer yang teridentifikasi, jabatan reviewer, dan keputusan Disetujui.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="text-xs font-bold text-slate-700">
-                      Reviewer name
+                      Nama reviewer
                       <input
                         value={subCertForm.reviewerName}
                         onChange={e => setSubCertForm({ ...subCertForm, reviewerName: e.target.value })}
@@ -907,17 +943,17 @@ export default function CertificationPage() {
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Reviewer role / position
+                      Jabatan reviewer
                       <input
                         value={subCertForm.reviewerRole}
                         onChange={e => setSubCertForm({ ...subCertForm, reviewerRole: e.target.value })}
-                        placeholder="e.g. Finance Controller / ICOFR Reviewer"
+                        placeholder="mis. Finance Controller / Reviewer ICOFR"
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                       />
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Reviewer email
+                      Email reviewer
                       <input
                         type="email"
                         value={subCertForm.reviewerEmail}
@@ -927,26 +963,26 @@ export default function CertificationPage() {
                     </label>
 
                     <label className="text-xs font-bold text-slate-700">
-                      Reviewer decision
+                      Keputusan reviewer
                       <select
                         value={subCertForm.reviewerDecision}
                         onChange={e => setSubCertForm({ ...subCertForm, reviewerDecision: e.target.value })}
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                       >
-                        <option value="">Not reviewed</option>
-                        <option>Approved</option>
-                        <option>Returned for Revision</option>
-                        <option>Rejected</option>
+                        <option value="">Belum direviu</option>
+                        <option value="Approved">Disetujui</option>
+                        <option value="Returned for Revision">Dikembalikan untuk Revisi</option>
+                        <option value="Rejected">Ditolak</option>
                       </select>
                     </label>
 
                     <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                      Reviewer comments
+                      Komentar reviewer
                       <textarea
                         rows={3}
                         value={subCertForm.reviewerComments}
                         onChange={e => setSubCertForm({ ...subCertForm, reviewerComments: e.target.value })}
-                        placeholder="Document review notes, conditions, required follow-up or approval rationale."
+                        placeholder="Dokumentasikan catatan reviu, kondisi, tindak lanjut yang diperlukan, atau alasan persetujuan."
                         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
                       />
                     </label>
@@ -956,19 +992,19 @@ export default function CertificationPage() {
 
               <div className="mt-4 flex justify-end">
                 <button disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
-                  <Save className="h-4 w-4" /> {subCertForm.id ? 'Update sub-certification' : 'Save sub-certification'}
+                  <Save className="h-4 w-4" /> {subCertForm.id ? 'Perbarui Sub-Sertifikasi' : 'Simpan Sub-Sertifikasi'}
                 </button>
               </div>
             </form>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-black text-slate-900">Sub-Certification Register</h2>
-              <p className="mt-1 text-[10px] text-slate-500">Entity/unit certifications roll up into the management attestation readiness view.</p>
+              <h2 className="text-sm font-black text-slate-900">Register Sub-Sertifikasi</h2>
+              <p className="mt-1 text-[10px] text-slate-500">Sertifikasi entitas/unit dirangkum ke dalam tampilan kesiapan atestasi manajemen.</p>
 
               <div className="mt-4 space-y-2">
                 {(data?.subCertifications || []).length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
-                    No sub-certifications registered.
+                    Belum ada sub-sertifikasi yang terdaftar.
                   </div>
                 ) : (
                   (data?.subCertifications || []).map((item: any) => (
@@ -976,14 +1012,14 @@ export default function CertificationPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${statusTone(item.status)}`}>{item.status}</span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${statusTone(item.status)}`}>{displayStatus(item.status)}</span>
                             <span className="text-[9px] font-bold text-slate-400">{item.period}</span>
                           </div>
                           <div className="mt-1 text-xs font-black text-slate-800">
-                            {item.subject?.code || item.subjectType} · {item.subject?.name || 'Subject not available'}
+                            {item.subject?.code || displaySubjectType(item.subjectType)} · {item.subject?.name || 'Subjek tidak tersedia'}
                           </div>
                           <div className="mt-1 text-[10px] text-slate-500">
-                            {item.certifierName} · {item.certifierRole} · {item.conclusion}
+                            {item.certifierName} · {item.certifierRole} · {displayConclusion(item.conclusion)}
                           </div>
                         </div>
                         <button type="button" onClick={() => editSubCert(item)} className="rounded-lg border border-slate-200 p-2 text-slate-500">
@@ -1002,14 +1038,14 @@ export default function CertificationPage() {
               <div className="mb-4 flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-brand-600" />
                 <div>
-                  <h2 className="text-sm font-black text-slate-900">2. Management Attestation</h2>
-                  <p className="text-[10px] text-slate-500">Management conclusion is explicitly entered; Total ARC does not infer it.</p>
+                  <h2 className="text-sm font-black text-slate-900">2. Atestasi Manajemen</h2>
+                  <p className="text-[10px] text-slate-500">Kesimpulan manajemen harus diinput secara eksplisit; Total ARC tidak menetapkannya secara otomatis.</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  ICOFR scope *
+                  Scope ICOFR *
                   <select
                     required
                     value={attestationForm.scopeId}
@@ -1020,27 +1056,27 @@ export default function CertificationPage() {
                     }}
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                   >
-                    <option value="">Select scope</option>
+                    <option value="">Pilih scope</option>
                     {(data?.scopes || []).map((item: any) => (
-                      <option key={item.id} value={item.id}>{item.scopeName} · FY{item.fiscalYear} · {item.status}</option>
+                      <option key={item.id} value={item.id}>{item.scopeName} · FY{item.fiscalYear} · {displayStatus(item.status)}</option>
                     ))}
                   </select>
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Testing cycle
+                  Siklus pengujian
                   <select
                     value={attestationForm.testingCycleId}
                     onChange={e => setAttestationForm({ ...attestationForm, testingCycleId: e.target.value })}
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                   >
-                    <option value="">No cycle linked</option>
+                    <option value="">Belum ada siklus yang terhubung</option>
                     {attestationCycles.map((item: any) => <option key={item.id} value={item.id}>{item.cycleName}</option>)}
                   </select>
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Period *
+                  Periode *
                   <input
                     required
                     value={attestationForm.period}
@@ -1051,51 +1087,51 @@ export default function CertificationPage() {
                 </label>
 
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Scope summary *
+                  Ringkasan scope *
                   <textarea
                     required
                     rows={3}
                     value={attestationForm.scopeSummary}
                     onChange={e => setAttestationForm({ ...attestationForm, scopeSummary: e.target.value })}
-                    placeholder="Describe the actual ICOFR perimeter covered by this management attestation."
+                    placeholder="Jelaskan perimeter ICOFR aktual yang dicakup dalam atestasi manajemen ini."
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
                   />
                 </label>
 
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Management representation *
+                  Representasi manajemen *
                   <textarea
                     required
                     rows={4}
                     value={attestationForm.managementRepresentation}
                     onChange={e => setAttestationForm({ ...attestationForm, managementRepresentation: e.target.value })}
-                    placeholder="Enter the approved management representation wording."
+                    placeholder="Masukkan pernyataan representasi manajemen yang telah disetujui."
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
                   />
                 </label>
 
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Unresolved deficiency disclosure
+                  Pengungkapan defisiensi yang belum terselesaikan
                   <textarea
                     rows={3}
                     value={attestationForm.unresolvedDeficiencyDisclosure}
                     onChange={e => setAttestationForm({ ...attestationForm, unresolvedDeficiencyDisclosure: e.target.value })}
-                    placeholder="Disclose unresolved deficiencies or state the documented conclusion."
+                    placeholder="Ungkapkan defisiensi yang belum terselesaikan atau nyatakan kesimpulan yang terdokumentasi."
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
                   />
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Overall management conclusion *
+                  Kesimpulan manajemen keseluruhan *
                   <select
                     value={attestationForm.overallConclusion}
                     onChange={e => setAttestationForm({ ...attestationForm, overallConclusion: e.target.value })}
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                   >
-                    <option>Not Concluded</option>
-                    <option>Effective</option>
-                    <option>Effective with Disclosed Exceptions</option>
-                    <option>Ineffective</option>
+                    <option value="Not Concluded">Belum Disimpulkan</option>
+                    <option value="Effective">Efektif</option>
+                    <option value="Effective with Disclosed Exceptions">Efektif dengan Pengecualian yang Diungkapkan</option>
+                    <option value="Ineffective">Tidak Efektif</option>
                   </select>
                 </label>
 
@@ -1106,15 +1142,15 @@ export default function CertificationPage() {
                     onChange={e => setAttestationForm({ ...attestationForm, status: e.target.value })}
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                   >
-                    <option>Draft</option>
-                    <option>Under Review</option>
-                    <option>Ready for Sign-Off</option>
-                    <option>Blocked</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Under Review">Dalam Reviu</option>
+                    <option value="Ready for Sign-Off">Siap untuk Persetujuan</option>
+                    <option value="Blocked">Diblokir</option>
                   </select>
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Prepared by *
+                  Disiapkan oleh *
                   <input
                     required
                     value={attestationForm.preparedBy}
@@ -1124,7 +1160,7 @@ export default function CertificationPage() {
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Reviewed by
+                  Direviu oleh
                   <input
                     value={attestationForm.reviewedBy}
                     onChange={e => setAttestationForm({ ...attestationForm, reviewedBy: e.target.value })}
@@ -1139,10 +1175,10 @@ export default function CertificationPage() {
                       checked={attestationForm.readinessOverride}
                       onChange={e => setAttestationForm({ ...attestationForm, readinessOverride: e.target.checked })}
                     />
-                    Document readiness override
+                    Dokumentasikan override kesiapan
                   </label>
                   <p className="mt-1 text-[10px] leading-4 text-amber-800">
-                    This does not change any failed readiness gate. It only permits executive sign-off when management has explicitly documented the basis for proceeding.
+                    Ini tidak mengubah pemeriksaan kesiapan yang gagal. Fitur ini hanya memungkinkan persetujuan eksekutif apabila manajemen secara eksplisit telah mendokumentasikan dasar untuk melanjutkan.
                   </p>
                   {attestationForm.readinessOverride && (
                     <textarea
@@ -1150,7 +1186,7 @@ export default function CertificationPage() {
                       rows={2}
                       value={attestationForm.overrideReason}
                       onChange={e => setAttestationForm({ ...attestationForm, overrideReason: e.target.value })}
-                      placeholder="Required documented override rationale."
+                      placeholder="Alasan override yang terdokumentasi wajib diisi."
                       className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-xs"
                     />
                   )}
@@ -1159,7 +1195,7 @@ export default function CertificationPage() {
 
               <div className="mt-4 flex justify-end">
                 <button disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
-                  <Save className="h-4 w-4" /> {attestationForm.id ? 'Update attestation' : 'Save attestation'}
+                  <Save className="h-4 w-4" /> {attestationForm.id ? 'Perbarui Atestasi' : 'Simpan Atestasi'}
                 </button>
               </div>
             </form>
@@ -1168,8 +1204,8 @@ export default function CertificationPage() {
               <div className="mb-4 flex items-center gap-2">
                 <BadgeCheck className="h-4 w-4 text-brand-600" />
                 <div>
-                  <h2 className="text-sm font-black text-slate-900">Year-End Readiness Gate</h2>
-                  <p className="text-[10px] text-slate-500">Select a saved attestation to evaluate persisted readiness evidence.</p>
+                  <h2 className="text-sm font-black text-slate-900">Pemeriksaan Kesiapan Akhir Tahun</h2>
+                  <p className="text-[10px] text-slate-500">Pilih atestasi yang telah disimpan untuk mengevaluasi evidence kesiapan yang tersimpan.</p>
                 </div>
               </div>
 
@@ -1188,15 +1224,15 @@ export default function CertificationPage() {
                 }}
                 className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs"
               >
-                <option value="">Select management attestation</option>
+                <option value="">Pilih atestasi manajemen</option>
                 {(data?.attestations || []).map((item: any) => (
-                  <option key={item.id} value={item.id}>{item.period} · {item.overallConclusion} · {item.status}</option>
+                  <option key={item.id} value={item.id}>{item.period} · {displayConclusion(item.overallConclusion)} · {displayStatus(item.status)}</option>
                 ))}
               </select>
 
               {!selectedAttestation ? (
                 <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
-                  Save or select an attestation to view readiness.
+                  Simpan atau pilih atestasi untuk melihat status kesiapan.
                 </div>
               ) : (
                 <>
@@ -1204,10 +1240,10 @@ export default function CertificationPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <div className="text-xs font-black text-slate-900">{selectedAttestation.period}</div>
-                        <div className="mt-0.5 text-[10px] text-slate-500">{selectedAttestation.overallConclusion}</div>
+                        <div className="mt-0.5 text-[10px] text-slate-500">{displayConclusion(selectedAttestation.overallConclusion)}</div>
                       </div>
                       <span className={`rounded-full border px-3 py-1 text-[10px] font-black ${readiness?.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
-                        {readiness?.ready ? 'READY' : 'NOT READY'}
+                        {readiness?.ready ? 'SIAP' : 'BELUM SIAP'}
                       </span>
                     </div>
                   </div>
@@ -1230,7 +1266,7 @@ export default function CertificationPage() {
 
                   {selectedAttestation.readinessOverride && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-4 text-amber-800">
-                      <strong>Readiness override documented:</strong> {selectedAttestation.overrideReason || 'Reason not available'}
+                      <strong>Override kesiapan terdokumentasi:</strong> {selectedAttestation.overrideReason || 'Alasan tidak tersedia'}
                     </div>
                   )}
                 </>
@@ -1243,14 +1279,14 @@ export default function CertificationPage() {
               <div className="mb-4 flex items-center gap-2">
                 <Signature className="h-4 w-4 text-brand-600" />
                 <div>
-                  <h2 className="text-sm font-black text-slate-900">3. Executive Sign-Off</h2>
-                  <p className="text-[10px] text-slate-500">Records a named sign-off and readiness snapshot; it is not a cryptographic digital signature.</p>
+                  <h2 className="text-sm font-black text-slate-900">3. Persetujuan Eksekutif</h2>
+                  <p className="text-[10px] text-slate-500">Mencatat persetujuan oleh pejabat yang disebutkan beserta snapshot kesiapan; ini bukan tanda tangan digital kriptografis.</p>
                 </div>
               </div>
 
               {!selectedAttestation ? (
                 <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
-                  Select a saved management attestation first.
+                  Pilih atestasi manajemen yang telah disimpan terlebih dahulu.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1260,14 +1296,14 @@ export default function CertificationPage() {
                       onClick={() => setSignoffRole('CFO')}
                       className={`rounded-xl border p-3 text-xs font-black ${signoffRole === 'CFO' ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}
                     >
-                      CFO Sign-Off
+                      Persetujuan CFO
                     </button>
                     <button
                       type="button"
                       onClick={() => setSignoffRole('CEO')}
                       className={`rounded-xl border p-3 text-xs font-black ${signoffRole === 'CEO' ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}
                     >
-                      CEO Sign-Off
+                      Persetujuan CEO
                     </button>
                   </div>
 
@@ -1275,19 +1311,19 @@ export default function CertificationPage() {
                     <div>
                       <div className="font-black text-slate-500">CFO</div>
                       <div className="mt-1 font-bold text-slate-800">
-                        {selectedAttestation.cfoSignOff ? `Signed · ${selectedAttestation.cfoName}` : 'Not signed'}
+                        {selectedAttestation.cfoSignOff ? `Signed · ${selectedAttestation.cfoName}` : 'Belum ditandatangani'}
                       </div>
                     </div>
                     <div>
                       <div className="font-black text-slate-500">CEO</div>
                       <div className="mt-1 font-bold text-slate-800">
-                        {selectedAttestation.ceoSignOff ? `Signed · ${selectedAttestation.ceoName}` : 'Not signed'}
+                        {selectedAttestation.ceoSignOff ? `Signed · ${selectedAttestation.ceoName}` : 'Belum ditandatangani'}
                       </div>
                     </div>
                   </div>
 
                   <label className="block text-xs font-bold text-slate-700">
-                    {signoffRole} signatory name *
+                    Nama penandatangan {signoffRole} *
                     <input
                       required
                       value={signatoryName}
@@ -1302,12 +1338,12 @@ export default function CertificationPage() {
                       checked={declarationConfirmed}
                       onChange={e => setDeclarationConfirmed(e.target.checked)}
                     />
-                    I confirm that the named signatory has reviewed the recorded management conclusion, disclosed matters and readiness information for this attestation.
+                    Saya mengonfirmasi bahwa penandatangan yang disebutkan telah meninjau kesimpulan manajemen, hal-hal yang diungkapkan, dan informasi kesiapan untuk atestasi ini.
                   </label>
 
                   {!readiness?.ready && !selectedAttestation.readinessOverride && (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-4 text-amber-800">
-                      Sign-off is blocked while readiness gates remain unresolved unless an explicit management readiness override is documented in the attestation form.
+                      Persetujuan diblokir selama pemeriksaan kesiapan masih belum terselesaikan, kecuali override kesiapan manajemen telah didokumentasikan secara eksplisit pada form atestasi.
                     </div>
                   )}
 
@@ -1316,7 +1352,7 @@ export default function CertificationPage() {
                       disabled={saving || !signatoryName || !declarationConfirmed}
                       className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50"
                     >
-                      <Signature className="h-4 w-4" /> Record {signoffRole} sign-off
+                      <Signature className="h-4 w-4" /> Catat Persetujuan {signoffRole}
                     </button>
                   </div>
                 </div>
@@ -1327,14 +1363,14 @@ export default function CertificationPage() {
               <div className="mb-4 flex items-center gap-2">
                 <FileArchive className="h-4 w-4 text-brand-600" />
                 <div>
-                  <h2 className="text-sm font-black text-slate-900">4. Year-End Evidence Pack</h2>
-                  <p className="text-[10px] text-slate-500">Registers actual evidence repository/file references; Total ARC does not fabricate attachments.</p>
+                  <h2 className="text-sm font-black text-slate-900">4. Paket Evidence Akhir Tahun</h2>
+                  <p className="text-[10px] text-slate-500">Mencatat referensi repositori/file evidence aktual; Total ARC tidak membuat lampiran fiktif.</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Management attestation *
+                  Atestasi manajemen *
                   <select
                     required
                     value={evidenceForm.attestationId}
@@ -1348,25 +1384,25 @@ export default function CertificationPage() {
                     }}
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                   >
-                    <option value="">Select</option>
+                    <option value="">Pilih</option>
                     {(data?.attestations || []).map((item: any) => (
-                      <option key={item.id} value={item.id}>{item.period} · {item.overallConclusion}</option>
+                      <option key={item.id} value={item.id}>{item.period} · {displayConclusion(item.overallConclusion)}</option>
                     ))}
                   </select>
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Pack name *
+                  Nama paket *
                   <input required value={evidenceForm.packName} onChange={e => setEvidenceForm({ ...evidenceForm, packName: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Period *
+                  Periode *
                   <input required value={evidenceForm.period} onChange={e => setEvidenceForm({ ...evidenceForm, period: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Prepared by *
+                  Disiapkan oleh *
                   <input required value={evidenceForm.preparedBy} onChange={e => setEvidenceForm({ ...evidenceForm, preparedBy: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
 
@@ -1376,15 +1412,15 @@ export default function CertificationPage() {
                 </label>
 
                 <label className="text-xs font-bold text-slate-700 sm:col-span-2">
-                  Evidence index reference *
-                  <input required value={evidenceForm.evidenceIndexRef} onChange={e => setEvidenceForm({ ...evidenceForm, evidenceIndexRef: e.target.value })} placeholder="Document repository/path/reference ID" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
+                  Referensi indeks evidence *
+                  <input required value={evidenceForm.evidenceIndexRef} onChange={e => setEvidenceForm({ ...evidenceForm, evidenceIndexRef: e.target.value })} placeholder="ID repositori/path/referensi dokumen" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
 
                 {[
-                  ['testingSummaryRef', 'Testing summary reference'],
-                  ['deficiencySummaryRef', 'Deficiency summary reference'],
-                  ['remediationSummaryRef', 'Remediation summary reference'],
-                  ['representationRef', 'Management representation reference']
+                  ['testingSummaryRef', 'Referensi ringkasan pengujian'],
+                  ['deficiencySummaryRef', 'Referensi ringkasan defisiensi'],
+                  ['remediationSummaryRef', 'Referensi ringkasan remediasi'],
+                  ['representationRef', 'Referensi representasi manajemen']
                 ].map(([key, label]) => (
                   <label key={key} className="text-xs font-bold text-slate-700">
                     {label}
@@ -1395,45 +1431,45 @@ export default function CertificationPage() {
                 <label className="text-xs font-bold text-slate-700">
                   Status
                   <select value={evidenceForm.status} onChange={e => setEvidenceForm({ ...evidenceForm, status: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                    <option>Draft</option>
-                    <option>Under Review</option>
-                    <option>Complete</option>
-                    <option>Archived</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Under Review">Dalam Reviu</option>
+                    <option value="Complete">Lengkap</option>
+                    <option value="Archived">Diarsipkan</option>
                   </select>
                 </label>
 
                 <label className="text-xs font-bold text-slate-700">
-                  Notes
+                  Catatan
                   <textarea rows={2} value={evidenceForm.notes} onChange={e => setEvidenceForm({ ...evidenceForm, notes: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
                 </label>
               </div>
 
               <div className="mt-4 flex justify-end">
                 <button disabled={saving || !(data?.attestations || []).length} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
-                  <Save className="h-4 w-4" /> {evidenceForm.id ? 'Update evidence pack' : 'Save evidence pack'}
+                  <Save className="h-4 w-4" /> {evidenceForm.id ? 'Perbarui Paket Evidence' : 'Simpan Paket Evidence'}
                 </button>
               </div>
             </form>
           </div>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-black text-slate-900">Management Attestation & Evidence Register</h2>
+            <h2 className="text-sm font-black text-slate-900">Register Atestasi Manajemen & Evidence</h2>
             <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
               <div className="space-y-2">
                 {(data?.attestations || []).length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">No management attestations registered.</div>
+                  <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">Belum ada atestasi manajemen yang terdaftar.</div>
                 ) : (
                   (data?.attestations || []).map((item: any) => (
                     <div key={item.id} className="rounded-xl border border-slate-200 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <button type="button" onClick={() => setSelectedAttestationId(item.id)} className="min-w-0 flex-1 text-left">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${statusTone(item.status)}`}>{item.status}</span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${statusTone(item.status)}`}>{displayStatus(item.status)}</span>
                             <span className="text-[9px] font-bold text-slate-400">{item.period}</span>
                           </div>
-                          <div className="mt-1 text-xs font-black text-slate-800">{item.overallConclusion}</div>
+                          <div className="mt-1 text-xs font-black text-slate-800">{displayConclusion(item.overallConclusion)}</div>
                           <div className="mt-1 text-[10px] text-slate-500">
-                            CFO {item.cfoSignOff ? 'signed' : 'pending'} · CEO {item.ceoSignOff ? 'signed' : 'pending'}
+                            CFO {item.cfoSignOff ? 'ditandatangani' : 'menunggu'} · CEO {item.ceoSignOff ? 'ditandatangani' : 'menunggu'}
                           </div>
                         </button>
                         <button type="button" onClick={() => editAttestation(item)} className="rounded-lg border border-slate-200 p-2 text-slate-500">
@@ -1447,14 +1483,14 @@ export default function CertificationPage() {
 
               <div className="space-y-2">
                 {(data?.evidencePacks || []).length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">No year-end evidence packs registered.</div>
+                  <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">Belum ada paket evidence akhir tahun yang terdaftar.</div>
                 ) : (
                   (data?.evidencePacks || []).map((item: any) => (
                     <div key={item.id} className="rounded-xl border border-slate-200 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${statusTone(item.status)}`}>{item.status}</span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${statusTone(item.status)}`}>{displayStatus(item.status)}</span>
                             <span className="text-[9px] font-bold text-slate-400">{item.period}</span>
                           </div>
                           <div className="mt-1 text-xs font-black text-slate-800">{item.packName}</div>
