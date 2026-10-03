@@ -145,7 +145,7 @@ async function runtimeProviders(input: {
         sensitivity: input.sensitivity
       });
 
-      if (routing.managed) {
+      if (routing.managed && routing.providers.length > 0) {
         return routing.providers.map(item => ({
           provider: item.provider,
           model: item.model,
