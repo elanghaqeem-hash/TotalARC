@@ -9,7 +9,7 @@ export async function GET() {
     return NextResponse.json({ ...data, storage: 'cloudflare-d1' });
   } catch (error) {
     console.error('Failed to load ICOFR deficiencies:', error);
-    return NextResponse.json({ error: 'Failed to load ICOFR deficiency register.' }, { status: 503 });
+    return NextResponse.json({ error: 'Gagal memuat register defisiensi ICOFR.' }, { status: 503 });
   }
 }
 
@@ -21,12 +21,12 @@ export async function POST(request: Request) {
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const known: Record<string, [string, number]> = {
-      INSTITUTION_REQUIRED: ['Register an institution before maintaining ICOFR deficiencies.', 409],
-      REQUIRED_FIELDS: ['Code, title, description, severity and owner are required.', 400],
-      CODE_CONFLICT: ['This deficiency code already exists.', 409]
+      INSTITUTION_REQUIRED: ['Daftarkan institusi terlebih dahulu sebelum mengelola defisiensi ICOFR.', 409],
+      REQUIRED_FIELDS: ['Kode, judul, deskripsi, tingkat keparahan, dan penanggung jawab wajib diisi.', 400],
+      CODE_CONFLICT: ['Kode defisiensi tersebut sudah terdaftar.', 409]
     };
     if (known[code]) return NextResponse.json({ error: known[code][0] }, { status: known[code][1] });
     console.error('Failed to save ICOFR deficiency:', error);
-    return NextResponse.json({ error: 'Failed to save ICOFR deficiency.' }, { status: 500 });
+    return NextResponse.json({ error: 'Gagal menyimpan defisiensi ICOFR.' }, { status: 500 });
   }
 }
