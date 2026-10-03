@@ -219,14 +219,17 @@ export default function RisksPage() {
               </div>
             </div>
 
-            <div className="grid w-full grid-cols-2 gap-2 lg:w-auto lg:min-w-[340px]">
+            <div className="grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2 lg:w-auto lg:min-w-[430px]">
               <AiRiskRegisterGenerator processes={processes} onCreated={loadRisks} />
               <button
+                type="button"
                 onClick={() => setNewRiskModal(true)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-[11px] font-black text-white shadow-sm transition hover:bg-slate-800"
+                className="group inline-flex min-h-12 w-full items-center justify-center gap-2.5 rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 text-[11px] font-black text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300 sm:text-xs"
               >
-                <Plus className="h-4 w-4" />
-                <span>Identifikasi Risiko</span>
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/10 transition group-hover:bg-white/15">
+                  <Plus className="h-4 w-4" />
+                </span>
+                <span className="whitespace-nowrap">Identifikasi Risiko Baru</span>
               </button>
             </div>
           </div>
