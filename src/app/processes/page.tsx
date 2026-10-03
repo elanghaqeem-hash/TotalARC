@@ -536,7 +536,15 @@ export default function ProcessesPage() {
                         ICOFR
                       </span>
                     )}
-                    <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                    <span
+                      className={`rounded-lg border px-2.5 py-1 text-[10px] font-semibold ${
+                        proc.status === 'Approved'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : proc.status === 'Rejected'
+                          ? 'border-rose-200 bg-rose-50 text-rose-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
+                    >
                       {proc.status}
                     </span>
                   </div>
