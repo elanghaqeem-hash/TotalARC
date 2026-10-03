@@ -216,7 +216,9 @@ export function aiKeyVaultReady() {
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = '';
-  for (const value of bytes) binary += String.fromCharCode(value);
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
   return btoa(binary);
 }
 
