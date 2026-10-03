@@ -5,8 +5,12 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   BarChart3,
+  CheckCircle2,
   Download,
+  Edit3,
+  FileDown,
   Lightbulb,
+  LockKeyhole,
   RefreshCcw,
   ShieldCheck,
   Sparkles,
@@ -15,6 +19,9 @@ import {
 import { useAssuranceData } from '@/hooks/useAssuranceData';
 
 type EnterpriseOverview = {
+  analysisId: string;
+  reviewStatus: 'PENDING_REVIEW' | 'ACCEPTED' | 'UPDATED';
+  downloadAllowed: boolean;
   generatedAt: string;
   analysisMode: 'ai' | 'data-rules-fallback';
   readiness: {
@@ -76,6 +83,11 @@ export default function ReportsPage() {
   const [overview, setOverview] = useState<EnterpriseOverview | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState('');
+  const [editingAnalysis, setEditingAnalysis] = useState(false);
+  const [editAnalysis, setEditAnalysis] = useState<EnterpriseOverview['analysis'] | null>(null);
+  const [downloadBusy, setDownloadBusy] = useState(false);
   const autoAnalyzed = useRef(false);
 
   const sources = data ? [
@@ -118,7 +130,11 @@ export default function ReportsPage() {
       if (!response.ok) {
         throw new Error(payload?.error || 'Analisis Total ARC tidak dapat dibuat.');
       }
-      setOverview(payload as EnterpriseOverview);
+      const next = payload as EnterpriseOverview;
+      setOverview(next);
+      setEditAnalysis(next.analysis);
+      setEditingAnalysis(false);
+      setReviewMessage('');
     } catch (analysisError) {
       setAiError(
         analysisError instanceof Error
@@ -142,6 +158,97 @@ export default function ReportsPage() {
     } finally {
       void runAiAnalysis();
     }
+  };
+
+  const reviewAnalysis = async (action: 'ACCEPT' | 'UPDATE') => {
+    if (!overview?.analysisId || reviewBusy) return;
+    setReviewBusy(true);
+    setAiError('');
+    setReviewMessage('');
+
+    try {
+      const response = await fetch('/api/reports/enterprise-overview/review', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          analysisId: overview.analysisId,
+          action,
+          ...(action === 'UPDATE' ? { analysis: editAnalysis || overview.analysis } : {})
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Reviu hasil analisis gagal disimpan.');
+
+      setOverview(current =>
+        current
+          ? {
+              ...current,
+              analysis: payload.snapshot?.analysis || current.analysis,
+              reviewStatus: payload.snapshot?.status || current.reviewStatus,
+              downloadAllowed: Boolean(payload.downloadAllowed)
+            }
+          : current
+      );
+      setEditAnalysis(payload.snapshot?.analysis || editAnalysis);
+      setEditingAnalysis(false);
+      setReviewMessage(payload.message || 'Reviu hasil analisis berhasil disimpan.');
+    } catch (reviewError) {
+      setAiError(
+        reviewError instanceof Error
+          ? reviewError.message
+          : 'Reviu hasil analisis gagal disimpan.'
+      );
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!overview?.analysisId || !overview.downloadAllowed || downloadBusy) return;
+    setDownloadBusy(true);
+    setAiError('');
+
+    try {
+      const response = await fetch(
+        '/api/reports/enterprise-overview/pdf?analysisId=' +
+          encodeURIComponent(overview.analysisId),
+        { credentials: 'same-origin', cache: 'no-store' }
+      );
+      if (!response.ok) {
+        const message = await response.text().catch(() => '');
+        throw new Error(message || 'PDF analisis gagal dibuat.');
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const fileName = match?.[1] || 'Total-ARC-Analisis.pdf';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      setAiError(
+        downloadError instanceof Error ? downloadError.message : 'PDF analisis gagal dibuat.'
+      );
+    } finally {
+      setDownloadBusy(false);
+    }
+  };
+
+  const updateEditField = (
+    field: keyof EnterpriseOverview['analysis'],
+    value: string | string[]
+  ) => {
+    setEditAnalysis(current => {
+      const source = current || overview?.analysis;
+      return source ? { ...source, [field]: value } : current;
+    });
   };
 
   const readinessTone = readinessClasses(overview?.readiness?.label);
@@ -271,6 +378,59 @@ export default function ReportsPage() {
                 <Sparkles className={`h-4 w-4 ${aiLoading ? 'animate-pulse' : ''}`} />
                 {aiLoading ? 'Menganalisis…' : overview ? 'Analisis Ulang' : 'Jalankan Analisis AI'}
               </button>
+              {overview && (
+                <div className="grid min-w-[220px] grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditAnalysis(overview.analysis);
+                      setEditingAnalysis(true);
+                      setReviewMessage('');
+                    }}
+                    disabled={reviewBusy || aiLoading}
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[10px] font-black text-slate-700 hover:border-sky-200 hover:bg-sky-50 disabled:opacity-50"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    Update
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void reviewAnalysis('ACCEPT')}
+                    disabled={reviewBusy || aiLoading}
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Aksep
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void downloadPdf()}
+                    disabled={!overview.downloadAllowed || downloadBusy}
+                    className={
+                      'col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-[10px] font-black transition ' +
+                      (overview.downloadAllowed
+                        ? 'bg-slate-950 text-white hover:bg-slate-800'
+                        : 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400')
+                    }
+                    title={
+                      overview.downloadAllowed
+                        ? 'Download laporan analisis tervalidasi dalam PDF'
+                        : 'Update atau Aksep hasil analisis untuk mengaktifkan download PDF'
+                    }
+                  >
+                    {overview.downloadAllowed ? (
+                      <FileDown className="h-4 w-4" />
+                    ) : (
+                      <LockKeyhole className="h-4 w-4" />
+                    )}
+                    {downloadBusy
+                      ? 'Membuat PDF…'
+                      : overview.downloadAllowed
+                        ? 'Download Report PDF'
+                        : 'PDF Terkunci'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -278,6 +438,114 @@ export default function ReportsPage() {
         {aiError && (
           <div className="mx-5 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700 sm:mx-6">
             {aiError}
+          </div>
+        )}
+
+        {overview && (
+          <div className="mx-5 mt-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[10px] sm:mx-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-slate-600">
+              Status hasil:
+              <strong className="ml-1 text-slate-800">
+                {overview.reviewStatus === 'ACCEPTED'
+                  ? 'Diaksep pengguna'
+                  : overview.reviewStatus === 'UPDATED'
+                    ? 'Diperbarui pengguna'
+                    : 'Menunggu reviu pengguna'}
+              </strong>
+            </div>
+            <div className={overview.downloadAllowed ? 'font-bold text-emerald-700' : 'text-slate-400'}>
+              {overview.downloadAllowed
+                ? 'PDF siap diunduh.'
+                : 'Tombol PDF aktif setelah hasil di-update atau diaksep.'}
+            </div>
+          </div>
+        )}
+
+        {reviewMessage && (
+          <div className="mx-5 mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700 sm:mx-6">
+            {reviewMessage}
+          </div>
+        )}
+
+        {editingAnalysis && editAnalysis && (
+          <div className="mx-5 mt-4 rounded-2xl border border-sky-200 bg-white p-4 sm:mx-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-xs font-black text-slate-900">Update Hasil Analisis</div>
+                <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                  Koreksi narasi yang diperlukan. Setelah disimpan, versi ini dianggap telah direviu pengguna dan tombol PDF akan aktif.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAnalysis(false);
+                  setEditAnalysis(overview?.analysis || null);
+                }}
+                className="text-[10px] font-bold text-slate-500 hover:text-slate-800"
+              >
+                Batal
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className="text-[10px] font-bold text-slate-600">
+                Headline
+                <input
+                  value={editAnalysis.headline}
+                  onChange={event => updateEditField('headline', event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-normal text-slate-800"
+                />
+              </label>
+              {[
+                ['executiveSummary', 'Ringkasan Eksekutif'],
+                ['icofrInsight', 'Insight ICOFR'],
+                ['riskInsight', 'Insight Risiko'],
+                ['complianceInsight', 'Insight Kepatuhan'],
+                ['priorityInsight', 'Insight Prioritas'],
+                ['caution', 'Catatan Kehati-hatian']
+              ].map(([field, label]) => (
+                <label key={field} className="text-[10px] font-bold text-slate-600">
+                  {label}
+                  <textarea
+                    rows={field === 'executiveSummary' ? 4 : 3}
+                    value={String((editAnalysis as any)[field] || '')}
+                    onChange={event => updateEditField(field as keyof EnterpriseOverview['analysis'], event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-normal leading-5 text-slate-800"
+                  />
+                </label>
+              ))}
+              <label className="text-[10px] font-bold text-slate-600">
+                Rekomendasi
+                <textarea
+                  rows={6}
+                  value={(editAnalysis.recommendations || []).join('\n')}
+                  onChange={event =>
+                    updateEditField(
+                      'recommendations',
+                      event.target.value
+                        .split('\n')
+                        .map(item => item.trim())
+                        .filter(Boolean)
+                    )
+                  }
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-normal leading-5 text-slate-800"
+                  placeholder="Satu rekomendasi per baris"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void reviewAnalysis('UPDATE')}
+                disabled={reviewBusy}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-[10px] font-black text-white hover:bg-sky-700 disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {reviewBusy ? 'Menyimpan…' : 'Simpan Update & Aktifkan PDF'}
+              </button>
+            </div>
           </div>
         )}
 

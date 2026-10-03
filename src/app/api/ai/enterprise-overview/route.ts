@@ -14,6 +14,8 @@ import {
 } from '@/lib/d1-icofr-domains';
 import { getTestingPlanData } from '@/lib/d1-icofr-testing-plan';
 import { getCertificationData } from '@/lib/d1-icofr-certification';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
+import { saveEnterpriseAnalysisSnapshot } from '@/lib/d1-enterprise-analysis';
 
 export const dynamic = 'force-dynamic';
 
@@ -228,6 +230,11 @@ function fallbackAnalysis(metrics: Record<string, any>, readiness: ReturnType<ty
 
 export async function POST(request: Request) {
   try {
+    const context = await resolveInstitutionAccess(request);
+    if (!context?.institution) {
+      return NextResponse.json({ error: 'Institusi aktif diperlukan.' }, { status: 409 });
+    }
+
     const guarded = await guardAiPost(request, 'AI_ANALYZE_RATE_LIMIT');
     if (!guarded.ok) return guarded.response;
 
@@ -436,32 +443,69 @@ export async function POST(request: Request) {
         caution: textValue(parsed.caution, baseline.caution)
       };
 
-      return NextResponse.json({
-        generatedAt: new Date().toISOString(),
+      const generatedAt = new Date().toISOString();
+      const ai = {
+        requestId: result.requestId,
+        provider: result.provider,
+        model: result.model,
+        fallbackUsed: result.fallbackUsed,
+        durationMs: result.durationMs
+      };
+      const disclaimer = 'AI Suggested — Human Review Required';
+      const snapshot = await saveEnterpriseAnalysisSnapshot({
+        institutionId: context.institution.id,
+        institutionName: context.institution.name,
+        generatedAt,
         analysisMode: 'ai',
         readiness,
         metrics,
         analysis,
-        ai: {
-          requestId: result.requestId,
-          provider: result.provider,
-          model: result.model,
-          fallbackUsed: result.fallbackUsed,
-          durationMs: result.durationMs
-        },
-        disclaimer: 'AI Suggested — Human Review Required'
+        ai,
+        disclaimer,
+        createdBy: context.profile.name || context.profile.email
+      });
+
+      return NextResponse.json({
+        analysisId: snapshot.id,
+        reviewStatus: snapshot.status,
+        downloadAllowed: false,
+        generatedAt,
+        analysisMode: 'ai',
+        readiness,
+        metrics,
+        analysis,
+        ai,
+        disclaimer
       });
     } catch (aiError) {
       console.error('Total ARC enterprise overview AI provider failed; using deterministic fallback:', aiError);
 
-      return NextResponse.json({
-        generatedAt: new Date().toISOString(),
+      const generatedAt = new Date().toISOString();
+      const disclaimer = 'Data-derived fallback — AI provider unavailable; Human Review Required';
+      const snapshot = await saveEnterpriseAnalysisSnapshot({
+        institutionId: context.institution.id,
+        institutionName: context.institution.name,
+        generatedAt,
         analysisMode: 'data-rules-fallback',
         readiness,
         metrics,
         analysis: baseline,
         ai: null,
-        disclaimer: 'Data-derived fallback — AI provider unavailable; Human Review Required'
+        disclaimer,
+        createdBy: context.profile.name || context.profile.email
+      });
+
+      return NextResponse.json({
+        analysisId: snapshot.id,
+        reviewStatus: snapshot.status,
+        downloadAllowed: false,
+        generatedAt,
+        analysisMode: 'data-rules-fallback',
+        readiness,
+        metrics,
+        analysis: baseline,
+        ai: null,
+        disclaimer
       });
     }
   } catch (error) {
