@@ -297,15 +297,15 @@ export default function EvidenceRepositoryPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-cyan-700">
-              <FileArchive className="h-4 w-4" /> Enterprise Evidence Repository
+              <FileArchive className="h-4 w-4" /> Repositori Evidence Terpusat
             </div>
             <h1 className="mt-1 text-2xl font-black text-slate-900">
-              File Evidence, Version Control, SHA-256 Integrity & Retention
+              File Evidence, Version Control, Integritas Dokumen & Retensi
             </h1>
             <p className="mt-1 max-w-5xl text-xs leading-5 text-slate-500">
-              Store actual evidence files, maintain immutable version history, pin evidence versions to assurance records,
-              verify file integrity before download, and govern sensitivity, retention and legal hold. File content is persisted
-              in institution-scoped Cloudflare D1 chunks in the current deployment.
+              Simpan file evidence aktual, kelola riwayat versi yang tidak dapat diubah, kaitkan versi evidence ke record assurance,
+              verifikasi integritas dokumen sebelum digunakan atau diunduh, serta kelola sensitivitas, retensi, dan legal hold.
+              SHA-256 digunakan sebagai sidik jari digital untuk memastikan file tetap identik dengan versi yang tersimpan.
             </p>
           </div>
           <button
@@ -623,8 +623,35 @@ export default function EvidenceRepositoryPage() {
                               <div className="mt-1 text-[9px] text-slate-500">
                                 {formatBytes(Number(version.sizeBytes || 0))} · {version.mimeType} · uploaded by {version.uploadedBy}
                               </div>
-                              <div className="mt-1 break-all font-mono text-[8px] text-slate-400">SHA-256 {version.sha256}</div>
-                              {version.versionNote && <div className="mt-1 text-[9px] text-slate-600">Change note: {version.versionNote}</div>}
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[9px] font-black ${
+                                    verification?.versionId === version.id && verification?.matches
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                      : 'border-slate-200 bg-slate-50 text-slate-600'
+                                  }`}
+                                >
+                                  {verification?.versionId === version.id && verification?.matches
+                                    ? '✓ Integritas SHA-256: Terverifikasi'
+                                    : 'Integritas SHA-256: Belum diverifikasi'}
+                                </span>
+                                <details className="group">
+                                  <summary className="cursor-pointer text-[9px] font-bold text-cyan-700">
+                                    Detail teknis
+                                  </summary>
+                                  <div className="mt-1 max-w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-[8px] text-slate-500">
+                                    <div className="font-bold text-slate-600">SHA-256 tersimpan</div>
+                                    <div className="mt-1 break-all font-mono">{version.sha256}</div>
+                                    {verification?.versionId === version.id && verification?.actualSha256 && (
+                                      <>
+                                        <div className="mt-2 font-bold text-slate-600">SHA-256 hasil verifikasi</div>
+                                        <div className="mt-1 break-all font-mono">{verification.actualSha256}</div>
+                                      </>
+                                    )}
+                                  </div>
+                                </details>
+                              </div>
+                              {version.versionNote && <div className="mt-1 text-[9px] text-slate-600">Catatan perubahan: {version.versionNote}</div>}
                             </div>
                             {version.isCurrent && <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[8px] font-black text-emerald-700">CURRENT</span>}
                           </div>
@@ -641,7 +668,7 @@ export default function EvidenceRepositoryPage() {
                               }}
                               className="inline-flex items-center gap-1 rounded-lg border border-cyan-200 px-2.5 py-1.5 text-[9px] font-bold text-cyan-700"
                             >
-                              <Fingerprint className="h-3 w-3" /> Verify SHA-256
+                              <Fingerprint className="h-3 w-3" /> Verifikasi Integritas
                             </button>
                           </div>
                         </div>
@@ -649,8 +676,19 @@ export default function EvidenceRepositoryPage() {
                     </div>
                     {verification && verification.documentId === selectedDocument.id && (
                       <div className={`mt-3 rounded-xl border p-3 text-[10px] ${verification.matches ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>
-                        <strong>{verification.matches ? 'Integrity verified.' : 'Integrity mismatch.'}</strong>
-                        <div className="mt-1 break-all font-mono text-[8px]">Actual: {verification.actualSha256}</div>
+                        <strong>{verification.matches ? '✓ Integritas dokumen terverifikasi.' : '⚠ Integritas dokumen tidak cocok.'}</strong>
+                        <div className="mt-1 text-[9px]">
+                          {verification.matches
+                            ? 'File saat ini identik dengan fingerprint SHA-256 yang tersimpan.'
+                            : 'Fingerprint file saat ini berbeda dari fingerprint yang tersimpan.'}
+                        </div>
+                        <details className="mt-2">
+                          <summary className="cursor-pointer font-bold">Detail teknis SHA-256</summary>
+                          <div className="mt-1 break-all font-mono text-[8px]">Aktual: {verification.actualSha256}</div>
+                          {verification.expectedSha256 && (
+                            <div className="mt-1 break-all font-mono text-[8px]">Tersimpan: {verification.expectedSha256}</div>
+                          )}
+                        </details>
                       </div>
                     )}
                   </div>
@@ -825,5 +863,5 @@ export default function EvidenceRepositoryPage() {
 }
 
 function resultMessage(version: any) {
-  return `SHA-256 verification completed for ${version.fileName} v${version.versionNo}.`;
+  return `Verifikasi integritas selesai untuk ${version.fileName} v${version.versionNo}.`;
 }
