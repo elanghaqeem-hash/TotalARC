@@ -18,6 +18,7 @@ type D1DatabaseLike = {
 export type MfaMethod = 'TOTP' | 'PASSKEY' | 'EMAIL_OTP' | 'SSO_MFA';
 
 export const MFA_REQUIRED_ROLES: UserRole[] = [
+  'SystemAdmin',
   'Admin',
   'InstitutionAdmin',
   'InternalAuditor',
