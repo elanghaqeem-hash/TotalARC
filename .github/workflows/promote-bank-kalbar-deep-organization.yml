@@ -256,10 +256,10 @@ jobs:
           upsert_unit("DIV-UUS","Divisi UUS","Division","DIR-PEMASARAN-UUS",None)
 
           for code,name in CONVENTIONAL_BRANCHES:
-              upsert_unit(code,name,"Branch",None,None)
+              upsert_unit(code,name,"Branch","DIR-PEMASARAN-UUS",None)
 
           for code,name in SHARIA_BRANCHES:
-              upsert_unit(code,name,"Branch","DIV-UUS",None)
+              upsert_unit(code,name,"Branch","DIR-PEMASARAN-UUS",None)
 
           Path("/tmp/deep_org_units.sql").write_text("\n".join(statements))
           execute_file("/tmp/deep_org_units.sql")
@@ -355,18 +355,11 @@ jobs:
                   "Unit existence is source-backed. Exact current director-level reporting line is deliberately left unassigned because the latest central-office amendment is scanned and not text-verifiable in the connected source."
               ))
 
-          for code,_ in CONVENTIONAL_BRANCHES:
+          for code,_ in CONVENTIONAL_BRANCHES + SHARIA_BRANCHES:
               evidence_sql.append(evidence(
-                  code,"VERIFIED_CURRENT_OFFICE","PENDING_PARENT",
-                  [SOURCES["website_network"],SOURCES["aura_branch_sop"]],
-                  "Active conventional branch is listed on the official Bank Kalbar office network. DIR/PP-0024/2026 states branch supervision is from Direksi through the relevant Division Head, but does not identify one single central parent for every branch."
-              ))
-
-          for code,_ in SHARIA_BRANCHES:
-              evidence_sql.append(evidence(
-                  code,"VERIFIED_CURRENT_OFFICE","VERIFIED_FUNCTIONAL_PARENT",
-                  [SOURCES["website_network"],SOURCES["website_management"],SOURCES["aura_branch_sop"]],
-                  "Active sharia branch is listed on the official network and is linked to UUS as the source-defined head-office parent for sharia offices."
+                  code,"USER_DIRECTED_CONFIGURATION","CONFIGURED_PARENT",
+                  ["USER-INSTRUCTION:2026-10-03"],
+                  "Total ARC configuration: all Bank Kalbar branches are placed directly under Direktur Pemasaran & UUS per user instruction dated 3 October 2026. This records the configured application hierarchy and does not assert that the relationship was independently verified from the formal organization source."
               ))
 
           Path("/tmp/deep_org_evidence.sql").write_text("\n".join(evidence_sql))
@@ -422,7 +415,7 @@ jobs:
                   "conventionalBranchCount":len(CONVENTIONAL_BRANCHES),
                   "shariaBranchCount":len(SHARIA_BRANCHES),
                   "formalBranchTemplateNodes":len(TEMPLATE_NODES),
-                  "policy":"Parent relationships are populated only where source-confirmed; unresolved central reporting lines remain null and are surfaced as PENDING_PARENT.",
+                  "policy":"All Bank Kalbar branches are configured directly under Direktur Pemasaran & UUS per user instruction dated 3 October 2026; other reporting relationships remain source-governed.",
                   "annualReportNote":"Project source confirms Annual Report 2025 was received/used, but the standalone report file was not directly readable/indexed in the connected Drive search during this promotion.",
                   "sourcePrecedence":"Seraya update > Aura baseline/formal amendment where overlapping; official Bank Kalbar website used for current management and office-network corroboration."
               }
@@ -461,7 +454,7 @@ jobs:
           VALUES(
             {q(audit_id)},{q(institution_id)},'System','System','UPSERT','OrganizationHierarchy',
             {q(BATCH)},NULL,{q(json.dumps(audit_value,ensure_ascii=False,separators=(",",":")))},
-            'Deepen Bank Kalbar organization from Aura formal sources, Seraya update sources, and official Bank Kalbar current website without inventing unresolved reporting lines.',
+            'Deepen Bank Kalbar organization from Aura/Seraya/official sources and apply the user-directed branch parent configuration under Direktur Pemasaran & UUS.',
             NULL,{q(now)}
           );
           """
