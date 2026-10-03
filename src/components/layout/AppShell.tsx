@@ -673,7 +673,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </button>
                       </div>
                     </div>
-                    {currentUser.role === 'Admin' && (
+                    {(currentUser.role === 'Admin' || currentUser.role === 'InstitutionAdmin') && (
                       <Link
                         href="/admin/security"
                         onClick={() => setAccountMenuOpen(false)}
