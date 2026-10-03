@@ -2,8 +2,201 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, CheckCircle2, Link2, Pencil, Plus, Save, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronDown, Link2, Pencil, Plus, Save, Search, ShieldCheck, X } from 'lucide-react';
 import { RichTextDisplay, RichTextEditor } from '@/components/common/RichTextEditor';
+
+
+type SearchPickerOption = {
+  value: string;
+  code?: string | null;
+  name: string;
+  meta?: string | null;
+};
+
+function SearchPicker({
+  label,
+  value,
+  options,
+  placeholder,
+  searchPlaceholder,
+  onChange
+}: {
+  label: string;
+  value: string;
+  options: SearchPickerOption[];
+  placeholder: string;
+  searchPlaceholder: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = options.find(option => option.value === value) || null;
+  const normalized = query.trim().toLowerCase();
+  const filtered = normalized
+    ? options.filter(option =>
+        [option.code, option.name, option.meta]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(normalized)
+      )
+    : options;
+
+  const close = () => {
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div>
+      <label className="text-xs font-bold text-slate-700">{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1 flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left font-normal text-slate-800 outline-none transition hover:border-slate-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <span className="min-w-0 flex-1">
+          {selected ? (
+            <span className="block min-w-0">
+              {selected.code && (
+                <span className="mr-1.5 inline-flex rounded-md bg-brand-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-brand-700">
+                  {selected.code}
+                </span>
+              )}
+              <span className="align-middle text-[11px] font-semibold text-slate-800">{selected.name}</span>
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-400">{placeholder}</span>
+          )}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-[90] flex items-end bg-slate-950/45 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={label}
+          onMouseDown={event => {
+            if (event.currentTarget === event.target) close();
+          }}
+        >
+          <div className="flex max-h-[82dvh] w-full flex-col overflow-hidden rounded-t-[24px] bg-white shadow-2xl sm:max-h-[76vh] sm:max-w-xl sm:rounded-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-4">
+              <div>
+                <div className="text-sm font-black text-slate-900">{label}</div>
+                <div className="mt-0.5 text-[10px] text-slate-500">
+                  {options.length} pilihan · cari kode atau nama
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={close}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Tutup"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-100 bg-slate-50/70 p-3">
+              <label className="relative block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-50"
+                />
+              </label>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+              {filtered.length === 0 ? (
+                <div className="px-4 py-10 text-center">
+                  <Search className="mx-auto h-6 w-6 text-slate-300" />
+                  <div className="mt-2 text-xs font-black text-slate-700">Pilihan tidak ditemukan</div>
+                  <div className="mt-1 text-[10px] text-slate-500">Gunakan kode atau kata kunci lain.</div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {filtered.map(option => {
+                    const active = option.value === value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          onChange(option.value);
+                          close();
+                        }}
+                        className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition ${
+                          active
+                            ? 'border-brand-300 bg-brand-50 shadow-sm'
+                            : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                            active
+                              ? 'border-brand-600 bg-brand-600 text-white'
+                              : 'border-slate-300 text-transparent'
+                          }`}
+                        >
+                          <Check className="h-3 w-3" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            {option.code && (
+                              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-600">
+                                {option.code}
+                              </span>
+                            )}
+                            {active && (
+                              <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-brand-700">
+                                Dipilih
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-1 block text-[12px] font-bold leading-5 text-slate-800">
+                            {option.name}
+                          </span>
+                          {option.meta && (
+                            <span className="mt-0.5 block text-[10px] text-slate-500">{option.meta}</span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-white px-4 py-3 text-[10px] text-slate-500">
+              <span>{filtered.length} dari {options.length} pilihan</span>
+              {value && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange('');
+                    close();
+                  }}
+                  className="font-black text-rose-600"
+                >
+                  Hapus pilihan
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 type RecordItem = {
   id: string;
@@ -280,26 +473,32 @@ export function ControlDomainWorkspace(props: Props) {
             <label className="text-xs font-bold text-slate-700">System / application {props.systemRequired ? '*' : ''}
               <input required={props.systemRequired} value={form.systemName} onChange={e=>setForm({...form,systemName:e.target.value})} placeholder={props.systemRequired ? 'Required for this domain' : 'Optional'} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
             </label>
-            <label className="text-xs font-bold text-slate-700">Link to Single Control Library
-              <select value={form.sourceControlId} onChange={e=>selectSourceControl(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                <option value="">No Control Master link</option>
-                {sourceControls.map(control => (
-                  <option key={control.id} value={control.id}>
-                    {control.controlId} · {control.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs font-bold text-slate-700">Business process
-              <select value={form.processName} onChange={e=>setForm({...form,processName:e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal">
-                <option value="">No process selected</option>
-                {processes.map(process => (
-                  <option key={process.id} value={process.name}>
-                    {process.processId} · {process.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <SearchPicker
+              label="Tautkan ke Control Master"
+              value={form.sourceControlId}
+              options={sourceControls.map(control => ({
+                value: String(control.id),
+                code: control.controlId ? String(control.controlId) : null,
+                name: String(control.name || 'Control tanpa nama'),
+                meta: control.process?.name || control.controlOwner || null
+              }))}
+              placeholder="Tidak ada Control Master yang ditautkan"
+              searchPlaceholder="Cari ID atau nama control..."
+              onChange={selectSourceControl}
+            />
+            <SearchPicker
+              label="Proses Bisnis"
+              value={form.processName}
+              options={processes.map(process => ({
+                value: String(process.name || ''),
+                code: process.processId ? String(process.processId) : null,
+                name: String(process.name || 'Proses bisnis tanpa nama'),
+                meta: process.category || process.ownerName || null
+              }))}
+              placeholder="Belum ada proses bisnis yang dipilih"
+              searchPlaceholder="Cari kode atau nama proses bisnis..."
+              onChange={processName => setForm({ ...form, processName })}
+            />
             <label className="text-xs font-bold text-slate-700">FS area / account
               <input value={form.financialStatementArea} onChange={e=>setForm({...form,financialStatementArea:e.target.value})} placeholder="e.g. Revenue, Cash, Loans" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" />
             </label>
