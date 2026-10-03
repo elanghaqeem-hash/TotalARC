@@ -7,6 +7,7 @@ import type {
   AiSensitivity,
   AiTask
 } from './types';
+import { redactBankingSensitiveData } from './redaction';
 
 type WorkersAiBinding = {
   run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
@@ -144,29 +145,8 @@ function truncateInput(value: string): string {
 }
 
 function redactForExternal(value: string): { text: string; redactions: number } {
-  let text = value;
-  let redactions = 0;
-
-  const replace = (pattern: RegExp, label: string) => {
-    text = text.replace(pattern, () => {
-      redactions += 1;
-      return '[' + label + '_REDACTED]';
-    });
-  };
-
-  replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, 'EMAIL');
-  replace(/(?:\+62|62|0)8\d{7,12}\b/g, 'PHONE');
-  replace(/\b\d{16}\b/g, 'IDENTIFIER');
-  replace(/\b\d{10,15}\b/g, 'ACCOUNT_OR_ID');
-  replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, 'API_KEY');
-  replace(/\bsk-[0-9A-Za-z_-]{16,}\b/g, 'API_KEY');
-  replace(/\bBearer\s+[0-9A-Za-z._~-]{12,}\b/gi, 'BEARER_TOKEN');
-  replace(
-    /\b(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,
-    'SECRET'
-  );
-
-  return { text, redactions };
+  const result = redactBankingSensitiveData(value);
+  return { text: result.text, redactions: result.redactions };
 }
 
 async function fetchJson(
