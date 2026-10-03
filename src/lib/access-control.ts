@@ -231,6 +231,7 @@ const API_PAGE_MAP: Array<{ api: string; page: string }> = [
   { api: '/api/evidence', page: '/evidence' },
   { api: '/api/admin/users', page: '/admin/users' },
   { api: '/api/admin/security', page: '/admin/security' },
+  { api: '/api/admin/ai-settings', page: '/admin/ai-settings' },
   { api: '/api/assure/toe', page: '/toe' },
   { api: '/api/assure/remediation', page: '/remediation' },
   { api: '/api/monitor/ccm', page: '/ccm' },
