@@ -345,6 +345,7 @@ export default function ProcessesPage() {
     (category: any) => String(category.id) === String(selectedCategory)
   );
 
+  const normalizedSearch = search.trim().toLowerCase();
   const filtered = processes.filter(p => {
     const processCategoryId = String(p.categoryId || p.category?.id || '');
     const processCategoryCode = String(p.category?.code || '');
@@ -358,14 +359,39 @@ export default function ProcessesPage() {
       (selectedCategoryCode !== '' && processCategoryCode === selectedCategoryCode) ||
       (selectedCategoryName !== '' && processCategoryName === selectedCategoryName);
 
-    const normalizedSearch = search.trim().toLowerCase();
-    const matchSearch =
-      String(p.name || '').toLowerCase().includes(normalizedSearch) ||
-      String(p.processId || '').toLowerCase().includes(normalizedSearch) ||
-      String(p.ownerName || '').toLowerCase().includes(normalizedSearch);
+    const searchableText = [
+      p.name,
+      p.processId,
+      p.ownerName,
+      p.orgUnit?.name,
+      p.description,
+      p.category?.name
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
 
-    return matchCat && matchSearch;
+    return matchCat && (!normalizedSearch || searchableText.includes(normalizedSearch));
   });
+
+  useEffect(() => {
+    if (processLoading) return;
+
+    const currentStillVisible =
+      Boolean(selectedProcess?.id) &&
+      filtered.some(process => String(process.id) === String(selectedProcess.id));
+
+    if (currentStillVisible) return;
+
+    if (filtered.length > 0) {
+      void loadProcessDetail(filtered[0]);
+      return;
+    }
+
+    setSelectedProcess(null);
+    setProcessDetailLoading(false);
+    setProcessDetailError('');
+  }, [search, selectedCategory, processes, processLoading]);
 
   const selectedProcessTags = parseProcessTags(selectedProcess?.tags);
   const selectedParent = selectedProcess?.parentProcessId
@@ -422,12 +448,33 @@ export default function ProcessesPage() {
         <div className="relative w-full">
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
-            type="text"
+            type="search"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Filter berdasarkan ID Proses, Nama, atau Pemilik..."
-            className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
+            placeholder="Cari ID Proses, Nama, Pemilik, Unit, atau Deskripsi..."
+            className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-11 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 [&::-webkit-search-cancel-button]:hidden"
+            aria-label="Cari proses bisnis"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Hapus pencarian"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500 sm:text-[11px]">
+          <span>
+            {normalizedSearch
+              ? `${filtered.length} proses ditemukan untuk “${search.trim()}”`
+              : `${filtered.length} proses ditampilkan`}
+          </span>
+          {normalizedSearch && filtered.length > 0 && (
+            <span className="font-semibold text-brand-700">Hasil pertama otomatis dipilih</span>
+          )}
         </div>
 
         <div className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -444,9 +491,9 @@ export default function ProcessesPage() {
           {categories.map(cat => (
             <button
               key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
+              onClick={() => setSelectedCategory(String(cat.id))}
               className={`min-h-10 shrink-0 whitespace-nowrap rounded-xl px-3.5 py-2 text-[11px] font-semibold transition-colors sm:text-xs ${
-                selectedCategory === cat.id
+                selectedCategory === String(cat.id)
                   ? 'bg-brand-600 text-white shadow-sm'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
@@ -476,6 +523,23 @@ export default function ProcessesPage() {
         <div className="space-y-4 lg:col-span-5">
           {processLoading ? (
             <DataLoadingState label="Memuat proses bisnis..." variant="list" rows={3} />
+          ) : filtered.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center shadow-sm">
+              <Search className="mx-auto h-6 w-6 text-slate-300" />
+              <div className="mt-2 text-sm font-black text-slate-700">Proses tidak ditemukan</div>
+              <div className="mt-1 text-[11px] leading-5 text-slate-500">
+                Ubah kata kunci atau pilih kategori lain.
+              </div>
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-200"
+                >
+                  Hapus pencarian
+                </button>
+              )}
+            </div>
           ) : (
             filtered.map(proc => {
             const isSelected = selectedProcess?.id === proc.id;
