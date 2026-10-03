@@ -185,6 +185,8 @@ export async function POST(request: Request) {
       'Differentiate observation from recommendation.',
       'For residual heatmaps, only discuss inherent-to-residual movement when comparisonEligible is greater than zero.',
       'Keep wording suitable for management and risk owners.',
+      'Write every user-facing narrative value in clear professional Bahasa Indonesia. Do not return English prose except unavoidable product names, acronyms, or technical terms.',
+      'Use these Indonesian terms consistently where relevant: inherent = inheren, residual = residual, assessed = sudah dinilai, not assessed = belum dinilai, coverage = cakupan, data quality = kualitas data.',
       'Return JSON only with this shape: {"headline":"string","executiveSummary":"string","dataQuality":"string","concentrationInsights":["string"],"managementActions":["string"],"caution":"string"}.',
       'Maximum 5 concentrationInsights and 5 managementActions.'
     ].join(' ');
@@ -194,8 +196,8 @@ export async function POST(request: Request) {
       sensitivity: 'confidential',
       systemPrompt,
       prompt:
-        'Analyze this Total ARC risk heatmap dataset. The selected view is ' +
-        mode +
+        'Analisis dataset heatmap risiko Total ARC berikut dan jawab seluruh narasi dalam Bahasa Indonesia. Tampilan yang dipilih adalah ' +
+        (mode === 'inherent' ? 'inheren' : 'residual') +
         '.\n' +
         JSON.stringify(heatmapContext),
       temperature: 0.1,
@@ -223,7 +225,7 @@ export async function POST(request: Request) {
         headline:
           typeof parsed.headline === 'string'
             ? parsed.headline
-            : 'Risk heatmap analysis completed.',
+            : 'Analisis heatmap risiko selesai.',
         executiveSummary:
           typeof parsed.executiveSummary === 'string'
             ? parsed.executiveSummary
@@ -237,7 +239,7 @@ export async function POST(request: Request) {
         caution:
           typeof parsed.caution === 'string'
             ? parsed.caution
-            : 'AI-generated analysis requires human review before use in risk decisions.'
+            : 'Analisis yang dihasilkan AI memerlukan reviu manusia sebelum digunakan dalam pengambilan keputusan risiko.'
       },
       ai: {
         requestId: result.requestId,
@@ -246,12 +248,12 @@ export async function POST(request: Request) {
         fallbackUsed: result.fallbackUsed,
         durationMs: result.durationMs
       },
-      disclaimer: 'AI Suggested — Human Review Required'
+      disclaimer: 'Saran AI — Memerlukan Reviu Manusia'
     });
   } catch (error) {
     console.error('AI risk heatmap analysis failed:', error);
     return NextResponse.json(
-      { error: 'Failed to generate AI risk heatmap analysis.' },
+      { error: 'Gagal menghasilkan analisis heatmap risiko berbasis AI.' },
       { status: 503 }
     );
   }

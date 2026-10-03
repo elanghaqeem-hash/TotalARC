@@ -578,13 +578,13 @@ export default function RisksPage() {
 
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
                 <span className="h-3 w-3 rounded border border-emerald-300 bg-emerald-100"></span>
-                <span className="text-slate-500">Low 1–4</span>
+                <span className="text-slate-500">Rendah 1–4</span>
                 <span className="h-3 w-3 rounded border border-amber-300 bg-amber-100"></span>
-                <span className="text-slate-500">Medium 5–9</span>
+                <span className="text-slate-500">Sedang 5–9</span>
                 <span className="h-3 w-3 rounded border border-rose-300 bg-rose-100"></span>
-                <span className="text-slate-500">High 10–14</span>
+                <span className="text-slate-500">Tinggi 10–14</span>
                 <span className="h-3 w-3 rounded border border-red-400 bg-red-200"></span>
-                <span className="text-slate-500">Critical 15–25</span>
+                <span className="text-slate-500">Kritis 15–25</span>
               </div>
             </div>
 
@@ -621,7 +621,7 @@ export default function RisksPage() {
                         </div>
                         <div className="text-center text-sm font-extrabold">{score}</div>
                         <div className="truncate text-center text-[8px] opacity-60 sm:text-[9px]">
-                          {count} risk(s)
+                          {count} risiko
                         </div>
                       </div>
                     );
@@ -629,8 +629,8 @@ export default function RisksPage() {
                 )}
               </div>
               <div className="mt-3 flex justify-between gap-4 px-1 text-[10px] font-bold text-slate-500 sm:px-2 sm:text-xs">
-                <span>Impact 1 (Insignificant)</span>
-                <span className="text-right">Impact 5 (Catastrophic)</span>
+                <span>Dampak 1 (Tidak Signifikan)</span>
+                <span className="text-right">Dampak 5 (Katastropik)</span>
               </div>
             </div>
           </div>
@@ -641,13 +641,13 @@ export default function RisksPage() {
                 <div>
                   <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-cyan-700">
                     <Sparkles className="h-4 w-4" />
-                    ARC AI Risk Analysis
+                    Analisis Risiko ARC AI
                   </div>
                   <h3 className="mt-1 text-base font-black text-slate-900">
-                    Heatmap Interpretation
+                    Interpretasi Heatmap
                   </h3>
                   <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                    AI explains the current {activeTab === 'inherent_heatmap' ? 'inherent' : 'residual'} distribution using persisted Risk Master data only.
+                    AI menjelaskan distribusi risiko {activeTab === 'inherent_heatmap' ? 'inheren' : 'residual'} saat ini hanya berdasarkan data Risk Master yang tersimpan.
                   </p>
                 </div>
 
@@ -658,23 +658,23 @@ export default function RisksPage() {
                   className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-cyan-200 bg-white px-2.5 text-[10px] font-black text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${heatmapAiLoading ? 'animate-spin' : ''}`} />
-                  Refresh
+                  Perbarui
                 </button>
               </div>
             </div>
 
             <div className="space-y-4 p-4 sm:p-5">
               {heatmapAiLoading ? (
-                <DataLoadingState label="ARC AI is analyzing risk distribution..." variant="panel" />
+                <DataLoadingState label="ARC AI sedang menganalisis distribusi risiko..." variant="panel" />
               ) : heatmapAiError ? (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] leading-5 text-rose-700">
-                  <strong>AI analysis unavailable.</strong> {heatmapAiError}
+                  <strong>Analisis AI tidak tersedia.</strong> {heatmapAiError}
                 </div>
               ) : heatmapAi?.analysis ? (
                 <>
                   <div className="rounded-xl border border-cyan-100 bg-white p-3.5">
                     <div className="text-[10px] font-black uppercase tracking-wide text-cyan-700">
-                      Executive readout
+                      Ringkasan eksekutif
                     </div>
                     <div className="mt-1 text-sm font-black leading-5 text-slate-900">
                       {heatmapAi.analysis.headline}
@@ -686,19 +686,19 @@ export default function RisksPage() {
 
                   <div className="grid grid-cols-3 gap-2">
                     <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
-                      <div className="text-[9px] font-black uppercase text-slate-400">Assessed</div>
+                      <div className="text-[9px] font-black uppercase text-slate-400">Sudah Dinilai</div>
                       <div className="mt-1 text-xl font-black text-slate-900">
                         {heatmapAi.metrics?.assessed ?? 0}
                       </div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
-                      <div className="text-[9px] font-black uppercase text-slate-400">Not Assessed</div>
+                      <div className="text-[9px] font-black uppercase text-slate-400">Belum Dinilai</div>
                       <div className="mt-1 text-xl font-black text-slate-900">
                         {heatmapAi.metrics?.unassessed ?? 0}
                       </div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
-                      <div className="text-[9px] font-black uppercase text-slate-400">Coverage</div>
+                      <div className="text-[9px] font-black uppercase text-slate-400">Cakupan</div>
                       <div className="mt-1 text-xl font-black text-slate-900">
                         {heatmapAi.metrics?.coveragePct ?? 0}%
                       </div>
@@ -707,7 +707,7 @@ export default function RisksPage() {
 
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
                     <div className="text-[10px] font-black uppercase tracking-wide text-amber-700">
-                      Data quality
+                      Kualitas data
                     </div>
                     <p className="mt-1 text-[11px] leading-5 text-amber-900">
                       {heatmapAi.analysis.dataQuality}
@@ -717,7 +717,7 @@ export default function RisksPage() {
                   {heatmapAi.analysis.concentrationInsights?.length > 0 && (
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                        Concentration insights
+                        Insight konsentrasi risiko
                       </div>
                       <div className="mt-2 space-y-2">
                         {heatmapAi.analysis.concentrationInsights.map((item: string, index: number) => (
@@ -738,7 +738,7 @@ export default function RisksPage() {
                   {heatmapAi.analysis.managementActions?.length > 0 && (
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                        Management attention
+                        Perhatian manajemen
                       </div>
                       <div className="mt-2 space-y-2">
                         {heatmapAi.analysis.managementActions.map((item: string, index: number) => (
@@ -770,7 +770,7 @@ export default function RisksPage() {
                 </>
               ) : (
                 <div className="rounded-xl border border-dashed border-cyan-200 bg-white p-5 text-center text-[11px] leading-5 text-slate-500">
-                  ARC AI analysis will appear here after the heatmap data is loaded.
+                  Analisis ARC AI akan tampil di sini setelah data heatmap selesai dimuat.
                 </div>
               )}
             </div>
