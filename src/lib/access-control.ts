@@ -268,6 +268,7 @@ export function canAccessApi(role: UserRole, pathname: string, method: string) {
   if (pathname === '/api/auth/profile') return true;
   if (role === 'SystemAdmin') return true;
 
+  if (role === 'Admin' && pathname.startsWith('/api/ai/')) return false;
   if (pathname.startsWith('/api/ai/')) return true;
   if (pathname === '/api/assurance') {
     if (isReadOnlyMethod(method)) {
