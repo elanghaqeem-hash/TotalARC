@@ -60,7 +60,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const users = await listManagedUsers(admin.institutionId);
+    const managedUsers = await listManagedUsers(admin.institutionId);
+    const users =
+      admin.role === 'Admin'
+        ? managedUsers.filter(
+            user => user.id === admin.id || !['SystemAdmin', 'Admin'].includes(user.role)
+          )
+        : managedUsers;
     return NextResponse.json(
       { users },
       { headers: { 'Cache-Control': 'no-store' } }
