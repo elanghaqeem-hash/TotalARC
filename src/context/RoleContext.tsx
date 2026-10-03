@@ -33,8 +33,8 @@ const loadingUser: UserProfile = {
   institutionName: '',
   orgUnitId: null,
   name: '',
-  role: 'Admin',
-  roleTitle: ROLE_TITLES.Admin,
+  role: 'SystemAdmin',
+  roleTitle: ROLE_TITLES.SystemAdmin,
   email: '',
   department: ''
 };
