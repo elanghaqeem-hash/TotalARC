@@ -213,12 +213,10 @@ export async function enforceAuthLoginRateLimit(input: {
   try {
     // Long-window limits use the compact AuthLoginRateLimit counter table.
     // Every lookup is a primary-key search on (scope,keyHash), so login traffic
-    // never scans the growing AuthEvent audit table.
-    // Ensure the D1-backed fallback tables exist before the first login attempt.
-    // This is required on non-Cloudflare runtimes (for example cPanel/Passenger),
-    // where the native Cloudflare rate-limit binding is unavailable and D1 is
-    // therefore the primary limiter from the very first request.
-    const db = await ensureAuthSecuritySchema();
+    // never scans the growing AuthEvent audit table. Schema creation/migration is
+    // deliberately kept off the login hot path; production databases must be
+    // provisioned before accepting authentication traffic.
+    const db = await getDb();
     const nowMs = Date.now();
     const ipAddress = String(input.ipAddress || '').trim();
     const account = String(input.email || '').trim().toLowerCase();
