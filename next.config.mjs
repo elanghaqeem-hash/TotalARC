@@ -1,7 +1,6 @@
 import path from 'node:path';
-import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
-
 if (process.env.NODE_ENV === 'development') {
+  const { initOpenNextCloudflareForDev } = await import('@opennextjs/cloudflare');
   initOpenNextCloudflareForDev();
 }
 
