@@ -40,8 +40,10 @@ jobs:
       - name: Verify authentication security integrity
         run: npm run verify:auth-security
 
-      - name: Verify D1 schema stability
-        run: npm run verify:d1-schema-stability
+      - name: Verify D1 schema stability and binding identity contract
+        run: |
+          npm run verify:d1-schema-stability
+          npm run verify:d1-binding-config
 
       - name: Verify tenant isolation
         run: npm run verify:tenant-isolation
