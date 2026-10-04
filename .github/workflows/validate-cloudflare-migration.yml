@@ -31,6 +31,9 @@ jobs:
       - name: Enforce critical toolchain security gate
         run: npm audit --audit-level=critical
 
+      - name: Verify GitHub gate contract
+        run: npm run verify:github-gates
+
       - name: Verify no dummy operational data
         run: npm run verify:no-dummy
 
