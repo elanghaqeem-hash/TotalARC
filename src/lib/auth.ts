@@ -208,6 +208,7 @@ export async function ensureAuthSchema() {
           ON AuthEvent(ipAddress, createdAt, eventType);
         CREATE INDEX IF NOT EXISTS idx_auth_user_pending_bootstrap
           ON AuthUser(role, lastLoginAt, createdAt);
+        PRAGMA optimize;
       `);
       await db.prepare(
         'INSERT OR IGNORE INTO AuthSchemaMigration (id, appliedAt) VALUES (?, ?)'
