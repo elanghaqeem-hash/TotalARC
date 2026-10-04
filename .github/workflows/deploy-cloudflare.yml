@@ -47,27 +47,58 @@ jobs:
               --header "X-GitHub-Api-Version: 2022-11-28" \
               "$API_URL" > /tmp/totalarc-required-checks.json
 
-            STATUS="$(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[0].status // empty' /tmp/totalarc-required-checks.json)"
-            CONCLUSION="$(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[0].conclusion // empty' /tmp/totalarc-required-checks.json)"
-            RUN_URL="$(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[0].html_url // empty' /tmp/totalarc-required-checks.json)"
+            SUCCESS_URL="$(jq -r '
+              [.workflow_runs[]
+                | select(.status == "completed" and .conclusion == "success")
+              ]
+              | sort_by(.updated_at)
+              | reverse
+              | .[0].html_url // empty
+            ' /tmp/totalarc-required-checks.json)"
 
-            if [ "$STATUS" = "completed" ] && [ "$CONCLUSION" = "success" ]; then
+            if [ -n "$SUCCESS_URL" ]; then
               echo "Mandatory Required Checks passed for $TARGET_SHA."
-              echo "- Required Checks: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Required Checks: $SUCCESS_URL" >> "$GITHUB_STEP_SUMMARY"
               break
             fi
 
-            if [ "$STATUS" = "completed" ] && [ -n "$CONCLUSION" ] && [ "$CONCLUSION" != "success" ]; then
-              echo "::error::Required Checks completed with conclusion '$CONCLUSION' for $TARGET_SHA."
+            ACTIVE_COUNT="$(jq '
+              [.workflow_runs[]
+                | select(
+                    .status == "queued" or
+                    .status == "in_progress" or
+                    .status == "waiting" or
+                    .status == "pending"
+                  )
+              ] | length
+            ' /tmp/totalarc-required-checks.json)"
+
+            FAILED_COUNT="$(jq '
+              [.workflow_runs[]
+                | select(
+                    .status == "completed" and
+                    .conclusion != "success" and
+                    .conclusion != "cancelled" and
+                    .conclusion != "skipped"
+                  )
+              ] | length
+            ' /tmp/totalarc-required-checks.json)"
+
+            RUN_COUNT="$(jq '.workflow_runs | length' /tmp/totalarc-required-checks.json)"
+
+            if [ "$ACTIVE_COUNT" -eq 0 ] && [ "$FAILED_COUNT" -gt 0 ]; then
+              echo "::error::All settled Required Checks runs for $TARGET_SHA are non-successful."
+              jq -r '.workflow_runs[] | "- " + (.html_url // "") + " => " + (.conclusion // .status // "unknown")' /tmp/totalarc-required-checks.json
               exit 1
             fi
 
             if [ "$attempt" -eq 90 ]; then
-              echo "::error::Timed out waiting for Required Checks on $TARGET_SHA."
+              echo "::error::Timed out waiting for a successful Required Checks run on $TARGET_SHA."
+              jq -r '.workflow_runs[] | "- " + (.html_url // "") + " => " + (.conclusion // .status // "unknown")' /tmp/totalarc-required-checks.json
               exit 1
             fi
 
-            echo "Waiting for Required Checks ($attempt/90): status=${STATUS:-not-started}"
+            echo "Waiting for successful Required Checks ($attempt/90): runs=$RUN_COUNT active=$ACTIVE_COUNT failures=$FAILED_COUNT"
             sleep 10
           done
 
