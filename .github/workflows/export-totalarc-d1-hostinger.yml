@@ -119,19 +119,19 @@ jobs:
           }
           (root/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
           readme = '''TOTAL ARC DATABASE EXPORT FOR HOSTINGER
-
-Isi paket:
-1. totalarc-production-d1.sql   = dump SQL dari Cloudflare D1 produksi.
-2. totalarc-production.sqlite  = database SQLite hasil rekonstruksi dump.
-3. manifest.json               = checksum SHA-256, jumlah tabel, dan hitungan record penting.
-
-Catatan penting deploy Hostinger:
-- Aplikasi Total ARC saat ini memakai Cloudflare D1 melalui getCloudflareContext()/binding DB.
-- File database ini adalah backup/migration source; aplikasi tidak akan otomatis memakai SQLite/MySQL di Hostinger tanpa perubahan adapter database.
-- Opsi tercepat untuk Node.js Hostinger dengan persistent filesystem adalah mengganti layer D1 dengan SQLite driver.
-- Opsi yang lebih umum untuk shared/cPanel Hostinger adalah migrasi schema+data ke MySQL/MariaDB lalu mengganti datasource/queries.
-- Jangan menaruh file .sqlite atau dump .sql di public_html atau repository publik.
-'''
+          
+          Isi paket:
+          1. totalarc-production-d1.sql   = dump SQL dari Cloudflare D1 produksi.
+          2. totalarc-production.sqlite  = database SQLite hasil rekonstruksi dump.
+          3. manifest.json               = checksum SHA-256, jumlah tabel, dan hitungan record penting.
+          
+          Catatan penting deploy Hostinger:
+          - Aplikasi Total ARC saat ini memakai Cloudflare D1 melalui getCloudflareContext()/binding DB.
+          - File database ini adalah backup/migration source; aplikasi tidak akan otomatis memakai SQLite/MySQL di Hostinger tanpa perubahan adapter database.
+          - Opsi tercepat untuk Node.js Hostinger dengan persistent filesystem adalah mengganti layer D1 dengan SQLite driver.
+          - Opsi yang lebih umum untuk shared/cPanel Hostinger adalah migrasi schema+data ke MySQL/MariaDB lalu mengganti datasource/queries.
+          - Jangan menaruh file .sqlite atau dump .sql di public_html atau repository publik.
+          '''
           (root/'HOSTINGER_README.txt').write_text(readme, encoding='utf-8')
           print(json.dumps(manifest, indent=2))
           PY
