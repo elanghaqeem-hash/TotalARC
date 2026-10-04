@@ -37,7 +37,8 @@
     "verify:d1-binding-config": "node scripts/verify-d1-binding-config.js",
     "prepare:d1-production-config": "node scripts/prepare-production-d1-config.cjs",
     "verify:github-gates": "node scripts/verify-github-gates.js",
-    "migrate:d1-to-sqlite": "node scripts/migrate-d1-to-local-sqlite.cjs"
+    "migrate:d1-to-sqlite": "node scripts/migrate-d1-to-local-sqlite.cjs",
+    "verify:local-sqlite": "node scripts/verify-local-sqlite.cjs"
   },
   "keywords": [],
   "author": "",
