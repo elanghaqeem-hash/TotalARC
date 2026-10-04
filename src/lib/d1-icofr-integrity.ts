@@ -1,5 +1,6 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureIcofrTraceabilitySchema } from '@/lib/d1-icofr-traceability';
+import { ensureIcofrCertificationSchema } from '@/lib/d1-icofr-certification';
 
 type D1DatabaseLike = {
   prepare: (sql: string) => {
@@ -21,6 +22,7 @@ type IntegrityCheck = {
 
 async function getDb(): Promise<D1DatabaseLike> {
   await ensureIcofrTraceabilitySchema();
+  await ensureIcofrCertificationSchema();
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
@@ -47,7 +49,10 @@ async function firstRow<T = Record<string, unknown>>(
 }
 
 type CompletenessMetrics = {
+  significantFinancialItems: number;
+  significantFinancialItemsWithAssertion: number;
   inScopeAssertions: number;
+  assertionsWithProcess: number;
   assertionsWithRisk: number;
   assertionsWithControl: number;
   controlsWithToD: number;
@@ -280,6 +285,120 @@ export async function getIcofrReferentialIntegrityReport() {
        FROM ManagementActionPlan m
        LEFT JOIN Issue i ON i.id = m.issueId
       WHERE i.id IS NULL`
+  );
+
+
+  await add(
+    'SUBCERT_SCOPE_ORPHAN',
+    'ICOFR sub-certifications must reference a scope in the same institution.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFRSubCertification s
+       LEFT JOIN ICOFRScope sc
+         ON sc.id = s.scopeId AND sc.institutionId = s.institutionId
+      WHERE s.scopeId IS NOT NULL AND TRIM(s.scopeId) <> '' AND sc.id IS NULL`
+  );
+
+  await add(
+    'SUBCERT_SCOPE_CROSS_TENANT',
+    'ICOFR sub-certifications may not reference a scope owned by another institution.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFRSubCertification s
+       JOIN ICOFRScope sc ON sc.id = s.scopeId
+      WHERE sc.institutionId <> s.institutionId`
+  );
+
+  await add(
+    'SUBCERT_CYCLE_ORPHAN',
+    'ICOFR sub-certification testing cycles must resolve in the same institution and scope.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFRSubCertification s
+       LEFT JOIN ICOFRTestingCycle c
+         ON c.id = s.testingCycleId
+        AND c.institutionId = s.institutionId
+        AND c.scopeId = s.scopeId
+      WHERE s.testingCycleId IS NOT NULL
+        AND TRIM(s.testingCycleId) <> ''
+        AND c.id IS NULL`
+  );
+
+  await add(
+    'SUBCERT_SUBJECT_ORPHAN',
+    'ICOFR sub-certification subjects must resolve to the selected legal entity or organization unit in the same institution.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFRSubCertification s
+      WHERE (s.subjectType = 'Legal Entity' AND NOT EXISTS (
+               SELECT 1 FROM LegalEntity le
+                WHERE le.id = s.subjectId AND le.institutionId = s.institutionId
+             ))
+         OR (s.subjectType = 'Organization Unit' AND NOT EXISTS (
+               SELECT 1 FROM OrganizationUnit ou
+                WHERE ou.id = s.subjectId AND ou.institutionId = s.institutionId
+             ))
+         OR s.subjectType NOT IN ('Legal Entity','Organization Unit')`
+  );
+
+  await add(
+    'ATTESTATION_SCOPE_ORPHAN',
+    'Management attestations must reference a scope in the same institution.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFRManagementAttestation a
+       LEFT JOIN ICOFRScope sc
+         ON sc.id = a.scopeId AND sc.institutionId = a.institutionId
+      WHERE sc.id IS NULL`
+  );
+
+  await add(
+    'ATTESTATION_SCOPE_CROSS_TENANT',
+    'Management attestations may not reference a scope owned by another institution.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFRManagementAttestation a
+       JOIN ICOFRScope sc ON sc.id = a.scopeId
+      WHERE sc.institutionId <> a.institutionId`
+  );
+
+  await add(
+    'ATTESTATION_CYCLE_ORPHAN',
+    'Management attestation testing cycles must resolve in the same institution and scope.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFRManagementAttestation a
+       LEFT JOIN ICOFRTestingCycle c
+         ON c.id = a.testingCycleId
+        AND c.institutionId = a.institutionId
+        AND c.scopeId = a.scopeId
+      WHERE a.testingCycleId IS NOT NULL
+        AND TRIM(a.testingCycleId) <> ''
+        AND c.id IS NULL`
+  );
+
+  await add(
+    'EVIDENCE_PACK_ATTESTATION_ORPHAN',
+    'Certification evidence packs must reference an attestation in the same institution.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFREvidencePack p
+       LEFT JOIN ICOFRManagementAttestation a
+         ON a.id = p.attestationId AND a.institutionId = p.institutionId
+      WHERE a.id IS NULL`
+  );
+
+  await add(
+    'EVIDENCE_PACK_ATTESTATION_CROSS_TENANT',
+    'Certification evidence packs may not reference an attestation owned by another institution.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFREvidencePack p
+       JOIN ICOFRManagementAttestation a ON a.id = p.attestationId
+      WHERE a.institutionId <> p.institutionId`
+  );
+
+  await add(
+    'EVIDENCE_PACK_PERIOD_MISMATCH',
+    'Certification evidence pack periods must match the referenced management attestation.',
+    `SELECT COUNT(*) AS count
+       FROM ICOFREvidencePack p
+       JOIN ICOFRManagementAttestation a
+         ON a.id = p.attestationId AND a.institutionId = p.institutionId
+      WHERE p.period <> a.period`,
+    [],
+    'High'
   );
 
   const completenessSql = `
