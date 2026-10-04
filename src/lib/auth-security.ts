@@ -139,9 +139,10 @@ async function recentAuthEventWindow(input: {
   nowMs: number;
 }) {
   const placeholders = LOGIN_ATTEMPT_EVENT_TYPES.map(() => '?').join(',');
+  const fieldExpression = input.field === 'email' ? 'LOWER(email)' : 'ipAddress';
   const sql =
     'SELECT COUNT(*) AS count, MIN(createdAt) AS oldest FROM AuthEvent ' +
-    'WHERE ' + input.field + ' = ? AND createdAt >= ? AND eventType IN (' + placeholders + ')';
+    'WHERE ' + fieldExpression + ' = ? AND createdAt >= ? AND eventType IN (' + placeholders + ')';
   const row = await first<{ count?: number; oldest?: string | null }>(
     input.db,
     sql,
