@@ -149,7 +149,10 @@ jobs:
             .crossTenantCount == 0 and
             .mandatoryChainGapCount == 0 and
             (.metrics | type) == "object" and
+            (.metrics.significantFinancialItems | type) == "number" and
+            (.metrics.significantFinancialItemsWithAssertion | type) == "number" and
             (.metrics.inScopeAssertions | type) == "number" and
+            (.metrics.assertionsWithProcess | type) == "number" and
             (.metrics.assertionsWithRisk | type) == "number" and
             (.metrics.assertionsWithControl | type) == "number" and
             (.metrics.controlsWithToD | type) == "number" and
