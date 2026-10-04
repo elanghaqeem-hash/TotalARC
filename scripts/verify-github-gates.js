@@ -15,6 +15,17 @@ function requireMarker(file, marker) {
   }
 }
 
+function forbidSmokeProbe(file, pathPrefix) {
+  const probeLines = source(file)
+    .split(/\r?\n/)
+    .filter(line => line.includes('check_json'));
+  if (probeLines.some(line => line.includes(pathPrefix))) {
+    throw new Error(
+      'GITHUB_GATE_CONTRACT_ERROR: ' + file + ' must not health-probe authenticated operational API: ' + pathPrefix
+    );
+  }
+}
+
 const requiredChecks = '.github/workflows/required-checks.yml';
 for (const marker of [
   'name: Build',
@@ -71,11 +82,26 @@ for (const marker of [
   '- Deploy Total ARC to Cloudflare',
   'Verify production D1 connectivity',
   'Smoke test production D1 APIs',
+  '/api/system/database',
   '/api/system/rcm-integrity',
   '/api/system/icofr-integrity',
-  '.mandatoryChainGapCount == 0'
+  '.mandatoryChainGapCount == 0',
+  'system/read-only probes'
 ]) {
   requireMarker(smoke, marker);
+}
+
+for (const pathPrefix of [
+  '/api/onboarding',
+  '/api/organization',
+  '/api/processes',
+  '/api/risks',
+  '/api/controls',
+  '/api/assure/',
+  '/api/assurance',
+  '/api/evidence'
+]) {
+  forbidSmokeProbe(smoke, pathPrefix);
 }
 
 const productionGate = '.github/workflows/production-gate.yml';
