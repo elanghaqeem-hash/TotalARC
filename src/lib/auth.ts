@@ -195,6 +195,25 @@ export async function ensureAuthSchema() {
       );
     `);
 
+    const loginReadEfficiencyMigration = await db
+      .prepare('SELECT id FROM AuthSchemaMigration WHERE id = ? LIMIT 1')
+      .bind('20261004_LOGIN_READ_EFFICIENCY')
+      .first<{ id?: string }>();
+
+    if (!loginReadEfficiencyMigration) {
+      await executeSchemaScript(db, `
+        CREATE INDEX IF NOT EXISTS idx_auth_event_email_created_type
+          ON AuthEvent(email, createdAt, eventType);
+        CREATE INDEX IF NOT EXISTS idx_auth_event_ip_created_type
+          ON AuthEvent(ipAddress, createdAt, eventType);
+        CREATE INDEX IF NOT EXISTS idx_auth_user_pending_bootstrap
+          ON AuthUser(role, lastLoginAt, createdAt);
+      `);
+      await db.prepare(
+        'INSERT OR IGNORE INTO AuthSchemaMigration (id, appliedAt) VALUES (?, ?)'
+      ).bind('20261004_LOGIN_READ_EFFICIENCY', new Date().toISOString()).run();
+    }
+
     const roleSplitMigration = await db
       .prepare('SELECT id FROM AuthSchemaMigration WHERE id = ? LIMIT 1')
       .bind('20261004_ADMIN_ROLE_SPLIT')
@@ -345,7 +364,7 @@ async function writeAuthEvent(
       input.userId || null,
       input.institutionId || null,
       input.eventType,
-      input.email || null,
+      input.email ? normalizeEmail(input.email) : null,
       input.role || null,
       input.ipAddress || null,
       input.userAgent || null,
@@ -579,36 +598,26 @@ async function ensureBootstrapAdministratorForLogin(
   db: D1DatabaseLike,
   requestedEmail: string
 ) {
-  const count = await first<{ count: number }>(
-    db,
-    'SELECT COUNT(*) AS count FROM AuthUser'
-  );
-
-  if (Number(count?.count || 0) === 0) {
-    await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
-    return;
-  }
-
   const env = await runtimeEnv();
   const bootstrapEmail = normalizeEmail(envString(env, 'TOTAL_ARC_BOOTSTRAP_ADMIN_EMAIL'));
+
+  // Bootstrap reconciliation is only relevant when the configured bootstrap
+  // account itself is attempting to sign in. Avoid COUNT(*) and pending-admin
+  // scans for every normal login request.
   if (!bootstrapEmail || requestedEmail !== bootstrapEmail) return;
 
-  const configuredAdmin = await first<{ id: string }>(
+  const configuredAdmin = await first<{
+    id: string;
+    role: string;
+    lastLoginAt: string | null;
+  }>(
     db,
-    'SELECT id FROM AuthUser WHERE emailNormalized = ? LIMIT 1',
+    'SELECT id, role, lastLoginAt FROM AuthUser WHERE emailNormalized = ? LIMIT 1',
     [bootstrapEmail]
   );
 
   if (configuredAdmin) {
-    const pendingConfiguredAdmin = await first<{ id: string }>(
-      db,
-      `SELECT id FROM AuthUser
-       WHERE id = ? AND role = 'SystemAdmin' AND lastLoginAt IS NULL
-       LIMIT 1`,
-      [configuredAdmin.id]
-    );
-
-    if (pendingConfiguredAdmin) {
+    if (configuredAdmin.role === 'SystemAdmin' && !configuredAdmin.lastLoginAt) {
       await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
     }
     return;
@@ -624,7 +633,13 @@ async function ensureBootstrapAdministratorForLogin(
 
   if (pendingAdmin) {
     await provisionBootstrapAdministrator({ reconcilePendingAdmin: true });
+    return;
   }
+
+  // No matching user exists. provisionBootstrapAdministrator performs the
+  // one-time empty-database check and creates the initial administrator when
+  // appropriate. This path is never reached for ordinary user logins.
+  await provisionBootstrapAdministrator({ reconcilePendingAdmin: false });
 }
 
 async function institutionNameFor(db: D1DatabaseLike, institutionId: string | null) {
