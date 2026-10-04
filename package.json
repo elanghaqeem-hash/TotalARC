@@ -7,6 +7,11 @@
     "dev": "next dev",
     "build": "node scripts/cloudflare-build.cjs",
     "start": "next start",
+    "postinstall": "prisma generate",
+    "build:hostinger": "node scripts/hostinger-build.cjs",
+    "start:hostinger": "node scripts/hostinger-start.cjs",
+    "hostinger:import-d1": "node scripts/hostinger-import-d1.cjs",
+    "hostinger:doctor": "node scripts/hostinger-doctor.cjs",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed-reference": "node prisma/seed.js",
@@ -42,6 +47,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20 <25"
+  },
   "dependencies": {
     "@prisma/client": "5.21.1",
     "clsx": "^2.1.1",
