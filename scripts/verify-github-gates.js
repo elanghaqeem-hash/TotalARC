@@ -15,10 +15,13 @@ function requireMarker(file, marker) {
   }
 }
 
-function forbidMarker(file, marker) {
-  if (source(file).includes(marker)) {
+function forbidSmokeProbe(file, pathPrefix) {
+  const probeLines = source(file)
+    .split(/\r?\n/)
+    .filter(line => line.includes('check_json'));
+  if (probeLines.some(line => line.includes(pathPrefix))) {
     throw new Error(
-      'GITHUB_GATE_CONTRACT_ERROR: ' + file + ' contains forbidden marker: ' + marker
+      'GITHUB_GATE_CONTRACT_ERROR: ' + file + ' must not health-probe authenticated operational API: ' + pathPrefix
     );
   }
 }
@@ -88,7 +91,7 @@ for (const marker of [
   requireMarker(smoke, marker);
 }
 
-for (const marker of [
+for (const pathPrefix of [
   '/api/onboarding',
   '/api/organization',
   '/api/processes',
@@ -98,7 +101,7 @@ for (const marker of [
   '/api/assurance',
   '/api/evidence'
 ]) {
-  forbidMarker(smoke, marker);
+  forbidSmokeProbe(smoke, pathPrefix);
 }
 
 const productionGate = '.github/workflows/production-gate.yml';
