@@ -195,26 +195,6 @@ export async function ensureAuthSchema() {
       );
     `);
 
-    const loginReadEfficiencyMigration = await db
-      .prepare('SELECT id FROM AuthSchemaMigration WHERE id = ? LIMIT 1')
-      .bind('20261004_LOGIN_READ_EFFICIENCY')
-      .first<{ id?: string }>();
-
-    if (!loginReadEfficiencyMigration) {
-      await executeSchemaScript(db, `
-        CREATE INDEX IF NOT EXISTS idx_auth_event_email_created_type
-          ON AuthEvent(email, createdAt, eventType);
-        CREATE INDEX IF NOT EXISTS idx_auth_event_ip_created_type
-          ON AuthEvent(ipAddress, createdAt, eventType);
-        CREATE INDEX IF NOT EXISTS idx_auth_user_pending_bootstrap
-          ON AuthUser(role, lastLoginAt, createdAt);
-        PRAGMA optimize;
-      `);
-      await db.prepare(
-        'INSERT OR IGNORE INTO AuthSchemaMigration (id, appliedAt) VALUES (?, ?)'
-      ).bind('20261004_LOGIN_READ_EFFICIENCY', new Date().toISOString()).run();
-    }
-
     const roleSplitMigration = await db
       .prepare('SELECT id FROM AuthSchemaMigration WHERE id = ? LIMIT 1')
       .bind('20261004_ADMIN_ROLE_SPLIT')
