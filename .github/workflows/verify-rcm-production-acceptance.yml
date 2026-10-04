@@ -29,6 +29,8 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+      TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -185,6 +187,52 @@ jobs:
           if not pass_all:
               raise RuntimeError("RCM_PRODUCTION_ACCEPTANCE_FAILED")
           PY
+
+      - name: Verify runtime production integrity endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is required for runtime verification."
+            exit 1
+          fi
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          OUT=/tmp/rcm-runtime-integrity.json
+
+          healthy=false
+          for attempt in $(seq 1 12); do
+            code="$(curl --silent --show-error --location --max-time 25               --output "$OUT"               --write-out "%{http_code}"               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"               "$BASE_URL/api/system/rcm-integrity" || true)"
+
+            if [ "$code" = "200" ] && jq -e '
+              .ok == true and
+              .test == "RCM_PRODUCTION_INTEGRITY" and
+              .storage == "cloudflare-d1" and
+              .summary.controls == 132 and
+              .summary.uusControls == 42 and
+              .summary.itgcControls == 10 and
+              .summary.ckpnRequirements == 9 and
+              .summary.reverseRepoRequirements == 1 and
+              .summary.elcDraftReferences == 63 and
+              .summary.integrity == "PASS"
+            ' "$OUT" >/dev/null 2>&1; then
+              healthy=true
+              break
+            fi
+
+            echo "RCM runtime endpoint not converged yet (attempt $attempt/12, HTTP ${code:-unknown})."
+            sleep 5
+          done
+
+          cat "$OUT" | jq . || true
+          if [ "$healthy" != "true" ]; then
+            echo "::error::RCM runtime production acceptance verification failed."
+            exit 1
+          fi
+
+          echo "Runtime endpoint independently confirms exact RCM production acceptance."
+          echo "- Runtime API: PASS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish acceptance evidence
         if: always()
