@@ -50,10 +50,13 @@ The reference seed loads taxonomy only. Register real institutional and operatio
 
 ```bash
 npm run verify:no-dummy
+npm run verify:github-gates
 npm run build
 ```
 
-The pull-request workflow blocks known dummy operational-data signatures and verifies the Cloudflare Worker artifact.
+Pull requests to `main` run the **Merge Gate**, which aggregates Build, TypeScript, Test Suite, Auth Security, Tenant Isolation, No Dummy Data, D1 Schema Stability, RCM Integrity, AI Security, ICOFR Traceability Integrity, Cloudflare Build, and CI supply-chain verification. Production deployment is followed by a separate **Production Gate — Build → Test → Security → Deploy → Smoke** evidence workflow.
+
+GitHub repository settings must additionally protect `main` and require the **Merge Gate** status before merge. The scheduled **Main Protection Audit** fails when `main` is not protected, so configuration drift remains visible.
 
 
 ## Banking RBAC
