@@ -1,4 +1,5 @@
 name: Cleanup Total ARC Hostinger export
+# Final cleanup after export retrieval
 
 on:
   push:
