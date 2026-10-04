@@ -35,7 +35,8 @@
     "verify:ci-supply-chain": "node scripts/verify-ci-supply-chain.js",
     "verify:security-negative": "node scripts/verify-security-negative-tests.js",
     "verify:d1-binding-config": "node scripts/verify-d1-binding-config.js",
-    "prepare:d1-production-config": "node scripts/prepare-production-d1-config.cjs"
+    "prepare:d1-production-config": "node scripts/prepare-production-d1-config.cjs",
+    "verify:github-gates": "node scripts/verify-github-gates.js"
   },
   "keywords": [],
   "author": "",
