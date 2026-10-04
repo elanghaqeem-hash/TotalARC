@@ -218,16 +218,29 @@ export function redactBankingSensitiveData(value: string): BankingRedactionResul
   let text = value;
   const categories: Partial<Record<BankingRedactionCategory, number>> = {};
 
+  const record = (category: BankingRedactionCategory) => {
+    addCount(categories, category);
+  };
+
+  const structured = redactStructuredJson(text, record);
+  if (structured !== null) text = structured;
+
+  // Second layer: semantic field classification for free-form key/value text.
+  // This covers bank identifiers even when their labels vary and reduces
+  // reliance on a single family of regexes.
+  text = redactContextKeyValues(text, record);
+
   const replace = (
     pattern: RegExp,
     category: BankingRedactionCategory,
     replacement?: (match: string, ...groups: string[]) => string
   ) => {
     text = text.replace(pattern, (...args: unknown[]) => {
-      addCount(categories, category);
       const match = String(args[0] || '');
+      if (/\[[A-Z_]+_REDACTED\]/.test(match)) return match;
+      record(category);
       const groups = args.slice(1, -2).map(item => String(item ?? ''));
-      return replacement ? replacement(match, ...groups) : '[' + category + '_REDACTED]';
+      return replacement ? replacement(match, ...groups) : replacementFor(category);
     });
   };
 
@@ -244,8 +257,8 @@ export function redactBankingSensitiveData(value: string): BankingRedactionResul
   text = text.replace(/\b(?:\d[ -]?){13,19}\d?\b/g, candidate => {
     const digits = candidate.replace(/\D/g, '');
     if (!luhnValid(digits)) return candidate;
-    addCount(categories, 'CARD_NUMBER');
-    return '[CARD_NUMBER_REDACTED]';
+    record('CARD_NUMBER');
+    return replacementFor('CARD_NUMBER');
   });
 
   replace(
@@ -254,13 +267,18 @@ export function redactBankingSensitiveData(value: string): BankingRedactionResul
   );
   text = text.replace(/\b\d{16}\b/g, candidate => {
     if (!plausibleNik(candidate)) return candidate;
-    addCount(categories, 'NIK');
-    return '[NIK_REDACTED]';
+    record('NIK');
+    return replacementFor('NIK');
   });
 
-  replace(
-    /\b(?:npwp|no\.?\s*npwp)\s*[:=#-]?\s*([0-9.\-]{15,24})\b/gi,
-    'NPWP'
+  text = text.replace(
+    /\b(?:npwp|no\.?\s*npwp|nomor\s+npwp)\s*[:=#-]?\s*([0-9.\-]{15,24})\b/gi,
+    match => {
+      const candidate = match.split(/[:=#]/).pop()?.trim() || '';
+      if (!plausibleNpwp(candidate)) return match;
+      record('NPWP');
+      return replacementFor('NPWP');
+    }
   );
 
   replace(
