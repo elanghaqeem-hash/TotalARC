@@ -23,6 +23,16 @@ if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1);
 // The chunked base64 is consumed by the packaging automation after CI passes.
 if (process.env.GITHUB_ACTIONS === 'true') {
   const archivePath = path.join(process.cwd(), '.totalarc-hostinger-ci.zip');
+  const sourceCommit = '9b3d11279c74f74ab6984e54796c6ce8203167ec';
+  const fetchSource = spawnSync(
+    'git',
+    ['fetch', '--no-tags', '--depth=1', 'origin', sourceCommit],
+    { stdio: 'inherit' }
+  );
+  if (fetchSource.error || (fetchSource.status ?? 1) !== 0) {
+    console.error(fetchSource.error || 'git fetch source commit failed');
+    process.exit(fetchSource.status ?? 1);
+  }
   const archive = spawnSync(
     'git',
     ['archive', '--format=zip', '--output=' + archivePath, '9b3d11279c74f74ab6984e54796c6ce8203167ec'],
