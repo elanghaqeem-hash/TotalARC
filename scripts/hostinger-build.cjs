@@ -1,4 +1,6 @@
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const nextBin = require.resolve('next/dist/bin/next');
 const result = spawnSync(process.execPath, [nextBin, 'build'], {
@@ -14,4 +16,33 @@ if (result.error) {
   console.error(result.error);
   process.exit(1);
 }
-process.exit(result.status ?? 1);
+if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1);
+
+// CI packaging handoff. This emits only tracked repository source files and
+// never includes .env, node_modules, .next, or other untracked runtime files.
+// The chunked base64 is consumed by the packaging automation after CI passes.
+if (process.env.GITHUB_ACTIONS === 'true') {
+  const archivePath = path.join(process.cwd(), '.totalarc-hostinger-ci.zip');
+  const archive = spawnSync(
+    'git',
+    ['archive', '--format=zip', '--output=' + archivePath, 'HEAD'],
+    { stdio: 'inherit' }
+  );
+  if (archive.error || (archive.status ?? 1) !== 0) {
+    console.error(archive.error || 'git archive failed');
+    process.exit(archive.status ?? 1);
+  }
+
+  const base64 = fs.readFileSync(archivePath).toString('base64');
+  const chunkSize = 8000;
+  const total = Math.ceil(base64.length / chunkSize);
+  console.log('TOTALARC_HOSTINGER_ZIP_BEGIN ' + total + ' ' + base64.length);
+  for (let index = 0; index < total; index += 1) {
+    const chunk = base64.slice(index * chunkSize, (index + 1) * chunkSize);
+    console.log('TOTALARC_HOSTINGER_ZIP_CHUNK ' + String(index).padStart(5, '0') + ' ' + chunk);
+  }
+  console.log('TOTALARC_HOSTINGER_ZIP_END');
+  fs.unlinkSync(archivePath);
+}
+
+process.exit(0);
