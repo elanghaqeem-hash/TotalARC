@@ -359,7 +359,12 @@ export async function getIcofrReferentialIntegrityReport() {
         JOIN TestingException e ON e.toeTestId = rt.toeId
     ),
     relevant_deficiency AS (
-      SELECT DISTINCT re.assertionId, re.institutionId, d.id AS deficiencyId, d.humanApproved
+      SELECT DISTINCT
+        re.assertionId,
+        re.institutionId,
+        re.exceptionId,
+        d.id AS deficiencyId,
+        d.humanApproved
         FROM relevant_exception re
         JOIN ControlDeficiency d ON d.exceptionId = re.exceptionId
     ),
@@ -464,8 +469,8 @@ export async function getIcofrReferentialIntegrityReport() {
       (SELECT COUNT(DISTINCT assertionId) FROM assertion_control) AS assertionsWithControl,
       (SELECT COUNT(DISTINCT controlDomainId) FROM control_tod) AS controlsWithToD,
       (SELECT COUNT(DISTINCT controlDomainId) FROM control_toe) AS controlsWithToE,
-      (SELECT COUNT(DISTINCT d.deficiencyId) FROM relevant_deficiency d) AS exceptionsWithDeficiency,
-      (SELECT COUNT(DISTINCT issueId) FROM relevant_issue) AS deficienciesWithIssue,
+      (SELECT COUNT(DISTINCT exceptionId) FROM relevant_deficiency) AS exceptionsWithDeficiency,
+      (SELECT COUNT(DISTINCT deficiencyId) FROM relevant_issue) AS deficienciesWithIssue,
       (SELECT COUNT(DISTINCT issueId) FROM relevant_map) AS issuesWithMAP,
       (SELECT COUNT(*) FROM in_scope) - (SELECT COUNT(*) FROM incomplete_assertions) AS completeChains,
       (SELECT COUNT(*) FROM incomplete_assertions) AS incompleteChains,
