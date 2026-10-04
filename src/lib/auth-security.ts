@@ -69,16 +69,29 @@ export const AUTH_LOGIN_RATE_LIMIT = {
   ipPerHour: { scope: 'IP_1H', limit: 100, windowMs: 60 * 60 * 1000 }
 } as const;
 
+type RateLimitBinding = {
+  limit: (options: { key: string }) => Promise<{ success: boolean }>;
+};
+
 export type AuthLoginRateLimitResult = {
   allowed: boolean;
   retryAfterSeconds: number;
   violatedScopes: string[];
+  degraded?: boolean;
 };
+
+const LOGIN_ATTEMPT_EVENT_TYPES = [
+  'LOGIN_FAILED',
+  'ACCOUNT_LOCKED',
+  'PASSWORD_VERIFIED_MFA_REQUIRED',
+  'LOGIN_SUCCESS',
+  'TEMPORARY_CREDENTIAL_EXPIRED'
+] as const;
 
 async function hashRateLimitKey(value: string) {
   const digest = await crypto.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode('totalarc-auth-rate-limit-v1|' + value)
+    new TextEncoder().encode('totalarc-auth-rate-limit-v2|' + value)
   );
   const bytes = new Uint8Array(digest);
   let hex = '';
@@ -88,124 +101,143 @@ async function hashRateLimitKey(value: string) {
   return hex;
 }
 
-async function consumeLoginRateLimit(input: {
+async function enforceCloudflareLoginBurst(input: {
+  ipAddress?: string | null;
+}) {
+  const ipAddress = String(input.ipAddress || '').trim();
+  if (!ipAddress) {
+    return { available: true, blocked: false, retryAfterSeconds: 0 };
+  }
+
+  const { env } = await getCloudflareContext({ async: true });
+  const limiter = (env as unknown as Record<string, unknown>).AUTH_LOGIN_BURST_RATE_LIMIT as
+    | RateLimitBinding
+    | undefined;
+
+  if (!limiter) {
+    if (process.env.NODE_ENV === 'development') {
+      return { available: false, blocked: false, retryAfterSeconds: 0 };
+    }
+    throw new Error('AUTH_LOGIN_BURST_RATE_LIMIT_BINDING_UNAVAILABLE');
+  }
+
+  const key = 'ip:' + (await hashRateLimitKey(ipAddress));
+  const result = await limiter.limit({ key });
+  return {
+    available: true,
+    blocked: !result.success,
+    retryAfterSeconds: result.success ? 0 : 60
+  };
+}
+
+async function recentAuthEventWindow(input: {
   db: D1DatabaseLike;
-  scope: string;
-  rawKey: string;
-  limit: number;
+  field: 'email' | 'ipAddress';
+  value: string;
+  sinceMs: number;
   windowMs: number;
   nowMs: number;
 }) {
-  const keyHash = await hashRateLimitKey(input.rawKey);
-  const now = input.nowMs;
-  const updatedAt = new Date(now).toISOString();
-
-  await run(
+  const placeholders = LOGIN_ATTEMPT_EVENT_TYPES.map(() => '?').join(',');
+  const fieldExpression = input.field === 'email' ? 'LOWER(email)' : 'ipAddress';
+  const sql =
+    'SELECT COUNT(*) AS count, MIN(createdAt) AS oldest FROM AuthEvent ' +
+    'WHERE ' + fieldExpression + ' = ? AND createdAt >= ? AND eventType IN (' + placeholders + ')';
+  const row = await first<{ count?: number; oldest?: string | null }>(
     input.db,
-    `INSERT INTO AuthLoginRateLimit (
-      scope,keyHash,windowStartedAt,count,updatedAt
-    ) VALUES (?,?,?,1,?)
-    ON CONFLICT(scope,keyHash) DO UPDATE SET
-      windowStartedAt = CASE
-        WHEN (? - AuthLoginRateLimit.windowStartedAt) >= ?
-          THEN ?
-        ELSE AuthLoginRateLimit.windowStartedAt
-      END,
-      count = CASE
-        WHEN (? - AuthLoginRateLimit.windowStartedAt) >= ?
-          THEN 1
-        ELSE AuthLoginRateLimit.count + 1
-      END,
-      updatedAt = ?`,
+    sql,
     [
-      input.scope,
-      keyHash,
-      now,
-      updatedAt,
-      now,
-      input.windowMs,
-      now,
-      now,
-      input.windowMs,
-      updatedAt
+      input.value,
+      new Date(input.sinceMs).toISOString(),
+      ...LOGIN_ATTEMPT_EVENT_TYPES
     ]
   );
 
-  const row = await first<{ windowStartedAt?: number; count?: number }>(
-    input.db,
-    'SELECT windowStartedAt,count FROM AuthLoginRateLimit WHERE scope=? AND keyHash=? LIMIT 1',
-    [input.scope, keyHash]
-  );
-
   const count = Number(row?.count || 0);
-  const startedAt = Number(row?.windowStartedAt || now);
+  const oldestMs = row?.oldest ? new Date(row.oldest).getTime() : input.nowMs;
   const retryAfterSeconds = Math.max(
     1,
-    Math.ceil((startedAt + input.windowMs - now) / 1000)
+    Math.ceil((oldestMs + input.windowMs - input.nowMs) / 1000)
   );
-
-  return {
-    scope: input.scope,
-    blocked: count > input.limit,
-    retryAfterSeconds
-  };
+  return { count, retryAfterSeconds };
 }
 
 export async function enforceAuthLoginRateLimit(input: {
   ipAddress?: string | null;
   email?: string | null;
 }): Promise<AuthLoginRateLimitResult> {
+  let burst: Awaited<ReturnType<typeof enforceCloudflareLoginBurst>>;
   try {
-    const db = await ensureAuthSecuritySchema();
-    const nowMs = Date.now();
-    const checks: Array<Promise<{
-      scope: string;
-      blocked: boolean;
-      retryAfterSeconds: number;
-    }>> = [];
+    burst = await enforceCloudflareLoginBurst(input);
+  } catch (error) {
+    console.error('AUTH_LOGIN_BURST_RATE_LIMIT unavailable:', error);
+    throw new Error('AUTH_LOGIN_RATE_LIMIT_UNAVAILABLE');
+  }
 
-    const ipAddress = String(input.ipAddress || '').trim();
-    if (ipAddress) {
-      checks.push(
-        consumeLoginRateLimit({
-          db,
-          rawKey: ipAddress,
-          nowMs,
-          ...AUTH_LOGIN_RATE_LIMIT.ipPerMinute
-        }),
-        consumeLoginRateLimit({
-          db,
-          rawKey: ipAddress,
-          nowMs,
-          ...AUTH_LOGIN_RATE_LIMIT.ipPerHour
-        })
-      );
-    }
+  if (burst.blocked) {
+    return {
+      allowed: false,
+      retryAfterSeconds: burst.retryAfterSeconds,
+      violatedScopes: [AUTH_LOGIN_RATE_LIMIT.ipPerMinute.scope]
+    };
+  }
+
+  try {
+    // Long-window checks are read-only and reuse existing AuthEvent audit evidence.
+    // This avoids three D1 writes for every login request and prevents D1 DDL/quota
+    // pressure from disabling authentication.
+    const db = await getDb();
+    const nowMs = Date.now();
+    const violatedScopes: string[] = [];
+    let retryAfterSeconds = 0;
 
     const account = String(input.email || '').trim().toLowerCase();
     if (account) {
-      checks.push(
-        consumeLoginRateLimit({
-          db,
-          rawKey: account,
-          nowMs,
-          ...AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes
-        })
-      );
+      const result = await recentAuthEventWindow({
+        db,
+        field: 'email',
+        value: account,
+        sinceMs: nowMs - AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes.windowMs,
+        windowMs: AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes.windowMs,
+        nowMs
+      });
+      if (result.count >= AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes.limit) {
+        violatedScopes.push(AUTH_LOGIN_RATE_LIMIT.accountPer15Minutes.scope);
+        retryAfterSeconds = Math.max(retryAfterSeconds, result.retryAfterSeconds);
+      }
     }
 
-    const results = await Promise.all(checks);
-    const blocked = results.filter(item => item.blocked);
+    const ipAddress = String(input.ipAddress || '').trim();
+    if (ipAddress) {
+      const result = await recentAuthEventWindow({
+        db,
+        field: 'ipAddress',
+        value: ipAddress,
+        sinceMs: nowMs - AUTH_LOGIN_RATE_LIMIT.ipPerHour.windowMs,
+        windowMs: AUTH_LOGIN_RATE_LIMIT.ipPerHour.windowMs,
+        nowMs
+      });
+      if (result.count >= AUTH_LOGIN_RATE_LIMIT.ipPerHour.limit) {
+        violatedScopes.push(AUTH_LOGIN_RATE_LIMIT.ipPerHour.scope);
+        retryAfterSeconds = Math.max(retryAfterSeconds, result.retryAfterSeconds);
+      }
+    }
+
     return {
-      allowed: blocked.length === 0,
-      retryAfterSeconds: blocked.length
-        ? Math.max(...blocked.map(item => item.retryAfterSeconds))
-        : 0,
-      violatedScopes: blocked.map(item => item.scope)
+      allowed: violatedScopes.length === 0,
+      retryAfterSeconds,
+      violatedScopes
     };
   } catch (error) {
-    console.error('AUTH_LOGIN_RATE_LIMIT unavailable:', error);
-    throw new Error('AUTH_LOGIN_RATE_LIMIT_UNAVAILABLE');
+    // Cloudflare's native 5/minute limiter remains active. Do not turn a
+    // temporary D1 audit-read problem into a full authentication outage.
+    console.error('AUTH_LOGIN_RATE_LIMIT long-window checks degraded:', error);
+    return {
+      allowed: true,
+      retryAfterSeconds: 0,
+      violatedScopes: [],
+      degraded: true
+    };
   }
 }
 
@@ -224,8 +256,11 @@ export async function ensureAuthSecuritySchema() {
     const passwordHistoryTable = await db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AuthPasswordHistory' LIMIT 1")
       .first<{ name?: string }>();
+    const rateLimitTable = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AuthLoginRateLimit' LIMIT 1")
+      .first<{ name?: string }>();
 
-    if (!sessionTable || !passwordHistoryTable) {
+    if (!sessionTable || !passwordHistoryTable || !rateLimitTable) {
       await executeSchemaScript(db, `
         CREATE TABLE IF NOT EXISTS AuthSession (
           id TEXT PRIMARY KEY NOT NULL,
@@ -255,21 +290,19 @@ export async function ensureAuthSecuritySchema() {
         );
         CREATE INDEX IF NOT EXISTS idx_auth_password_history_user
           ON AuthPasswordHistory(userId,createdAt DESC);
+
+        CREATE TABLE IF NOT EXISTS AuthLoginRateLimit (
+          scope TEXT NOT NULL,
+          keyHash TEXT NOT NULL,
+          windowStartedAt INTEGER NOT NULL,
+          count INTEGER NOT NULL DEFAULT 0,
+          updatedAt TEXT NOT NULL,
+          PRIMARY KEY (scope,keyHash)
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_login_rate_limit_updated
+          ON AuthLoginRateLimit(updatedAt);
       `);
     }
-
-    await executeSchemaScript(db, `
-      CREATE TABLE IF NOT EXISTS AuthLoginRateLimit (
-        scope TEXT NOT NULL,
-        keyHash TEXT NOT NULL,
-        windowStartedAt INTEGER NOT NULL,
-        count INTEGER NOT NULL DEFAULT 0,
-        updatedAt TEXT NOT NULL,
-        PRIMARY KEY (scope,keyHash)
-      );
-      CREATE INDEX IF NOT EXISTS idx_auth_login_rate_limit_updated
-        ON AuthLoginRateLimit(updatedAt);
-    `);
 
     return db;
   })().catch(error => {
