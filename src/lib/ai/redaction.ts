@@ -97,13 +97,114 @@ function luhnValid(candidate: string) {
   return sum % 10 === 0;
 }
 
+function validCalendarDate(day: number, month: number) {
+  if (day < 1 || day > 31 || month < 1 || month > 12) return false;
+  const maxDay = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  return day <= maxDay;
+}
+
 function plausibleNik(candidate: string) {
   if (!/^\d{16}$/.test(candidate)) return false;
+  const region = candidate.slice(0, 6);
   const day = Number(candidate.slice(6, 8));
   const normalizedDay = day > 40 ? day - 40 : day;
   const month = Number(candidate.slice(8, 10));
-  const year = Number(candidate.slice(10, 12));
-  return normalizedDay >= 1 && normalizedDay <= 31 && month >= 1 && month <= 12 && year >= 0 && year <= 99;
+  const serial = candidate.slice(12, 16);
+
+  if (/^0{6}$/.test(region) || serial === '0000') return false;
+  return validCalendarDate(normalizedDay, month);
+}
+
+function plausibleNpwp(candidate: string) {
+  const digits = candidate.replace(/\D/g, '');
+  return digits.length === 15 || digits.length === 16;
+}
+
+function replacementFor(category: BankingRedactionCategory) {
+  return '[' + category + '_REDACTED]';
+}
+
+function redactStructuredValue(value: unknown, category: BankingRedactionCategory): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map(item =>
+      item === null || item === undefined ? item : replacementFor(category)
+    );
+  }
+  return replacementFor(category);
+}
+
+function redactStructuredJson(
+  value: string,
+  onRedaction: (category: BankingRedactionCategory) => void
+): string | null {
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+
+  const visit = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(visit);
+    if (!node || typeof node !== 'object') return node;
+
+    const output: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+      const classified = classifyBankingSensitiveField(key);
+      if (classified) {
+        output[key] = redactStructuredValue(child, classified.category);
+        onRedaction(classified.category);
+      } else {
+        output[key] = visit(child);
+      }
+    }
+    return output;
+  };
+
+  return JSON.stringify(visit(parsed));
+}
+
+function redactContextKeyValues(
+  value: string,
+  onRedaction: (category: BankingRedactionCategory) => void
+) {
+  return value
+    .split('\n')
+    .map(line => {
+      const separators = [line.indexOf(':'), line.indexOf('=')]
+        .filter(index => index > 0)
+        .sort((a, b) => a - b);
+
+      if (separators.length === 0) return line;
+
+      const index = separators[0];
+      const label = line.slice(0, index).replace(/^\s*[-*•]\s*/, '').trim();
+      const classified = classifyBankingSensitiveField(label);
+      const rawValue = line.slice(index + 1).trim();
+
+      if (!classified || !rawValue || /^\[[A-Z_]+_REDACTED\]$/.test(rawValue)) {
+        return line;
+      }
+
+      const candidate = rawValue.replace(/^["']|["'],?$/g, '').trim();
+
+      if (classified.category === 'CARD_NUMBER' && !luhnValid(candidate)) return line;
+      if (
+        classified.category === 'NIK' &&
+        !plausibleNik(candidate.replace(/\D/g, ''))
+      ) {
+        return line;
+      }
+      if (classified.category === 'NPWP' && !plausibleNpwp(candidate)) return line;
+
+      onRedaction(classified.category);
+      return line.slice(0, index + 1) + ' ' + replacementFor(classified.category);
+    })
+    .join('\n');
 }
 
 function addCount(
