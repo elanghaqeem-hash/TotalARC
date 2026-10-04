@@ -74,6 +74,10 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   experimental: {
+    // Keep production builds within shared-hosting/cPanel resource limits.
+    // Cloudflare/Vercel remain compatible; this only reduces build parallelism.
+    cpus: 1,
+    workerThreads: false,
     optimizePackageImports: ['lucide-react'],
   },
   webpack(config) {
