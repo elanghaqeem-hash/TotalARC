@@ -1,14 +1,9 @@
 name: Verify production ICOFR traceability
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/lib/d1-icofr-integrity.ts'
-      - 'src/lib/d1-icofr-traceability.ts'
-      - 'src/lib/d1-icofr-certification.ts'
-      - 'scripts/verify-icofr-lifecycle-traceability.js'
-      - '.github/workflows/verify-icofr-production-traceability.yml'
+  workflow_run:
+    workflows: ['Deploy Total ARC to Cloudflare']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +11,7 @@ permissions:
 
 jobs:
   traceability-production:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
