@@ -1,5 +1,11 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { ensureCoreDomainSchema } from '@/lib/d1-core';
+import { ensureIcofrScopeSchema } from '@/lib/d1-icofr';
+import { ensureIcofrDomainSchema } from '@/lib/d1-icofr-domains';
 import { ensureIcofrTraceabilitySchema } from '@/lib/d1-icofr-traceability';
+import { ensureIcofrTestingPlanSchema } from '@/lib/d1-icofr-testing-plan';
+import { ensureAssuranceSchema } from '@/lib/d1-assurance';
+import { ensureIcofrCertificationSchema } from '@/lib/d1-icofr-certification';
 
 type D1DatabaseLike = {
   prepare: (sql: string) => {
@@ -20,7 +26,18 @@ type IntegrityCheck = {
 };
 
 async function getDb(): Promise<D1DatabaseLike> {
+  // The integrity report references records owned by multiple ICOFR/assurance
+  // schemas. Initialize every referenced schema before issuing read-only
+  // integrity queries so a fresh production isolate cannot fail with
+  // "no such table" merely because the corresponding UI module has not run yet.
+  await ensureCoreDomainSchema();
+  await ensureIcofrScopeSchema();
+  await ensureIcofrDomainSchema();
   await ensureIcofrTraceabilitySchema();
+  await ensureAssuranceSchema();
+  await ensureIcofrTestingPlanSchema();
+  await ensureIcofrCertificationSchema();
+
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
