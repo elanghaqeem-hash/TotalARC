@@ -32,11 +32,10 @@ const requirements = [
   ['src/lib/auth-security.ts', "limit: 20, windowMs: 15 * 60 * 1000"],
   ['src/lib/auth-security.ts', "limit: 100, windowMs: 60 * 60 * 1000"],
   ['src/lib/auth-security.ts', 'AUTH_LOGIN_BURST_RATE_LIMIT'],
-  ['src/lib/auth-security.ts', 'recentAuthEventWindow'],
+  ['src/lib/auth-security.ts', 'consumeD1LoginWindow'],
+  ['src/lib/auth-security.ts', 'AuthLoginRateLimit WHERE scope=? AND keyHash=?'],
+  ['src/lib/auth-security.ts', 'ON CONFLICT(scope,keyHash) DO UPDATE SET'],
   ['src/lib/auth-security.ts', 'degraded: true'],
-  ['src/lib/auth.ts', 'idx_auth_event_email_created_type'],
-  ['src/lib/auth.ts', 'idx_auth_event_ip_created_type'],
-  ['src/lib/auth.ts', '20261004_LOGIN_READ_EFFICIENCY'],
   ['wrangler.jsonc', '"name": "AUTH_LOGIN_BURST_RATE_LIMIT"'],
   ['wrangler.jsonc', '"namespace_id": "571003"'],
   ['wrangler.jsonc', '"limit": 5'],
@@ -175,9 +174,9 @@ if (limiterBlock.includes('ensureAuthSecuritySchema()')) {
     'AUTH_SECURITY_INTEGRITY_ERROR: login rate limiting must not run auth-security DDL on the request hot path.'
   );
 }
-if (!limiterBlock.includes('const db = await getDb();') || !limiterBlock.includes('recentAuthEventWindow')) {
+if (!limiterBlock.includes('const db = await getDb();') || !limiterBlock.includes('consumeD1LoginWindow')) {
   throw new Error(
-    'AUTH_SECURITY_INTEGRITY_ERROR: long-window login limits must use read-only AuthEvent evidence.'
+    'AUTH_SECURITY_INTEGRITY_ERROR: long-window login limits must use compact AuthLoginRateLimit counters.'
   );
 }
 if (!limiterBlock.includes('degraded: true')) {
@@ -191,9 +190,14 @@ if (!authSecuritySource.includes("violatedScopes: [AUTH_LOGIN_RATE_LIMIT.ipPerMi
   );
 }
 
-if (authSecuritySource.includes("LOWER(email)")) {
+if (limiterBlock.includes('FROM AuthEvent') || limiterBlock.includes('recentAuthEventWindow')) {
   throw new Error(
-    'AUTH_SECURITY_INTEGRITY_ERROR: login rate-limit email lookup must remain sargable and use the AuthEvent covering index.'
+    'AUTH_SECURITY_INTEGRITY_ERROR: login rate limiting must never scan the growing AuthEvent audit table.'
+  );
+}
+if (!authSecuritySource.includes('PRIMARY KEY (scope,keyHash)')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: AuthLoginRateLimit must keep a composite primary key for point lookups.'
   );
 }
 
