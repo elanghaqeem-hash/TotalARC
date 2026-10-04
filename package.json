@@ -30,7 +30,7 @@
     "typecheck": "tsc --noEmit",
     "verify:rcm-integrity": "node scripts/verify-rcm-integrity.js",
     "verify:ai-security": "node scripts/verify-ai-security.js",
-    "verify:icofr-traceability": "node scripts/verify-icofr-traceability.js",
+    "verify:icofr-traceability": "node scripts/verify-icofr-lifecycle-traceability.js",
     "verify:security-headers": "node scripts/verify-security-headers.js",
     "verify:ci-supply-chain": "node scripts/verify-ci-supply-chain.js",
     "verify:security-negative": "node scripts/verify-security-negative-tests.js",
