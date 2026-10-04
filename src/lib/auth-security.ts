@@ -115,19 +115,24 @@ async function enforceCloudflareLoginBurst(input: {
     | undefined;
 
   if (!limiter) {
-    if (process.env.NODE_ENV === 'development') {
-      return { available: false, blocked: false, retryAfterSeconds: 0 };
-    }
-    throw new Error('AUTH_LOGIN_BURST_RATE_LIMIT_BINDING_UNAVAILABLE');
+    // Production must not become unavailable only because the optional native
+    // Cloudflare rate-limit binding is absent. The caller will fall back to
+    // the institution-scoped AuthEvent evidence for the same 5/minute IP rule.
+    return { available: false, blocked: false, retryAfterSeconds: 0 };
   }
 
-  const key = 'ip:' + (await hashRateLimitKey(ipAddress));
-  const result = await limiter.limit({ key });
-  return {
-    available: true,
-    blocked: !result.success,
-    retryAfterSeconds: result.success ? 0 : 60
-  };
+  try {
+    const key = 'ip:' + (await hashRateLimitKey(ipAddress));
+    const result = await limiter.limit({ key });
+    return {
+      available: true,
+      blocked: !result.success,
+      retryAfterSeconds: result.success ? 0 : 60
+    };
+  } catch (error) {
+    console.error('AUTH_LOGIN_BURST_RATE_LIMIT binding failed; using D1 fallback:', error);
+    return { available: false, blocked: false, retryAfterSeconds: 0 };
+  }
 }
 
 async function recentAuthEventWindow(input: {
@@ -166,13 +171,7 @@ export async function enforceAuthLoginRateLimit(input: {
   ipAddress?: string | null;
   email?: string | null;
 }): Promise<AuthLoginRateLimitResult> {
-  let burst: Awaited<ReturnType<typeof enforceCloudflareLoginBurst>>;
-  try {
-    burst = await enforceCloudflareLoginBurst(input);
-  } catch (error) {
-    console.error('AUTH_LOGIN_BURST_RATE_LIMIT unavailable:', error);
-    throw new Error('AUTH_LOGIN_RATE_LIMIT_UNAVAILABLE');
-  }
+  const burst = await enforceCloudflareLoginBurst(input);
 
   if (burst.blocked) {
     return {
@@ -191,6 +190,27 @@ export async function enforceAuthLoginRateLimit(input: {
     const violatedScopes: string[] = [];
     let retryAfterSeconds = 0;
 
+    const ipAddress = String(input.ipAddress || '').trim();
+
+    // Fallback for deployments where Cloudflare does not expose the native
+    // AUTH_LOGIN_BURST_RATE_LIMIT binding. AuthEvent records are written by
+    // the authentication flow, so the sixth attempt inside 60 seconds is
+    // rejected while avoiding an extra write on every login request.
+    if (!burst.available && ipAddress) {
+      const oneMinute = await recentAuthEventWindow({
+        db,
+        field: 'ipAddress',
+        value: ipAddress,
+        sinceMs: nowMs - AUTH_LOGIN_RATE_LIMIT.ipPerMinute.windowMs,
+        windowMs: AUTH_LOGIN_RATE_LIMIT.ipPerMinute.windowMs,
+        nowMs
+      });
+      if (oneMinute.count >= AUTH_LOGIN_RATE_LIMIT.ipPerMinute.limit) {
+        violatedScopes.push(AUTH_LOGIN_RATE_LIMIT.ipPerMinute.scope);
+        retryAfterSeconds = Math.max(retryAfterSeconds, oneMinute.retryAfterSeconds);
+      }
+    }
+
     const account = String(input.email || '').trim().toLowerCase();
     if (account) {
       const result = await recentAuthEventWindow({
@@ -207,7 +227,6 @@ export async function enforceAuthLoginRateLimit(input: {
       }
     }
 
-    const ipAddress = String(input.ipAddress || '').trim();
     if (ipAddress) {
       const result = await recentAuthEventWindow({
         db,
@@ -229,9 +248,14 @@ export async function enforceAuthLoginRateLimit(input: {
       violatedScopes
     };
   } catch (error) {
-    // Cloudflare's native 5/minute limiter remains active. Do not turn a
-    // temporary D1 audit-read problem into a full authentication outage.
-    console.error('AUTH_LOGIN_RATE_LIMIT long-window checks degraded:', error);
+    // If the native limiter is present, long-window D1 checks may degrade
+    // without disabling authentication because the 5/minute protection is
+    // still enforced at the edge. If the native binding is absent as well,
+    // fail closed because no rate-limit protection would remain.
+    console.error('AUTH_LOGIN_RATE_LIMIT D1 checks degraded:', error);
+    if (!burst.available) {
+      throw new Error('AUTH_LOGIN_RATE_LIMIT_UNAVAILABLE');
+    }
     return {
       allowed: true,
       retryAfterSeconds: 0,
