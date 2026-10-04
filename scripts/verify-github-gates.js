@@ -90,6 +90,17 @@ for (const marker of [
   requireMarker(productionGate, marker);
 }
 
+const protectionAudit = '.github/workflows/audit-main-protection.yml';
+for (const marker of [
+  'name: Audit main branch protection',
+  'name: Main Protection Audit',
+  '/branches/main',
+  '.protected // false',
+  'Configure a repository ruleset/branch protection and require Merge Gate before merge'
+]) {
+  requireMarker(protectionAudit, marker);
+}
+
 console.log(
-  'GitHub gate contract verified: PR Merge Gate and post-deploy Production Gate cover Build, Test, Security, Deploy, and Smoke evidence.'
+  'GitHub gate contract verified: PR Merge Gate, post-deploy Production Gate, and main-protection drift audit are wired.'
 );
