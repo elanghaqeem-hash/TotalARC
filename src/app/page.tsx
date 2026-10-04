@@ -62,36 +62,44 @@ type DashboardPayload = {
 
 const quickActions = [
   {
+    key: 'rcm',
     title: 'Dynamic RCM',
     description: 'Kelola keterkaitan proses, risiko, dan kontrol.',
     href: '/rcm',
     icon: FileSpreadsheet,
-    accent: 'from-sky-500 to-blue-600',
-    iconBg: 'bg-white/20'
+    accent: 'from-sky-400 via-blue-500 to-blue-700',
+    iconTone: 'text-blue-600',
+    glow: 'bg-cyan-300/35'
   },
   {
+    key: 'toe',
     title: 'ToE Workpaper',
     description: 'Uji efektivitas kontrol dan dokumentasikan evidence.',
     href: '/toe',
     icon: Cpu,
-    accent: 'from-emerald-500 to-teal-600',
-    iconBg: 'bg-white/20'
+    accent: 'from-emerald-400 via-teal-500 to-emerald-700',
+    iconTone: 'text-emerald-600',
+    glow: 'bg-emerald-300/30'
   },
   {
+    key: 'csa',
     title: 'CSA Assessment',
     description: 'Lakukan control self-assessment secara terstruktur.',
     href: '/rcsa',
     icon: ClipboardCheck,
-    accent: 'from-violet-500 to-purple-600',
-    iconBg: 'bg-white/20'
+    accent: 'from-violet-400 via-purple-500 to-indigo-700',
+    iconTone: 'text-violet-600',
+    glow: 'bg-fuchsia-300/25'
   },
   {
+    key: 'analytics',
     title: 'Reports & Analytics',
     description: 'Pantau assurance, remediation, dan status kontrol.',
     href: '/reports',
     icon: BarChart3,
-    accent: 'from-amber-500 to-orange-500',
-    iconBg: 'bg-white/20'
+    accent: 'from-amber-400 via-orange-500 to-orange-600',
+    iconTone: 'text-orange-600',
+    glow: 'bg-yellow-300/30'
   }
 ];
 
@@ -305,24 +313,84 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2">
           {visibleQuickActions.map((item) => {
             const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`group relative overflow-hidden rounded-2xl bg-gradient-to-br ${item.accent} p-4 text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg`}
+                className={`group relative min-h-[190px] overflow-hidden rounded-[26px] border border-white/20 bg-gradient-to-br ${item.accent} p-5 text-white shadow-[0_18px_42px_-22px_rgba(15,23,42,0.55)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-20px_rgba(15,23,42,0.5)] focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 sm:min-h-[205px] sm:p-6`}
               >
-                <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/10" />
-                <div className="relative flex items-start justify-between gap-3">
-                  <div className={`rounded-xl p-2.5 ${item.iconBg}`}>
-                    <Icon className="h-5 w-5" />
+                <div className={`pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full ${item.glow} blur-2xl transition duration-500 group-hover:scale-110`} />
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(255,255,255,0.26),transparent_42%)]" />
+                <div className="pointer-events-none absolute -bottom-20 -right-16 h-52 w-72 rotate-[-12deg] rounded-[48%] border border-white/15 bg-white/[0.07]" />
+                <div className="pointer-events-none absolute -bottom-28 right-12 h-52 w-72 rotate-[-16deg] rounded-[48%] border border-white/10 bg-white/[0.05]" />
+
+                <div className="relative z-20 flex items-start justify-between gap-3">
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-white/95 shadow-lg shadow-black/10 ring-1 ring-white/70 ${item.iconTone}`}>
+                    <Icon className="h-6 w-6" strokeWidth={2.2} />
                   </div>
-                  <ArrowRight className="h-4 w-4 opacity-70 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/95 text-slate-700 shadow-md shadow-black/10 transition duration-300 group-hover:translate-x-1 group-hover:bg-white">
+                    <ArrowRight className="h-5 w-5" strokeWidth={2.4} />
+                  </div>
                 </div>
-                <div className="relative mt-4 text-sm font-black">{item.title}</div>
-                <p className="relative mt-1 min-h-[34px] text-[11px] leading-4 text-white/80">{item.description}</p>
+
+                <div className="pointer-events-none absolute right-6 top-[60px] z-10 hidden h-[105px] w-[150px] sm:block">
+                  {item.key === 'rcm' && (
+                    <>
+                      <div className="absolute right-2 top-2 h-[82px] w-[108px] rotate-[-5deg] rounded-2xl border border-white/35 bg-white/20 shadow-xl backdrop-blur-sm" />
+                      <div className="absolute right-8 top-0 flex h-[88px] w-[92px] rotate-[4deg] flex-col justify-center rounded-2xl border border-white/50 bg-white/85 p-4 text-blue-500 shadow-xl">
+                        <FileSpreadsheet className="h-9 w-9" />
+                        <div className="mt-2 h-2 w-12 rounded-full bg-blue-200" />
+                        <div className="mt-1 h-2 w-9 rounded-full bg-blue-100" />
+                      </div>
+                      <div className="absolute bottom-0 right-0 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/60 bg-blue-600/90 text-white shadow-xl">
+                        <Shield className="h-7 w-7" />
+                      </div>
+                    </>
+                  )}
+                  {item.key === 'toe' && (
+                    <>
+                      <div className="absolute right-0 top-3 h-[78px] w-[110px] rotate-[5deg] rounded-2xl border border-white/30 bg-white/15 backdrop-blur-sm" />
+                      <div className="absolute right-6 top-0 h-[88px] w-[108px] rotate-[-3deg] rounded-2xl border border-white/45 bg-white/30 shadow-xl backdrop-blur-md" />
+                      <div className="absolute right-10 top-5 flex h-[78px] w-[92px] flex-col justify-center rounded-2xl bg-white/90 p-4 text-emerald-600 shadow-xl">
+                        <ClipboardCheck className="h-8 w-8" />
+                        <div className="mt-2 h-2 w-11 rounded-full bg-emerald-200" />
+                        <div className="mt-1 h-2 w-8 rounded-full bg-emerald-100" />
+                      </div>
+                    </>
+                  )}
+                  {item.key === 'csa' && (
+                    <>
+                      <div className="absolute bottom-0 right-3 h-[72px] w-[126px] rounded-[50%] border border-white/20 bg-white/10" />
+                      <div className="absolute right-8 top-0 flex h-[96px] w-[92px] rotate-[7deg] flex-col items-center justify-center rounded-[20px] border border-white/55 bg-white/90 text-violet-600 shadow-xl">
+                        <ClipboardCheck className="h-10 w-10" />
+                        <div className="mt-2 grid grid-cols-3 gap-1">
+                          <span className="h-2 w-2 rounded-sm bg-violet-300" />
+                          <span className="h-2 w-7 rounded-full bg-violet-200" />
+                          <span className="h-2 w-2 rounded-sm bg-violet-300" />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {item.key === 'analytics' && (
+                    <>
+                      <div className="absolute right-0 top-4 h-[82px] w-[118px] rotate-[6deg] rounded-2xl border border-white/30 bg-white/18 backdrop-blur-sm" />
+                      <div className="absolute right-7 top-0 flex h-[96px] w-[110px] rotate-[-4deg] items-end gap-2 rounded-2xl border border-white/60 bg-white/90 p-4 text-orange-500 shadow-xl">
+                        <span className="h-8 w-4 rounded-t bg-orange-200" />
+                        <span className="h-12 w-4 rounded-t bg-orange-300" />
+                        <span className="h-16 w-4 rounded-t bg-orange-400" />
+                        <span className="mb-1 ml-auto h-11 w-11 rounded-full border-[7px] border-orange-200 border-r-orange-500" />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="relative z-20 mt-8 max-w-[72%] sm:mt-9 sm:max-w-[58%]">
+                  <div className="text-[20px] font-black leading-tight tracking-tight sm:text-[22px]">{item.title}</div>
+                  <p className="mt-2 text-[13px] leading-5 text-white/85 sm:text-sm">{item.description}</p>
+                </div>
               </Link>
             );
           })}
