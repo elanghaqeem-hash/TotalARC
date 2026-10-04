@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -26,6 +27,87 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Wait for mandatory checks on main commit
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          API_URL="https://api.github.com/repos/$REPOSITORY/actions/workflows/required-checks.yml/runs?head_sha=$TARGET_SHA&event=push&per_page=20"
+
+          for attempt in $(seq 1 90); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "$API_URL" > /tmp/totalarc-required-checks.json
+
+            STATUS="$(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[0].status // empty' /tmp/totalarc-required-checks.json)"
+            CONCLUSION="$(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[0].conclusion // empty' /tmp/totalarc-required-checks.json)"
+            RUN_URL="$(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[0].html_url // empty' /tmp/totalarc-required-checks.json)"
+
+            if [ "$STATUS" = "completed" ] && [ "$CONCLUSION" = "success" ]; then
+              echo "Mandatory Required Checks passed for $TARGET_SHA."
+              echo "- Required Checks: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+              break
+            fi
+
+            if [ "$STATUS" = "completed" ] && [ -n "$CONCLUSION" ] && [ "$CONCLUSION" != "success" ]; then
+              echo "::error::Required Checks completed with conclusion '$CONCLUSION' for $TARGET_SHA."
+              exit 1
+            fi
+
+            if [ "$attempt" -eq 90 ]; then
+              echo "::error::Timed out waiting for Required Checks on $TARGET_SHA."
+              exit 1
+            fi
+
+            echo "Waiting for Required Checks ($attempt/90): status=${STATUS:-not-started}"
+            sleep 10
+          done
+
+      - name: Require merged PR provenance for production deploy
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+          ALLOW_DIRECT_MAIN_DEPLOY: ${{ vars.TOTALARC_ALLOW_DIRECT_MAIN_DEPLOY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${ALLOW_DIRECT_MAIN_DEPLOY:-false}" = "true" ]; then
+            echo "::warning::Break-glass TOTALARC_ALLOW_DIRECT_MAIN_DEPLOY=true; PR provenance enforcement bypassed."
+            exit 0
+          fi
+
+          API_URL="https://api.github.com/repos/$REPOSITORY/commits/$TARGET_SHA/pulls"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$API_URL" > /tmp/totalarc-commit-pulls.json
+
+          if ! jq -e --arg sha "$TARGET_SHA" '
+            any(.[];
+              .state == "closed" and
+              .merged_at != null and
+              .base.ref == "main" and
+              .merge_commit_sha == $sha
+            )
+          ' /tmp/totalarc-commit-pulls.json >/dev/null; then
+            echo "::error::Production deployment blocked: main commit $TARGET_SHA is not the merge result of an approved pull request."
+            echo "Create and merge a PR to main. Direct pushes remain non-deployable while branch protection is being enabled."
+            exit 1
+          fi
+
+          echo "Merged PR provenance verified for production commit $TARGET_SHA."
 
       - name: Verify immutable CI action refs
         run: npm run verify:ci-supply-chain
