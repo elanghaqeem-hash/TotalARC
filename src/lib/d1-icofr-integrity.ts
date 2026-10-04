@@ -35,6 +35,38 @@ async function count(db: D1DatabaseLike, sql: string, values: unknown[] = []) {
   return Number(row?.count || 0);
 }
 
+async function firstRow<T = Record<string, unknown>>(
+  db: D1DatabaseLike,
+  sql: string,
+  values: unknown[] = []
+): Promise<T | null> {
+  const statement = db.prepare(sql);
+  return values.length
+    ? statement.bind(...values).first<T>()
+    : statement.first<T>();
+}
+
+type CompletenessMetrics = {
+  inScopeAssertions: number;
+  assertionsWithRisk: number;
+  assertionsWithControl: number;
+  controlsWithToD: number;
+  controlsWithToE: number;
+  exceptionsWithDeficiency: number;
+  deficienciesWithIssue: number;
+  issuesWithMAP: number;
+  completeChains: number;
+  incompleteChains: number;
+  coveragePercent: number;
+};
+
+type CompletenessCheck = {
+  code: string;
+  description: string;
+  count: number;
+  severity: 'Critical' | 'High';
+};
+
 export async function getIcofrReferentialIntegrityReport() {
   const db = await getDb();
   const institutions = await db.prepare(
@@ -250,6 +282,280 @@ export async function getIcofrReferentialIntegrityReport() {
       WHERE i.id IS NULL`
   );
 
+  const completenessSql = `
+    WITH
+    in_scope AS (
+      SELECT a.id, a.institutionId
+        FROM ICOFRAssertion a
+       WHERE a.inScope = 1
+    ),
+    assertion_risk AS (
+      SELECT DISTINCT
+        a.id AS assertionId,
+        a.institutionId AS institutionId,
+        r.id AS riskId
+      FROM in_scope a
+      JOIN ICOFRTraceabilityLink l
+        ON l.institutionId = a.institutionId
+       AND l.sourceType = 'ASSERTION'
+       AND l.sourceId = a.id
+       AND l.targetType = 'RISK'
+       AND l.relationship = 'ASSERTION_ADDRESSES_RISK'
+      JOIN RiskMaster r
+        ON r.id = l.targetId
+       AND r.institutionId = a.institutionId
+    ),
+    assertion_control AS (
+      SELECT DISTINCT
+        ar.assertionId,
+        ar.institutionId,
+        ar.riskId,
+        d.id AS controlDomainId,
+        d.sourceControlId,
+        CASE
+          WHEN d.keyControl = 1
+            OR COALESCE(cm.isIcofrKey, 0) = 1
+            OR COALESCE(cm.isKeyControl, 0) = 1
+          THEN 1 ELSE 0
+        END AS requiresTesting
+      FROM assertion_risk ar
+      JOIN ICOFRTraceabilityLink l
+        ON l.institutionId = ar.institutionId
+       AND l.sourceType = 'RISK'
+       AND l.sourceId = ar.riskId
+       AND l.targetType = 'ICOFR_CONTROL'
+       AND l.relationship = 'RISK_MITIGATED_BY_CONTROL'
+      JOIN ICOFRControlDomain d
+        ON d.id = l.targetId
+       AND d.institutionId = ar.institutionId
+      LEFT JOIN ControlMaster cm
+        ON cm.id = d.sourceControlId
+       AND cm.institutionId = ar.institutionId
+    ),
+    control_tod AS (
+      SELECT DISTINCT ac.assertionId, ac.controlDomainId
+        FROM assertion_control ac
+        JOIN ICOFRDesignAssessment tod
+          ON tod.institutionId = ac.institutionId
+         AND tod.controlDomainId = ac.controlDomainId
+    ),
+    control_toe AS (
+      SELECT DISTINCT ac.assertionId, ac.controlDomainId, toe.id AS toeId
+        FROM assertion_control ac
+        JOIN ToETest toe
+          ON ac.sourceControlId IS NOT NULL
+         AND toe.controlId = ac.sourceControlId
+    ),
+    relevant_toe AS (
+      SELECT DISTINCT ac.assertionId, ac.institutionId, toe.id AS toeId
+        FROM assertion_control ac
+        JOIN ToETest toe
+          ON ac.sourceControlId IS NOT NULL
+         AND toe.controlId = ac.sourceControlId
+    ),
+    relevant_exception AS (
+      SELECT DISTINCT rt.assertionId, rt.institutionId, e.id AS exceptionId
+        FROM relevant_toe rt
+        JOIN TestingException e ON e.toeTestId = rt.toeId
+    ),
+    relevant_deficiency AS (
+      SELECT DISTINCT
+        re.assertionId,
+        re.institutionId,
+        re.exceptionId,
+        d.id AS deficiencyId,
+        d.humanApproved
+        FROM relevant_exception re
+        JOIN ControlDeficiency d ON d.exceptionId = re.exceptionId
+    ),
+    relevant_issue AS (
+      SELECT DISTINCT rd.assertionId, rd.institutionId, rd.deficiencyId, i.id AS issueId
+        FROM relevant_deficiency rd
+        JOIN Issue i
+          ON i.deficiencyId = rd.deficiencyId
+         AND i.institutionId = rd.institutionId
+    ),
+    relevant_map AS (
+      SELECT DISTINCT ri.assertionId, ri.issueId, m.id AS mapId
+        FROM relevant_issue ri
+        JOIN ManagementActionPlan m ON m.issueId = ri.issueId
+    ),
+    risk_missing AS (
+      SELECT i.id AS assertionId
+        FROM in_scope i
+       WHERE NOT EXISTS (
+         SELECT 1 FROM assertion_risk ar WHERE ar.assertionId = i.id
+       )
+    ),
+    control_missing AS (
+      SELECT DISTINCT ar.assertionId, ar.riskId
+        FROM assertion_risk ar
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM assertion_control ac
+          WHERE ac.assertionId = ar.assertionId
+            AND ac.riskId = ar.riskId
+       )
+    ),
+    tod_missing AS (
+      SELECT DISTINCT ac.assertionId, ac.controlDomainId
+        FROM assertion_control ac
+       WHERE ac.requiresTesting = 1
+         AND NOT EXISTS (
+           SELECT 1
+             FROM control_tod ct
+            WHERE ct.assertionId = ac.assertionId
+              AND ct.controlDomainId = ac.controlDomainId
+         )
+    ),
+    toe_missing AS (
+      SELECT DISTINCT ac.assertionId, ac.controlDomainId
+        FROM assertion_control ac
+       WHERE ac.requiresTesting = 1
+         AND NOT EXISTS (
+           SELECT 1
+             FROM control_toe ct
+            WHERE ct.assertionId = ac.assertionId
+              AND ct.controlDomainId = ac.controlDomainId
+         )
+    ),
+    exception_deficiency_missing AS (
+      SELECT DISTINCT re.assertionId, re.exceptionId
+        FROM relevant_exception re
+       WHERE NOT EXISTS (
+         SELECT 1 FROM ControlDeficiency d WHERE d.exceptionId = re.exceptionId
+       )
+    ),
+    approved_deficiency_issue_missing AS (
+      SELECT DISTINCT rd.assertionId, rd.deficiencyId
+        FROM relevant_deficiency rd
+       WHERE rd.humanApproved = 1
+         AND NOT EXISTS (
+           SELECT 1
+             FROM Issue i
+            WHERE i.deficiencyId = rd.deficiencyId
+              AND i.institutionId = rd.institutionId
+         )
+    ),
+    issue_map_missing AS (
+      SELECT DISTINCT ri.assertionId, ri.issueId
+        FROM relevant_issue ri
+        JOIN relevant_deficiency rd
+          ON rd.assertionId = ri.assertionId
+         AND rd.deficiencyId = ri.deficiencyId
+       WHERE rd.humanApproved = 1
+         AND NOT EXISTS (
+           SELECT 1 FROM ManagementActionPlan m WHERE m.issueId = ri.issueId
+         )
+    ),
+    incomplete_assertions AS (
+      SELECT assertionId FROM risk_missing
+      UNION
+      SELECT assertionId FROM control_missing
+      UNION
+      SELECT assertionId FROM tod_missing
+      UNION
+      SELECT assertionId FROM toe_missing
+      UNION
+      SELECT assertionId FROM exception_deficiency_missing
+      UNION
+      SELECT assertionId FROM approved_deficiency_issue_missing
+      UNION
+      SELECT assertionId FROM issue_map_missing
+    )
+    SELECT
+      (SELECT COUNT(*) FROM in_scope) AS inScopeAssertions,
+      (SELECT COUNT(DISTINCT assertionId) FROM assertion_risk) AS assertionsWithRisk,
+      (SELECT COUNT(DISTINCT assertionId) FROM assertion_control) AS assertionsWithControl,
+      (SELECT COUNT(DISTINCT controlDomainId) FROM control_tod) AS controlsWithToD,
+      (SELECT COUNT(DISTINCT controlDomainId) FROM control_toe) AS controlsWithToE,
+      (SELECT COUNT(DISTINCT exceptionId) FROM relevant_deficiency) AS exceptionsWithDeficiency,
+      (SELECT COUNT(DISTINCT deficiencyId) FROM relevant_issue) AS deficienciesWithIssue,
+      (SELECT COUNT(DISTINCT issueId) FROM relevant_map) AS issuesWithMAP,
+      (SELECT COUNT(*) FROM in_scope) - (SELECT COUNT(*) FROM incomplete_assertions) AS completeChains,
+      (SELECT COUNT(*) FROM incomplete_assertions) AS incompleteChains,
+      (SELECT COUNT(*) FROM risk_missing) AS assertionRiskMissing,
+      (SELECT COUNT(*) FROM control_missing) AS riskControlMissing,
+      (SELECT COUNT(*) FROM tod_missing) AS keyControlToDMissing,
+      (SELECT COUNT(*) FROM toe_missing) AS keyControlToEMissing,
+      (SELECT COUNT(*) FROM exception_deficiency_missing) AS exceptionDeficiencyMissing,
+      (SELECT COUNT(*) FROM approved_deficiency_issue_missing) AS approvedDeficiencyIssueMissing,
+      (SELECT COUNT(*) FROM issue_map_missing) AS issueMapMissing
+  `;
+
+  const completenessRow = await firstRow<Record<string, unknown>>(db, completenessSql);
+  const inScopeAssertions = Number(completenessRow?.inScopeAssertions || 0);
+  const completeChains = Number(completenessRow?.completeChains || 0);
+  const incompleteChains = Number(completenessRow?.incompleteChains || 0);
+  const coveragePercent =
+    inScopeAssertions > 0
+      ? Math.round((completeChains / inScopeAssertions) * 10000) / 100
+      : 0;
+
+  const metrics: CompletenessMetrics = {
+    inScopeAssertions,
+    assertionsWithRisk: Number(completenessRow?.assertionsWithRisk || 0),
+    assertionsWithControl: Number(completenessRow?.assertionsWithControl || 0),
+    controlsWithToD: Number(completenessRow?.controlsWithToD || 0),
+    controlsWithToE: Number(completenessRow?.controlsWithToE || 0),
+    exceptionsWithDeficiency: Number(completenessRow?.exceptionsWithDeficiency || 0),
+    deficienciesWithIssue: Number(completenessRow?.deficienciesWithIssue || 0),
+    issuesWithMAP: Number(completenessRow?.issuesWithMAP || 0),
+    completeChains,
+    incompleteChains,
+    coveragePercent
+  };
+
+  const completenessChecks: CompletenessCheck[] = [
+    {
+      code: 'IN_SCOPE_ASSERTION_RISK_MISSING',
+      description: 'Every in-scope assertion must link to at least one risk.',
+      count: Number(completenessRow?.assertionRiskMissing || 0),
+      severity: 'Critical'
+    },
+    {
+      code: 'ASSERTION_RISK_CONTROL_MISSING',
+      description: 'Every risk linked from an in-scope assertion must link to an ICOFR control.',
+      count: Number(completenessRow?.riskControlMissing || 0),
+      severity: 'Critical'
+    },
+    {
+      code: 'KEY_CONTROL_TOD_MISSING',
+      description: 'Every key/ICOFR-key control in an in-scope assertion chain must have a Test of Design.',
+      count: Number(completenessRow?.keyControlToDMissing || 0),
+      severity: 'Critical'
+    },
+    {
+      code: 'KEY_CONTROL_TOE_MISSING',
+      description: 'Every key/ICOFR-key control in an in-scope assertion chain must have a Test of Effectiveness.',
+      count: Number(completenessRow?.keyControlToEMissing || 0),
+      severity: 'Critical'
+    },
+    {
+      code: 'EXCEPTION_DEFICIENCY_MISSING',
+      description: 'Every testing exception in an in-scope assertion chain must resolve to a control deficiency.',
+      count: Number(completenessRow?.exceptionDeficiencyMissing || 0),
+      severity: 'Critical'
+    },
+    {
+      code: 'APPROVED_DEFICIENCY_ISSUE_MISSING',
+      description: 'A human-approved deficiency is treated as remediation-required and must resolve to an Issue.',
+      count: Number(completenessRow?.approvedDeficiencyIssueMissing || 0),
+      severity: 'Critical'
+    },
+    {
+      code: 'ISSUE_MAP_MISSING',
+      description: 'Every remediation Issue arising from a human-approved deficiency must have a Management Action Plan.',
+      count: Number(completenessRow?.issueMapMissing || 0),
+      severity: 'Critical'
+    }
+  ];
+
+  const mandatoryChainGapCount = completenessChecks.reduce(
+    (total, check) => total + check.count,
+    0
+  );
+
   const orphanCount = checks.reduce((total, check) => total + check.count, 0);
   const criticalFailures = checks.filter(check => check.count > 0 && check.severity === 'Critical');
   const crossTenantCount = checks
@@ -257,7 +563,7 @@ export async function getIcofrReferentialIntegrityReport() {
     .reduce((total, check) => total + check.count, 0);
 
   return {
-    ok: criticalFailures.length === 0,
+    ok: criticalFailures.length === 0 && mandatoryChainGapCount === 0,
     test: 'ICOFR_END_TO_END_REFERENTIAL_INTEGRITY',
     storage: 'cloudflare-d1',
     checkedAt: new Date().toISOString(),
@@ -277,6 +583,18 @@ export async function getIcofrReferentialIntegrityReport() {
     ],
     orphanCount,
     crossTenantCount,
+    mandatoryChainGapCount,
+    completenessTest: 'ICOFR_TRACEABILITY_COMPLETENESS',
+    completenessPolicy: {
+      assertionToRisk: 'mandatory',
+      riskToControl: 'mandatory',
+      testing: 'mandatory for ICOFRControlDomain.keyControl, ControlMaster.isIcofrKey, or ControlMaster.isKeyControl',
+      exceptionToDeficiency: 'mandatory when an exception exists',
+      deficiencyToIssue: 'mandatory when ControlDeficiency.humanApproved = 1',
+      issueToMAP: 'mandatory for remediation issues arising from human-approved deficiencies'
+    },
+    metrics,
+    completenessChecks,
     checks
   };
 }
