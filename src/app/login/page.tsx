@@ -461,9 +461,81 @@ export default function LoginPage() {
 
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_38%),linear-gradient(180deg,#f8fbff_0%,#f8fafc_100%)] px-4 py-6 sm:px-6 sm:py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-7xl items-center justify-center">
-        <div className="grid w-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)] lg:grid-cols-[1.18fr_0.82fr]">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.13),_transparent_38%),linear-gradient(180deg,#f5faff_0%,#f8fafc_100%)] px-3 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-8">
+      <div className="mx-auto flex w-full max-w-7xl items-start justify-center lg:min-h-[calc(100vh-4rem)] lg:items-center">
+        <div className="grid w-full overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)] sm:rounded-[28px] lg:grid-cols-[1.18fr_0.82fr]">
+          <section className="relative overflow-hidden bg-[linear-gradient(145deg,#082f63_0%,#0b4f82_52%,#072a55_100%)] px-6 py-7 text-white lg:hidden sm:px-8 sm:py-8">
+            <div className="pointer-events-none absolute inset-0">
+              <div className="absolute -left-16 top-10 h-48 w-48 rounded-full bg-sky-400/12 blur-3xl" />
+              <div className="absolute -bottom-20 right-0 h-60 w-60 rounded-full bg-cyan-300/12 blur-3xl" />
+              <svg
+                className="absolute bottom-0 left-0 h-[45%] w-full opacity-45"
+                viewBox="0 0 800 260"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path d="M0 160C110 125 200 130 292 166C395 206 490 206 590 164C673 130 737 127 800 144V260H0Z" fill="rgba(14,165,233,0.18)" />
+                <path d="M0 195C106 168 207 171 308 201C408 231 510 228 610 194C686 168 750 168 800 180" fill="none" stroke="rgba(125,211,252,0.34)" strokeWidth="3" />
+              </svg>
+            </div>
+
+            <div className="relative z-10">
+              <div className="inline-flex items-center rounded-2xl bg-white/95 p-2.5 shadow-[0_12px_30px_-14px_rgba(2,132,199,0.6)]">
+                <img
+                  src="/brand/total-arc-logo.svg"
+                  alt="Total ARC"
+                  className="h-11 w-auto max-w-[155px] object-contain sm:h-12"
+                />
+              </div>
+
+              <div className="mt-4 text-[9px] font-black uppercase tracking-[0.27em] text-sky-200">
+                Integrated GRC Platform
+              </div>
+              <h1 className="mt-5 max-w-xl text-[28px] font-black leading-[1.08] tracking-[-0.03em] sm:text-3xl">
+                Satu Platform untuk
+                <span className="block text-sky-300">GRC yang Lebih Terintegrasi</span>
+              </h1>
+              <p className="mt-4 max-w-2xl text-[12px] leading-5 text-slate-200/90 sm:text-sm sm:leading-6">
+                Hubungkan proses, risiko, kontrol, pengujian, remediasi, pemantauan, dan pelaporan dalam satu sumber data.
+              </p>
+
+              <div className="mt-6 grid grid-cols-2 gap-2.5">
+                {[
+                  { title: 'BPM & RCM', desc: 'Proses & Risiko', Icon: Network },
+                  { title: 'ICOFR & RCSA', desc: 'Kontrol & Risiko', Icon: ShieldCheck },
+                  { title: 'CSA · ToD · ToE', desc: 'Pengujian Kontrol', Icon: ClipboardCheck },
+                  { title: 'CCM & Reporting', desc: 'Monitoring & Laporan', Icon: BarChart3 }
+                ].map(({ title, desc, Icon }) => (
+                  <div key={title} className="rounded-2xl border border-white/12 bg-slate-950/25 p-3 backdrop-blur-sm">
+                    <div className="flex items-center gap-2.5">
+                      <div className="rounded-xl bg-sky-400/14 p-2 text-sky-200 ring-1 ring-sky-200/10">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-[10px] font-black text-white">{title}</div>
+                        <div className="mt-0.5 text-[9px] leading-4 text-slate-300">{desc}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 grid grid-cols-4 gap-2 border-t border-white/10 pt-4">
+                {[
+                  { label: 'Data Terintegrasi', Icon: Layers },
+                  { label: 'Pengawasan', Icon: ShieldCheck },
+                  { label: 'Keputusan Cepat', Icon: BarChart3 },
+                  { label: 'Tata Kelola', Icon: Building2 }
+                ].map(({ label, Icon }) => (
+                  <div key={label} className="text-center">
+                    <Icon className="mx-auto h-4 w-4 text-sky-200" />
+                    <div className="mt-1.5 text-[8px] font-semibold leading-3 text-slate-200">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
           <section className="relative hidden min-h-[760px] overflow-hidden bg-[linear-gradient(145deg,#082f63_0%,#0b4f82_48%,#072a55_100%)] p-9 text-white lg:flex lg:flex-col xl:p-11">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute -left-20 top-24 h-72 w-72 rounded-full bg-sky-400/10 blur-3xl" />
@@ -547,23 +619,15 @@ export default function LoginPage() {
             </div>
           </section>
 
-          <section className="relative flex min-h-[680px] items-center bg-white p-5 sm:p-8 lg:min-h-[760px] lg:p-10 xl:p-12">
+          <section className="relative flex items-center bg-white p-6 sm:p-8 lg:min-h-[760px] lg:p-10 xl:p-12">
             <div className="mx-auto w-full max-w-[470px]">
-              <div className="mb-8 lg:hidden">
-                <img
-                  src="/brand/total-arc-logo.svg"
-                  alt="Total ARC"
-                  className="h-14 w-auto max-w-[180px] object-contain"
-                />
-              </div>
-
-              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-700">
+              <div className="text-[9px] font-black uppercase tracking-[0.24em] text-sky-700 sm:text-[10px]">
                 Total ARC Secure Access
               </div>
-              <h2 className="mt-3 text-3xl font-black tracking-[-0.03em] text-slate-950 sm:text-4xl">
+              <h2 className="mt-3 text-[30px] font-black tracking-[-0.035em] text-slate-950 sm:text-4xl">
                 {mfa ? 'Verifikasi MFA' : 'Masuk ke Total ARC'}
               </h2>
-              <p className="mt-3 max-w-md text-sm leading-6 text-slate-500">
+              <p className="mt-3 max-w-md text-[13px] leading-6 text-slate-500 sm:text-sm">
                 {mfa
                   ? 'Sesi belum dibuat. Selesaikan faktor kedua untuk melanjutkan ke Total ARC.'
                   : 'Gunakan credential akun yang diberikan administrator institusi Anda.'}
@@ -582,7 +646,7 @@ export default function LoginPage() {
               )}
 
               {!mfa ? (
-                <form onSubmit={submit} className="mt-8 space-y-5">
+                <form onSubmit={submit} className="mt-7 space-y-4 sm:mt-8 sm:space-y-5">
                   <label className="block">
                     <span className="mb-2 block text-xs font-black text-slate-700">Email</span>
                     <div className="flex items-center rounded-2xl border border-slate-200 bg-white px-3 shadow-[0_8px_22px_-18px_rgba(15,23,42,0.45)] transition focus-within:border-sky-400 focus-within:ring-4 focus-within:ring-sky-50">
@@ -797,7 +861,7 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <div className="mt-8 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-slate-50 p-4">
+              <div className="mt-7 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-slate-50 p-4 sm:mt-8">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 rounded-xl bg-white p-2 text-sky-700 shadow-sm ring-1 ring-sky-100">
                     <ShieldCheck className="h-5 w-5" />
@@ -812,7 +876,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="mt-7 border-t border-slate-100 pt-5 text-center text-[10px] leading-5 text-slate-400">
+              <div className="mt-6 border-t border-slate-100 pt-4 text-center text-[10px] leading-5 text-slate-400 sm:mt-7 sm:pt-5">
                 © 2026 Total ARC. All rights reserved.
               </div>
             </div>
