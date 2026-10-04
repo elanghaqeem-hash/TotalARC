@@ -93,10 +93,114 @@ jobs:
           fi
           echo "Cloudflare D1 access is available."
 
+      - name: Resolve and pin production D1 binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          CONFIGURED_D1_DATABASE_ID: ${{ vars.TOTALARC_D1_DATABASE_ID }}
+          CONFIGURED_D1_DATABASE_NAME: ${{ vars.TOTALARC_D1_DATABASE_NAME }}
+          ALLOW_D1_REBIND: ${{ vars.TOTALARC_ALLOW_D1_REBIND }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SETTINGS_URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/totalarc/settings"
+          SETTINGS_HTTP="$(curl --silent --show-error --max-time 20             --output /tmp/totalarc-worker-settings.json             --write-out "%{http_code}"             --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$SETTINGS_URL" || true)"
+
+          CURRENT_ID=""
+          if [ "$SETTINGS_HTTP" = "200" ]; then
+            CURRENT_ID="$(jq -r '
+              .result.bindings[]?
+              | select(.type == "d1" and .name == "DB")
+              | (.database_id // .id // empty)
+            ' /tmp/totalarc-worker-settings.json | head -n 1)"
+          fi
+
+          TARGET_ID="${CONFIGURED_D1_DATABASE_ID:-$CURRENT_ID}"
+
+          if [ -z "$TARGET_ID" ] && [ -n "${CONFIGURED_D1_DATABASE_NAME:-}" ]; then
+            TARGET_ID="$(jq -r --arg name "$CONFIGURED_D1_DATABASE_NAME" '
+              .[]
+              | select((.name // "") == $name)
+              | (.uuid // .id // empty)
+            ' /tmp/totalarc-d1-list.json | head -n 1)"
+          fi
+
+          if [ -z "$TARGET_ID" ]; then
+            CANDIDATE_COUNT="$(jq '[.[] | select((.name // "") | test("total.?arc"; "i"))] | length' /tmp/totalarc-d1-list.json)"
+            if [ "$CANDIDATE_COUNT" = "1" ]; then
+              TARGET_ID="$(jq -r '
+                .[]
+                | select((.name // "") | test("total.?arc"; "i"))
+                | (.uuid // .id // empty)
+              ' /tmp/totalarc-d1-list.json)"
+            fi
+          fi
+
+          if [ -z "$TARGET_ID" ]; then
+            echo "::error::Unable to determine a unique production D1 database. Configure repository variable TOTALARC_D1_DATABASE_ID."
+            exit 1
+          fi
+
+          TARGET_NAME="$(jq -r --arg id "$TARGET_ID" '
+            .[]
+            | select((.uuid // .id // "") == $id)
+            | (.name // empty)
+          ' /tmp/totalarc-d1-list.json | head -n 1)"
+
+          if [ -z "$TARGET_NAME" ]; then
+            echo "::error::Resolved D1 database ID is not present in the Cloudflare account."
+            exit 1
+          fi
+
+          if [ -n "${CONFIGURED_D1_DATABASE_NAME:-}" ] && [ "$CONFIGURED_D1_DATABASE_NAME" != "$TARGET_NAME" ]; then
+            echo "::error::TOTALARC_D1_DATABASE_NAME does not match the database resolved from TOTALARC_D1_DATABASE_ID."
+            exit 1
+          fi
+
+          if [ -n "$CURRENT_ID" ] && [ "$CURRENT_ID" != "$TARGET_ID" ] && [ "${ALLOW_D1_REBIND:-false}" != "true" ]; then
+            echo "::error::Deployment would rebind production DB from the currently attached D1 database. Set TOTALARC_ALLOW_D1_REBIND=true only for an explicitly approved migration."
+            exit 1
+          fi
+
+          echo "::add-mask::$TARGET_ID"
+          echo "TOTALARC_D1_DATABASE_ID=$TARGET_ID" >> "$GITHUB_ENV"
+          echo "TOTALARC_D1_DATABASE_NAME=$TARGET_NAME" >> "$GITHUB_ENV"
+          echo "TOTALARC_WRANGLER_CONFIG=wrangler.production.json" >> "$GITHUB_ENV"
+
+          TOTALARC_D1_DATABASE_ID="$TARGET_ID"           TOTALARC_D1_DATABASE_NAME="$TARGET_NAME"             node scripts/prepare-production-d1-config.cjs
+
+          jq -e --arg id "$TARGET_ID" --arg name "$TARGET_NAME" '
+            [.d1_databases[]
+              | select(
+                  .binding == "DB" and
+                  .database_id == $id and
+                  .database_name == $name
+                )
+            ] | length == 1
+          ' wrangler.production.json >/dev/null
+
+          npx wrangler d1 execute "$TARGET_NAME" --remote --json             --command "SELECT COUNT(*) AS count FROM Institution WHERE legalName = 'PT. Bank Pembangunan Daerah Kalimantan Barat'"             >/tmp/totalarc-d1-identity.json
+
+          if ! jq -e '([.[]?.results[]? | (.count // 0)] | add // 0) >= 1' /tmp/totalarc-d1-identity.json >/dev/null; then
+            echo "::error::Resolved production D1 does not contain the expected Bank Kalbar institution identity."
+            exit 1
+          fi
+
+          MASKED_ID="${TARGET_ID:0:8}…${TARGET_ID: -4}"
+          echo "### Deterministic production D1 binding" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Binding: DB" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Database name: $TARGET_NAME" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Database ID: $MASKED_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Existing Worker binding preserved: $([ -n "$CURRENT_ID" ] && echo yes || echo not-yet-bound)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Auto-provisioning: disabled for production deploy" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Backfill missing process objectives
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          TOTALARC_D1_DATABASE_ID: ${{ env.TOTALARC_D1_DATABASE_ID }}
+          TOTALARC_D1_DATABASE_NAME: ${{ env.TOTALARC_D1_DATABASE_NAME }}
         run: python scripts/backfill-process-objectives.py
 
       - name: Validate Workers AI account inference
@@ -132,7 +236,9 @@ jobs:
         run: npm run verify:security-headers
 
       - name: Verify D1 schema stability
-        run: npm run verify:d1-schema-stability
+        run: |
+          npm run verify:d1-schema-stability
+          npm run verify:d1-binding-config
 
       - name: Verify RCM integrity contract
         run: npm run verify:rcm-integrity
@@ -169,13 +275,50 @@ jobs:
       - name: Build OpenNext Worker
         run: npm run build
 
-      - name: Deploy Worker and provision Cloudflare bindings
+      - name: Deploy Worker with pinned Cloudflare bindings
         id: deploy
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          command: deploy --config wrangler.production.json --no-x-provision
+
+      - name: Verify production D1 binding identity
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETTINGS_URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/totalarc/settings"
+
+          verified=false
+          for attempt in $(seq 1 12); do
+            HTTP_CODE="$(curl --silent --show-error --max-time 20               --output /tmp/totalarc-worker-settings-after.json               --write-out "%{http_code}"               --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               "$SETTINGS_URL" || true)"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              BOUND_ID="$(jq -r '
+                .result.bindings[]?
+                | select(.type == "d1" and .name == "DB")
+                | (.database_id // .id // empty)
+              ' /tmp/totalarc-worker-settings-after.json | head -n 1)"
+
+              if [ "$BOUND_ID" = "$TOTALARC_D1_DATABASE_ID" ]; then
+                verified=true
+                break
+              fi
+            fi
+
+            echo "Production D1 binding identity not propagated yet (attempt $attempt/12)."
+            sleep 5
+          done
+
+          if [ "$verified" != "true" ]; then
+            echo "::error::Production Worker DB binding does not match the pinned TotalARC D1 database."
+            exit 1
+          fi
+
+          echo "Production Worker binding DB is pinned to the expected D1 database."
 
       - name: Verify production security headers
         env:
@@ -257,7 +400,7 @@ jobs:
             local name="$1"
             local value="$2"
             if [ -n "$value" ]; then
-              printf '%s' "$value" | npx wrangler secret put "$name" >/dev/null
+              printf '%s' "$value" | npx wrangler secret put "$name" --config wrangler.production.json >/dev/null
               echo "$name synchronized to the Total ARC Worker."
             fi
           }
