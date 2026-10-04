@@ -19,6 +19,67 @@ export type BankingRedactionResult = {
   categories: Partial<Record<BankingRedactionCategory, number>>;
 };
 
+export type BankingRedactionMethod =
+  | 'STRUCTURED_FIELD'
+  | 'CONTEXT_CLASSIFIER'
+  | 'CHECKSUM_VALIDATOR'
+  | 'FORMAT_VALIDATOR'
+  | 'SECRET_PATTERN';
+
+export type BankingRedactionDetection = {
+  category: BankingRedactionCategory;
+  method: BankingRedactionMethod;
+  confidence: 'HIGH' | 'MEDIUM';
+};
+
+type ClassifiedField = {
+  category: BankingRedactionCategory;
+  confidence: 'HIGH' | 'MEDIUM';
+};
+
+const FIELD_ALIASES: Array<{ category: BankingRedactionCategory; aliases: string[] }> = [
+  { category: 'CIF', aliases: ['cif','customer cif','customer id','customer number','customer information file','nomor cif','no cif','id nasabah','nomor nasabah'] },
+  { category: 'BANK_ACCOUNT', aliases: ['rekening','nomor rekening','no rekening','account number','account no','bank account','bank account number','nomor akun bank'] },
+  { category: 'CARD_NUMBER', aliases: ['card number','card no','nomor kartu','no kartu','pan','primary account number'] },
+  { category: 'NIK', aliases: ['nik','no nik','nomor nik','nomor induk kependudukan','id kependudukan'] },
+  { category: 'NPWP', aliases: ['npwp','no npwp','nomor npwp','tax id','taxpayer id'] },
+  { category: 'LOAN_ACCOUNT', aliases: ['loan account','loan account number','loan number','loan no','loan id','credit account','credit account number','credit number','credit no','credit id','nomor kredit','no kredit','nomor pinjaman','no pinjaman','nomor fasilitas','no fasilitas'] },
+  { category: 'EMPLOYEE_ID', aliases: ['employee id','internal employee id','personnel number','employee number','nip','nik pegawai','id pegawai','nomor pegawai'] },
+  { category: 'CONFIDENTIAL_DOCUMENT_METADATA', aliases: ['document id','document number','document no','document reference','document metadata','document filename','filename','file name','nomor dokumen','no dokumen','referensi dokumen','nama file','evidence file','evidence filename','workpaper reference','working paper reference','confidential document metadata'] }
+];
+
+function normalizeFieldName(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_./\\-]+/g, ' ')
+    .replace(/[^A-Za-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+export function classifyBankingSensitiveField(fieldName: string): ClassifiedField | null {
+  const normalized = normalizeFieldName(fieldName);
+  if (!normalized) return null;
+
+  for (const rule of FIELD_ALIASES) {
+    if (rule.aliases.includes(normalized)) {
+      return { category: rule.category, confidence: 'HIGH' };
+    }
+  }
+
+  for (const rule of FIELD_ALIASES) {
+    if (rule.aliases.some(alias =>
+      normalized.length >= 5 &&
+      (normalized.endsWith(' ' + alias) || normalized.startsWith(alias + ' '))
+    )) {
+      return { category: rule.category, confidence: 'MEDIUM' };
+    }
+  }
+
+  return null;
+}
+
 function luhnValid(candidate: string) {
   const digits = candidate.replace(/\D/g, '');
   if (digits.length < 13 || digits.length > 19) return false;
