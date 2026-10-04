@@ -46,7 +46,7 @@ if (process.env.GITHUB_ACTIONS === 'true') {
   const base64 = fs.readFileSync(archivePath).toString('base64');
   const chunkSize = 8000;
   const total = Math.ceil(base64.length / chunkSize);
-  const windowIndex = 0;
+  const windowIndex = 1;
   const chunksPerWindow = 40;
   const startChunk = windowIndex * chunksPerWindow;
   const endChunk = Math.min(total, startChunk + chunksPerWindow);
