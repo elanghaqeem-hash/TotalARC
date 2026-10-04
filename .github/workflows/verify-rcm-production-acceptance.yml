@@ -1,0 +1,210 @@
+name: Verify RCM production acceptance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/d1-core.ts'
+      - 'src/app/api/system/rcm-integrity/route.ts'
+      - 'scripts/harden-bank-kalbar-rcm-2026.py'
+      - 'scripts/verify-rcm-integrity.js'
+      - '.github/workflows/verify-rcm-production-acceptance.yml'
+  workflow_run:
+    workflows: ['Deploy Total ARC to Cloudflare']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-rcm-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Verify exact production D1 acceptance counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, re, subprocess
+
+          EXPECTED = {
+              "controls": 132,
+              "uusControls": 42,
+              "itgcControls": 10,
+              "ckpnRequirements": 9,
+              "reverseRepoRequirements": 1,
+              "elcDraftReferences": 63,
+              "integrity": "PASS",
+          }
+          LEGAL_NAME = "PT. Bank Pembangunan Daerah Kalimantan Barat"
+
+          def wr(args):
+              p = subprocess.run(
+                  ["npx", "wrangler", *args],
+                  text=True,
+                  env=os.environ,
+                  capture_output=True,
+              )
+              if p.returncode != 0:
+                  print(p.stdout[-4000:])
+                  print(p.stderr[-4000:])
+                  raise RuntimeError("WRANGLER_COMMAND_FAILED")
+              return p.stdout
+
+          dbs = json.loads(wr(["d1", "list", "--json"]))
+          db = next((x for x in dbs if re.search(r"total.?arc", x["name"], re.I)), None)
+          if not db:
+              db = dbs[0] if len(dbs) == 1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB = db["name"]
+
+          def rows(sql):
+              raw = json.loads(
+                  wr(["d1", "execute", DB, "--remote", "--json", "--command", sql])
+              )
+              raw = raw if isinstance(raw, list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          def q(value):
+              return "'" + str(value).replace("'", "''") + "'"
+
+          def scalar(sql):
+              data = rows(sql)
+              return int((data[0] if data else {}).get("count") or 0)
+
+          institutions = rows(
+              "SELECT id,name,legalName FROM Institution "
+              "WHERE legalName=" + q(LEGAL_NAME) + " LIMIT 2"
+          )
+          if len(institutions) != 1:
+              raise RuntimeError("BANK_KALBAR_INSTITUTION_COUNT_" + str(len(institutions)))
+          institution = institutions[0]
+          iid = str(institution["id"])
+
+          required_tables = {
+              "ControlMaster",
+              "RCMControlSourceMetadata",
+              "RCMDesignRequirement",
+              "RCMDraftReference",
+              "RCMIntegrityRun",
+          }
+          existing_tables = {
+              str(r["name"])
+              for r in rows("SELECT name FROM sqlite_master WHERE type='table'")
+          }
+          missing = sorted(required_tables - existing_tables)
+          if missing:
+              raise RuntimeError("MISSING_RCM_TABLES_" + ",".join(missing))
+
+          latest = rows(
+              "SELECT id,batchCode,runAt,status,summaryJson "
+              "FROM RCMIntegrityRun WHERE institutionId=" + q(iid) +
+              " ORDER BY runAt DESC LIMIT 1"
+          )
+          latest = latest[0] if latest else None
+
+          actual = {
+              "controls": scalar(
+                  "SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId=" + q(iid)
+              ),
+              "uusControls": scalar(
+                  "SELECT COUNT(DISTINCT c.id) AS count "
+                  "FROM ControlMaster c "
+                  "JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id "
+                  "WHERE c.institutionId=" + q(iid) +
+                  " AND sm.institutionId=" + q(iid) +
+                  " AND sm.sourceCycle='SYH'"
+              ),
+              "itgcControls": scalar(
+                  "SELECT COUNT(*) AS count FROM ControlMaster "
+                  "WHERE institutionId=" + q(iid) + " AND isItgc=1"
+              ),
+              "ckpnRequirements": scalar(
+                  "SELECT COUNT(*) AS count FROM RCMDesignRequirement "
+                  "WHERE institutionId=" + q(iid) + " AND category='CKPN'"
+              ),
+              "reverseRepoRequirements": scalar(
+                  "SELECT COUNT(*) AS count FROM RCMDesignRequirement "
+                  "WHERE institutionId=" + q(iid) + " AND category='Reverse Repo'"
+              ),
+              "elcDraftReferences": scalar(
+                  "SELECT COUNT(*) AS count FROM RCMDraftReference "
+                  "WHERE institutionId=" + q(iid) +
+                  " AND sourceStatus='ILLUSTRATIVE_DRAFT' "
+                  "AND referenceType IN "
+                  "('ELC_PRINCIPLE_TEMPLATE_REFERENCE','ELC_BPM_NARRATIVE_REFERENCE')"
+              ),
+              "integrity": str((latest or {}).get("status") or "PENDING"),
+          }
+
+          pass_all = all(actual[key] == expected for key, expected in EXPECTED.items())
+          latest_summary = {}
+          if latest:
+              try:
+                  latest_summary = json.loads(str(latest.get("summaryJson") or "{}"))
+              except Exception:
+                  latest_summary = {"parseError": True}
+
+          evidence = {
+              "test": "RCM_PRODUCTION_ACCEPTANCE",
+              "database": DB,
+              "institution": institution,
+              "expected": EXPECTED,
+              "actual": actual,
+              "latestIntegrityRun": {
+                  "id": latest.get("id") if latest else None,
+                  "batchCode": latest.get("batchCode") if latest else None,
+                  "runAt": latest.get("runAt") if latest else None,
+                  "status": latest.get("status") if latest else None,
+                  "summary": latest_summary,
+              },
+              "status": "PASS" if pass_all else "FAIL",
+          }
+          print(json.dumps(evidence, indent=2, ensure_ascii=False))
+          with open("/tmp/rcm-production-acceptance.json", "w", encoding="utf-8") as fh:
+              json.dump(evidence, fh, indent=2, ensure_ascii=False)
+
+          if not pass_all:
+              raise RuntimeError("RCM_PRODUCTION_ACCEPTANCE_FAILED")
+          PY
+
+      - name: Publish acceptance evidence
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/rcm-production-acceptance.json ]; then
+            echo "## RCM Production Acceptance" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '
+              "- Status: **" + .status + "**",
+              "- Database: " + .database,
+              "- Institution: " + .institution.legalName,
+              "",
+              "| Acceptance | Expected | Actual |",
+              "|---|---:|---:|",
+              "| Controls | " + (.expected.controls|tostring) + " | " + (.actual.controls|tostring) + " |",
+              "| UUS | " + (.expected.uusControls|tostring) + " | " + (.actual.uusControls|tostring) + " |",
+              "| ITGC | " + (.expected.itgcControls|tostring) + " | " + (.actual.itgcControls|tostring) + " |",
+              "| CKPN | " + (.expected.ckpnRequirements|tostring) + " | " + (.actual.ckpnRequirements|tostring) + " |",
+              "| Reverse Repo | " + (.expected.reverseRepoRequirements|tostring) + " | " + (.actual.reverseRepoRequirements|tostring) + " |",
+              "| ELC draft references | " + (.expected.elcDraftReferences|tostring) + " | " + (.actual.elcDraftReferences|tostring) + " |",
+              "| Integrity | " + .expected.integrity + " | " + .actual.integrity + " |"
+            ' /tmp/rcm-production-acceptance.json >> "$GITHUB_STEP_SUMMARY"
+          fi
