@@ -1,9 +1,10 @@
 /**
- * Vercel compatibility shim for code that normally runs on Cloudflare Workers.
+ * Node-hosting compatibility shim for code that normally runs on Cloudflare Workers.
  *
- * On Vercel, Next.js bundles imports of `@opennextjs/cloudflare` to this module
- * (see next.config.mjs). It exposes a minimal getCloudflareContext() surface and
- * provides a D1-compatible adapter backed by Cloudflare's HTTPS D1 API.
+ * Node-hosted deployments (cPanel/Passenger or Vercel) can expose a D1-compatible
+ * DB surface through one of two backends:
+ *   - Cloudflare D1 over HTTPS (default)
+ *   - local SQLite on the hosting server (TOTAL_ARC_DB_BACKEND=sqlite)
  *
  * Cloudflare/OpenNext builds do not use this file and continue to receive native
  * bindings directly from Workers.
@@ -14,6 +15,7 @@ type QueryMeta = Record<string, unknown> & {
   duration?: number;
   rows_read?: number;
   rows_written?: number;
+  last_row_id?: number | string;
 };
 
 type QueryResult<T = Record<string, unknown>> = {
@@ -34,6 +36,58 @@ type BoundQuery = {
   params: unknown[];
 };
 
+type D1PreparedStatementLike = {
+  readonly __totalArcBoundQuery: BoundQuery;
+  bind: (...values: unknown[]) => D1PreparedStatementLike;
+  all: <T = Record<string, unknown>>() => Promise<QueryResult<T>>;
+  first: <T = Record<string, unknown>>(columnName?: string) => Promise<T | null>;
+  run: () => Promise<QueryResult>;
+  raw: <T = unknown[]>(options?: { columnNames?: boolean }) => Promise<T[]>;
+};
+
+type D1DatabaseLike = {
+  prepare: (sql: string) => D1PreparedStatementLike;
+  exec: (sql: string) => Promise<{ count: number; duration: number }>;
+  batch: (statements: unknown[]) => Promise<QueryResult[]>;
+};
+
+type NodeFsLike = {
+  mkdirSync: (path: string, options?: Record<string, unknown>) => void;
+};
+
+type NodePathLike = {
+  resolve: (...paths: string[]) => string;
+  dirname: (path: string) => string;
+};
+
+type NodeSqliteModuleLike = {
+  DatabaseSync: new (path: string) => any;
+};
+
+function nodeBuiltin<T>(name: string): T {
+  const getter = (process as typeof process & {
+    getBuiltinModule?: (id: string) => unknown;
+  }).getBuiltinModule;
+  if (typeof getter !== 'function') {
+    throw new Error('NODE_BUILTIN_MODULE_LOADER_UNAVAILABLE');
+  }
+  const loaded = getter(name);
+  if (!loaded) throw new Error('NODE_BUILTIN_MODULE_UNAVAILABLE:' + name);
+  return loaded as T;
+}
+
+function nodeFs() {
+  return nodeBuiltin<NodeFsLike>('fs');
+}
+
+function nodePath() {
+  return nodeBuiltin<NodePathLike>('path');
+}
+
+function nodeSqlite() {
+  return nodeBuiltin<NodeSqliteModuleLike>('sqlite');
+}
+
 function envValue(name: string) {
   return typeof process.env[name] === 'string' ? String(process.env[name]).trim() : '';
 }
@@ -52,6 +106,21 @@ function normalizeParam(value: unknown): string | number | boolean | null {
   return String(value);
 }
 
+function normalizeSqliteParam(value: unknown): string | number | bigint | Uint8Array | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+    return value;
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Uint8Array) return value;
+  return String(value);
+}
+
+function dbBackend() {
+  return envValue('TOTAL_ARC_DB_BACKEND').toLowerCase() || 'd1';
+}
+
 function d1Config() {
   const accountId = envValue('CLOUDFLARE_ACCOUNT_ID');
   const databaseId =
@@ -61,6 +130,12 @@ function d1Config() {
 
   if (!accountId || !databaseId || !apiToken) return null;
   return { accountId, databaseId, apiToken };
+}
+
+function sqlitePath() {
+  const configured = envValue('TOTAL_ARC_SQLITE_PATH');
+  if (configured) return nodePath().resolve(configured);
+  return nodePath().resolve(process.cwd(), '.totalarc-data', 'totalarc.db');
 }
 
 function timeoutMs() {
@@ -162,7 +237,7 @@ class VercelD1HttpClient {
   }
 }
 
-class VercelD1PreparedStatement {
+class D1HttpPreparedStatement implements D1PreparedStatementLike {
   readonly __totalArcBoundQuery: BoundQuery;
 
   constructor(
@@ -174,7 +249,7 @@ class VercelD1PreparedStatement {
   }
 
   bind(...values: unknown[]) {
-    return new VercelD1PreparedStatement(this.client, this.__totalArcBoundQuery.sql, values);
+    return new D1HttpPreparedStatement(this.client, this.__totalArcBoundQuery.sql, values);
   }
 
   async all<T = Record<string, unknown>>() {
@@ -203,11 +278,11 @@ class VercelD1PreparedStatement {
   }
 }
 
-class VercelD1Database {
+class D1HttpDatabase implements D1DatabaseLike {
   constructor(private readonly client: VercelD1HttpClient) {}
 
   prepare(sql: string) {
-    return new VercelD1PreparedStatement(this.client, sql);
+    return new D1HttpPreparedStatement(this.client, sql);
   }
 
   async exec(sql: string) {
@@ -221,12 +296,12 @@ class VercelD1Database {
   async batch(statements: unknown[]) {
     const queries = statements.map(statement => {
       if (
-        statement instanceof VercelD1PreparedStatement ||
+        statement instanceof D1HttpPreparedStatement ||
         (typeof statement === 'object' &&
           statement !== null &&
           '__totalArcBoundQuery' in statement)
       ) {
-        return (statement as VercelD1PreparedStatement).__totalArcBoundQuery;
+        return (statement as D1PreparedStatementLike).__totalArcBoundQuery;
       }
       throw new Error('D1_HTTP_BATCH_INVALID_STATEMENT');
     });
@@ -234,13 +309,165 @@ class VercelD1Database {
   }
 }
 
-let database: VercelD1Database | null | undefined;
+class LocalSqlitePreparedStatement implements D1PreparedStatementLike {
+  readonly __totalArcBoundQuery: BoundQuery;
+
+  constructor(
+    private readonly database: any,
+    sql: string,
+    params: unknown[] = []
+  ) {
+    this.__totalArcBoundQuery = { sql, params };
+  }
+
+  bind(...values: unknown[]) {
+    return new LocalSqlitePreparedStatement(
+      this.database,
+      this.__totalArcBoundQuery.sql,
+      values
+    );
+  }
+
+  async all<T = Record<string, unknown>>(): Promise<QueryResult<T>> {
+    const statement = this.database.prepare(this.__totalArcBoundQuery.sql);
+    const params = this.__totalArcBoundQuery.params.map(normalizeSqliteParam);
+    const rows = statement.all(...params) as T[];
+    return {
+      success: true,
+      results: rows,
+      meta: { rows_read: rows.length, rows_written: 0 }
+    };
+  }
+
+  async first<T = Record<string, unknown>>(columnName?: string): Promise<T | null> {
+    const statement = this.database.prepare(this.__totalArcBoundQuery.sql);
+    const params = this.__totalArcBoundQuery.params.map(normalizeSqliteParam);
+    const row = (statement.get(...params) || null) as Record<string, unknown> | null;
+    if (!row) return null;
+    if (columnName) return (row[columnName] ?? null) as T | null;
+    return row as T;
+  }
+
+  async run(): Promise<QueryResult> {
+    const statement = this.database.prepare(this.__totalArcBoundQuery.sql);
+    const params = this.__totalArcBoundQuery.params.map(normalizeSqliteParam);
+    const result = statement.run(...params);
+    return {
+      success: true,
+      results: [],
+      meta: {
+        changes: Number(result.changes || 0),
+        rows_read: 0,
+        rows_written: Number(result.changes || 0),
+        last_row_id:
+          typeof result.lastInsertRowid === 'bigint'
+            ? result.lastInsertRowid.toString()
+            : Number(result.lastInsertRowid || 0)
+      }
+    };
+  }
+
+  async raw<T = unknown[]>(options?: { columnNames?: boolean }) {
+    const result = await this.all<Record<string, unknown>>();
+    const rows = result.results || [];
+    if (rows.length === 0) return [] as T[];
+    const columns = Object.keys(rows[0]);
+    const values = rows.map(row => columns.map(column => row[column]));
+    return (options?.columnNames ? [columns, ...values] : values) as T[];
+  }
+}
+
+class LocalSqliteDatabase implements D1DatabaseLike {
+  private readonly database: any;
+
+  constructor(filePath: string) {
+    nodeFs().mkdirSync(nodePath().dirname(filePath), { recursive: true, mode: 0o700 });
+    this.database = new (nodeSqlite().DatabaseSync)(filePath);
+    this.database.exec('PRAGMA journal_mode=WAL;');
+    this.database.exec('PRAGMA synchronous=NORMAL;');
+    this.database.exec('PRAGMA busy_timeout=5000;');
+    this.database.exec('PRAGMA foreign_keys=ON;');
+  }
+
+  prepare(sql: string) {
+    return new LocalSqlitePreparedStatement(this.database, sql);
+  }
+
+  async exec(sql: string) {
+    const startedAt = Date.now();
+    this.database.exec(sql);
+    return {
+      count: sql
+        .split(';')
+        .map(statement => statement.trim())
+        .filter(Boolean).length,
+      duration: Date.now() - startedAt
+    };
+  }
+
+  async batch(statements: unknown[]) {
+    const queries = statements.map(statement => {
+      if (
+        statement instanceof LocalSqlitePreparedStatement ||
+        (typeof statement === 'object' &&
+          statement !== null &&
+          '__totalArcBoundQuery' in statement)
+      ) {
+        return (statement as D1PreparedStatementLike).__totalArcBoundQuery;
+      }
+      throw new Error('LOCAL_SQLITE_BATCH_INVALID_STATEMENT');
+    });
+
+    const results: QueryResult[] = [];
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      for (const item of queries) {
+        const statement = this.database.prepare(item.sql);
+        const params = item.params.map(normalizeSqliteParam);
+        const result = statement.run(...params);
+        results.push({
+          success: true,
+          results: [],
+          meta: {
+            changes: Number(result.changes || 0),
+            rows_read: 0,
+            rows_written: Number(result.changes || 0),
+            last_row_id:
+              typeof result.lastInsertRowid === 'bigint'
+                ? result.lastInsertRowid.toString()
+                : Number(result.lastInsertRowid || 0)
+          }
+        });
+      }
+      this.database.exec('COMMIT');
+      return results;
+    } catch (error) {
+      try {
+        this.database.exec('ROLLBACK');
+      } catch {}
+      throw error;
+    }
+  }
+}
+
+let database: D1DatabaseLike | null | undefined;
 
 function runtimeDatabase() {
   if (database !== undefined) return database;
+
+  if (dbBackend() === 'sqlite') {
+    if (envValue('TOTAL_ARC_NODE_RUNTIME') !== '1') {
+      throw new Error(
+        'TOTAL_ARC_DB_BACKEND=sqlite is supported only on TOTAL_ARC_NODE_RUNTIME=1.'
+      );
+    }
+    database = new LocalSqliteDatabase(sqlitePath());
+    return database;
+  }
+
   const config = d1Config();
   database = config
-    ? new VercelD1Database(
+    ? new D1HttpDatabase(
         new VercelD1HttpClient(config.accountId, config.databaseId, config.apiToken)
       )
     : null;
@@ -267,5 +494,5 @@ export function getCloudflareContext(_options?: unknown) {
 }
 
 export function initOpenNextCloudflareForDev() {
-  // No-op on Vercel. Cloudflare builds continue using the real OpenNext package.
+  // No-op on Node hosting. Cloudflare builds continue using the real OpenNext package.
 }
