@@ -2688,8 +2688,8 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
     first<Record<string, unknown>>(
       db,
       `SELECT
-          COUNT(*) AS controls,
-          SUM(CASE WHEN isItgc = 1 THEN 1 ELSE 0 END) AS itgcControls,
+          COUNT(DISTINCT c.id) AS controls,
+          COUNT(DISTINCT CASE WHEN c.isItgc = 1 THEN c.id END) AS itgcControls,
           COUNT(DISTINCT CASE WHEN sm.sourceCycle = 'SYH' THEN c.id END) AS uusControls
          FROM ControlMaster c
          LEFT JOIN RCMControlSourceMetadata sm
