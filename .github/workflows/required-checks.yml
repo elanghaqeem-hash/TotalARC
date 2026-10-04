@@ -229,6 +229,7 @@ jobs:
           set -euo pipefail
 
           declare -A checks=(
+            ["GitHub Gate Contract"]="$GITHUB_GATE_CONTRACT"
             ["CI Supply Chain"]="$CI_SUPPLY_CHAIN"
             ["Build"]="$BUILD"
             ["TypeScript"]="$TYPESCRIPT"
