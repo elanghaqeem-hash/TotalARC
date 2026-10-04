@@ -211,6 +211,7 @@ jobs:
     steps:
       - name: Enforce all required pre-merge checks
         env:
+          GITHUB_GATE_CONTRACT: ${{ needs.github-gate-contract.result }}
           CI_SUPPLY_CHAIN: ${{ needs.ci-supply-chain.result }}
           BUILD: ${{ needs.build.result }}
           TYPESCRIPT: ${{ needs.typescript.result }}
