@@ -591,7 +591,7 @@ jobs:
           echo "- Rate-limit path: active / non-503" >> "$GITHUB_STEP_SUMMARY"
           echo "- Probe response: HTTP $HTTP_CODE" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify production D1 login query plans
+      - name: Verify production D1 login counter query plan
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -599,38 +599,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          EMAIL_PLAN_SQL="EXPLAIN QUERY PLAN SELECT COUNT(*) AS count, MIN(createdAt) AS oldest FROM AuthEvent WHERE email = 'query-plan-probe@invalid.totalarc.test' AND createdAt >= '2026-01-01T00:00:00.000Z' AND eventType IN ('LOGIN_FAILED','ACCOUNT_LOCKED','PASSWORD_VERIFIED_MFA_REQUIRED','LOGIN_SUCCESS','TEMPORARY_CREDENTIAL_EXPIRED')"
-          IP_PLAN_SQL="EXPLAIN QUERY PLAN SELECT COUNT(*) AS count, MIN(createdAt) AS oldest FROM AuthEvent WHERE ipAddress = '192.0.2.10' AND createdAt >= '2026-01-01T00:00:00.000Z' AND eventType IN ('LOGIN_FAILED','ACCOUNT_LOCKED','PASSWORD_VERIFIED_MFA_REQUIRED','LOGIN_SUCCESS','TEMPORARY_CREDENTIAL_EXPIRED')"
+          PLAN_SQL="EXPLAIN QUERY PLAN SELECT count, windowStartedAt FROM AuthLoginRateLimit WHERE scope = 'ACCOUNT_15M' AND keyHash = 'query-plan-probe' LIMIT 1"
+          npx wrangler d1 execute "$TOTALARC_D1_DATABASE_NAME" --remote --json --command "$PLAN_SQL" >/tmp/totalarc-d1-login-counter-plan.json
 
-          npx wrangler d1 execute "$TOTALARC_D1_DATABASE_NAME" --remote --json --command "$EMAIL_PLAN_SQL" >/tmp/totalarc-d1-login-email-plan.json
-          npx wrangler d1 execute "$TOTALARC_D1_DATABASE_NAME" --remote --json --command "$IP_PLAN_SQL" >/tmp/totalarc-d1-login-ip-plan.json
+          PLAN="$(jq -r '[.[]?.results[]?.detail // empty] | join(" | ")' /tmp/totalarc-d1-login-counter-plan.json)"
 
-          EMAIL_PLAN="$(jq -r '[.[]?.results[]?.detail // empty] | join(" | ")' /tmp/totalarc-d1-login-email-plan.json)"
-          IP_PLAN="$(jq -r '[.[]?.results[]?.detail // empty] | join(" | ")' /tmp/totalarc-d1-login-ip-plan.json)"
-
-          if ! grep -q "idx_auth_event_email_created_type" <<<"$EMAIL_PLAN"; then
-            echo "::error::D1 email login rate-limit query is not using idx_auth_event_email_created_type."
-            echo "Email query plan: $EMAIL_PLAN"
+          if ! grep -q "SEARCH AuthLoginRateLimit USING" <<<"$PLAN"; then
+            echo "::error::D1 login counter lookup is not using the AuthLoginRateLimit primary-key index."
+            echo "Counter query plan: $PLAN"
             exit 1
           fi
 
-          if ! grep -q "idx_auth_event_ip_created_type" <<<"$IP_PLAN"; then
-            echo "::error::D1 IP login rate-limit query is not using idx_auth_event_ip_created_type."
-            echo "IP query plan: $IP_PLAN"
-            exit 1
-          fi
-
-          if grep -q "SCAN AuthEvent" <<<"$EMAIL_PLAN $IP_PLAN"; then
-            echo "::error::D1 login rate-limit query plan contains a full AuthEvent table scan."
-            echo "Email query plan: $EMAIL_PLAN"
-            echo "IP query plan: $IP_PLAN"
+          if grep -q "SCAN AuthLoginRateLimit" <<<"$PLAN"; then
+            echo "::error::D1 login counter lookup contains a full AuthLoginRateLimit table scan."
+            echo "Counter query plan: $PLAN"
             exit 1
           fi
 
           echo "### D1 login query efficiency" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Email rate-limit query: covering/index search verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "- IP rate-limit query: covering/index search verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Full AuthEvent scan: none" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rate-limit storage: AuthLoginRateLimit counter table" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Counter lookup: indexed SEARCH verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- AuthEvent rate-limit scan: removed from login hot path" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify AI runtime and provider connectivity
         env:
