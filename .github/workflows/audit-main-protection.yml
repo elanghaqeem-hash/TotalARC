@@ -1,0 +1,44 @@
+name: Audit main branch protection
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 1 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Main Protection Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify main is protected
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          URL="https://api.github.com/repos/$REPOSITORY/branches/main"
+          curl --fail --silent --show-error             --header "Authorization: Bearer $GH_TOKEN"             --header "Accept: application/vnd.github+json"             --header "X-GitHub-Api-Version: 2022-11-28"             "$URL" > /tmp/totalarc-main-branch.json
+
+          PROTECTED="$(jq -r '.protected // false' /tmp/totalarc-main-branch.json)"
+
+          {
+            echo "## TotalARC main branch protection audit"
+            echo ""
+            echo "- Branch: main"
+            echo "- Protected: $PROTECTED"
+            echo "- Required target: Merge Gate"
+            echo "- Underlying checks: Build, TypeScript, Test Suite, Auth Security, Tenant Isolation, No Dummy Data, D1 Schema Stability, RCM Integrity, AI Security, ICOFR Traceability Integrity, Cloudflare Build"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$PROTECTED" != "true" ]; then
+            echo "::error::main is not protected. Configure a repository ruleset/branch protection and require Merge Gate before merge."
+            exit 1
+          fi
+
+          echo "main is protected."
