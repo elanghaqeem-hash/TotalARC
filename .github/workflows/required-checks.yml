@@ -193,6 +193,7 @@ jobs:
     name: Merge Gate
     if: always()
     needs:
+      - github-gate-contract
       - ci-supply-chain
       - build
       - typescript
