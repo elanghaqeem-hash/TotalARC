@@ -17,6 +17,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  github-gate-contract:
+    name: GitHub Gate Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: npm run verify:github-gates
+
   ci-supply-chain:
     name: CI Supply Chain
     runs-on: ubuntu-latest
@@ -146,6 +157,25 @@ jobs:
       - run: npm ci
       - run: npm run verify:icofr-traceability
 
+  test-suite:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:security-negative
+      - run: npm run verify:process-flow
+      - run: npm run verify:process-document-ai
+      - run: npm run verify:ai-risk-register
+      - run: npm run verify:ai-significant-accounts
+      - run: npm run verify:ai-materiality
+      - run: npm run verify:rcsa-campaign-units
+
   cloudflare-build:
     name: Cloudflare Build
     runs-on: ubuntu-latest
@@ -158,3 +188,80 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  merge-gate:
+    name: Merge Gate
+    if: always()
+    needs:
+      - github-gate-contract
+      - ci-supply-chain
+      - build
+      - typescript
+      - test-suite
+      - auth-security
+      - tenant-isolation
+      - no-dummy-data
+      - d1-schema-stability
+      - rcm-integrity
+      - ai-security
+      - icofr-traceability
+      - cloudflare-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enforce all required pre-merge checks
+        env:
+          GITHUB_GATE_CONTRACT: ${{ needs.github-gate-contract.result }}
+          CI_SUPPLY_CHAIN: ${{ needs.ci-supply-chain.result }}
+          BUILD: ${{ needs.build.result }}
+          TYPESCRIPT: ${{ needs.typescript.result }}
+          TEST_SUITE: ${{ needs.test-suite.result }}
+          AUTH_SECURITY: ${{ needs.auth-security.result }}
+          TENANT_ISOLATION: ${{ needs.tenant-isolation.result }}
+          NO_DUMMY_DATA: ${{ needs.no-dummy-data.result }}
+          D1_SCHEMA_STABILITY: ${{ needs.d1-schema-stability.result }}
+          RCM_INTEGRITY: ${{ needs.rcm-integrity.result }}
+          AI_SECURITY: ${{ needs.ai-security.result }}
+          ICOFR_TRACEABILITY: ${{ needs.icofr-traceability.result }}
+          CLOUDFLARE_BUILD: ${{ needs.cloudflare-build.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          declare -A checks=(
+            ["GitHub Gate Contract"]="$GITHUB_GATE_CONTRACT"
+            ["CI Supply Chain"]="$CI_SUPPLY_CHAIN"
+            ["Build"]="$BUILD"
+            ["TypeScript"]="$TYPESCRIPT"
+            ["Test Suite"]="$TEST_SUITE"
+            ["Auth Security"]="$AUTH_SECURITY"
+            ["Tenant Isolation"]="$TENANT_ISOLATION"
+            ["No Dummy Data"]="$NO_DUMMY_DATA"
+            ["D1 Schema Stability"]="$D1_SCHEMA_STABILITY"
+            ["RCM Integrity"]="$RCM_INTEGRITY"
+            ["AI Security"]="$AI_SECURITY"
+            ["ICOFR Traceability Integrity"]="$ICOFR_TRACEABILITY"
+            ["Cloudflare Build"]="$CLOUDFLARE_BUILD"
+          )
+
+          failed=0
+          {
+            echo "## TotalARC Pre-Merge Gate"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            for name in               "GitHub Gate Contract"               "CI Supply Chain"               "Build"               "TypeScript"               "Test Suite"               "Auth Security"               "Tenant Isolation"               "No Dummy Data"               "D1 Schema Stability"               "RCM Integrity"               "AI Security"               "ICOFR Traceability Integrity"               "Cloudflare Build"; do
+              result="${checks[$name]}"
+              echo "| $name | $result |"
+              if [ "$result" != "success" ]; then
+                failed=1
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::One or more mandatory TotalARC pre-merge checks did not pass."
+            exit 1
+          fi
+
+          echo "All mandatory TotalARC pre-merge checks passed."
