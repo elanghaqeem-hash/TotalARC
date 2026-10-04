@@ -2759,7 +2759,7 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
     ),
     first<Record<string, unknown>>(
       db,
-      `SELECT id, institutionId, runAt, status, summaryJson, createdAt
+      `SELECT id, institutionId, batchCode, runAt, status, summaryJson
          FROM RCMIntegrityRun
         WHERE institutionId = ?
         ORDER BY runAt DESC
