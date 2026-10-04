@@ -464,34 +464,91 @@ export default function LoginPage() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_38%),linear-gradient(180deg,#f8fbff_0%,#f8fafc_100%)] px-4 py-6 sm:px-6 sm:py-8">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-7xl items-center justify-center">
         <div className="grid w-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)] lg:grid-cols-[1.18fr_0.82fr]">
-          <section className="hidden min-h-[720px] flex-col bg-slate-950 p-8 text-white lg:flex xl:p-10">
-            <img
-              src="/brand/total-arc-logo.svg"
-              alt="Total ARC"
-              className="h-14 w-auto max-w-[190px] rounded-xl bg-white px-3 py-2 object-contain"
-            />
-
-            <div className="mt-7">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-sky-200">
-                <ShieldCheck className="h-4 w-4" />
-                About Total ARC
-              </div>
-              <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight tracking-tight xl:text-4xl">
-                Total ARC adalah platform terintegrasi
-                <span className="block text-sky-300">untuk governance, risk, dan control.</span>
-              </h1>
-              <p className="mt-4 max-w-2xl text-xs leading-6 text-slate-300 xl:text-sm xl:leading-7">
-                Total ARC membantu institusi mendaftarkan entitas, menyusun struktur organisasi, memetakan proses
-                bisnis, membangun Risk Control Matrix, serta menjalankan monitoring dan assurance secara terhubung
-                dalam satu sistem.
-              </p>
+          <section className="relative hidden min-h-[760px] overflow-hidden bg-[linear-gradient(145deg,#082f63_0%,#0b4f82_48%,#072a55_100%)] p-9 text-white lg:flex lg:flex-col xl:p-11">
+            <div className="pointer-events-none absolute inset-0">
+              <div className="absolute -left-20 top-24 h-72 w-72 rounded-full bg-sky-400/10 blur-3xl" />
+              <div className="absolute bottom-10 right-0 h-96 w-96 rounded-full bg-cyan-300/10 blur-3xl" />
+              <svg
+                className="absolute bottom-0 left-0 h-[46%] w-full opacity-40"
+                viewBox="0 0 900 360"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path d="M0 230C120 170 210 178 310 225C430 282 540 287 650 224C752 166 820 159 900 186V360H0Z" fill="rgba(14,165,233,0.16)" />
+                <path d="M0 268C130 223 243 231 354 272C464 313 575 310 679 263C771 222 839 219 900 236" fill="none" stroke="rgba(125,211,252,0.34)" strokeWidth="3" />
+                <path d="M0 302C118 274 230 278 344 305C462 334 581 331 698 297C782 272 846 271 900 284" fill="none" stroke="rgba(186,230,253,0.24)" strokeWidth="2" />
+              </svg>
+              <div className="absolute -bottom-24 -right-20 h-80 w-80 rotate-12 rounded-[42%] border border-sky-200/10" />
             </div>
 
-            <TotalArcCarousel />
+            <div className="relative z-10 flex h-full flex-col">
+              <div className="inline-flex w-fit items-center rounded-2xl bg-white/95 p-3 shadow-[0_12px_30px_-14px_rgba(2,132,199,0.55)]">
+                <img
+                  src="/brand/total-arc-logo.svg"
+                  alt="Total ARC"
+                  className="h-14 w-auto max-w-[195px] object-contain"
+                />
+              </div>
+
+              <div className="mt-4 text-[10px] font-black uppercase tracking-[0.28em] text-sky-200">
+                Integrated GRC Platform
+              </div>
+
+              <div className="mt-12 max-w-2xl">
+                <h1 className="text-4xl font-black leading-[1.08] tracking-tight xl:text-[44px]">
+                  Satu Platform untuk
+                  <span className="block text-sky-300">GRC yang Lebih Terintegrasi</span>
+                </h1>
+                <p className="mt-5 max-w-xl text-sm leading-7 text-slate-200/90">
+                  Total ARC membantu organisasi menghubungkan proses, risiko, kontrol, pengujian, remediasi,
+                  pemantauan, dan pelaporan dalam satu sumber data yang terintegrasi.
+                </p>
+              </div>
+
+              <div className="mt-9 grid grid-cols-2 gap-3">
+                {[
+                  { title: 'BPM & RCM', desc: 'Proses & Risiko Terstruktur', Icon: Network },
+                  { title: 'ICOFR & RCSA', desc: 'Pengendalian & Penilaian Risiko', Icon: ShieldCheck },
+                  { title: 'CSA · ToD · ToE', desc: 'Pengujian & Evaluasi Kontrol', Icon: ClipboardCheck },
+                  { title: 'CCM & Reporting', desc: 'Monitoring & Pelaporan Terintegrasi', Icon: BarChart3 }
+                ].map(({ title, desc, Icon }) => (
+                  <div
+                    key={title}
+                    className="group rounded-2xl border border-white/12 bg-slate-950/25 p-4 backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-sky-200/30 hover:bg-slate-950/35"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-xl bg-sky-400/14 p-2.5 text-sky-200 ring-1 ring-sky-200/10">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-white">{title}</div>
+                        <div className="mt-1 text-[10px] leading-4 text-slate-300">{desc}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-auto grid grid-cols-4 gap-3 pt-9">
+                {[
+                  { label: 'Data Terintegrasi', Icon: Layers },
+                  { label: 'Pengawasan Lebih Efektif', Icon: ShieldCheck },
+                  { label: 'Keputusan Lebih Cepat', Icon: BarChart3 },
+                  { label: 'Tata Kelola Lebih Baik', Icon: Building2 }
+                ].map(({ label, Icon }) => (
+                  <div key={label} className="text-center">
+                    <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl bg-white/8 text-sky-200 ring-1 ring-white/10">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="mt-2 text-[9px] font-semibold leading-4 text-slate-200">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
 
-          <section className="flex min-h-[620px] items-center p-5 sm:p-8 lg:min-h-[720px] lg:p-10">
-            <div className="mx-auto w-full max-w-md">
+          <section className="relative flex min-h-[680px] items-center bg-white p-5 sm:p-8 lg:min-h-[760px] lg:p-10 xl:p-12">
+            <div className="mx-auto w-full max-w-[470px]">
               <div className="mb-8 lg:hidden">
                 <img
                   src="/brand/total-arc-logo.svg"
@@ -500,13 +557,13 @@ export default function LoginPage() {
                 />
               </div>
 
-              <div className="text-[11px] font-black uppercase tracking-[0.16em] text-brand-600">
+              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-700">
                 Total ARC Secure Access
               </div>
-              <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-                {mfa ? 'Verifikasi MFA' : 'Sign in'}
+              <h2 className="mt-3 text-3xl font-black tracking-[-0.03em] text-slate-950 sm:text-4xl">
+                {mfa ? 'Verifikasi MFA' : 'Masuk ke Total ARC'}
               </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
+              <p className="mt-3 max-w-md text-sm leading-6 text-slate-500">
                 {mfa
                   ? 'Sesi belum dibuat. Selesaikan faktor kedua untuk melanjutkan ke Total ARC.'
                   : 'Gunakan credential akun yang diberikan administrator institusi Anda.'}
@@ -525,10 +582,10 @@ export default function LoginPage() {
               )}
 
               {!mfa ? (
-                <form onSubmit={submit} className="mt-7 space-y-5">
+                <form onSubmit={submit} className="mt-8 space-y-5">
                   <label className="block">
                     <span className="mb-2 block text-xs font-black text-slate-700">Email</span>
-                    <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 shadow-sm focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-50">
+                    <div className="flex items-center rounded-2xl border border-slate-200 bg-white px-3 shadow-[0_8px_22px_-18px_rgba(15,23,42,0.45)] transition focus-within:border-sky-400 focus-within:ring-4 focus-within:ring-sky-50">
                       <Mail className="h-4 w-4 shrink-0 text-slate-400" />
                       <input
                         type="email"
@@ -544,7 +601,7 @@ export default function LoginPage() {
 
                   <label className="block">
                     <span className="mb-2 block text-xs font-black text-slate-700">Password</span>
-                    <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 shadow-sm focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-50">
+                    <div className="flex items-center rounded-2xl border border-slate-200 bg-white px-3 shadow-[0_8px_22px_-18px_rgba(15,23,42,0.45)] transition focus-within:border-sky-400 focus-within:ring-4 focus-within:ring-sky-50">
                       <LockKeyhole className="h-4 w-4 shrink-0 text-slate-400" />
                       <input
                         type={showPassword ? 'text' : 'password'}
@@ -568,17 +625,17 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 text-sm font-black text-white shadow-lg shadow-sky-100 transition hover:from-brand-700 hover:to-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-700 via-sky-600 to-cyan-500 px-4 text-sm font-black text-white shadow-[0_16px_34px_-18px_rgba(2,132,199,0.75)] transition hover:-translate-y-0.5 hover:from-sky-800 hover:to-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {submitting && (
                       <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                     )}
-                    {submitting ? 'Signing in…' : 'Sign in to Total ARC'}
+                    {submitting ? 'Memproses…' : 'Masuk ke Total ARC'}
                   </button>
 
                   <Link
                     href="/admin/users"
-                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-xs font-black text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-50/70 px-4 text-xs font-black text-sky-700 transition hover:border-sky-300 hover:bg-sky-50"
                   >
                     <UserPlus className="h-4 w-4" />
                     Admin Setup · Daftarkan User
@@ -740,8 +797,23 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <div className="lg:hidden">
-                <TotalArcCarousel compact />
+              <div className="mt-8 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50 to-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-xl bg-white p-2 text-sky-700 shadow-sm ring-1 ring-sky-100">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-slate-900">Akses Terbatas & Aman</div>
+                    <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                      Sistem hanya dapat diakses oleh pengguna terdaftar dengan pengelolaan hak akses berbasis role
+                      dan kontrol autentikasi Total ARC.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-7 border-t border-slate-100 pt-5 text-center text-[10px] leading-5 text-slate-400">
+                © 2026 Total ARC. All rights reserved.
               </div>
             </div>
           </section>
