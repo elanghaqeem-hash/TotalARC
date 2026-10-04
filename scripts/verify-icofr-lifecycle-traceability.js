@@ -1,3 +1,5 @@
+const fs = require('fs');
+
 const assert = (condition, message) => {
   if (!condition) throw new Error('ICOFR_LIFECYCLE_TRACEABILITY_ERROR: ' + message);
 };
@@ -175,3 +177,21 @@ console.log(JSON.stringify({
     validCompleteChain: 'PASS'
   }
 }, null, 2));
+
+const integritySource = fs.readFileSync('src/lib/d1-icofr-integrity.ts', 'utf8');
+for (const marker of [
+  'ensureCoreDomainSchema()',
+  'ensureIcofrScopeSchema()',
+  'ensureIcofrDomainSchema()',
+  'ensureIcofrTraceabilitySchema()',
+  'ensureAssuranceSchema()',
+  'ensureIcofrTestingPlanSchema()',
+  'ensureIcofrCertificationSchema()'
+]) {
+  assert(
+    integritySource.includes(marker),
+    'production integrity bootstrap must initialize referenced schema: ' + marker
+  );
+}
+
+console.log('ICOFR production integrity schema-bootstrap contract PASS');
