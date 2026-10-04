@@ -10,10 +10,6 @@
  * bindings directly from Workers.
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-
 type QueryMeta = Record<string, unknown> & {
   changes?: number;
   duration?: number;
@@ -54,6 +50,43 @@ type D1DatabaseLike = {
   exec: (sql: string) => Promise<{ count: number; duration: number }>;
   batch: (statements: unknown[]) => Promise<QueryResult[]>;
 };
+
+type NodeFsLike = {
+  mkdirSync: (path: string, options?: Record<string, unknown>) => void;
+};
+
+type NodePathLike = {
+  resolve: (...paths: string[]) => string;
+  dirname: (path: string) => string;
+};
+
+type NodeSqliteModuleLike = {
+  DatabaseSync: new (path: string) => any;
+};
+
+function nodeBuiltin<T>(name: string): T {
+  const getter = (process as typeof process & {
+    getBuiltinModule?: (id: string) => unknown;
+  }).getBuiltinModule;
+  if (typeof getter !== 'function') {
+    throw new Error('NODE_BUILTIN_MODULE_LOADER_UNAVAILABLE');
+  }
+  const loaded = getter(name);
+  if (!loaded) throw new Error('NODE_BUILTIN_MODULE_UNAVAILABLE:' + name);
+  return loaded as T;
+}
+
+function nodeFs() {
+  return nodeBuiltin<NodeFsLike>('fs');
+}
+
+function nodePath() {
+  return nodeBuiltin<NodePathLike>('path');
+}
+
+function nodeSqlite() {
+  return nodeBuiltin<NodeSqliteModuleLike>('sqlite');
+}
 
 function envValue(name: string) {
   return typeof process.env[name] === 'string' ? String(process.env[name]).trim() : '';
@@ -101,8 +134,8 @@ function d1Config() {
 
 function sqlitePath() {
   const configured = envValue('TOTAL_ARC_SQLITE_PATH');
-  if (configured) return path.resolve(configured);
-  return path.resolve(process.cwd(), '.totalarc-data', 'totalarc.db');
+  if (configured) return nodePath().resolve(configured);
+  return nodePath().resolve(process.cwd(), '.totalarc-data', 'totalarc.db');
 }
 
 function timeoutMs() {
@@ -280,7 +313,7 @@ class LocalSqlitePreparedStatement implements D1PreparedStatementLike {
   readonly __totalArcBoundQuery: BoundQuery;
 
   constructor(
-    private readonly database: DatabaseSync,
+    private readonly database: any,
     sql: string,
     params: unknown[] = []
   ) {
@@ -345,11 +378,11 @@ class LocalSqlitePreparedStatement implements D1PreparedStatementLike {
 }
 
 class LocalSqliteDatabase implements D1DatabaseLike {
-  private readonly database: DatabaseSync;
+  private readonly database: any;
 
   constructor(filePath: string) {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-    this.database = new DatabaseSync(filePath);
+    nodeFs().mkdirSync(nodePath().dirname(filePath), { recursive: true, mode: 0o700 });
+    this.database = new (nodeSqlite().DatabaseSync)(filePath);
     this.database.exec('PRAGMA journal_mode=WAL;');
     this.database.exec('PRAGMA synchronous=NORMAL;');
     this.database.exec('PRAGMA busy_timeout=5000;');
