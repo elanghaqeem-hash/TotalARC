@@ -507,7 +507,12 @@ export async function getIcofrCoverageData() {
     ),
     all<Record<string, unknown>>(
       db,
-      'SELECT * FROM ManagementActionPlan ORDER BY createdAt DESC'
+      `SELECT m.*
+         FROM ManagementActionPlan m
+         JOIN Issue i ON i.id = m.issueId
+        WHERE i.institutionId = ?
+        ORDER BY m.createdAt DESC`,
+      [institution.id]
     ),
     all<Record<string, unknown>>(
       db,
