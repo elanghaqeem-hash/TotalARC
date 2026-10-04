@@ -102,6 +102,39 @@ console.log(
 );
 
 
+const middlewareSource = source('src/middleware.ts');
+const sessionRoleMarker = middlewareSource.indexOf('const sessionRoleValid =');
+const loginGuardStart = middlewareSource.indexOf("if (pathname === '/login')", sessionRoleMarker);
+const loginGuardEnd = middlewareSource.indexOf("if (!session || !sessionRoleValid)", loginGuardStart);
+if (loginGuardStart < 0 || loginGuardEnd < 0) {
+  throw new Error('AUTH_SECURITY_INTEGRITY_ERROR: login middleware guard is missing.');
+}
+const loginGuard = middlewareSource.slice(loginGuardStart, loginGuardEnd);
+if (loginGuard.includes('NextResponse.redirect')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: /login must not auto-redirect to a protected route based on a cookie.'
+  );
+}
+if (!middlewareSource.includes('return unauthorized(request, Boolean(token));')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: invalid protected-route sessions must be cleared before redirecting to login.'
+  );
+}
+
+const authProfileSource = source('src/lib/auth.ts');
+const schemaIndex = authProfileSource.indexOf('const db = await ensureAuthSchema();', authProfileSource.indexOf('export async function getAuthenticatedProfile'));
+const activeIndex = authProfileSource.indexOf('isAuthSessionActive(session, true)', authProfileSource.indexOf('export async function getAuthenticatedProfile'));
+if (schemaIndex < 0 || activeIndex < 0 || schemaIndex > activeIndex) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: auth schema/role migration must complete before session-registry validation.'
+  );
+}
+if (!authProfileSource.includes('row.role !== session.role')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: authenticated profile must reject stale role tokens.'
+  );
+}
+
 const authSource = source('src/lib/auth.ts');
 const iterationDefaults = [...authSource.matchAll(/passwordIterations\\s+INTEGER\\s+NOT\\s+NULL\\s+DEFAULT\\s+(\\d+)/g)]
   .map(match => Number(match[1]));

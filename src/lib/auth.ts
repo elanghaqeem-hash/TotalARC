@@ -888,15 +888,24 @@ export async function getAuthenticatedProfile(token: string) {
   const session = await verifySessionToken(token, secret);
   if (!session) return null;
   if (isMfaRequiredForRole(session.role) && !session.mfaAt) return null;
+
+  // Complete auth schema/role migrations before trusting the session registry.
+  // A role migration may revoke the very session represented by this cookie.
+  const db = await ensureAuthSchema();
   if (!(await isAuthSessionActive(session, true))) return null;
 
-  const db = await ensureAuthSchema();
   const row = await first<AuthUserRow>(
     db,
     'SELECT * FROM AuthUser WHERE id = ? LIMIT 1',
     [session.sub]
   );
   if (!row || !row.active || !isUserRole(row.role)) return null;
+
+  // A signed token must never keep authorization from an earlier role assignment.
+  if (row.role !== session.role) {
+    await revokeSession(session.jti, 'Session role no longer matches current user role', session.sub);
+    return null;
+  }
 
   return profileFromRow(db, row);
 }
