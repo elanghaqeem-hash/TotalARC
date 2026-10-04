@@ -455,25 +455,19 @@ export async function getIcofrReferentialIntegrityReport() {
   );
 
   const checks: IntegrityCheck[] = [];
-  if (db.batch) {
-    const statements = checkDefinitions.map(item => {
-      const statement = db.prepare(item.sql);
-      return item.values.length ? statement.bind(...item.values) : statement;
-    });
-    const results = await db.batch<{ count?: number }>(statements);
-    for (let index = 0; index < checkDefinitions.length; index += 1) {
-      const definition = checkDefinitions[index];
-      const row = results[index]?.results?.[0];
-      checks.push({
-        code: definition.code,
-        description: definition.description,
-        count: Number(row?.count || 0),
-        severity: definition.severity
-      });
-    }
-  } else {
+
+  const runIndividually = async () => {
     const counts = await Promise.all(
-      checkDefinitions.map(item => count(db, item.sql, item.values))
+      checkDefinitions.map(async item => {
+        try {
+          return await count(db, item.sql, item.values);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'UNKNOWN_D1_ERROR';
+          throw new Error(
+            'ICOFR_INTEGRITY_CHECK_FAILED:' + item.code + ':' + message
+          );
+        }
+      })
     );
     for (let index = 0; index < checkDefinitions.length; index += 1) {
       const definition = checkDefinitions[index];
@@ -484,6 +478,34 @@ export async function getIcofrReferentialIntegrityReport() {
         severity: definition.severity
       });
     }
+  };
+
+  if (db.batch) {
+    try {
+      const statements = checkDefinitions.map(item => {
+        const statement = db.prepare(item.sql);
+        return item.values.length ? statement.bind(...item.values) : statement;
+      });
+      const results = await db.batch<{ count?: number }>(statements);
+      for (let index = 0; index < checkDefinitions.length; index += 1) {
+        const definition = checkDefinitions[index];
+        const row = results[index]?.results?.[0];
+        checks.push({
+          code: definition.code,
+          description: definition.description,
+          count: Number(row?.count || 0),
+          severity: definition.severity
+        });
+      }
+    } catch (error) {
+      console.error(
+        'ICOFR integrity batch execution failed; retrying individual checks for diagnosis:',
+        error
+      );
+      await runIndividually();
+    }
+  } else {
+    await runIndividually();
   }
 
   const completenessSql = `
