@@ -46,8 +46,15 @@ if (process.env.GITHUB_ACTIONS === 'true') {
   const base64 = fs.readFileSync(archivePath).toString('base64');
   const chunkSize = 8000;
   const total = Math.ceil(base64.length / chunkSize);
-  console.log('TOTALARC_HOSTINGER_ZIP_BEGIN ' + total + ' ' + base64.length);
-  for (let index = 0; index < total; index += 1) {
+  const windowIndex = 0;
+  const chunksPerWindow = 40;
+  const startChunk = windowIndex * chunksPerWindow;
+  const endChunk = Math.min(total, startChunk + chunksPerWindow);
+  console.log(
+    'TOTALARC_HOSTINGER_ZIP_BEGIN ' +
+      total + ' ' + base64.length + ' ' + windowIndex + ' ' + startChunk + ' ' + endChunk
+  );
+  for (let index = startChunk; index < endChunk; index += 1) {
     const chunk = base64.slice(index * chunkSize, (index + 1) * chunkSize);
     console.log('TOTALARC_HOSTINGER_ZIP_CHUNK ' + String(index).padStart(5, '0') + ' ' + chunk);
   }
