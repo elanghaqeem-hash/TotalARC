@@ -1,21 +1,16 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import { ensureCoreDomainSchema } from '@/lib/d1-core';
-import { ensureIcofrScopeSchema } from '@/lib/d1-icofr';
-import { ensureIcofrDomainSchema } from '@/lib/d1-icofr-domains';
-import { ensureIcofrTraceabilitySchema } from '@/lib/d1-icofr-traceability';
-import { ensureIcofrTestingPlanSchema } from '@/lib/d1-icofr-testing-plan';
-import { ensureAssuranceSchema } from '@/lib/d1-assurance';
-import { ensureIcofrCertificationSchema } from '@/lib/d1-icofr-certification';
+
+type D1PreparedStatementLike = {
+  bind: (...values: unknown[]) => D1PreparedStatementLike;
+  first: <T = Record<string, unknown>>() => Promise<T | null>;
+  all: <T = Record<string, unknown>>() => Promise<{ results?: T[] }>;
+};
 
 type D1DatabaseLike = {
-  prepare: (sql: string) => {
-    bind: (...values: unknown[]) => {
-      first: <T = Record<string, unknown>>() => Promise<T | null>;
-      all: <T = Record<string, unknown>>() => Promise<{ results?: T[] }>;
-    };
-    first: <T = Record<string, unknown>>() => Promise<T | null>;
-    all: <T = Record<string, unknown>>() => Promise<{ results?: T[] }>;
-  };
+  prepare: (sql: string) => D1PreparedStatementLike;
+  batch?: <T = Record<string, unknown>>(
+    statements: D1PreparedStatementLike[]
+  ) => Promise<Array<{ results?: T[] }>>;
 };
 
 type IntegrityCheck = {
@@ -25,22 +20,59 @@ type IntegrityCheck = {
   severity: 'Critical' | 'High';
 };
 
-async function getDb(): Promise<D1DatabaseLike> {
-  // The integrity report references records owned by multiple ICOFR/assurance
-  // schemas. Initialize every referenced schema before issuing read-only
-  // integrity queries so a fresh production isolate cannot fail with
-  // "no such table" merely because the corresponding UI module has not run yet.
-  await ensureCoreDomainSchema();
-  await ensureIcofrScopeSchema();
-  await ensureIcofrDomainSchema();
-  await ensureIcofrTraceabilitySchema();
-  await ensureAssuranceSchema();
-  await ensureIcofrTestingPlanSchema();
-  await ensureIcofrCertificationSchema();
+const INTEGRITY_REQUIRED_TABLES = [
+  'Institution',
+  'ICOFRAssertion',
+  'ICOFRFinancialItem',
+  'ICOFRTraceabilityLink',
+  'RiskMaster',
+  'ICOFRControlDomain',
+  'ICOFRInformationRegister',
+  'BusinessProcess',
+  'ControlMaster',
+  'ControlRiskMapping',
+  'ICOFRDesignAssessment',
+  'ToETest',
+  'TestingException',
+  'ControlDeficiency',
+  'Issue',
+  'ManagementActionPlan',
+  'ICOFRSubCertification',
+  'ICOFRScope',
+  'ICOFRTestingCycle',
+  'LegalEntity',
+  'OrganizationUnit',
+  'ICOFRManagementAttestation',
+  'ICOFREvidencePack'
+] as const;
 
+async function assertIntegrityTablesReady(db: D1DatabaseLike) {
+  const placeholders = INTEGRITY_REQUIRED_TABLES.map(() => '?').join(',');
+  const result = await db
+    .prepare(
+      `SELECT name
+         FROM sqlite_master
+        WHERE type = 'table'
+          AND name IN (${placeholders})`
+    )
+    .bind(...INTEGRITY_REQUIRED_TABLES)
+    .all<{ name?: string }>();
+  const present = new Set((result.results || []).map(row => String(row.name || '')));
+  const missing = INTEGRITY_REQUIRED_TABLES.filter(name => !present.has(name));
+  if (missing.length) {
+    throw new Error('ICOFR_INTEGRITY_SCHEMA_NOT_READY:' + missing.join(','));
+  }
+}
+
+async function getDb(): Promise<D1DatabaseLike> {
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
   if (!db) throw new Error('Cloudflare D1 binding "DB" is not available.');
+
+  // Integrity verification is deliberately read-only. Schema creation and
+  // migrations belong to deployment/provisioning, not a production health
+  // endpoint, because runtime DDL can consume D1 write quota on cold isolates.
+  await assertIntegrityTablesReady(db);
   return db;
 }
 
@@ -93,7 +125,13 @@ export async function getIcofrReferentialIntegrityReport() {
     'SELECT id, name, legalName FROM Institution ORDER BY createdAt ASC'
   ).all<Record<string, unknown>>();
 
-  const checks: IntegrityCheck[] = [];
+  const checkDefinitions: Array<{
+    code: string;
+    description: string;
+    sql: string;
+    values: unknown[];
+    severity: IntegrityCheck['severity'];
+  }> = [];
   const add = async (
     code: string,
     description: string,
@@ -101,7 +139,7 @@ export async function getIcofrReferentialIntegrityReport() {
     values: unknown[] = [],
     severity: IntegrityCheck['severity'] = 'Critical'
   ) => {
-    checks.push({ code, description, count: await count(db, sql, values), severity });
+    checkDefinitions.push({ code, description, sql, values, severity });
   };
 
   await add(
@@ -415,6 +453,38 @@ export async function getIcofrReferentialIntegrityReport() {
     [],
     'High'
   );
+
+  const checks: IntegrityCheck[] = [];
+  if (db.batch) {
+    const statements = checkDefinitions.map(item => {
+      const statement = db.prepare(item.sql);
+      return item.values.length ? statement.bind(...item.values) : statement;
+    });
+    const results = await db.batch<{ count?: number }>(statements);
+    for (let index = 0; index < checkDefinitions.length; index += 1) {
+      const definition = checkDefinitions[index];
+      const row = results[index]?.results?.[0];
+      checks.push({
+        code: definition.code,
+        description: definition.description,
+        count: Number(row?.count || 0),
+        severity: definition.severity
+      });
+    }
+  } else {
+    const counts = await Promise.all(
+      checkDefinitions.map(item => count(db, item.sql, item.values))
+    );
+    for (let index = 0; index < checkDefinitions.length; index += 1) {
+      const definition = checkDefinitions[index];
+      checks.push({
+        code: definition.code,
+        description: definition.description,
+        count: counts[index],
+        severity: definition.severity
+      });
+    }
+  }
 
   const completenessSql = `
     WITH
