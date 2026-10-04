@@ -27,6 +27,10 @@ for (const category of [
 
 requireMarker(redaction, 'luhnValid');
 requireMarker(redaction, 'plausibleNik');
+requireMarker(redaction, 'plausibleNpwp');
+requireMarker(redaction, 'classifyBankingSensitiveField');
+requireMarker(redaction, 'redactStructuredJson');
+requireMarker(redaction, 'redactContextKeyValues');
 requireMarker('src/lib/ai/gateway.ts', "import { redactBankingSensitiveData } from './redaction';");
 requireMarker('src/lib/ai/gateway.ts', 'redactBankingSensitiveData(value)');
 requireMarker('src/lib/ai/http-security.ts', 'guardAiPost');
@@ -34,4 +38,4 @@ requireMarker('wrangler.jsonc', '"AI_DEFAULT_SENSITIVITY": "confidential"');
 requireMarker('wrangler.jsonc', '"AI_ALLOW_EXTERNAL_FOR_SENSITIVE": "false"');
 requireMarker('wrangler.jsonc', '"AI_REDACT_EXTERNAL": "true"');
 
-console.log('AI security integrity verified: banking-sensitive classifier, private-by-default routing and endpoint guards are present.');
+console.log('AI security integrity verified: semantic banking classifier, structured redaction, validators, private-by-default routing and endpoint guards are present.');
