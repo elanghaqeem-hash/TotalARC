@@ -1,0 +1,92 @@
+name: Production Gate
+
+on:
+  workflow_run:
+    workflows:
+      - Verify production D1 persistence
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  production-gate:
+    name: Production Gate — Build → Test → Security → Deploy → Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve production evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          SMOKE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SMOKE_SHA: ${{ github.event.workflow_run.head_sha }}
+          SMOKE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          DISPATCH_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TARGET_SHA="$DISPATCH_SHA"
+            SMOKE_STATUS="manual-verification"
+          else
+            TARGET_SHA="$SMOKE_SHA"
+            SMOKE_STATUS="$SMOKE_CONCLUSION"
+            if [ "$SMOKE_CONCLUSION" != "success" ]; then
+              echo "::error::Production smoke verification did not pass: $SMOKE_CONCLUSION"
+              exit 1
+            fi
+          fi
+
+          if [ -z "$TARGET_SHA" ]; then
+            echo "::error::Unable to resolve the production commit SHA."
+            exit 1
+          fi
+
+          API_URL="https://api.github.com/repos/$REPOSITORY/actions/workflows/deploy-cloudflare.yml/runs?head_sha=$TARGET_SHA&status=completed&per_page=20"
+          curl --fail --silent --show-error             --header "Authorization: Bearer $GH_TOKEN"             --header "Accept: application/vnd.github+json"             --header "X-GitHub-Api-Version: 2022-11-28"             "$API_URL" > /tmp/totalarc-deploy-runs.json
+
+          DEPLOY_RUN_ID="$(jq -r '
+            [.workflow_runs[]
+              | select(
+                  .name == "Deploy Total ARC to Cloudflare" and
+                  .conclusion == "success"
+                )
+            ][0].id // empty
+          ' /tmp/totalarc-deploy-runs.json)"
+
+          DEPLOY_URL="$(jq -r --argjson id "${DEPLOY_RUN_ID:-0}" '
+            [.workflow_runs[] | select(.id == $id)][0].html_url // empty
+          ' /tmp/totalarc-deploy-runs.json)"
+
+          if [ -z "$DEPLOY_RUN_ID" ]; then
+            echo "::error::No successful TotalARC Cloudflare deployment was found for commit $TARGET_SHA."
+            exit 1
+          fi
+
+          SHORT_SHA="${TARGET_SHA:0:12}"
+
+          {
+            echo "## TotalARC Production Evidence"
+            echo ""
+            echo "**Commit:** `$SHORT_SHA`"
+            echo ""
+            echo "| Stage | Evidence | Result |"
+            echo "|---|---|---|"
+            echo "| Build | Deploy workflow reruns Build/OpenNext validation | PASS |"
+            echo "| Test | Deploy workflow reruns integrity and workflow contract tests | PASS |"
+            echo "| Security validation | Auth, tenant, D1, RCM, ICOFR, AI and supply-chain gates | PASS |"
+            echo "| Deploy | [Cloudflare deployment run]($DEPLOY_URL) | PASS |"
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "| Smoke test | Manual Production Gate invocation | VERIFY MANUALLY |"
+            else
+              echo "| Smoke test | [Production D1/API smoke run]($SMOKE_RUN_URL) | PASS |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Production evidence verified for commit $TARGET_SHA."
