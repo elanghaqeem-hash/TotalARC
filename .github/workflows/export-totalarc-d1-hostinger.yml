@@ -1,0 +1,141 @@
+name: Export Total ARC D1 for Hostinger
+
+on:
+  push:
+    branches:
+      - ops/hostinger-d1-export-20261004-1614
+    paths:
+      - '.github/workflows/export-totalarc-d1-hostinger.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      CONFIGURED_D1_DATABASE_ID: ${{ vars.TOTALARC_D1_DATABASE_ID }}
+      CONFIGURED_D1_DATABASE_NAME: ${{ vars.TOTALARC_D1_DATABASE_NAME }}
+    steps:
+      - name: Check required credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing CLOUDFLARE_API_TOKEN'; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
+
+      - name: Resolve live Total ARC D1 database
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.135.0 d1 list --json > /tmp/d1-list.json
+          SETTINGS_URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/totalarc/settings"
+          HTTP_CODE="$(curl --silent --show-error --max-time 20 --output /tmp/worker-settings.json --write-out '%{http_code}' --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$SETTINGS_URL" || true)"
+          CURRENT_ID=''
+          if [ "$HTTP_CODE" = '200' ]; then
+            CURRENT_ID="$(jq -r '.result.bindings[]? | select(.type == "d1" and .name == "DB") | (.database_id // .id // empty)' /tmp/worker-settings.json | head -n1)"
+          fi
+          TARGET_ID="${CURRENT_ID:-${CONFIGURED_D1_DATABASE_ID:-}}"
+          TARGET_NAME=''
+          if [ -n "$TARGET_ID" ]; then
+            TARGET_NAME="$(jq -r --arg id "$TARGET_ID" '.[] | select((.uuid // .id // "") == $id) | (.name // empty)' /tmp/d1-list.json | head -n1)"
+          fi
+          if [ -z "$TARGET_NAME" ] && [ -n "${CONFIGURED_D1_DATABASE_NAME:-}" ]; then
+            TARGET_NAME="$CONFIGURED_D1_DATABASE_NAME"
+          fi
+          if [ -z "$TARGET_NAME" ]; then
+            COUNT="$(jq '[.[] | select((.name // "") | test("total.?arc"; "i"))] | length' /tmp/d1-list.json)"
+            if [ "$COUNT" = '1' ]; then
+              TARGET_NAME="$(jq -r '.[] | select((.name // "") | test("total.?arc"; "i")) | .name' /tmp/d1-list.json)"
+            fi
+          fi
+          test -n "$TARGET_NAME" || { echo 'Unable to uniquely resolve Total ARC D1 database'; exit 1; }
+          echo "database_name=$TARGET_NAME" >> "$GITHUB_OUTPUT"
+          echo "Resolved live D1 database: $TARGET_NAME"
+
+      - name: Verify production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_NAME='${{ steps.resolve.outputs.database_name }}'
+          npx --yes wrangler@4.135.0 d1 execute "$DB_NAME" --remote --json --command "SELECT COUNT(*) AS count FROM Institution WHERE legalName = 'PT. Bank Pembangunan Daerah Kalimantan Barat'" > /tmp/identity.json
+          jq -e '([.[]?.results[]? | (.count // 0)] | add // 0) >= 1' /tmp/identity.json >/dev/null
+
+      - name: Export live D1 database
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_NAME='${{ steps.resolve.outputs.database_name }}'
+          mkdir -p export
+          npx --yes wrangler@4.135.0 d1 export "$DB_NAME" --remote --output=export/totalarc-production-d1.sql
+          test -s export/totalarc-production-d1.sql
+
+      - name: Build SQLite copy and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import hashlib, json, os, sqlite3, datetime, pathlib
+          root = pathlib.Path('export')
+          sql_path = root / 'totalarc-production-d1.sql'
+          db_path = root / 'totalarc-production.sqlite'
+          sql = sql_path.read_text(encoding='utf-8')
+          if db_path.exists(): db_path.unlink()
+          con = sqlite3.connect(db_path)
+          try:
+              con.executescript(sql)
+              con.commit()
+              tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+              key_counts = {}
+              for name in ['Institution','OrganizationUnit','BusinessProcess','RiskMaster','ControlMaster','AuthUser','SourceDocument','SourceStructuredRecord']:
+                  if name in tables:
+                      key_counts[name] = con.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]
+          finally:
+              con.close()
+          def sha256(path):
+              h = hashlib.sha256()
+              with open(path,'rb') as f:
+                  for chunk in iter(lambda:f.read(1024*1024), b''): h.update(chunk)
+              return h.hexdigest()
+          manifest = {
+              'source': 'Cloudflare D1 production binding DB',
+              'exportedAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'format': ['D1 SQL dump','SQLite database'],
+              'tableCount': len(tables),
+              'keyRowCounts': key_counts,
+              'files': {
+                  sql_path.name: {'bytes': sql_path.stat().st_size, 'sha256': sha256(sql_path)},
+                  db_path.name: {'bytes': db_path.stat().st_size, 'sha256': sha256(db_path)}
+              }
+          }
+          (root/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+          readme = '''TOTAL ARC DATABASE EXPORT FOR HOSTINGER
+
+Isi paket:
+1. totalarc-production-d1.sql   = dump SQL dari Cloudflare D1 produksi.
+2. totalarc-production.sqlite  = database SQLite hasil rekonstruksi dump.
+3. manifest.json               = checksum SHA-256, jumlah tabel, dan hitungan record penting.
+
+Catatan penting deploy Hostinger:
+- Aplikasi Total ARC saat ini memakai Cloudflare D1 melalui getCloudflareContext()/binding DB.
+- File database ini adalah backup/migration source; aplikasi tidak akan otomatis memakai SQLite/MySQL di Hostinger tanpa perubahan adapter database.
+- Opsi tercepat untuk Node.js Hostinger dengan persistent filesystem adalah mengganti layer D1 dengan SQLite driver.
+- Opsi yang lebih umum untuk shared/cPanel Hostinger adalah migrasi schema+data ke MySQL/MariaDB lalu mengganti datasource/queries.
+- Jangan menaruh file .sqlite atau dump .sql di public_html atau repository publik.
+'''
+          (root/'HOSTINGER_README.txt').write_text(readme, encoding='utf-8')
+          print(json.dumps(manifest, indent=2))
+          PY
+          (cd export && zip -9 TotalARC_Database_Hostinger_2026-10-04.zip totalarc-production-d1.sql totalarc-production.sqlite manifest.json HOSTINGER_README.txt)
+
+      - name: Upload short-lived database artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: totalarc-d1-hostinger-export
+          path: export/TotalARC_Database_Hostinger_2026-10-04.zip
+          retention-days: 1
+          if-no-files-found: error
