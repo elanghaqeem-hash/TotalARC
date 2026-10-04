@@ -31,6 +31,13 @@ const requirements = [
   ['src/lib/auth-security.ts', "limit: 5, windowMs: 60 * 1000"],
   ['src/lib/auth-security.ts', "limit: 20, windowMs: 15 * 60 * 1000"],
   ['src/lib/auth-security.ts', "limit: 100, windowMs: 60 * 60 * 1000"],
+  ['src/lib/auth-security.ts', 'AUTH_LOGIN_BURST_RATE_LIMIT'],
+  ['src/lib/auth-security.ts', 'recentAuthEventWindow'],
+  ['src/lib/auth-security.ts', 'degraded: true'],
+  ['wrangler.jsonc', '"name": "AUTH_LOGIN_BURST_RATE_LIMIT"'],
+  ['wrangler.jsonc', '"namespace_id": "571003"'],
+  ['wrangler.jsonc', '"limit": 5'],
+  ['wrangler.jsonc', '"period": 60'],
   ['src/app/api/auth/login/route.ts', 'enforceAuthLoginRateLimit'],
   ['src/app/api/auth/login/route.ts', "code: 'AUTH_LOGIN_RATE_LIMIT'"],
   ['src/app/api/auth/login/route.ts', "'Retry-After'"],
@@ -151,4 +158,32 @@ for (const file of ['src/lib/auth.ts', 'src/lib/auth-security.ts']) {
       ' must execute multi-statement D1 schema scripts statement-by-statement.'
     );
   }
+}
+
+const authSecuritySource = source('src/lib/auth-security.ts');
+const limiterStart = authSecuritySource.indexOf('export async function enforceAuthLoginRateLimit');
+const limiterEnd = authSecuritySource.indexOf('const CLOUDFLARE_PBKDF2_MAX_ITERATIONS', limiterStart);
+if (limiterStart < 0 || limiterEnd < 0) {
+  throw new Error('AUTH_SECURITY_INTEGRITY_ERROR: login rate limiter implementation is missing.');
+}
+const limiterBlock = authSecuritySource.slice(limiterStart, limiterEnd);
+if (limiterBlock.includes('ensureAuthSecuritySchema()')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: login rate limiting must not run auth-security DDL on the request hot path.'
+  );
+}
+if (!limiterBlock.includes('const db = await getDb();') || !limiterBlock.includes('recentAuthEventWindow')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: long-window login limits must use read-only AuthEvent evidence.'
+  );
+}
+if (!limiterBlock.includes('degraded: true')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: D1 long-window degradation must not disable all authentication.'
+  );
+}
+if (!authSecuritySource.includes("violatedScopes: [AUTH_LOGIN_RATE_LIMIT.ipPerMinute.scope]")) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: native Cloudflare burst limiting must enforce the 5/minute IP scope.'
+  );
 }
