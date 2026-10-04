@@ -86,7 +86,7 @@ jobs:
           if ! npx wrangler d1 list --json >/tmp/totalarc-d1-list.json 2>/tmp/totalarc-d1-error.log; then
             echo "::error::Cloudflare token cannot access D1. Total ARC cannot safely deploy its DB binding."
             echo "### Cloudflare D1 permission required" >> "$GITHUB_STEP_SUMMARY"
-            echo "The deployment token is valid, but it cannot list/provision D1 databases." >> "$GITHUB_STEP_SUMMARY"
+            echo "The deployment token is valid, but it cannot list/verify D1 databases." >> "$GITHUB_STEP_SUMMARY"
             echo "Grant D1 Edit/Write permission for the Total ARC Cloudflare account, then rerun this workflow." >> "$GITHUB_STEP_SUMMARY"
             tail -n 20 /tmp/totalarc-d1-error.log || true
             exit 1
@@ -199,8 +199,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
-          TOTALARC_D1_DATABASE_ID: ${{ env.TOTALARC_D1_DATABASE_ID }}
-          TOTALARC_D1_DATABASE_NAME: ${{ env.TOTALARC_D1_DATABASE_NAME }}
         run: python scripts/backfill-process-objectives.py
 
       - name: Validate Workers AI account inference
