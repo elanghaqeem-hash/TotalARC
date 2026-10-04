@@ -336,6 +336,38 @@ jobs:
           echo "### Authentication bootstrap" >> "$GITHUB_STEP_SUMMARY"
           echo "- Bootstrap administrator: $STATUS" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify production login rate-limit path
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          FALLBACK_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_URL="${DEPLOYMENT_URL:-${FALLBACK_URL:-https://totalarc.elang-haqeem.workers.dev}}"
+          BASE_URL="${BASE_URL%/}"
+          PROBE_EMAIL="rate-limit-probe-${GITHUB_RUN_ID}@invalid.totalarc.test"
+          PROBE_PASSWORD="Invalid-Probe-Only-9f4!Kp"
+
+          HTTP_CODE="$(curl --silent --show-error --max-time 20             --output /tmp/totalarc-login-rate-limit-probe.json             --write-out "%{http_code}"             --request POST             --header "Content-Type: application/json"             --data "{\"email\":\"$PROBE_EMAIL\",\"password\":\"$PROBE_PASSWORD\"}"             "$BASE_URL/api/auth/login" || true)"
+
+          if [ "$HTTP_CODE" = "503" ]; then
+            echo "::error::Login endpoint returned HTTP 503. Rate-limit/auth runtime protection is unavailable."
+            cat /tmp/totalarc-login-rate-limit-probe.json 2>/dev/null || true
+            exit 1
+          fi
+
+          if [ "$HTTP_CODE" != "401" ] && [ "$HTTP_CODE" != "429" ]; then
+            echo "::error::Unexpected login probe response HTTP $HTTP_CODE; expected 401 (invalid credential) or 429 (rate limited)."
+            cat /tmp/totalarc-login-rate-limit-probe.json 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "### Authentication runtime verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Login endpoint: available" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Rate-limit path: active / non-503" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Probe response: HTTP $HTTP_CODE" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify AI runtime and provider connectivity
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
