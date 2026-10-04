@@ -1625,23 +1625,25 @@ export async function getAssuranceDashboardMetrics(institutionId?: string | null
   const values = tenantId ? [tenantId] : [];
 
   const [
-    failedToEs,
-    totalExceptions,
-    openIssues,
-    closedIssues,
-    overdueMAP,
-    completedMAP,
+    toeMetrics,
+    exceptionCount,
+    issueMetrics,
+    mapMetrics,
     ccmHealthy,
-    totalRetests,
-    testedKeyControls
+    totalRetests
   ] = await Promise.all([
-    count(
+    first<Record<string, unknown>>(
       db,
-      `SELECT COUNT(*) AS count
+      `SELECT
+          SUM(CASE
+                WHEN t.failCount > 0
+                  OR t.finalConclusion IN ('Partially Effective', 'Ineffective')
+                THEN 1 ELSE 0
+              END) AS failedToEs,
+          COUNT(DISTINCT CASE WHEN c.isKeyControl = 1 THEN t.controlId END) AS testedKeyControls
          FROM ToETest t
          JOIN ControlMaster c ON c.id = t.controlId
-        WHERE (t.failCount > 0 OR t.finalConclusion IN ('Partially Effective', 'Ineffective'))
-          ${tenantId ? 'AND c.institutionId = ?' : ''}`,
+        ${tenantId ? 'WHERE c.institutionId = ?' : ''}`,
       values
     ),
     count(
@@ -1653,33 +1655,23 @@ export async function getAssuranceDashboardMetrics(institutionId?: string | null
         ${tenantId ? 'WHERE c.institutionId = ?' : ''}`,
       values
     ),
-    count(
+    first<Record<string, unknown>>(
       db,
-      `SELECT COUNT(*) AS count FROM Issue
-        WHERE status <> 'Closed' ${tenantId ? 'AND institutionId = ?' : ''}`,
+      `SELECT
+          SUM(CASE WHEN status <> 'Closed' THEN 1 ELSE 0 END) AS openIssues,
+          SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) AS closedIssues
+         FROM Issue
+        ${tenantId ? 'WHERE institutionId = ?' : ''}`,
       values
     ),
-    count(
+    first<Record<string, unknown>>(
       db,
-      `SELECT COUNT(*) AS count FROM Issue
-        WHERE status = 'Closed' ${tenantId ? 'AND institutionId = ?' : ''}`,
-      values
-    ),
-    count(
-      db,
-      `SELECT COUNT(*) AS count
+      `SELECT
+          SUM(CASE WHEN m.status = 'Overdue' THEN 1 ELSE 0 END) AS overdueMAP,
+          SUM(CASE WHEN m.status IN ('Completed by Owner', 'Closed') THEN 1 ELSE 0 END) AS completedMAP
          FROM ManagementActionPlan m
          JOIN Issue i ON i.id = m.issueId
-        WHERE m.status = 'Overdue' ${tenantId ? 'AND i.institutionId = ?' : ''}`,
-      values
-    ),
-    count(
-      db,
-      `SELECT COUNT(*) AS count
-         FROM ManagementActionPlan m
-         JOIN Issue i ON i.id = m.issueId
-        WHERE m.status IN ('Completed by Owner', 'Closed')
-          ${tenantId ? 'AND i.institutionId = ?' : ''}`,
+        ${tenantId ? 'WHERE i.institutionId = ?' : ''}`,
       values
     ),
     count(
@@ -1698,27 +1690,19 @@ export async function getAssuranceDashboardMetrics(institutionId?: string | null
          JOIN Issue i ON i.id = m.issueId
         ${tenantId ? 'WHERE i.institutionId = ?' : ''}`,
       values
-    ),
-    count(
-      db,
-      `SELECT COUNT(DISTINCT t.controlId) AS count
-         FROM ToETest t
-         JOIN ControlMaster c ON c.id = t.controlId
-        WHERE c.isKeyControl = 1 ${tenantId ? 'AND c.institutionId = ?' : ''}`,
-      values
     )
   ]);
 
   return {
-    failedToEs,
-    totalExceptions,
-    openIssues,
-    closedIssues,
-    overdueMAP,
-    completedMAP,
+    failedToEs: Number(toeMetrics?.failedToEs || 0),
+    totalExceptions: exceptionCount,
+    openIssues: Number(issueMetrics?.openIssues || 0),
+    closedIssues: Number(issueMetrics?.closedIssues || 0),
+    overdueMAP: Number(mapMetrics?.overdueMAP || 0),
+    completedMAP: Number(mapMetrics?.completedMAP || 0),
     ccmHealthy,
     totalRetests,
-    testedKeyControls
+    testedKeyControls: Number(toeMetrics?.testedKeyControls || 0)
   };
 }
 
