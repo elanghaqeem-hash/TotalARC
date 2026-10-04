@@ -144,7 +144,10 @@ async function recentAuthEventWindow(input: {
   nowMs: number;
 }) {
   const placeholders = LOGIN_ATTEMPT_EVENT_TYPES.map(() => '?').join(',');
-  const fieldExpression = input.field === 'email' ? 'LOWER(email)' : 'ipAddress';
+  // AuthEvent.email is normalized on write. Keep the predicate sargable so D1
+  // can use the covering indexes created by ensureAuthSchema instead of
+  // scanning the full AuthEvent table for every login attempt.
+  const fieldExpression = input.field === 'email' ? 'email' : 'ipAddress';
   const sql =
     'SELECT COUNT(*) AS count, MIN(createdAt) AS oldest FROM AuthEvent ' +
     'WHERE ' + fieldExpression + ' = ? AND createdAt >= ? AND eventType IN (' + placeholders + ')';

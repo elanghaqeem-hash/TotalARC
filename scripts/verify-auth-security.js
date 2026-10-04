@@ -34,6 +34,9 @@ const requirements = [
   ['src/lib/auth-security.ts', 'AUTH_LOGIN_BURST_RATE_LIMIT'],
   ['src/lib/auth-security.ts', 'recentAuthEventWindow'],
   ['src/lib/auth-security.ts', 'degraded: true'],
+  ['src/lib/auth.ts', 'idx_auth_event_email_created_type'],
+  ['src/lib/auth.ts', 'idx_auth_event_ip_created_type'],
+  ['src/lib/auth.ts', '20261004_LOGIN_READ_EFFICIENCY'],
   ['wrangler.jsonc', '"name": "AUTH_LOGIN_BURST_RATE_LIMIT"'],
   ['wrangler.jsonc', '"namespace_id": "571003"'],
   ['wrangler.jsonc', '"limit": 5'],
@@ -185,5 +188,28 @@ if (!limiterBlock.includes('degraded: true')) {
 if (!authSecuritySource.includes("violatedScopes: [AUTH_LOGIN_RATE_LIMIT.ipPerMinute.scope]")) {
   throw new Error(
     'AUTH_SECURITY_INTEGRITY_ERROR: native Cloudflare burst limiting must enforce the 5/minute IP scope.'
+  );
+}
+
+if (authSecuritySource.includes("LOWER(email)")) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: login rate-limit email lookup must remain sargable and use the AuthEvent covering index.'
+  );
+}
+
+const bootstrapStart = authProfileSource.indexOf('async function ensureBootstrapAdministratorForLogin');
+const bootstrapEnd = authProfileSource.indexOf('async function institutionNameFor', bootstrapStart);
+if (bootstrapStart < 0 || bootstrapEnd < 0) {
+  throw new Error('AUTH_SECURITY_INTEGRITY_ERROR: bootstrap login guard is missing.');
+}
+const bootstrapBlock = authProfileSource.slice(bootstrapStart, bootstrapEnd);
+if (bootstrapBlock.includes('SELECT COUNT(*) AS count FROM AuthUser')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: ordinary login requests must not perform a full AuthUser COUNT(*) scan.'
+  );
+}
+if (!bootstrapBlock.includes('requestedEmail !== bootstrapEmail')) {
+  throw new Error(
+    'AUTH_SECURITY_INTEGRITY_ERROR: bootstrap reconciliation must short-circuit for ordinary user logins.'
   );
 }
