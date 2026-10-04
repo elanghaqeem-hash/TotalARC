@@ -46,18 +46,35 @@ async function authorizedHealthProbe(request: NextRequest) {
   return safeEqual(configured, supplied);
 }
 
-function unauthorized(request: NextRequest) {
+function clearAuthCookie(response: NextResponse) {
+  response.cookies.set({
+    name: AUTH_COOKIE_NAME,
+    value: '',
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 0
+  });
+  return response;
+}
+
+function unauthorized(request: NextRequest, clearSession = false) {
+  let response: NextResponse;
+
   if (request.nextUrl.pathname.startsWith('/api/')) {
-    return NextResponse.json(
+    response = NextResponse.json(
       { error: 'Authentication required.', code: 'AUTH_REQUIRED' },
       { status: 401, headers: { 'Cache-Control': 'no-store' } }
     );
+  } else {
+    const login = new URL('/login', request.url);
+    const target = request.nextUrl.pathname + request.nextUrl.search;
+    if (target !== '/') login.searchParams.set('next', target);
+    response = NextResponse.redirect(login);
   }
 
-  const login = new URL('/login', request.url);
-  const target = request.nextUrl.pathname + request.nextUrl.search;
-  if (target !== '/') login.searchParams.set('next', target);
-  return NextResponse.redirect(login);
+  return clearSession ? clearAuthCookie(response) : response;
 }
 
 function forbidden(request: NextRequest) {
@@ -119,28 +136,33 @@ export async function middleware(request: NextRequest) {
   const sessionRoleValid = session ? isUserRole(session.role) : false;
 
   if (pathname === '/login') {
-    if (session && (!sessionRoleValid || (sessionRoleValid && isMfaRequiredForRole(session.role) && !session.mfaAt))) {
-      const response = NextResponse.next();
-      response.cookies.delete(AUTH_COOKIE_NAME);
-      return response;
+    // Never auto-redirect away from the login page based only on a cookie.
+    // This intentionally breaks login<->app redirect loops when a legacy,
+    // migrated, MFA-incomplete, or revoked session is still present in the browser.
+    if (!session) return NextResponse.next();
+
+    if (
+      !sessionRoleValid ||
+      (sessionRoleValid && isMfaRequiredForRole(session.role) && !session.mfaAt)
+    ) {
+      return clearAuthCookie(NextResponse.next());
     }
-    if (session) {
-      try {
-        if (await isAuthSessionActive(session, false)) {
-          return NextResponse.redirect(new URL('/', request.url));
-        }
-      } catch {
-        // A stale/pre-hardening cookie must never prevent access to the login page.
+
+    try {
+      if (!(await isAuthSessionActive(session, false))) {
+        return clearAuthCookie(NextResponse.next());
       }
+    } catch {
+      // If D1/session-registry validation is temporarily unavailable,
+      // render the login page instead of bouncing to a protected route.
     }
+
     return NextResponse.next();
   }
 
-  if (!session || !sessionRoleValid) return unauthorized(request);
+  if (!session || !sessionRoleValid) return unauthorized(request, Boolean(token));
   if (isMfaRequiredForRole(session.role) && !session.mfaAt) {
-    const response = unauthorized(request);
-    response.cookies.delete(AUTH_COOKIE_NAME);
-    return response;
+    return unauthorized(request, true);
   }
 
   let activeSession = false;
@@ -154,9 +176,9 @@ export async function middleware(request: NextRequest) {
         { status: 503, headers: { 'Cache-Control': 'no-store' } }
       );
     }
-    return unauthorized(request);
+    return unauthorized(request, false);
   }
-  if (!activeSession) return unauthorized(request);
+  if (!activeSession) return unauthorized(request, true);
 
   const passwordChangePath =
     pathname === '/profile' ||
