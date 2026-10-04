@@ -416,6 +416,232 @@ function gap(
   };
 }
 
+export async function getIcofrCoverageMetrics() {
+  const db = await ensureIcofrCoverageSchema();
+  const institution = await primaryInstitution(db);
+  if (!institution) {
+    return {
+      coveragePercent: 0,
+      financialStatementCoverage: { covered: 0, total: 0, percent: 0 },
+      assertionRiskCoverage: { covered: 0, total: 0, percent: 0 },
+      riskControlCoverage: { covered: 0, total: 0, percent: 0 },
+      todCoverage: { covered: 0, total: 0, percent: 0 },
+      toeCoverage: { covered: 0, total: 0, percent: 0 },
+      itacItgcCoverage: { covered: 0, total: 0, percent: 0 },
+      informationValidationCoverage: { covered: 0, total: 0, percent: 0 },
+      remediationCoverage: { covered: 0, total: 0, percent: 0 },
+      openGaps: 0,
+      openActions: 0,
+      overdueActions: 0
+    };
+  }
+
+  const institutionId = String(institution.id);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [
+    financial,
+    assertionRisk,
+    riskControl,
+    controlTesting,
+    information,
+    remediation,
+    actions
+  ] = await Promise.all([
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN EXISTS (
+            SELECT 1
+              FROM ICOFRAssertion a
+             WHERE a.financialItemId = f.id
+               AND a.institutionId = f.institutionId
+               AND a.inScope = 1
+          ) THEN 1 ELSE 0 END) AS covered
+         FROM ICOFRFinancialItem f
+        WHERE f.institutionId = ?
+          AND f.significant = 1
+          AND COALESCE(f.status, 'Draft') <> 'Retired'`,
+      [institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN EXISTS (
+            SELECT 1
+              FROM ICOFRTraceabilityLink l
+             WHERE l.institutionId = a.institutionId
+               AND l.sourceType = 'ASSERTION'
+               AND l.sourceId = a.id
+               AND l.targetType = 'RISK'
+          ) THEN 1 ELSE 0 END) AS covered
+         FROM ICOFRAssertion a
+        WHERE a.institutionId = ?
+          AND a.inScope = 1`,
+      [institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `WITH assertion_risks AS (
+         SELECT DISTINCT l.targetId AS riskId
+           FROM ICOFRTraceabilityLink l
+           JOIN ICOFRAssertion a
+             ON a.id = l.sourceId
+            AND a.institutionId = l.institutionId
+          WHERE l.institutionId = ?
+            AND l.sourceType = 'ASSERTION'
+            AND l.targetType = 'RISK'
+            AND a.inScope = 1
+       )
+       SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN EXISTS (
+           SELECT 1
+             FROM ICOFRTraceabilityLink rc
+            WHERE rc.institutionId = ?
+              AND rc.sourceType = 'RISK'
+              AND rc.sourceId = assertion_risks.riskId
+              AND rc.targetType = 'ICOFR_CONTROL'
+         ) THEN 1 ELSE 0 END) AS covered
+        FROM assertion_risks`,
+      [institutionId, institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          SUM(CASE WHEN d.keyControl = 1 THEN 1 ELSE 0 END) AS keyTotal,
+          SUM(CASE WHEN d.keyControl = 1 AND EXISTS (
+            SELECT 1
+              FROM ICOFRDesignAssessment tod
+             WHERE tod.institutionId = d.institutionId
+               AND tod.controlDomainId = d.id
+          ) THEN 1 ELSE 0 END) AS todCovered,
+          SUM(CASE WHEN d.keyControl = 1
+                    AND d.sourceControlId IS NOT NULL
+                    AND EXISTS (
+                      SELECT 1 FROM ToETest toe
+                       WHERE toe.controlId = d.sourceControlId
+                    )
+                   THEN 1 ELSE 0 END) AS toeCovered,
+          SUM(CASE WHEN d.keyControl = 1 AND (d.sourceControlId IS NULL OR TRIM(d.sourceControlId) = '')
+                   THEN 1 ELSE 0 END) AS keyNoMaster,
+          SUM(CASE WHEN d.category = 'ITAC' THEN 1 ELSE 0 END) AS itacTotal,
+          SUM(CASE WHEN d.category = 'ITAC' AND EXISTS (
+            SELECT 1
+              FROM ICOFRControlDependency dep
+             WHERE dep.institutionId = d.institutionId
+               AND dep.sourceControlId = d.id
+               AND dep.status <> 'Inactive'
+          ) THEN 1 ELSE 0 END) AS itacCovered
+         FROM ICOFRControlDomain d
+        WHERE d.institutionId = ?
+          AND COALESCE(d.status, 'Active') <> 'Retired'`,
+      [institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          SUM(CASE WHEN keyReport = 1 THEN 1 ELSE 0 END) AS total,
+          SUM(CASE WHEN keyReport = 1
+                    AND TRIM(COALESCE(completenessMethod, '')) <> ''
+                    AND TRIM(COALESCE(accuracyMethod, '')) <> ''
+                   THEN 1 ELSE 0 END) AS covered
+         FROM ICOFRInformationRegister
+        WHERE institutionId = ?`,
+      [institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `WITH tenant_deficiencies AS (
+         SELECT DISTINCT d.id
+           FROM ControlDeficiency d
+           JOIN TestingException e ON e.id = d.exceptionId
+           JOIN ToETest t ON t.id = e.toeTestId
+           JOIN ControlMaster c ON c.id = t.controlId
+          WHERE c.institutionId = ?
+       )
+       SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN EXISTS (
+           SELECT 1
+             FROM Issue i
+            WHERE i.institutionId = ?
+              AND i.deficiencyId = tenant_deficiencies.id
+              AND EXISTS (
+                SELECT 1 FROM ManagementActionPlan m WHERE m.issueId = i.id
+              )
+         ) THEN 1 ELSE 0 END) AS covered
+        FROM tenant_deficiencies`,
+      [institutionId, institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          SUM(CASE WHEN a.status NOT IN ('Closed','Cancelled') THEN 1 ELSE 0 END) AS openActions,
+          SUM(CASE WHEN a.status NOT IN ('Closed','Cancelled') AND a.dueDate < ? THEN 1 ELSE 0 END) AS overdueActions
+         FROM ICOFRGapAction a
+        WHERE a.institutionId = ?`,
+      [today, institutionId]
+    )
+  ]);
+
+  const metric = (coveredValue: unknown, totalValue: unknown) => {
+    const covered = Number(coveredValue || 0);
+    const total = Number(totalValue || 0);
+    return { covered, total, percent: percentage(covered, total) };
+  };
+
+  const financialStatementCoverage = metric(financial?.covered, financial?.total);
+  const assertionRiskCoverage = metric(assertionRisk?.covered, assertionRisk?.total);
+  const riskControlCoverage = metric(riskControl?.covered, riskControl?.total);
+  const todCoverage = metric(controlTesting?.todCovered, controlTesting?.keyTotal);
+  const toeCoverage = metric(controlTesting?.toeCovered, controlTesting?.keyTotal);
+  const itacItgcCoverage = metric(controlTesting?.itacCovered, controlTesting?.itacTotal);
+  const informationValidationCoverage = metric(information?.covered, information?.total);
+  const remediationCoverage = metric(remediation?.covered, remediation?.total);
+
+  const dimensions = [
+    financialStatementCoverage,
+    assertionRiskCoverage,
+    riskControlCoverage,
+    todCoverage,
+    toeCoverage,
+    itacItgcCoverage,
+    informationValidationCoverage,
+    remediationCoverage
+  ];
+  const aggregateCovered = dimensions.reduce((sum, item) => sum + item.covered, 0);
+  const aggregateTotal = dimensions.reduce((sum, item) => sum + item.total, 0);
+
+  const openGaps =
+    (financialStatementCoverage.total - financialStatementCoverage.covered) +
+    (assertionRiskCoverage.total - assertionRiskCoverage.covered) +
+    (riskControlCoverage.total - riskControlCoverage.covered) +
+    Number(controlTesting?.keyNoMaster || 0) +
+    (todCoverage.total - todCoverage.covered) +
+    (toeCoverage.total - toeCoverage.covered) +
+    (itacItgcCoverage.total - itacItgcCoverage.covered) +
+    (informationValidationCoverage.total - informationValidationCoverage.covered) +
+    (remediationCoverage.total - remediationCoverage.covered);
+
+  return {
+    coveragePercent: percentage(aggregateCovered, aggregateTotal),
+    financialStatementCoverage,
+    assertionRiskCoverage,
+    riskControlCoverage,
+    todCoverage,
+    toeCoverage,
+    itacItgcCoverage,
+    informationValidationCoverage,
+    remediationCoverage,
+    openGaps,
+    openActions: Number(actions?.openActions || 0),
+    overdueActions: Number(actions?.overdueActions || 0)
+  };
+}
+
 export async function getIcofrCoverageData() {
   const db = await ensureIcofrCoverageSchema();
   const institution = await primaryInstitution(db);
