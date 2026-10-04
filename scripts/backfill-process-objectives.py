@@ -28,12 +28,33 @@ def wr(args, retries=5):
     raise RuntimeError("WRANGLER_COMMAND_FAILED")
 
 dbs = json.loads(wr(["d1", "list", "--json"]))
-db = next((x for x in dbs if re.search(r"total.?arc", str(x.get("name", "")), re.I)), None)
+requested_id = str(os.environ.get("TOTALARC_D1_DATABASE_ID") or "").strip()
+requested_name = str(os.environ.get("TOTALARC_D1_DATABASE_NAME") or "").strip()
+
+def db_id(item):
+    return str(item.get("uuid") or item.get("id") or "").strip()
+
+if requested_id:
+    db = next((x for x in dbs if db_id(x) == requested_id), None)
+elif requested_name:
+    db = next((x for x in dbs if str(x.get("name") or "").strip() == requested_name), None)
+else:
+    candidates = [x for x in dbs if re.search(r"total.?arc", str(x.get("name", "")), re.I)]
+    db = candidates[0] if len(candidates) == 1 else None
+
 if not db:
-    db = dbs[0] if len(dbs) == 1 else None
-if not db:
-    raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
-DB = db["name"]
+    raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND_OR_AMBIGUOUS")
+
+actual_id = db_id(db)
+actual_name = str(db.get("name") or "").strip()
+
+if requested_id and actual_id != requested_id:
+    raise RuntimeError("TOTAL_ARC_D1_ID_MISMATCH")
+if requested_name and actual_name != requested_name:
+    raise RuntimeError("TOTAL_ARC_D1_NAME_MISMATCH")
+
+DB = actual_name
+DB_ID = actual_id
 
 def rows(sql):
     raw = json.loads(wr(["d1", "execute", DB, "--remote", "--json", "--command", sql]))
@@ -384,6 +405,7 @@ if int(summary.get("missingObjective") or 0) != 0:
 print("=== PROCESS OBJECTIVE BACKFILL ===")
 print(json.dumps({
     "database": DB,
+    "databaseIdFingerprint": (DB_ID[:8] + "…" + DB_ID[-4:]) if DB_ID else None,
     "totalProcesses": int(summary.get("totalProcesses") or 0),
     "withObjective": int(summary.get("withObjective") or 0),
     "missingObjective": int(summary.get("missingObjective") or 0),

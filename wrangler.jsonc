@@ -24,6 +24,10 @@
   },
   "d1_databases": [
     {
+      // Template binding only. The production workflow resolves the currently
+      // attached D1 database, injects database_name + database_id into
+      // wrangler.production.json, deploys with --no-x-provision, and verifies
+      // the live Worker binding after deployment.
       "binding": "DB"
     }
   ],

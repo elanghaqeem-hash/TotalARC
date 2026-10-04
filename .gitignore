@@ -38,6 +38,7 @@ yarn-error.log*
 # cloudflare / opennext
 /.open-next/
 /.wrangler/
+wrangler.production.json
 .dev.vars
 
 # local Prisma / SQLite runtime data

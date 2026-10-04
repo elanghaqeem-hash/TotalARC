@@ -159,7 +159,23 @@ Optional external provider GitHub Actions secrets:
 
 Cloudflare Workers AI remains the required private provider for confidential/restricted workloads. Gemini, Groq and OpenRouter remain optional fallback/eligible routing providers according to the gateway policy.
 
-The deployment token must be able to access/provision the D1 database required by the current Total ARC production architecture. If the D1 permission preflight fails, deployment stops before building or publishing the Worker.
+The deployment token must be able to access the D1 database required by the current Total ARC production architecture. If the D1 permission preflight fails, deployment stops before building or publishing the Worker.
+
+### Deterministic production D1 binding
+
+The committed `wrangler.jsonc` intentionally keeps `DB` as a template binding. Production deployment does **not** rely on implicit D1 auto-provisioning.
+
+Before every production deploy, GitHub Actions:
+
+1. reads the currently attached `DB` binding from the Cloudflare Worker settings API;
+2. reconciles that ID with `wrangler d1 list`;
+3. optionally enforces repository variables `TOTALARC_D1_DATABASE_ID` and `TOTALARC_D1_DATABASE_NAME`;
+4. generates `wrangler.production.json` with explicit `database_name` and `database_id`;
+5. verifies the selected database contains the expected Bank Kalbar institution identity;
+6. deploys with `--no-x-provision`; and
+7. re-reads the live Worker settings after deployment and fails the deployment if `DB` points to any other D1 database.
+
+An intentional production database migration must be explicitly approved by setting `TOTALARC_ALLOW_D1_REBIND=true` for that deployment. This prevents accidental rebinding when multiple D1 databases exist in the Cloudflare account.
 
 
 ### AI endpoint production guards
