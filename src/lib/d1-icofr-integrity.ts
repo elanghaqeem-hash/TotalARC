@@ -403,8 +403,14 @@ export async function getIcofrReferentialIntegrityReport() {
 
   const completenessSql = `
     WITH
+    significant_financial AS (
+      SELECT f.id, f.institutionId
+        FROM ICOFRFinancialItem f
+       WHERE f.significant = 1
+         AND COALESCE(f.status, 'Draft') <> 'Retired'
+    ),
     in_scope AS (
-      SELECT a.id, a.institutionId
+      SELECT a.id, a.institutionId, a.financialItemId
         FROM ICOFRAssertion a
        WHERE a.inScope = 1
     ),
@@ -423,6 +429,19 @@ export async function getIcofrReferentialIntegrityReport() {
       JOIN RiskMaster r
         ON r.id = l.targetId
        AND r.institutionId = a.institutionId
+    ),
+    assertion_process AS (
+      SELECT DISTINCT
+        ar.assertionId,
+        ar.institutionId,
+        p.id AS processId
+      FROM assertion_risk ar
+      JOIN RiskMaster r
+        ON r.id = ar.riskId
+       AND r.institutionId = ar.institutionId
+      JOIN BusinessProcess p
+        ON p.id = r.processId
+       AND p.institutionId = ar.institutionId
     ),
     assertion_control AS (
       SELECT DISTINCT
@@ -499,12 +518,32 @@ export async function getIcofrReferentialIntegrityReport() {
         FROM relevant_issue ri
         JOIN ManagementActionPlan m ON m.issueId = ri.issueId
     ),
+    financial_assertion_missing AS (
+      SELECT sf.id AS financialItemId
+        FROM significant_financial sf
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM in_scope a
+          WHERE a.financialItemId = sf.id
+            AND a.institutionId = sf.institutionId
+       )
+    ),
     risk_missing AS (
       SELECT i.id AS assertionId
         FROM in_scope i
        WHERE NOT EXISTS (
          SELECT 1 FROM assertion_risk ar WHERE ar.assertionId = i.id
        )
+    ),
+    process_missing AS (
+      SELECT i.id AS assertionId
+        FROM in_scope i
+       WHERE EXISTS (
+         SELECT 1 FROM assertion_risk ar WHERE ar.assertionId = i.id
+       )
+         AND NOT EXISTS (
+           SELECT 1 FROM assertion_process ap WHERE ap.assertionId = i.id
+         )
     ),
     control_missing AS (
       SELECT DISTINCT ar.assertionId, ar.riskId
@@ -570,6 +609,8 @@ export async function getIcofrReferentialIntegrityReport() {
     incomplete_assertions AS (
       SELECT assertionId FROM risk_missing
       UNION
+      SELECT assertionId FROM process_missing
+      UNION
       SELECT assertionId FROM control_missing
       UNION
       SELECT assertionId FROM tod_missing
@@ -583,7 +624,11 @@ export async function getIcofrReferentialIntegrityReport() {
       SELECT assertionId FROM issue_map_missing
     )
     SELECT
+      (SELECT COUNT(*) FROM significant_financial) AS significantFinancialItems,
+      (SELECT COUNT(*) FROM significant_financial)
+        - (SELECT COUNT(*) FROM financial_assertion_missing) AS significantFinancialItemsWithAssertion,
       (SELECT COUNT(*) FROM in_scope) AS inScopeAssertions,
+      (SELECT COUNT(DISTINCT assertionId) FROM assertion_process) AS assertionsWithProcess,
       (SELECT COUNT(DISTINCT assertionId) FROM assertion_risk) AS assertionsWithRisk,
       (SELECT COUNT(DISTINCT assertionId) FROM assertion_control) AS assertionsWithControl,
       (SELECT COUNT(DISTINCT controlDomainId) FROM control_tod) AS controlsWithToD,
@@ -593,7 +638,9 @@ export async function getIcofrReferentialIntegrityReport() {
       (SELECT COUNT(DISTINCT issueId) FROM relevant_map) AS issuesWithMAP,
       (SELECT COUNT(*) FROM in_scope) - (SELECT COUNT(*) FROM incomplete_assertions) AS completeChains,
       (SELECT COUNT(*) FROM incomplete_assertions) AS incompleteChains,
+      (SELECT COUNT(*) FROM financial_assertion_missing) AS financialAssertionMissing,
       (SELECT COUNT(*) FROM risk_missing) AS assertionRiskMissing,
+      (SELECT COUNT(*) FROM process_missing) AS assertionProcessMissing,
       (SELECT COUNT(*) FROM control_missing) AS riskControlMissing,
       (SELECT COUNT(*) FROM tod_missing) AS keyControlToDMissing,
       (SELECT COUNT(*) FROM toe_missing) AS keyControlToEMissing,
@@ -612,7 +659,10 @@ export async function getIcofrReferentialIntegrityReport() {
       : 0;
 
   const metrics: CompletenessMetrics = {
+    significantFinancialItems: Number(completenessRow?.significantFinancialItems || 0),
+    significantFinancialItemsWithAssertion: Number(completenessRow?.significantFinancialItemsWithAssertion || 0),
     inScopeAssertions,
+    assertionsWithProcess: Number(completenessRow?.assertionsWithProcess || 0),
     assertionsWithRisk: Number(completenessRow?.assertionsWithRisk || 0),
     assertionsWithControl: Number(completenessRow?.assertionsWithControl || 0),
     controlsWithToD: Number(completenessRow?.controlsWithToD || 0),
@@ -627,9 +677,21 @@ export async function getIcofrReferentialIntegrityReport() {
 
   const completenessChecks: CompletenessCheck[] = [
     {
+      code: 'SIGNIFICANT_FINANCIAL_ITEM_ASSERTION_MISSING',
+      description: 'Every significant financial account/disclosure must have at least one in-scope assertion.',
+      count: Number(completenessRow?.financialAssertionMissing || 0),
+      severity: 'Critical'
+    },
+    {
       code: 'IN_SCOPE_ASSERTION_RISK_MISSING',
       description: 'Every in-scope assertion must link to at least one risk.',
       count: Number(completenessRow?.assertionRiskMissing || 0),
+      severity: 'Critical'
+    },
+    {
+      code: 'ASSERTION_BPM_PATH_MISSING',
+      description: 'Every in-scope assertion with a linked risk must resolve through that risk to a Business Process in the same institution.',
+      count: Number(completenessRow?.assertionProcessMissing || 0),
       severity: 'Critical'
     },
     {
@@ -670,6 +732,24 @@ export async function getIcofrReferentialIntegrityReport() {
     }
   ];
 
+  const certificationMetricsRow = await firstRow<Record<string, unknown>>(
+    db,
+    `SELECT
+       (SELECT COUNT(*) FROM ICOFRSubCertification) AS subCertifications,
+       (SELECT COUNT(*) FROM ICOFRSubCertification WHERE status IN ('Submitted','Approved')) AS submittedOrApprovedSubCertifications,
+       (SELECT COUNT(*) FROM ICOFRManagementAttestation) AS managementAttestations,
+       (SELECT COUNT(*) FROM ICOFRManagementAttestation WHERE status IN ('Submitted','Approved','Signed')) AS progressedAttestations,
+       (SELECT COUNT(*) FROM ICOFREvidencePack) AS evidencePacks`
+  );
+
+  const certificationMetrics = {
+    subCertifications: Number(certificationMetricsRow?.subCertifications || 0),
+    submittedOrApprovedSubCertifications: Number(certificationMetricsRow?.submittedOrApprovedSubCertifications || 0),
+    managementAttestations: Number(certificationMetricsRow?.managementAttestations || 0),
+    progressedAttestations: Number(certificationMetricsRow?.progressedAttestations || 0),
+    evidencePacks: Number(certificationMetricsRow?.evidencePacks || 0)
+  };
+
   const mandatoryChainGapCount = completenessChecks.reduce(
     (total, check) => total + check.count,
     0
@@ -688,31 +768,38 @@ export async function getIcofrReferentialIntegrityReport() {
     checkedAt: new Date().toISOString(),
     checkedInstitutions: (institutions.results || []).length,
     chain: [
-      'Financial Item',
+      'Financial Account / Disclosure',
       'Assertion',
+      'Business Process (via linked Risk.processId)',
       'Risk',
       'ICOFR Control',
       'Control Master',
       'ToD',
       'ToE',
-      'Exception',
-      'Deficiency',
-      'Issue',
-      'Management Action Plan'
+      'Exception (when present)',
+      'Deficiency (when exception exists)',
+      'Issue (when human-approved deficiency requires remediation)',
+      'Management Action Plan',
+      'Sub-Certification / Management Attestation / Evidence Pack'
     ],
     orphanCount,
     crossTenantCount,
     mandatoryChainGapCount,
     completenessTest: 'ICOFR_TRACEABILITY_COMPLETENESS',
+    certificationTraceabilityTest: 'ICOFR_CERTIFICATION_REFERENTIAL_INTEGRITY',
     completenessPolicy: {
+      financialItemToAssertion: 'mandatory for significant financial accounts/disclosures',
+      assertionToBusinessProcess: 'mandatory through the linked risk BusinessProcess reference',
       assertionToRisk: 'mandatory',
       riskToControl: 'mandatory',
       testing: 'mandatory for ICOFRControlDomain.keyControl, ControlMaster.isIcofrKey, or ControlMaster.isKeyControl',
       exceptionToDeficiency: 'mandatory when an exception exists',
       deficiencyToIssue: 'mandatory when ControlDeficiency.humanApproved = 1',
-      issueToMAP: 'mandatory for remediation issues arising from human-approved deficiencies'
+      issueToMAP: 'mandatory for remediation issues arising from human-approved deficiencies',
+      certification: 'certification records are referentially validated against institution, scope, testing cycle, subject, attestation and evidence-pack period'
     },
     metrics,
+    certificationMetrics,
     completenessChecks,
     checks
   };
