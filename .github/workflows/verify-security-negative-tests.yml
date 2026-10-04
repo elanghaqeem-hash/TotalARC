@@ -1,0 +1,45 @@
+name: Verify security negative tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/access-control.ts'
+      - 'src/lib/institution-context.ts'
+      - 'src/lib/ai/redaction.ts'
+      - 'src/lib/d1-icofr-domains.ts'
+      - 'src/lib/d1-icofr-integrity.ts'
+      - 'src/middleware.ts'
+      - 'src/app/api/icofr/**'
+      - 'scripts/verify-security-negative-tests.js'
+      - 'package.json'
+      - '.github/workflows/verify-security-negative-tests.yml'
+  pull_request:
+    paths:
+      - 'src/lib/access-control.ts'
+      - 'src/lib/institution-context.ts'
+      - 'src/lib/ai/redaction.ts'
+      - 'src/lib/d1-icofr-domains.ts'
+      - 'src/lib/d1-icofr-integrity.ts'
+      - 'src/middleware.ts'
+      - 'src/app/api/icofr/**'
+      - 'scripts/verify-security-negative-tests.js'
+      - 'package.json'
+      - '.github/workflows/verify-security-negative-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  negative-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run verify:security-negative
