@@ -424,6 +424,16 @@ export async function getIcofrReferentialIntegrityReport() {
         ON r.id = l.targetId
        AND r.institutionId = a.institutionId
     ),
+    assertion_process AS (
+      SELECT DISTINCT ar.assertionId
+        FROM assertion_risk ar
+        JOIN RiskMaster r
+          ON r.id = ar.riskId
+         AND r.institutionId = ar.institutionId
+        JOIN BusinessProcess p
+          ON p.id = r.processId
+         AND p.institutionId = ar.institutionId
+    ),
     assertion_control AS (
       SELECT DISTINCT
         ar.assertionId,
@@ -583,7 +593,18 @@ export async function getIcofrReferentialIntegrityReport() {
       SELECT assertionId FROM issue_map_missing
     )
     SELECT
+      (SELECT COUNT(*) FROM ICOFRFinancialItem WHERE significant = 1) AS significantFinancialItems,
+      (
+        SELECT COUNT(DISTINCT f.id)
+          FROM ICOFRFinancialItem f
+          JOIN ICOFRAssertion a
+            ON a.financialItemId = f.id
+           AND a.institutionId = f.institutionId
+         WHERE f.significant = 1
+           AND a.inScope = 1
+      ) AS significantFinancialItemsWithAssertion,
       (SELECT COUNT(*) FROM in_scope) AS inScopeAssertions,
+      (SELECT COUNT(DISTINCT assertionId) FROM assertion_process) AS assertionsWithProcess,
       (SELECT COUNT(DISTINCT assertionId) FROM assertion_risk) AS assertionsWithRisk,
       (SELECT COUNT(DISTINCT assertionId) FROM assertion_control) AS assertionsWithControl,
       (SELECT COUNT(DISTINCT controlDomainId) FROM control_tod) AS controlsWithToD,
@@ -612,7 +633,12 @@ export async function getIcofrReferentialIntegrityReport() {
       : 0;
 
   const metrics: CompletenessMetrics = {
+    significantFinancialItems: Number(completenessRow?.significantFinancialItems || 0),
+    significantFinancialItemsWithAssertion: Number(
+      completenessRow?.significantFinancialItemsWithAssertion || 0
+    ),
     inScopeAssertions,
+    assertionsWithProcess: Number(completenessRow?.assertionsWithProcess || 0),
     assertionsWithRisk: Number(completenessRow?.assertionsWithRisk || 0),
     assertionsWithControl: Number(completenessRow?.assertionsWithControl || 0),
     controlsWithToD: Number(completenessRow?.controlsWithToD || 0),
