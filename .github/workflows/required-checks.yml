@@ -178,6 +178,19 @@ jobs:
       - run: npm run verify:ai-materiality
       - run: npm run verify:rcsa-campaign-units
 
+  vercel-build:
+    name: Vercel Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: VERCEL=1 npm run build
+
   cloudflare-build:
     name: Cloudflare Build
     runs-on: ubuntu-latest
@@ -207,6 +220,7 @@ jobs:
       - rcm-integrity
       - ai-security
       - icofr-traceability
+      - vercel-build
       - cloudflare-build
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -225,6 +239,7 @@ jobs:
           RCM_INTEGRITY: ${{ needs.rcm-integrity.result }}
           AI_SECURITY: ${{ needs.ai-security.result }}
           ICOFR_TRACEABILITY: ${{ needs.icofr-traceability.result }}
+          VERCEL_BUILD: ${{ needs.vercel-build.result }}
           CLOUDFLARE_BUILD: ${{ needs.cloudflare-build.result }}
         shell: bash
         run: |
@@ -243,6 +258,7 @@ jobs:
             ["RCM Integrity"]="$RCM_INTEGRITY"
             ["AI Security"]="$AI_SECURITY"
             ["ICOFR Traceability Integrity"]="$ICOFR_TRACEABILITY"
+            ["Vercel Build"]="$VERCEL_BUILD"
             ["Cloudflare Build"]="$CLOUDFLARE_BUILD"
           )
 
@@ -252,7 +268,7 @@ jobs:
             echo ""
             echo "| Check | Result |"
             echo "|---|---|"
-            for name in               "GitHub Gate Contract"               "CI Supply Chain"               "Build"               "TypeScript"               "Test Suite"               "Auth Security"               "Tenant Isolation"               "No Dummy Data"               "D1 Schema Stability"               "RCM Integrity"               "AI Security"               "ICOFR Traceability Integrity"               "Cloudflare Build"; do
+            for name in               "GitHub Gate Contract"               "CI Supply Chain"               "Build"               "TypeScript"               "Test Suite"               "Auth Security"               "Tenant Isolation"               "No Dummy Data"               "D1 Schema Stability"               "RCM Integrity"               "AI Security"               "ICOFR Traceability Integrity"               "Vercel Build"               "Cloudflare Build"; do
               result="${checks[$name]}"
               echo "| $name | $result |"
               if [ "$result" != "success" ]; then

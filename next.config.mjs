@@ -1,8 +1,11 @@
+import path from 'node:path';
 import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 
 if (process.env.NODE_ENV === 'development') {
   initOpenNextCloudflareForDev();
 }
+
+const isVercel = process.env.VERCEL === '1';
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -72,6 +75,22 @@ const nextConfig = {
   poweredByHeader: false,
   experimental: {
     optimizePackageImports: ['lucide-react'],
+  },
+  webpack(config) {
+    // TotalARC is Cloudflare-native, but the Vercel deployment is also kept as
+    // an operational fallback. On Vercel only, redirect Workers runtime imports
+    // to a small compatibility layer that exposes process.env plus a D1 HTTPS
+    // adapter. Cloudflare/OpenNext builds continue using native bindings.
+    if (isVercel) {
+      config.resolve.alias = {
+        ...(config.resolve.alias || {}),
+        '@opennextjs/cloudflare': path.resolve(
+          process.cwd(),
+          'src/lib/cloudflare-vercel-shim.ts'
+        ),
+      };
+    }
+    return config;
   },
   async headers() {
     return [
