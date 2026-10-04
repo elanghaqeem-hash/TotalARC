@@ -103,7 +103,8 @@ console.log(
 
 
 const middlewareSource = source('src/middleware.ts');
-const loginGuardStart = middlewareSource.indexOf("if (pathname === '/login')");
+const sessionRoleMarker = middlewareSource.indexOf('const sessionRoleValid =');
+const loginGuardStart = middlewareSource.indexOf("if (pathname === '/login')", sessionRoleMarker);
 const loginGuardEnd = middlewareSource.indexOf("if (!session || !sessionRoleValid)", loginGuardStart);
 if (loginGuardStart < 0 || loginGuardEnd < 0) {
   throw new Error('AUTH_SECURITY_INTEGRITY_ERROR: login middleware guard is missing.');
