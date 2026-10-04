@@ -114,7 +114,40 @@ export async function listBpmWithoutRcm(institutionId?: string | null) {
   const tenantId = String(institutionId || '').trim();
   const rows = await all<Record<string, unknown>>(
     db,
-    `SELECT
+    `WITH
+      activity_counts AS (
+        SELECT processId, COUNT(*) AS activityCount
+          FROM ProcessActivity
+         GROUP BY processId
+      ),
+      risk_counts AS (
+        SELECT processId, COUNT(*) AS riskCount
+          FROM RiskMaster
+         ${tenantId ? 'WHERE institutionId = ?' : ''}
+         GROUP BY processId
+      ),
+      control_counts AS (
+        SELECT processId, COUNT(*) AS controlCount
+          FROM ControlMaster
+         ${tenantId ? 'WHERE institutionId = ?' : ''}
+         GROUP BY processId
+      ),
+      mapping_counts AS (
+        SELECT c.processId, COUNT(*) AS mappingCount
+          FROM ControlRiskMapping m
+          JOIN ControlMaster c ON c.id = m.controlId
+         ${tenantId ? 'WHERE c.institutionId = ?' : ''}
+         GROUP BY c.processId
+      ),
+      pending_drafts AS (
+        SELECT sourceRecordId AS processId, COUNT(*) AS pendingDraftCount
+          FROM RCMDraftReference
+         WHERE referenceType = 'BPM_RCM_DRAFT'
+           AND sourceStatus = 'DRAFT_PENDING_VALIDATION'
+           ${tenantId ? 'AND institutionId = ?' : ''}
+         GROUP BY sourceRecordId
+      )
+      SELECT
         p.id,
         p.institutionId,
         p.processId,
@@ -126,33 +159,23 @@ export async function listBpmWithoutRcm(institutionId?: string | null) {
         p.isIcofrRelevant,
         p.status,
         pc.name AS categoryName,
-        (SELECT COUNT(*) FROM ProcessActivity pa WHERE pa.processId = p.id) AS activityCount,
-        (SELECT COUNT(*) FROM RiskMaster r WHERE r.processId = p.id) AS riskCount,
-        (SELECT COUNT(*) FROM ControlMaster c WHERE c.processId = p.id) AS controlCount,
-        (
-          SELECT COUNT(*)
-            FROM ControlRiskMapping m
-            JOIN ControlMaster c ON c.id = m.controlId
-           WHERE c.processId = p.id
-        ) AS mappingCount,
-        (
-          SELECT COUNT(*)
-            FROM RCMDraftReference d
-           WHERE d.institutionId = p.institutionId
-             AND d.referenceType = 'BPM_RCM_DRAFT'
-             AND d.sourceRecordId = p.id
-             AND d.sourceStatus = 'DRAFT_PENDING_VALIDATION'
-        ) AS pendingDraftCount
+        COALESCE(a.activityCount, 0) AS activityCount,
+        COALESCE(r.riskCount, 0) AS riskCount,
+        COALESCE(c.controlCount, 0) AS controlCount,
+        COALESCE(m.mappingCount, 0) AS mappingCount,
+        COALESCE(d.pendingDraftCount, 0) AS pendingDraftCount
        FROM BusinessProcess p
        LEFT JOIN ProcessCategory pc ON pc.id = p.categoryId
-      WHERE ${tenantId ? 'p.institutionId = ? AND ' : ''}NOT EXISTS (
-        SELECT 1
-          FROM ControlRiskMapping m
-          JOIN ControlMaster c ON c.id = m.controlId
-         WHERE c.processId = p.id
-      )
+       LEFT JOIN activity_counts a ON a.processId = p.id
+       LEFT JOIN risk_counts r ON r.processId = p.id
+       LEFT JOIN control_counts c ON c.processId = p.id
+       LEFT JOIN mapping_counts m ON m.processId = p.id
+       LEFT JOIN pending_drafts d ON d.processId = p.id
+      WHERE ${tenantId ? 'p.institutionId = ? AND ' : ''}COALESCE(m.mappingCount, 0) = 0
       ORDER BY p.processId ASC`,
-    tenantId ? [tenantId] : []
+    tenantId
+      ? [tenantId, tenantId, tenantId, tenantId, tenantId]
+      : []
   );
 
   return rows.map(row => {
@@ -193,6 +216,7 @@ export async function listBpmWithoutRcm(institutionId?: string | null) {
     };
   });
 }
+
 
 function buildDerivedPair(input: {
   process: Record<string, unknown>;
