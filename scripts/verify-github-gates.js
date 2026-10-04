@@ -15,6 +15,14 @@ function requireMarker(file, marker) {
   }
 }
 
+function forbidMarker(file, marker) {
+  if (source(file).includes(marker)) {
+    throw new Error(
+      'GITHUB_GATE_CONTRACT_ERROR: ' + file + ' contains forbidden marker: ' + marker
+    );
+  }
+}
+
 const requiredChecks = '.github/workflows/required-checks.yml';
 for (const marker of [
   'name: Build',
@@ -71,11 +79,26 @@ for (const marker of [
   '- Deploy Total ARC to Cloudflare',
   'Verify production D1 connectivity',
   'Smoke test production D1 APIs',
+  '/api/system/database',
   '/api/system/rcm-integrity',
   '/api/system/icofr-integrity',
-  '.mandatoryChainGapCount == 0'
+  '.mandatoryChainGapCount == 0',
+  'system/read-only probes'
 ]) {
   requireMarker(smoke, marker);
+}
+
+for (const marker of [
+  '/api/onboarding',
+  '/api/organization',
+  '/api/processes',
+  '/api/risks',
+  '/api/controls',
+  '/api/assure/',
+  '/api/assurance',
+  '/api/evidence'
+]) {
+  forbidMarker(smoke, marker);
 }
 
 const productionGate = '.github/workflows/production-gate.yml';
