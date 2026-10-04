@@ -6,6 +6,11 @@ on:
       - ops/hostinger-d1-export-20261004-1614
     paths:
       - '.github/workflows/export-totalarc-d1-hostinger.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/export-totalarc-d1-hostinger.yml'
 
 permissions:
   contents: read
