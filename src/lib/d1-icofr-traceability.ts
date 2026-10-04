@@ -643,6 +643,97 @@ async function downstreamForControl(db: D1DatabaseLike, controlDomain: Record<st
   return { designTests, toeTests, deficiencies, maps };
 }
 
+export async function getTraceabilityMetrics() {
+  const db = await ensureIcofrTraceabilitySchema();
+  const institution = await primaryInstitution(db);
+  if (!institution) {
+    return {
+      significantItems: 0,
+      tracedFinancialItems: 0,
+      tracedRisks: 0,
+      tracedControls: 0,
+      completeChains: 0,
+      totalChains: 0
+    };
+  }
+
+  const institutionId = String(institution.id);
+  const row = await first<Record<string, unknown>>(
+    db,
+    `WITH chains AS (
+       SELECT DISTINCT
+         a.id AS assertionId,
+         a.financialItemId,
+         r.id AS riskId,
+         d.id AS controlId,
+         d.sourceControlId
+       FROM ICOFRAssertion a
+       JOIN ICOFRTraceabilityLink ar
+         ON ar.institutionId = a.institutionId
+        AND ar.sourceType = 'ASSERTION'
+        AND ar.sourceId = a.id
+        AND ar.targetType = 'RISK'
+       JOIN RiskMaster r
+         ON r.id = ar.targetId
+        AND r.institutionId = a.institutionId
+       JOIN ICOFRTraceabilityLink rc
+         ON rc.institutionId = a.institutionId
+        AND rc.sourceType = 'RISK'
+        AND rc.sourceId = r.id
+        AND rc.targetType = 'ICOFR_CONTROL'
+       JOIN ICOFRControlDomain d
+         ON d.id = rc.targetId
+        AND d.institutionId = a.institutionId
+      WHERE a.institutionId = ?
+     )
+     SELECT
+       (SELECT COUNT(*)
+          FROM ICOFRFinancialItem f
+         WHERE f.institutionId = ?
+           AND f.significant = 1) AS significantItems,
+       COUNT(DISTINCT financialItemId) AS tracedFinancialItems,
+       COUNT(DISTINCT riskId) AS tracedRisks,
+       COUNT(DISTINCT controlId) AS tracedControls,
+       COUNT(*) AS totalChains,
+       SUM(
+         CASE
+           WHEN EXISTS (
+                  SELECT 1
+                    FROM ICOFRFinancialItem f
+                   WHERE f.id = chains.financialItemId
+                     AND f.institutionId = ?
+                )
+            AND EXISTS (
+                  SELECT 1
+                    FROM ICOFRDesignAssessment tod
+                   WHERE tod.controlDomainId = chains.controlId
+                     AND tod.institutionId = ?
+                )
+            AND chains.sourceControlId IS NOT NULL
+            AND EXISTS (
+                  SELECT 1
+                    FROM ToETest toe
+                    JOIN ControlMaster cm ON cm.id = toe.controlId
+                   WHERE toe.controlId = chains.sourceControlId
+                     AND cm.institutionId = ?
+                )
+           THEN 1 ELSE 0
+         END
+       ) AS completeChains
+     FROM chains`,
+    [institutionId, institutionId, institutionId, institutionId, institutionId]
+  );
+
+  return {
+    significantItems: Number(row?.significantItems || 0),
+    tracedFinancialItems: Number(row?.tracedFinancialItems || 0),
+    tracedRisks: Number(row?.tracedRisks || 0),
+    tracedControls: Number(row?.tracedControls || 0),
+    completeChains: Number(row?.completeChains || 0),
+    totalChains: Number(row?.totalChains || 0)
+  };
+}
+
 export async function getTraceabilityData() {
   const db = await ensureIcofrTraceabilitySchema();
   const institution = await primaryInstitution(db);

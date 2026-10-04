@@ -10,11 +10,13 @@ import {
 } from '@/lib/d1-icofr-domains';
 import {
   ensureIcofrTraceabilitySchema,
-  getTraceabilityData
+  getTraceabilityData,
+  getTraceabilityMetrics
 } from '@/lib/d1-icofr-traceability';
 import {
   ensureIcofrCoverageSchema,
-  getIcofrCoverageData
+  getIcofrCoverageData,
+  getIcofrCoverageMetrics
 } from '@/lib/d1-icofr-coverage';
 import {
   ensureIcofrTestingPlanSchema,
@@ -232,14 +234,14 @@ export async function GET(request: Request) {
       await ensureIcofrTraceabilitySchema();
       await ensureIcofrCoverageSchema();
 
-      const [traceability, coverage] = await Promise.all([
-        getTraceabilityData(),
-        getIcofrCoverageData()
+      const [traceabilityMetrics, coverageMetrics] = await Promise.all([
+        getTraceabilityMetrics(),
+        getIcofrCoverageMetrics()
       ]);
 
       return NextResponse.json({
-        traceabilityMetrics: traceability.metrics || {},
-        coverageMetrics: coverage.metrics || {},
+        traceabilityMetrics,
+        coverageMetrics,
         storage: 'cloudflare-d1',
         view: 'metrics',
         progressive: true

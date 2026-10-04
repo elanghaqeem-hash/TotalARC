@@ -2675,11 +2675,8 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
 
   const institutionId = String(institution.id);
   const [
-    controlTotalRow,
-    uusControlTotalRow,
-    itgcControlTotalRow,
-    ckpnRequirementTotalRow,
-    reverseRepoRequirementTotalRow,
+    controlMetrics,
+    requirementMetrics,
     elcDraftReferenceTotalRow,
     legacyTotalRow,
     legacyByCycle,
@@ -2688,34 +2685,26 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
     sourceMetadataSummary,
     latestIntegrity
   ] = await Promise.all([
-    first<{ count?: number }>(
+    first<Record<string, unknown>>(
       db,
-      'SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId = ?',
-      [institutionId]
-    ),
-    first<{ count?: number }>(
-      db,
-      `SELECT COUNT(DISTINCT c.id) AS count
+      `SELECT
+          COUNT(DISTINCT c.id) AS controls,
+          COUNT(DISTINCT CASE WHEN c.isItgc = 1 THEN c.id END) AS itgcControls,
+          COUNT(DISTINCT CASE WHEN sm.sourceCycle = 'SYH' THEN c.id END) AS uusControls
          FROM ControlMaster c
-         JOIN RCMControlSourceMetadata sm ON sm.controlId = c.id
-        WHERE c.institutionId = ?
-          AND sm.institutionId = ?
-          AND sm.sourceCycle = 'SYH'`,
-      [institutionId, institutionId]
-    ),
-    first<{ count?: number }>(
-      db,
-      'SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId = ? AND isItgc = 1',
+         LEFT JOIN RCMControlSourceMetadata sm
+           ON sm.controlId = c.id
+          AND sm.institutionId = c.institutionId
+        WHERE c.institutionId = ?`,
       [institutionId]
     ),
-    first<{ count?: number }>(
+    first<Record<string, unknown>>(
       db,
-      "SELECT COUNT(*) AS count FROM RCMDesignRequirement WHERE institutionId = ? AND category = 'CKPN'",
-      [institutionId]
-    ),
-    first<{ count?: number }>(
-      db,
-      "SELECT COUNT(*) AS count FROM RCMDesignRequirement WHERE institutionId = ? AND category = 'Reverse Repo'",
+      `SELECT
+          SUM(CASE WHEN category = 'CKPN' THEN 1 ELSE 0 END) AS ckpnRequirements,
+          SUM(CASE WHEN category = 'Reverse Repo' THEN 1 ELSE 0 END) AS reverseRepoRequirements
+         FROM RCMDesignRequirement
+        WHERE institutionId = ?`,
       [institutionId]
     ),
     first<{ count?: number }>(
@@ -2770,7 +2759,7 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
     ),
     first<Record<string, unknown>>(
       db,
-      `SELECT *
+      `SELECT id, institutionId, runAt, status, summaryJson, createdAt
          FROM RCMIntegrityRun
         WHERE institutionId = ?
         ORDER BY runAt DESC
@@ -2792,11 +2781,11 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
   }
 
   const summary = {
-    controls: Number(controlTotalRow?.count || 0),
-    uusControls: Number(uusControlTotalRow?.count || 0),
-    itgcControls: Number(itgcControlTotalRow?.count || 0),
-    ckpnRequirements: Number(ckpnRequirementTotalRow?.count || 0),
-    reverseRepoRequirements: Number(reverseRepoRequirementTotalRow?.count || 0),
+    controls: Number(controlMetrics?.controls || 0),
+    uusControls: Number(controlMetrics?.uusControls || 0),
+    itgcControls: Number(controlMetrics?.itgcControls || 0),
+    ckpnRequirements: Number(requirementMetrics?.ckpnRequirements || 0),
+    reverseRepoRequirements: Number(requirementMetrics?.reverseRepoRequirements || 0),
     elcDraftReferences: Number(elcDraftReferenceTotalRow?.count || 0),
     integrity: String(parsedIntegrity?.status || 'PENDING')
   };
@@ -2833,29 +2822,43 @@ async function count(
 export async function getCoreDashboardData(institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
   const tenantId = String(institutionId || '').trim();
+  const values = tenantId ? [tenantId] : [];
   const tenantWhere = tenantId ? ' WHERE institutionId = ?' : '';
   const tenantAnd = tenantId ? ' AND institutionId = ?' : '';
-  const tenantValues = tenantId ? [tenantId] : [];
 
   const [
-    totalProcesses,
-    criticalProcesses,
-    totalRisks,
-    criticalRisks,
-    highRisks,
-    totalControls,
-    keyControls,
+    processMetrics,
+    riskMetrics,
+    controlMetrics,
     mappedHighCritical,
-    highCritical,
     recentAuditLogs
   ] = await Promise.all([
-    count(db, `SELECT COUNT(*) AS count FROM BusinessProcess${tenantWhere}`, tenantValues),
-    count(db, `SELECT COUNT(*) AS count FROM BusinessProcess WHERE criticality = 'Critical'${tenantAnd}`, tenantValues),
-    count(db, `SELECT COUNT(*) AS count FROM RiskMaster${tenantWhere}`, tenantValues),
-    count(db, `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'Critical'${tenantAnd}`, tenantValues),
-    count(db, `SELECT COUNT(*) AS count FROM RiskMaster WHERE inherentRating = 'High'${tenantAnd}`, tenantValues),
-    count(db, `SELECT COUNT(*) AS count FROM ControlMaster${tenantWhere}`, tenantValues),
-    count(db, `SELECT COUNT(*) AS count FROM ControlMaster WHERE isKeyControl = 1${tenantAnd}`, tenantValues),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          COUNT(*) AS totalProcesses,
+          SUM(CASE WHEN criticality = 'Critical' THEN 1 ELSE 0 END) AS criticalProcesses
+         FROM BusinessProcess${tenantWhere}`,
+      values
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          COUNT(*) AS totalRisks,
+          SUM(CASE WHEN inherentRating = 'Critical' THEN 1 ELSE 0 END) AS criticalRisks,
+          SUM(CASE WHEN inherentRating = 'High' THEN 1 ELSE 0 END) AS highRisks,
+          SUM(CASE WHEN inherentRating IN ('High','Critical') THEN 1 ELSE 0 END) AS highCritical
+         FROM RiskMaster${tenantWhere}`,
+      values
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT
+          COUNT(*) AS totalControls,
+          SUM(CASE WHEN isKeyControl = 1 THEN 1 ELSE 0 END) AS keyControls
+         FROM ControlMaster${tenantWhere}`,
+      values
+    ),
     count(
       db,
       `SELECT COUNT(DISTINCT r.id) AS count
@@ -2863,23 +2866,27 @@ export async function getCoreDashboardData(institutionId?: string | null) {
          JOIN ControlRiskMapping m ON m.riskId = r.id
         WHERE r.inherentRating IN ('High', 'Critical')
           ${tenantId ? 'AND r.institutionId = ?' : ''}`,
-      tenantValues
-    ),
-    count(
-      db,
-      `SELECT COUNT(*) AS count FROM RiskMaster
-        WHERE inherentRating IN ('High', 'Critical')
-        ${tenantId ? 'AND institutionId = ?' : ''}`,
-      tenantValues
+      values
     ),
     all<Record<string, unknown>>(
       db,
-      `SELECT * FROM AuditLog
+      `SELECT id, institutionId, userName, userRole, action, entityType, recordId, reason, timestamp
+         FROM AuditLog
         ${tenantId ? 'WHERE institutionId = ?' : ''}
-        ORDER BY timestamp DESC LIMIT 8`,
-      tenantValues
+        ORDER BY timestamp DESC
+        LIMIT 8`,
+      values
     )
   ]);
+
+  const totalProcesses = Number(processMetrics?.totalProcesses || 0);
+  const criticalProcesses = Number(processMetrics?.criticalProcesses || 0);
+  const totalRisks = Number(riskMetrics?.totalRisks || 0);
+  const criticalRisks = Number(riskMetrics?.criticalRisks || 0);
+  const highRisks = Number(riskMetrics?.highRisks || 0);
+  const highCritical = Number(riskMetrics?.highCritical || 0);
+  const totalControls = Number(controlMetrics?.totalControls || 0);
+  const keyControls = Number(controlMetrics?.keyControls || 0);
 
   const metrics = {
     totalProcesses,

@@ -13,11 +13,11 @@ function requireMarker(path, marker) {
 
 const core = 'src/lib/d1-core.ts';
 for (const marker of [
-  'controls: Number(controlTotalRow?.count || 0)',
-  'uusControls: Number(uusControlTotalRow?.count || 0)',
-  'itgcControls: Number(itgcControlTotalRow?.count || 0)',
-  'ckpnRequirements: Number(ckpnRequirementTotalRow?.count || 0)',
-  'reverseRepoRequirements: Number(reverseRepoRequirementTotalRow?.count || 0)',
+  'controls: Number(controlMetrics?.controls || 0)',
+  'uusControls: Number(controlMetrics?.uusControls || 0)',
+  'itgcControls: Number(controlMetrics?.itgcControls || 0)',
+  'ckpnRequirements: Number(requirementMetrics?.ckpnRequirements || 0)',
+  'reverseRepoRequirements: Number(requirementMetrics?.reverseRepoRequirements || 0)',
   'elcDraftReferences: Number(elcDraftReferenceTotalRow?.count || 0)',
   "integrity: String(parsedIntegrity?.status || 'PENDING')"
 ]) requireMarker(core, marker);

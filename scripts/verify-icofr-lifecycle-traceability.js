@@ -180,6 +180,18 @@ console.log(JSON.stringify({
 
 const integritySource = fs.readFileSync('src/lib/d1-icofr-integrity.ts', 'utf8');
 for (const marker of [
+  'INTEGRITY_REQUIRED_TABLES',
+  'assertIntegrityTablesReady',
+  "FROM sqlite_master",
+  'db.batch',
+  'Integrity verification is deliberately read-only'
+]) {
+  assert(
+    integritySource.includes(marker),
+    'production integrity verifier must keep the read-only/batched D1 contract: ' + marker
+  );
+}
+for (const forbidden of [
   'ensureCoreDomainSchema()',
   'ensureIcofrScopeSchema()',
   'ensureIcofrDomainSchema()',
@@ -189,9 +201,9 @@ for (const marker of [
   'ensureIcofrCertificationSchema()'
 ]) {
   assert(
-    integritySource.includes(marker),
-    'production integrity bootstrap must initialize referenced schema: ' + marker
+    !integritySource.includes(forbidden),
+    'production integrity endpoint must not perform runtime schema initialization: ' + forbidden
   );
 }
 
-console.log('ICOFR production integrity schema-bootstrap contract PASS');
+console.log('ICOFR production integrity read-only/batched D1 contract PASS');
