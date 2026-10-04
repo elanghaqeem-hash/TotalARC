@@ -255,6 +255,50 @@ function redactionVectors() {
 
     const card = cardNumber('4111111111111' + suffix);
     vectors.push({ category: 'CARD_NUMBER', secret: card, input: 'Card number ' + card });
+
+    // Structured payloads exercise semantic field classification rather than
+    // relying on free-text regex matching. These mirror JSON sent through the
+    // AI gateway from banking forms and evidence objects.
+    vectors.push({
+      category: 'CIF',
+      secret: cif,
+      input: JSON.stringify({ customerCif: cif, process: 'CKPN' })
+    });
+    vectors.push({
+      category: 'BANK_ACCOUNT',
+      secret: account,
+      input: JSON.stringify({ accountNumber: account, process: 'CKPN' })
+    });
+    vectors.push({
+      category: 'CARD_NUMBER',
+      secret: card,
+      input: JSON.stringify({ cardNumber: card, process: 'CKPN' })
+    });
+    vectors.push({
+      category: 'NIK',
+      secret: nik,
+      input: JSON.stringify({ nik, process: 'CKPN' })
+    });
+    vectors.push({
+      category: 'NPWP',
+      secret: npwp,
+      input: JSON.stringify({ npwp, process: 'CKPN' })
+    });
+    vectors.push({
+      category: 'LOAN_ACCOUNT',
+      secret: loan,
+      input: JSON.stringify({ loanAccountNumber: loan, process: 'CKPN' })
+    });
+    vectors.push({
+      category: 'EMPLOYEE_ID',
+      secret: employee,
+      input: JSON.stringify({ internalEmployeeId: employee, process: 'CKPN' })
+    });
+    vectors.push({
+      category: 'CONFIDENTIAL_DOCUMENT_METADATA',
+      secret: documentId,
+      input: JSON.stringify({ documentReference: documentId, process: 'CKPN' })
+    });
   }
 
   return vectors;
@@ -263,7 +307,26 @@ function redactionVectors() {
 function verifyRedaction() {
   const redaction = loadTypeScriptModule('src/lib/ai/redaction.ts');
   const vectors = redactionVectors();
-  assert(vectors.length >= 100, 'Redaction suite must contain at least 100 vectors.');
+  assert(vectors.length >= 200, 'Redaction suite must contain at least 200 vectors.');
+
+  const semanticFields = {
+    customerCif: 'CIF',
+    accountNumber: 'BANK_ACCOUNT',
+    cardNumber: 'CARD_NUMBER',
+    nik: 'NIK',
+    npwp: 'NPWP',
+    loanAccountNumber: 'LOAN_ACCOUNT',
+    internalEmployeeId: 'EMPLOYEE_ID',
+    documentReference: 'CONFIDENTIAL_DOCUMENT_METADATA'
+  };
+
+  for (const [field, expectedCategory] of Object.entries(semanticFields)) {
+    const classified = redaction.classifyBankingSensitiveField(field);
+    assert(
+      classified && classified.category === expectedCategory,
+      'Semantic classifier failed for ' + field + ' -> ' + expectedCategory
+    );
+  }
 
   const survivors = [];
   for (const vector of vectors) {
@@ -287,7 +350,7 @@ function verifyRedaction() {
     label: 'Redaction',
     vectors: vectors.length,
     survivors: 0,
-    expected: '100+ vectors -> no sensitive value survives'
+    expected: '200+ regex + semantic + structured vectors -> no sensitive value survives'
   };
 }
 
