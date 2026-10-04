@@ -25,7 +25,10 @@ for (const marker of [
   'MAP_ISSUE_ORPHAN',
   "test: 'ICOFR_END_TO_END_REFERENTIAL_INTEGRITY'",
   "completenessTest: 'ICOFR_TRACEABILITY_COMPLETENESS'",
+  'significantFinancialItems',
+  'significantFinancialItemsWithAssertion',
   'inScopeAssertions',
+  'assertionsWithProcess',
   'assertionsWithRisk',
   'assertionsWithControl',
   'controlsWithToD',
@@ -53,7 +56,10 @@ requireMarker('.github/workflows/verify-production-d1.yml', '/api/system/icofr-i
 requireMarker('.github/workflows/verify-production-d1.yml', '.orphanCount == 0');
 requireMarker('.github/workflows/verify-production-d1.yml', '.crossTenantCount == 0');
 requireMarker('.github/workflows/verify-production-d1.yml', '.mandatoryChainGapCount == 0');
+requireMarker('.github/workflows/verify-production-d1.yml', '.metrics.significantFinancialItems');
+requireMarker('.github/workflows/verify-production-d1.yml', '.metrics.significantFinancialItemsWithAssertion');
 requireMarker('.github/workflows/verify-production-d1.yml', '.metrics.inScopeAssertions');
+requireMarker('.github/workflows/verify-production-d1.yml', '.metrics.assertionsWithProcess');
 requireMarker('.github/workflows/verify-production-d1.yml', '.metrics.coveragePercent');
 requireMarker('.github/workflows/verify-production-d1.yml', '.completenessChecks[]');
 
