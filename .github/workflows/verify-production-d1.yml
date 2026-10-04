@@ -343,10 +343,25 @@ jobs:
             .ok == true and
             .storage == "cloudflare-d1" and
             .test == "ICOFR_END_TO_END_REFERENTIAL_INTEGRITY" and
+            .completenessTest == "ICOFR_TRACEABILITY_COMPLETENESS" and
             .checkedInstitutions >= 1 and
             .orphanCount == 0 and
             .crossTenantCount == 0 and
-            ([.checks[] | select(.count != 0)] | length) == 0
+            .mandatoryChainGapCount == 0 and
+            (.metrics | type) == "object" and
+            (.metrics.inScopeAssertions | type) == "number" and
+            (.metrics.assertionsWithRisk | type) == "number" and
+            (.metrics.assertionsWithControl | type) == "number" and
+            (.metrics.controlsWithToD | type) == "number" and
+            (.metrics.controlsWithToE | type) == "number" and
+            (.metrics.exceptionsWithDeficiency | type) == "number" and
+            (.metrics.deficienciesWithIssue | type) == "number" and
+            (.metrics.issuesWithMAP | type) == "number" and
+            (.metrics.completeChains | type) == "number" and
+            (.metrics.incompleteChains | type) == "number" and
+            (.metrics.coveragePercent | type) == "number" and
+            ([.checks[] | select(.count != 0)] | length) == 0 and
+            ([.completenessChecks[] | select(.count != 0)] | length) == 0
           '
 
           check_json "icofr-coverage" "/api/icofr/coverage" '
