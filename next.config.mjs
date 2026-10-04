@@ -6,6 +6,7 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 const isVercel = process.env.VERCEL === '1';
+const isNodeHosted = isVercel || process.env.TOTAL_ARC_NODE_RUNTIME === '1';
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -81,7 +82,7 @@ const nextConfig = {
     // an operational fallback. On Vercel only, redirect Workers runtime imports
     // to a small compatibility layer that exposes process.env plus a D1 HTTPS
     // adapter. Cloudflare/OpenNext builds continue using native bindings.
-    if (isVercel) {
+    if (isNodeHosted) {
       config.resolve.alias = {
         ...(config.resolve.alias || {}),
         '@opennextjs/cloudflare': path.resolve(
