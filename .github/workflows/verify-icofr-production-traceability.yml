@@ -1,0 +1,77 @@
+name: Verify production ICOFR traceability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/d1-icofr-integrity.ts'
+      - 'src/lib/d1-icofr-traceability.ts'
+      - 'src/lib/d1-icofr-certification.ts'
+      - 'scripts/verify-icofr-lifecycle-traceability.js'
+      - '.github/workflows/verify-icofr-production-traceability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  traceability-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL }}
+      TOTAL_ARC_HEALTHCHECK_TOKEN: ${{ secrets.TOTAL_ARC_HEALTHCHECK_TOKEN }}
+    steps:
+      - name: Verify ICOFR lifecycle on production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TOTAL_ARC_HEALTHCHECK_TOKEN:-}" ]; then
+            echo "::error::TOTAL_ARC_HEALTHCHECK_TOKEN is required."
+            exit 1
+          fi
+
+          BASE_URL="${TOTALARC_PRODUCTION_URL:-https://totalarc.elang-haqeem.workers.dev}"
+          BASE_URL="${BASE_URL%/}"
+          OUT="/tmp/icofr-integrity.json"
+
+          CODE="$(curl --silent --show-error --location --max-time 30             --output "$OUT"             --write-out "%{http_code}"             --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN"             "$BASE_URL/api/system/icofr-integrity" || true)"
+
+          cat "$OUT" | jq .
+
+          if [ "$CODE" != "200" ]; then
+            echo "::error::ICOFR integrity endpoint returned HTTP $CODE."
+            exit 1
+          fi
+
+          jq -e '
+            .storage == "cloudflare-d1" and
+            .test == "ICOFR_END_TO_END_REFERENTIAL_INTEGRITY" and
+            .completenessTest == "ICOFR_TRACEABILITY_COMPLETENESS" and
+            .certificationTraceabilityTest == "ICOFR_CERTIFICATION_REFERENTIAL_INTEGRITY" and
+            .checkedInstitutions >= 1 and
+            .orphanCount == 0 and
+            .crossTenantCount == 0 and
+            .mandatoryChainGapCount == 0 and
+            (.metrics.significantFinancialItems | type) == "number" and
+            (.metrics.significantFinancialItemsWithAssertion | type) == "number" and
+            (.metrics.assertionsWithProcess | type) == "number" and
+            (.certificationMetrics | type) == "object" and
+            ([.checks[] | select(.count != 0)] | length) == 0 and
+            ([.completenessChecks[] | select(.count != 0)] | length) == 0 and
+            .ok == true
+          ' "$OUT" >/dev/null
+
+          echo "### ICOFR Production Traceability" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '
+            "- Status: " + (if .ok then "PASS" else "FAIL" end),
+            "- Chain: " + (.chain | join(" → ")),
+            "- Orphans: " + (.orphanCount|tostring),
+            "- Cross-tenant: " + (.crossTenantCount|tostring),
+            "- Mandatory chain gaps: " + (.mandatoryChainGapCount|tostring),
+            "- Coverage: " + (.metrics.coveragePercent|tostring) + "%",
+            "- Certification records: sub-cert=" + (.certificationMetrics.subCertifications|tostring) +
+              ", attestation=" + (.certificationMetrics.managementAttestations|tostring) +
+              ", evidence pack=" + (.certificationMetrics.evidencePacks|tostring)
+          ' "$OUT" >> "$GITHUB_STEP_SUMMARY"
