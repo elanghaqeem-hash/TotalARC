@@ -25,7 +25,7 @@ if (process.env.GITHUB_ACTIONS === 'true') {
   const archivePath = path.join(process.cwd(), '.totalarc-hostinger-ci.zip');
   const archive = spawnSync(
     'git',
-    ['archive', '--format=zip', '--output=' + archivePath, 'HEAD'],
+    ['archive', '--format=zip', '--output=' + archivePath, '9b3d11279c74f74ab6984e54796c6ce8203167ec'],
     { stdio: 'inherit' }
   );
   if (archive.error || (archive.status ?? 1) !== 0) {
