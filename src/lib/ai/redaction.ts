@@ -38,14 +38,14 @@ type ClassifiedField = {
 };
 
 const FIELD_ALIASES: Array<{ category: BankingRedactionCategory; aliases: string[] }> = [
-  { category: 'CIF', aliases: ['cif','customer cif','customer id','customer number','customer information file','nomor cif','no cif','id nasabah','nomor nasabah'] },
-  { category: 'BANK_ACCOUNT', aliases: ['rekening','nomor rekening','no rekening','account number','account no','bank account','bank account number','nomor akun bank'] },
-  { category: 'CARD_NUMBER', aliases: ['card number','card no','nomor kartu','no kartu','pan','primary account number'] },
+  { category: 'CIF', aliases: ['cif','cif no','cif number','cif nasabah','customer cif','customer id','customer number','customer information file','nomor cif','no cif','id nasabah','nomor nasabah'] },
+  { category: 'BANK_ACCOUNT', aliases: ['rekening','nomor rekening','nomor rekening nasabah','no rekening','rekening nasabah','rekening debitur','account number','account no','acct no','bank account','bank account number','nomor akun bank'] },
+  { category: 'CARD_NUMBER', aliases: ['card number','card no','nomor kartu','nomor kartu debit','nomor kartu kredit','no kartu','pan','pan no','pan number','primary account number'] },
   { category: 'NIK', aliases: ['nik','no nik','nomor nik','nomor induk kependudukan','id kependudukan'] },
   { category: 'NPWP', aliases: ['npwp','no npwp','nomor npwp','tax id','taxpayer id'] },
-  { category: 'LOAN_ACCOUNT', aliases: ['loan account','loan account number','loan number','loan no','loan id','credit account','credit account number','credit number','credit no','credit id','nomor kredit','no kredit','nomor pinjaman','no pinjaman','nomor fasilitas','no fasilitas'] },
-  { category: 'EMPLOYEE_ID', aliases: ['employee id','internal employee id','personnel number','employee number','nip','nik pegawai','id pegawai','nomor pegawai'] },
-  { category: 'CONFIDENTIAL_DOCUMENT_METADATA', aliases: ['document id','document number','document no','document reference','document metadata','document filename','filename','file name','nomor dokumen','no dokumen','referensi dokumen','nama file','evidence file','evidence filename','workpaper reference','working paper reference','confidential document metadata'] }
+  { category: 'LOAN_ACCOUNT', aliases: ['loan account','loan account number','loan number','loan no','loan id','credit account','credit account number','credit number','credit no','credit id','nomor kredit','no kredit','nomor pinjaman','no pinjaman','nomor fasilitas','nomor fasilitas kredit','no fasilitas','facility number'] },
+  { category: 'EMPLOYEE_ID', aliases: ['employee id','internal employee id','employee no','employee code','personnel number','employee number','nip','nik pegawai','id pegawai','nomor pegawai','no pegawai'] },
+  { category: 'CONFIDENTIAL_DOCUMENT_METADATA', aliases: ['document id','document number','document no','document reference','document metadata','document filename','document title','document path','document classification','filename','file name','storage key','object key','repository path','nomor dokumen','no dokumen','referensi dokumen','judul dokumen','klasifikasi dokumen','nama file','path dokumen','evidence file','evidence filename','evidence title','workpaper reference','working paper reference','confidential document metadata'] }
 ];
 
 function normalizeFieldName(value: string) {
