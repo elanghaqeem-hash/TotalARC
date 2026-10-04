@@ -6,7 +6,9 @@ on:
       - main
   push:
     branches:
+      - main
       - hardening/**
+      - hotfix/**
   workflow_dispatch:
 
 permissions:

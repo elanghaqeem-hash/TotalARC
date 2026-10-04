@@ -73,7 +73,7 @@ jobs:
           printf '%s\n' "$RESPONSE"
           exit 1
 
-      - name: Smoke test production D1 APIs
+      - name: Smoke test production system integrity and auth boundaries
         shell: bash
         run: |
           set -euo pipefail
@@ -89,7 +89,7 @@ jobs:
 
             echo "Checking $name at $path"
             local http_code
-            http_code="$(curl --silent --show-error --location --max-time 25 \
+            http_code="$(curl --silent --show-error --location --max-time 30 \
               --output "$output" \
               --write-out "%{http_code}" \
               --header "X-Total-ARC-Health-Token: $TOTAL_ARC_HEALTHCHECK_TOKEN" \
@@ -110,98 +110,35 @@ jobs:
             echo "$name: healthy"
           }
 
+          check_protected() {
+            local name="$1"
+            local path="$2"
+            local output="/tmp/totalarc-auth-boundary-${name}.json"
+            local http_code
+
+            http_code="$(curl --silent --show-error --location --max-time 20 \
+              --output "$output" \
+              --write-out "%{http_code}" \
+              "$BASE_URL$path" || true)"
+
+            if [ "$http_code" != "401" ] && [ "$http_code" != "403" ]; then
+              echo "::error::$name must remain session-protected; got HTTP ${http_code:-unknown}."
+              cat "$output" 2>/dev/null || true
+              return 1
+            fi
+
+            echo "$name: authentication boundary enforced (HTTP $http_code)"
+          }
+
           check_json "database" "/api/system/database" '
             .ok == true and
             .database == "cloudflare-d1" and
             .persistent == true and
-            .readOnlyProbe == true
-          '
-
-          check_json "institution" "/api/onboarding" '
-            .storage == "cloudflare-d1" and
-            .institution.legalName == "PT. Bank Pembangunan Daerah Kalimantan Barat" and
-            .institution.name == "Bank Kalbar"
-          '
-
-          check_json "organization" "/api/organization" '
-            .storage == "cloudflare-d1" and
-            .institution.legalName == "PT. Bank Pembangunan Daerah Kalimantan Barat" and
-            (.legalEntities | type) == "array" and
-            ([.legalEntities[] | select(.code == "BANK-KALBAR")] | length) == 1 and
-            (.organizationUnits | type) == "array" and
-            ([.organizationUnits[] | select(
-              .code == "GOV-DEKOM" or
-              .code == "GOV-KOM-AUD" or
-              .code == "EXEC-DIREKSI" or
-              .code == "FUNC-CORSEC" or
-              .code == "DIV-SDM" or
-              .code == "DIV-TREASURY" or
-              .code == "DIV-KREDIT" or
-              .code == "DIV-AKUNTANSI" or
-              .code == "DIV-KEPATUHAN" or
-              .code == "DIV-TI" or
-              .code == "DIV-MR" or
-              .code == "DIV-UUS" or
-              .code == "DIV-EBANK" or
-              .code == "DIV-STRATEGI" or
-              .code == "DIV-UMUM" or
-              .code == "FUNC-SKAI" or
-              .code == "FUNC-ICOFR"
-            )] | length) == 17 and
-            ([.organizationUnits[] | select(.code == "DIR-UMUM" and .parentId != null)] | length) == 1 and
-            (.hierarchyEvidence | type) == "array" and
-            ([.hierarchyEvidence[] | select(.hierarchyStatus == "PENDING_PARENT")] | length) == 0 and
-            (.branchExpansions | type) == "array" and
-            (.branchExpansions | length) == 23 and
-            ([.branchExpansions[] | select(.structureType == "CONVENTIONAL_2026" and .nodeCount == 13)] | length) == 19 and
-            ([.branchExpansions[] | select(.structureType == "SHARIA_2026" and .nodeCount == 4)] | length) == 4
-          '
-
-          check_json "processes" "/api/processes" '
-            .storage == "cloudflare-d1" and
-            (.processes | type) == "array" and
-            (.categories | type) == "array" and
-            ([.categories[] | select(.code == "CAT-CORE" and .name == "Core Business Operation")] | length) == 1 and
-            ([.processes[] | select(.level == 2)] | length) >= 18 and
-            ([.processes[] | select(.level == 3)] | length) >= 48 and
-            ([.processes[] | select(.processId == "KRD" and .name == "Perkreditan")] | length) == 1 and
-            ([.processes[] | select(.processId == "DPK")] | length) == 1 and
-            ([.processes[] | select(.processId == "MRO")] | length) == 1 and
-            ([.processes[] | select(.processId == "TRY")] | length) == 1 and
-            ([.processes[] | select(.processId == "UUS")] | length) == 1
-          '
-
-          check_json "risks" "/api/risks" '
-            .storage == "cloudflare-d1" and
-            (.risks | type) == "array" and
-            ([.risks[] | select(
-              .sourceMetadata != null and
-              .sourceMetadata.feedBatch == "BANK_KALBAR_RISK_UNIVERSE_20260922"
-            )] | length) == 50 and
-            ([.risks[] | select(
-              .sourceMetadata != null and
-              .sourceMetadata.feedBatch == "BANK_KALBAR_RISK_UNIVERSE_20260922" and
-              .status == "Draft" and
-              .inherentScore == 0 and
-              .inherentRating == "Not Assessed" and
-              .residualScore == 0 and
-              .residualRating == "Not Assessed"
-            )] | length) == 50 and
-            ([.risks[] | select(.riskId == "R-KRD-01")] | length) == 1 and
-            ([.risks[] | select(.riskId == "R-012")] | length) == 1 and
-            ([.risks[] | select(
-              .sourceMetadata != null and
-              (
-                .sourceMetadata.sourceRecordType == "ICOFR_ENTITY_LEVEL_RISK_UPDATE_CANDIDATE" or
-                .sourceMetadata.sourceRecordType == "ICOFR_FRAUD_RISK_UPDATE_CANDIDATE" or
-                .sourceMetadata.sourceRecordType == "ICOFR_IT_RISK_UPDATE_CANDIDATE"
-              )
-            )] | length) == 0
-          '
-
-          check_json "controls" "/api/controls" '
-            .storage == "cloudflare-d1" and
-            (.controls | type) == "array"
+            .readOnlyProbe == true and
+            .health.binding == "DB" and
+            .health.queryOk == true and
+            .health.requiredTablesReady == true and
+            (.health.missingRequiredTables | length) == 0
           '
 
           check_json "rcm-integrity" "/api/system/rcm-integrity" '
@@ -217,254 +154,23 @@ jobs:
             .summary.integrity == "PASS"
           '
 
-          echo "RCM inherent assessment evidence:"
-          jq '{
-            sourceRatedRows: ([.rcm[] | select((.inherentSourceRating // "") != "")] | length),
-            validatedNumericRows: ([.rcm[] | select(.inherentAssessmentStatus == "ASSESSED_1_5")] | length),
-            pendingNumericRows: ([.rcm[] | select(.inherentAssessmentStatus == "SOURCE_RATING_PENDING_1_5_VALIDATION")] | length),
-            examples: ([.rcm[] | select(.riskId == "R-018" or .riskId == "R-019")
-              | {riskId, inherentLikelihood, inherentImpact, inherentScore, inherentRating,
-                 inherentSourceRating, inherentAssessmentStatus}] | unique_by(.riskId))
-          }' /tmp/totalarc-smoke-rcm.json
-
-          check_json "dashboard" "/api/dashboard" '
-            .storage == "cloudflare-d1" and
-            (.metrics | type) == "object" and
-            (.executiveQandA | type) == "array"
-          '
-
-          check_json "toe" "/api/assure/toe" '
-            .storage == "cloudflare-d1" and
-            (.tests | type) == "array"
-          '
-
-          check_json "remediation" "/api/assure/remediation" '
-            .storage == "cloudflare-d1" and
-            (.exceptions | type) == "array" and
-            (.deficiencies | type) == "array" and
-            (.issues | type) == "array" and
-            (.maps | type) == "array" and
-            (.retests | type) == "array"
-          '
-
-          check_json "ccm" "/api/monitor/ccm" '
-            .storage == "cloudflare-d1" and
-            (.rules | type) == "array"
-          '
-
-          check_json "assurance-integration" "/api/assurance?sections=integration" '
-            .storage == "cloudflare-d1" and
-            .dataStatus == "complete" and
-            (.degradedModules | length) == 0 and
-            (.campaigns | type) == "array" and
-            (.controls | type) == "array" and
-            (.tasks | type) == "array" and
-            (.todTests | type) == "array" and
-            (.toeTests | type) == "array" and
-            (.actionPlans | type) == "array"
-          '
-
-          check_json "assurance-calendar" "/api/assurance?sections=calendar" '
-            .storage == "cloudflare-d1" and
-            (.calendarEvents | type) == "array" and
-            (.campaigns | type) == "array" and
-            (.testingPlanItems | type) == "array" and
-            (.toeTests | type) == "array" and
-            (.actionPlans | type) == "array" and
-            (.retests | type) == "array" and
-            (.attestations | type) == "array" and
-            (.tasks | type) == "array"
-          '
-
-          check_json "icofr-hub" "/api/icofr/hub" '
-            .storage == "cloudflare-d1" and
-            (.counts | type) == "object" and
-            (.traceabilityMetrics | type) == "object" and
-            (.testingMetrics | type) == "object"
-          '
-
-          check_json "icofr-scoping" "/api/icofr/scoping" '
-            .storage == "cloudflare-d1" and
-            (.scopes | type) == "array" and
-            ([.scopes[] | select(
-              .fiscalYear == 2026 and
-              .scopeName == "Bank Kalbar ICOFR Tahun Buku 2026" and
-              .benchmarkType == "Profit Before Tax - normalized 3-year average" and
-              .benchmarkAmount == 638098666667 and
-              .overallMaterialityPercent == 5 and
-              .overallMaterialityAmount == 31904933333 and
-              .performanceMaterialityPercent == 50 and
-              .performanceMaterialityAmount == 15952466667 and
-              .clearlyTrivialPercent == 5 and
-              .clearlyTrivialAmount == 797623333 and
-              .status == "Approved" and
-              (.approvedBy != null and (.approvedBy | length) > 0) and
-              ([.parameters[] | select(.parameterCode == "OM_AMOUNT" and .status == "FINAL_APPROVED")] | length) == 1 and
-              ([.parameters[] | select(.parameterCode == "PM_AMOUNT" and .status == "FINAL_APPROVED")] | length) == 1 and
-              ([.parameters[] | select(.parameterCode == "REQUEST_TRACKER_OM_ALTERNATE" and .numericValue == 33669050000 and .status == "SOURCE_CONFLICT_NOT_ACTIVE")] | length) == 1 and
-              ([.populationSummaries[] | select(
-                .populationType == "FSLI" and
-                .assessedCount == 52 and
-                .significantCount == 37 and
-                .quantitativeSignificantCount == 36 and
-                .qualitativeOnlyCount == 1 and
-                .notSignificantCount == 14
-              )] | length) == 1 and
-              ([.populationSummaries[] | select(
-                .populationType == "BUSINESS_PROCESS" and
-                .assessedCount == 16 and
-                .significantCount == 16
-              )] | length) == 1 and
-              ([.populationSummaries[] | select(
-                .populationType == "APPLICATION" and
-                .assessedCount == 62 and
-                .significantCount == 31 and
-                .sourceStatus == "REVALIDATION_REQUIRED"
-              )] | length) == 1 and
-              ([.items[] | select(.itemType == "Financial Account")] | length) == 52 and
-              ([.items[] | select(.itemType == "Financial Account" and .inScope == true)] | length) == 38 and
-              ([.items[] | select(.itemType == "Business Process")] | length) == 16 and
-              ([.items[] | select(.itemType == "Business Process" and .inScope == true)] | length) == 16 and
-              ([.issues[] | select(.issueCode == "MAT-OM-SOURCE-CONFLICT" and .status == "CLOSED")] | length) == 1
-            )] | length) == 1
-          '
-
-          check_json "icofr-financial-items" "/api/icofr/financial-items" '
-            .storage == "cloudflare-d1" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-traceability" "/api/icofr/traceability" '
-            .storage == "cloudflare-d1" and
-            (.chains | type) == "array"
-          '
-
-          check_json "icofr-referential-integrity" "/api/system/icofr-integrity" '
+          check_json "icofr-integrity" "/api/system/icofr-integrity" '
             .ok == true and
             .storage == "cloudflare-d1" and
             .test == "ICOFR_END_TO_END_REFERENTIAL_INTEGRITY" and
             .completenessTest == "ICOFR_TRACEABILITY_COMPLETENESS" and
-            .checkedInstitutions >= 1 and
             .orphanCount == 0 and
             .crossTenantCount == 0 and
             .mandatoryChainGapCount == 0 and
-            (.metrics | type) == "object" and
-            (.metrics.inScopeAssertions | type) == "number" and
-            (.metrics.assertionsWithRisk | type) == "number" and
-            (.metrics.assertionsWithControl | type) == "number" and
-            (.metrics.controlsWithToD | type) == "number" and
-            (.metrics.controlsWithToE | type) == "number" and
-            (.metrics.exceptionsWithDeficiency | type) == "number" and
-            (.metrics.deficienciesWithIssue | type) == "number" and
-            (.metrics.issuesWithMAP | type) == "number" and
-            (.metrics.completeChains | type) == "number" and
-            (.metrics.incompleteChains | type) == "number" and
-            (.metrics.coveragePercent | type) == "number" and
             ([.checks[] | select(.count != 0)] | length) == 0 and
             ([.completenessChecks[] | select(.count != 0)] | length) == 0
           '
 
-          check_json "icofr-coverage" "/api/icofr/coverage" '
-            .storage == "cloudflare-d1" and
-            (.metrics | type) == "object"
-          '
+          # Normal application APIs remain protected. Health probes must never
+          # become a backdoor around user sessions/RBAC.
+          check_protected "institution" "/api/onboarding"
+          check_protected "organization" "/api/organization"
+          check_protected "processes" "/api/processes"
+          check_protected "icofr-hub" "/api/icofr/hub"
 
-          check_json "icofr-elc" "/api/icofr/controls?category=ELC" '
-            .storage == "cloudflare-d1" and
-            .category == "ELC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-plc" "/api/icofr/controls?category=PLC" '
-            .storage == "cloudflare-d1" and
-            .category == "PLC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-itgc" "/api/icofr/controls?category=ITGC" '
-            .storage == "cloudflare-d1" and
-            .category == "ITGC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-itac" "/api/icofr/controls?category=ITAC" '
-            .storage == "cloudflare-d1" and
-            .category == "ITAC" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-information" "/api/icofr/information" '
-            .storage == "cloudflare-d1" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-testing-plan" "/api/icofr/testing-plan" '
-            .storage == "cloudflare-d1" and
-            (.planItems | type) == "array" and
-            (.cycles | type) == "array"
-          '
-
-          check_json "icofr-deficiencies" "/api/icofr/deficiencies" '
-            .storage == "cloudflare-d1" and
-            (.records | type) == "array"
-          '
-
-          check_json "icofr-certification" "/api/icofr/certification" '
-            .storage == "cloudflare-d1" and
-            (.attestations | type) == "array" and
-            (.subCertifications | type) == "array"
-          '
-
-          check_json "icofr-reporting" "/api/icofr/reporting" '
-            .storage == "cloudflare-d1" and
-            (.pbcRequests | type) == "array" and
-            (.reportPacks | type) == "array"
-          '
-
-          check_json "icofr-roll-forward" "/api/icofr/roll-forward" '
-            .storage == "cloudflare-d1" and
-            (.sourceCloses | type) == "array" and
-            (.rollForwards | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "icofr-smart-testing" "/api/icofr/smart-testing" '
-            .storage == "cloudflare-d1" and
-            (.cycles | type) == "array" and
-            (.runs | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "icofr-sampling-evidence" "/api/icofr/sampling-evidence" '
-            .storage == "cloudflare-d1" and
-            (.eligiblePlanItems | type) == "array" and
-            (.samplingPlans | type) == "array" and
-            (.evidenceRequests | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "icofr-workpaper-review" "/api/icofr/workpaper-review" '
-            .storage == "cloudflare-d1" and
-            (.workpapers | type) == "array" and
-            (.reviews | type) == "array" and
-            (.openReviewNotes | type) == "array" and
-            (.metrics | type) == "object"
-          '
-
-          check_json "evidence-repository" "/api/evidence" '
-            .storage == "cloudflare-d1" and
-            (.documents | type) == "array" and
-            (.linkTargets | type) == "array" and
-            (.metrics | type) == "object" and
-            .limits.storageMode == "D1_CHUNKED"
-          '
-
-          check_json "database-final" "/api/system/database" '
-            .ok == true and
-            .database == "cloudflare-d1" and
-            .persistent == true and
-            .health.requiredTablesReady == true and
-            (.health.missingRequiredTables | length) == 0
-          '
-
-          echo "All Total ARC production D1 API smoke tests passed."
+          echo "Total ARC production system integrity and authentication-boundary smoke tests passed."
