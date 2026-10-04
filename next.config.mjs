@@ -50,13 +50,16 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
   },
-  webpack(config) {
+  webpack(config, { isServer, nextRuntime }) {
     if (isVercel || isHostinger) {
+      const useNodeHostingerShim =
+        isHostinger && isServer && nextRuntime !== 'edge';
+
       config.resolve.alias = {
         ...(config.resolve.alias || {}),
         '@opennextjs/cloudflare': path.resolve(
           process.cwd(),
-          isHostinger
+          useNodeHostingerShim
             ? 'src/lib/cloudflare-node-shim.ts'
             : 'src/lib/cloudflare-vercel-shim.ts'
         ),
