@@ -96,7 +96,10 @@ function safeRemove(file) {
   const schemaResult = await d1(
     "SELECT type,name,tbl_name,sql FROM sqlite_master " +
     "WHERE sql IS NOT NULL AND type IN ('table','index','trigger') " +
-    "AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 1 WHEN 'index' THEN 2 ELSE 3 END,name"
+    "AND name NOT LIKE 'sqlite_%' " +
+    "AND name NOT LIKE '_cf_%' " +
+    "AND tbl_name NOT LIKE '_cf_%' " +
+    "ORDER BY CASE type WHEN 'table' THEN 1 WHEN 'index' THEN 2 ELSE 3 END,name"
   );
   const schemaRows = schemaResult.results || [];
   const tableRows = schemaRows.filter(row => row.type === 'table');
