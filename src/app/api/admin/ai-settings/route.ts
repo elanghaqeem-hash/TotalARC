@@ -15,7 +15,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const PROVIDERS: AiProvider[] = ['cloudflare', 'gemini', 'groq', 'openrouter'];
+const PROVIDERS: AiProvider[] = ['cloudflare', 'openai', 'gemini', 'groq', 'openrouter'];
 
 async function requireSystemAdmin(request: Request) {
   const context = await resolveInstitutionAccess(request);

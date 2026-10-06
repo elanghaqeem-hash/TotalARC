@@ -14,7 +14,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-type ProviderName = 'cloudflare' | 'gemini' | 'groq' | 'openrouter';
+type ProviderName = 'cloudflare' | 'openai' | 'gemini' | 'groq' | 'openrouter';
 type AiLevel = 'FAST' | 'STANDARD' | 'ADVANCED';
 
 type ProviderForm = {
@@ -29,6 +29,7 @@ type ProviderForm = {
 };
 
 const providerTone: Record<ProviderName, string> = {
+  openai: 'border-teal-200 bg-teal-50/40',
   cloudflare: 'border-orange-200 bg-orange-50/40',
   gemini: 'border-sky-200 bg-sky-50/40',
   groq: 'border-violet-200 bg-violet-50/40',

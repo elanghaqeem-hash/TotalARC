@@ -1,3 +1,4 @@
+import { openAiRequestBody, parseOpenAiResponse } from './openai';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import type { AiFeature, AiLevel, AiProvider, AiSensitivity } from './types';
 
@@ -103,6 +104,12 @@ export const AI_PROVIDER_DEFAULTS: Record<
   AiProvider,
   { label: string; model: string; description: string; requiresApiKey: boolean }
 > = {
+  openai: {
+    label: 'OpenAI (ChatGPT)',
+    model: process.env.OPENAI_MODEL || 'gpt-4.1',
+    description: 'Analisis BPM, risiko dan ICOFR melalui OpenAI API. Penagihan API terpisah dari ChatGPT.',
+    requiresApiKey: true
+  },
   cloudflare: {
     label: 'Cloudflare Workers AI',
     model: process.env.CLOUDFLARE_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8',
@@ -157,7 +164,7 @@ export type AiRuntimeProviderConfig = {
 };
 
 function isProvider(value: unknown): value is AiProvider {
-  return ['cloudflare', 'gemini', 'groq', 'openrouter'].includes(String(value || ''));
+  return ['cloudflare', 'openai', 'gemini', 'groq', 'openrouter'].includes(String(value || ''));
 }
 
 function isAiLevel(value: unknown): value is AiLevel {
@@ -498,7 +505,13 @@ export async function testAiAdminProviderConfig(institutionId: string, provider:
       if (!apiKey) throw new Error('API key belum tersimpan.');
 
       let response: Response;
-      if (provider === 'gemini') {
+      if (provider === 'openai') {
+        response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify(openAiRequestBody({ model, systemPrompt: 'Uji koneksi Total ARC.', prompt: 'Reply exactly OK.', maxOutputTokens: 512, requireJson: false }))
+        });
+      } else if (provider === 'gemini') {
         response = await fetchWithTimeout(
           'https://generativelanguage.googleapis.com/v1beta/models/' +
             encodeURIComponent(model) +
@@ -536,6 +549,9 @@ export async function testAiAdminProviderConfig(institutionId: string, provider:
         const raw = await response.text().catch(() => '');
         throw new Error('Provider HTTP ' + response.status + (raw ? ': ' + raw.slice(0, 180) : ''));
       }
+      if (provider === 'openai') {
+        parseOpenAiResponse(await response.json() as Record<string, unknown>);
+      }
       ok = true;
       message = AI_PROVIDER_DEFAULTS[provider].label + ' terhubung.';
     }
@@ -550,6 +566,7 @@ export async function testAiAdminProviderConfig(institutionId: string, provider:
 
 export function environmentProviderConfigured(provider: AiProvider) {
   if (provider === 'cloudflare') return true;
+  if (provider === 'openai') return Boolean(process.env.OPENAI_API_KEY);
   if (provider === 'gemini') return Boolean(process.env.GEMINI_API_KEY);
   if (provider === 'groq') return Boolean(process.env.GROQ_API_KEY);
   if (provider === 'openrouter') return Boolean(process.env.OPENROUTER_API_KEY);
