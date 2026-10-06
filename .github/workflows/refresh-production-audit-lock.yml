@@ -22,9 +22,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci --ignore-scripts
-      - name: Refresh lockfile security fixes
-        run: npm audit fix --package-lock-only
+      - name: Refresh lockfile after dependency override
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Verify clean install
+        run: npm ci --ignore-scripts
       - name: Verify production audit gate
         run: npm audit --omit=dev --audit-level=moderate
       - name: Commit refreshed lockfile
