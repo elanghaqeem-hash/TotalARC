@@ -1,0 +1,208 @@
+name: Diagnose RCM draft validation
+
+on:
+  push:
+    branches:
+      - fix/rcm-validate-use-20261006
+    paths:
+      - '.github/workflows/diagnose-rcm-draft-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Inspect production D1 RCM validation path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, re, subprocess
+
+          def wr(args):
+              p = subprocess.run(
+                  ["npx", "wrangler", *args],
+                  text=True,
+                  env=os.environ,
+                  capture_output=True,
+              )
+              if p.returncode != 0:
+                  print(p.stdout[-5000:])
+                  print(p.stderr[-5000:])
+                  raise RuntimeError("WRANGLER_COMMAND_FAILED")
+              return p.stdout
+
+          dbs = json.loads(wr(["d1", "list", "--json"]))
+          db = next((x for x in dbs if re.search(r"total.?arc", x["name"], re.I)), None)
+          if not db:
+              db = dbs[0] if len(dbs) == 1 else None
+          if not db:
+              raise RuntimeError("TOTAL_ARC_D1_NOT_FOUND")
+          DB = db["name"]
+
+          def rows(sql):
+              raw = json.loads(
+                  wr(["d1", "execute", DB, "--remote", "--json", "--command", sql])
+              )
+              raw = raw if isinstance(raw, list) else [raw]
+              return [r for block in raw for r in (block.get("results") or [])]
+
+          def show(label, sql):
+              print("\n### " + label)
+              print(json.dumps(rows(sql), indent=2, ensure_ascii=False))
+
+          show(
+              "Relevant table DDL",
+              """SELECT name, sql FROM sqlite_master
+                   WHERE type='table'
+                     AND name IN (
+                       'RCMDraftReference','RCMControlSourceMetadata','RiskMaster',
+                       'ControlMaster','ControlRiskMapping','AuditLog','BusinessProcess'
+                     )
+                   ORDER BY name"""
+          )
+
+          show(
+              "Relevant triggers",
+              """SELECT name, tbl_name, sql FROM sqlite_master
+                   WHERE type='trigger'
+                     AND tbl_name IN (
+                       'RCMDraftReference','RCMControlSourceMetadata','RiskMaster',
+                       'ControlMaster','ControlRiskMapping','AuditLog','BusinessProcess'
+                     )
+                   ORDER BY tbl_name,name"""
+          )
+
+          for table in [
+              "RCMDraftReference",
+              "RCMControlSourceMetadata",
+              "RiskMaster",
+              "ControlMaster",
+              "ControlRiskMapping",
+              "AuditLog",
+              "BusinessProcess",
+          ]:
+              show("Columns " + table, "PRAGMA table_info(" + table + ")")
+              show("Foreign keys " + table, "PRAGMA foreign_key_list(" + table + ")")
+
+          show(
+              "Pending draft summary",
+              """SELECT institutionId, COUNT(*) AS pending
+                   FROM RCMDraftReference
+                  WHERE referenceType='BPM_RCM_DRAFT'
+                    AND sourceStatus='DRAFT_PENDING_VALIDATION'
+                    AND validationRequired=1
+                  GROUP BY institutionId
+                  ORDER BY pending DESC"""
+          )
+
+          show(
+              "Pending draft promotion preflight",
+              """SELECT
+                   d.id AS draftId,
+                   d.institutionId,
+                   d.referenceCode,
+                   d.sourceRecordId AS processInternalId,
+                   d.sourceReference,
+                   json_extract(d.payloadJson,'$.process.id') AS payloadProcessId,
+                   json_extract(d.payloadJson,'$.process.name') AS processName,
+                   json_extract(d.payloadJson,'$.risk.existingRiskId') AS existingRiskId,
+                   json_extract(d.payloadJson,'$.risk.riskId') AS draftRiskId,
+                   json_extract(d.payloadJson,'$.control.controlId') AS draftControlId,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.risk.name'),''))) AS riskNameLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.risk.description'),''))) AS riskDescriptionLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.risk.cause'),''))) AS riskCauseLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.risk.event'),''))) AS riskEventLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.risk.impact'),''))) AS riskImpactLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.risk.category'),''))) AS riskCategoryLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.risk.ownerName'),''))) AS riskOwnerLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.control.name'),''))) AS controlNameLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.control.description'),''))) AS controlDescriptionLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.control.objective'),''))) AS controlObjectiveLen,
+                   length(trim(coalesce(json_extract(d.payloadJson,'$.control.controlOwner'),''))) AS controlOwnerLen,
+                   (SELECT COUNT(*) FROM BusinessProcess p
+                     WHERE p.id=json_extract(d.payloadJson,'$.process.id')
+                       AND p.institutionId=d.institutionId) AS processMatchesTenant,
+                   (SELECT COUNT(*) FROM RiskMaster r
+                     WHERE r.institutionId=d.institutionId
+                       AND r.riskId=json_extract(d.payloadJson,'$.risk.riskId')) AS duplicateRiskCount,
+                   (SELECT COUNT(*) FROM ControlMaster c
+                     WHERE c.institutionId=d.institutionId
+                       AND c.controlId=json_extract(d.payloadJson,'$.control.controlId')) AS duplicateControlCount,
+                   (SELECT COUNT(*) FROM ControlMaster c
+                     JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id
+                     WHERE c.institutionId=d.institutionId
+                       AND c.controlId=json_extract(d.payloadJson,'$.control.controlId')
+                       AND sm.sourceReference=d.sourceReference
+                       AND sm.sourceRecordType='BPM_DERIVED_USER_VALIDATED') AS matchingPromotedMetadataCount
+                 FROM RCMDraftReference d
+                WHERE d.referenceType='BPM_RCM_DRAFT'
+                  AND d.sourceStatus='DRAFT_PENDING_VALIDATION'
+                  AND d.validationRequired=1
+                ORDER BY d.institutionId,d.referenceCode
+                LIMIT 100"""
+          )
+
+          show(
+              "Pending draft anomaly totals",
+              """WITH q AS (
+                   SELECT
+                     d.id,
+                     d.institutionId,
+                     json_extract(d.payloadJson,'$.process.id') AS processId,
+                     json_extract(d.payloadJson,'$.risk.existingRiskId') AS existingRiskId,
+                     json_extract(d.payloadJson,'$.risk.riskId') AS riskId,
+                     json_extract(d.payloadJson,'$.control.controlId') AS controlId,
+                     json_extract(d.payloadJson,'$.risk.name') AS riskName,
+                     json_extract(d.payloadJson,'$.risk.description') AS riskDescription,
+                     json_extract(d.payloadJson,'$.risk.cause') AS riskCause,
+                     json_extract(d.payloadJson,'$.risk.event') AS riskEvent,
+                     json_extract(d.payloadJson,'$.risk.impact') AS riskImpact,
+                     json_extract(d.payloadJson,'$.risk.category') AS riskCategory,
+                     json_extract(d.payloadJson,'$.risk.ownerName') AS riskOwner,
+                     json_extract(d.payloadJson,'$.control.name') AS controlName,
+                     json_extract(d.payloadJson,'$.control.description') AS controlDescription,
+                     json_extract(d.payloadJson,'$.control.objective') AS controlObjective,
+                     json_extract(d.payloadJson,'$.control.controlOwner') AS controlOwner
+                   FROM RCMDraftReference d
+                  WHERE d.referenceType='BPM_RCM_DRAFT'
+                    AND d.sourceStatus='DRAFT_PENDING_VALIDATION'
+                    AND d.validationRequired=1
+                 )
+                 SELECT
+                   COUNT(*) AS pending,
+                   SUM(CASE WHEN processId IS NULL OR trim(processId)='' THEN 1 ELSE 0 END) AS missingProcessId,
+                   SUM(CASE WHEN riskId IS NULL OR trim(riskId)='' THEN 1 ELSE 0 END) AS missingRiskId,
+                   SUM(CASE WHEN controlId IS NULL OR trim(controlId)='' THEN 1 ELSE 0 END) AS missingControlId,
+                   SUM(CASE WHEN existingRiskId IS NULL AND (
+                     riskName IS NULL OR trim(riskName)='' OR
+                     riskDescription IS NULL OR trim(riskDescription)='' OR
+                     riskCause IS NULL OR trim(riskCause)='' OR
+                     riskEvent IS NULL OR trim(riskEvent)='' OR
+                     riskImpact IS NULL OR trim(riskImpact)='' OR
+                     riskCategory IS NULL OR trim(riskCategory)='' OR
+                     riskOwner IS NULL OR trim(riskOwner)=''
+                   ) THEN 1 ELSE 0 END) AS incompleteNewRisk,
+                   SUM(CASE WHEN
+                     controlName IS NULL OR trim(controlName)='' OR
+                     controlDescription IS NULL OR trim(controlDescription)='' OR
+                     controlObjective IS NULL OR trim(controlObjective)='' OR
+                     controlOwner IS NULL OR trim(controlOwner)=''
+                   THEN 1 ELSE 0 END) AS incompleteControl
+                 FROM q"""
+          )
+          PY
