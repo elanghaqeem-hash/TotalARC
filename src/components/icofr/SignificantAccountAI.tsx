@@ -1,5 +1,7 @@
 'use client';
 
+import { PdfCompressControl } from '@/components/documents/PdfCompressControl';
+
 import { preparePdfText } from '@/lib/pdf-ocr-client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -107,6 +109,7 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
   const [active, setActive] = useState<Analysis | null>(null);
   const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [compressing, setCompressing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState('');
@@ -187,7 +190,7 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
   const hasUsableAnalysis = analyses.some(item => item.status !== 'REJECTED');
 
   const analyze = async () => {
-    if (!file || !scope || analyzing) return;
+    if (!file || !scope || analyzing || compressing) return;
     if (file.size > MAX_BYTES) {
       setError('Ukuran dokumen melebihi batas 10 MB.');
       return;
@@ -433,7 +436,8 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                 </div>
               </div>
             )}
-            {file && /\.pdf$/i.test(file.name) && (
+            <PdfCompressControl file={file} disabled={analyzing} onChange={setFile} onBusyChange={setCompressing} />
+        {file && /\.pdf$/i.test(file.name) && (
               <div className="my-2 text-xs text-slate-600">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={forceOcr} disabled={analyzing} onChange={event => setForceOcr(event.target.checked)} />
@@ -464,13 +468,14 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
               <input
                 ref={fileInputRef}
                 type="file"
+                  disabled={compressing}
                 className="hidden"
                 accept=".pdf,.xlsx,.docx,.txt,.jpg,.jpeg,.png"
                 onChange={event => setFile(event.target.files?.[0] || null)}
               />
               <button
                 type="button"
-                disabled={!file || analyzing}
+                disabled={!file || analyzing || compressing}
                 onClick={() => void analyze()}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-5 text-xs font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
