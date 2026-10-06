@@ -3,11 +3,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
+  Cloud,
   Cpu,
   KeyRound,
   RefreshCw,
   Save,
+  Route,
   ShieldCheck,
   Sparkles,
   TestTube2,
@@ -34,6 +38,35 @@ const providerTone: Record<ProviderName, string> = {
   gemini: 'border-sky-200 bg-sky-50/40',
   groq: 'border-violet-200 bg-violet-50/40',
   openrouter: 'border-emerald-200 bg-emerald-50/40'
+};
+
+const providerVisual: Record<
+  ProviderName,
+  {
+    Icon: React.ComponentType<{ className?: string }>;
+    iconClassName: string;
+  }
+> = {
+  openai: {
+    Icon: Sparkles,
+    iconClassName: 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+  },
+  cloudflare: {
+    Icon: Cloud,
+    iconClassName: 'bg-orange-50 text-orange-500 ring-orange-100'
+  },
+  gemini: {
+    Icon: Sparkles,
+    iconClassName: 'bg-sky-50 text-sky-600 ring-sky-100'
+  },
+  groq: {
+    Icon: Cpu,
+    iconClassName: 'bg-violet-50 text-violet-600 ring-violet-100'
+  },
+  openrouter: {
+    Icon: Route,
+    iconClassName: 'bg-slate-100 text-slate-700 ring-slate-200'
+  }
 };
 
 export default function AiSettingsPage() {
@@ -178,21 +211,137 @@ export default function AiSettingsPage() {
 
   return (
     <div className="space-y-5">
-      {data && <section id="urutan-provider" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-slate-950">Urutan Penggunaan AI</h2>
-        <p className="mt-1 text-sm text-slate-600">Provider paling atas digunakan terlebih dahulu. Jika gagal atau tidak tersedia, sistem mencoba provider berikutnya yang aktif, memiliki akses fitur, dan diizinkan untuk data tersebut. Urutan berlaku pada institusi yang dipilih.</p>
-        <ol className="my-4 space-y-2">
-          {providerOrder.map((provider, index) => <li key={provider} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 p-3">
-            <span className="font-semibold">{index + 1}. {data.providers.find((item: any) => item.provider === provider)?.label || provider}</span>
-            <div className="flex gap-2">
-              <button type="button" disabled={index === 0 || !!busyProvider} onClick={() => moveProvider(index, -1)} aria-label={'Naikkan ' + provider} className="rounded-lg border px-3 py-1 disabled:opacity-40">↑ Naik</button>
-              <button type="button" disabled={index === providerOrder.length - 1 || !!busyProvider} onClick={() => moveProvider(index, 1)} aria-label={'Turunkan ' + provider} className="rounded-lg border px-3 py-1 disabled:opacity-40">↓ Turun</button>
+      {data && (
+        <section
+          id="urutan-provider"
+          className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50/70 shadow-sm"
+        >
+          <div className="border-b border-slate-200 bg-white px-4 py-5 sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="max-w-3xl">
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-brand-600">
+                  <Cpu className="h-4 w-4" />
+                  Routing AI Total ARC
+                </div>
+                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                  Urutan Penggunaan AI
+                </h2>
+                <p className="mt-2 text-xs leading-5 text-slate-500 sm:text-sm">
+                  Provider pada posisi paling atas menjadi pilihan utama. Jika tidak tersedia,
+                  Total ARC otomatis melanjutkan ke provider aktif berikutnya sesuai izin fitur
+                  dan klasifikasi data.
+                </p>
+              </div>
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Fallback otomatis aktif
+              </div>
             </div>
-          </li>)}
-        </ol>
-        <button type="button" onClick={saveOrder} disabled={!!busyProvider} className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{busyProvider === 'order' ? 'Menyimpan…' : 'Simpan Urutan AI'}</button>
-        <p className="mt-2 text-xs text-slate-500">Penyimpanan urutan tidak mengaktifkan provider atau mengubah API key. Izin data sensitif tetap mengikuti pengaturan tiap provider.</p>
-      </section>}
+          </div>
+
+          <ol className="space-y-3 p-3 sm:p-5">
+            {providerOrder.map((provider, index) => {
+              const item = data.providers.find((candidate: any) => candidate.provider === provider);
+              const visual = providerVisual[provider];
+              const ProviderIcon = visual.Icon;
+              const isFirst = index === 0;
+              const isLast = index === providerOrder.length - 1;
+
+              return (
+                <li
+                  key={provider}
+                  className="group grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:shadow-sm sm:grid-cols-[auto_auto_minmax(0,1fr)_auto] sm:gap-4 sm:p-4"
+                >
+                  <div
+                    className={
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-black ring-1 sm:h-11 sm:w-11 ' +
+                      (isFirst
+                        ? 'bg-brand-50 text-brand-700 ring-brand-100'
+                        : 'bg-slate-50 text-slate-700 ring-slate-200')
+                    }
+                    aria-label={'Prioritas ' + (index + 1)}
+                  >
+                    {index + 1}
+                  </div>
+
+                  <div
+                    className={
+                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 sm:h-12 sm:w-12 ' +
+                      visual.iconClassName
+                    }
+                    aria-hidden="true"
+                  >
+                    <ProviderIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-black text-slate-950 sm:text-base">
+                        {item?.label || provider}
+                      </span>
+                      {isFirst ? (
+                        <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-brand-700">
+                          Utama
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-slate-500">
+                          Fallback {index}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-slate-400">
+                      {item?.config?.enabled
+                        ? 'Aktif dan siap mengikuti urutan routing.'
+                        : 'Urutan tersimpan; provider hanya digunakan jika diaktifkan.'}
+                    </div>
+                  </div>
+
+                  <div className="col-span-3 grid grid-cols-2 gap-2 sm:col-span-1 sm:flex sm:justify-end">
+                    <button
+                      type="button"
+                      disabled={isFirst || !!busyProvider}
+                      onClick={() => moveProvider(index, -1)}
+                      aria-label={'Naikkan ' + (item?.label || provider)}
+                      title={isFirst ? 'Sudah berada di urutan teratas' : 'Naikkan satu tingkat'}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300 disabled:ring-0 sm:min-w-[104px]"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                      Naik
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLast || !!busyProvider}
+                      onClick={() => moveProvider(index, 1)}
+                      aria-label={'Turunkan ' + (item?.label || provider)}
+                      title={isLast ? 'Sudah berada di urutan terbawah' : 'Turunkan satu tingkat'}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-200 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300 disabled:ring-0 sm:min-w-[104px]"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                      Turun
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <p className="max-w-3xl text-[10px] leading-4 text-slate-500">
+              Perubahan urutan tidak mengaktifkan provider dan tidak mengubah API key. Kebijakan
+              data sensitif tetap mengikuti konfigurasi masing-masing provider.
+            </p>
+            <button
+              type="button"
+              onClick={saveOrder}
+              disabled={!!busyProvider}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 text-xs font-black text-white shadow-sm transition hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {busyProvider === 'order' ? 'Menyimpan…' : 'Simpan Urutan AI'}
+            </button>
+          </div>
+        </section>
+      )}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-4xl">
