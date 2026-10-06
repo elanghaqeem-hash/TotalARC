@@ -184,7 +184,7 @@ async function database() {
 
 async function ensureSchema() {
   const db = await database();
-  await db.exec(`
+  const schema = `
     CREATE TABLE IF NOT EXISTS AIProviderAdminConfig (
       id TEXT PRIMARY KEY NOT NULL,
       institutionId TEXT NOT NULL,
@@ -209,11 +209,21 @@ async function ensureSchema() {
       ON AIProviderAdminConfig(institutionId, provider);
     CREATE INDEX IF NOT EXISTS idx_ai_provider_admin_priority
       ON AIProviderAdminConfig(institutionId, enabled, priority);
-  `);
+  `;
+  for (const statement of schema.split(';').map(value => value.trim()).filter(Boolean)) {
+    await db.prepare(statement).run();
+  }
   return db;
 }
 
 function masterSecret() {
+  try {
+    const env = getCloudflareContext().env as unknown as Record<string, unknown>;
+    const secret = env.AI_CONFIG_MASTER_KEY || env.AUTH_TOKEN_SECRET;
+    if (typeof secret === 'string' && secret) return secret;
+  } catch {
+    // Local Node runtime uses environment variables.
+  }
   return process.env.AI_CONFIG_MASTER_KEY || process.env.AUTH_TOKEN_SECRET || '';
 }
 

@@ -179,7 +179,7 @@ export default function AiSettingsPage() {
           ['Provider Aktif', configuredCount, Cpu],
           ['Koneksi Sehat', healthyCount, CheckCircle2],
           ['Fitur AI', data?.features?.length || 0, Sparkles],
-          ['Vault API Key', data?.vaultReady ? 'Siap' : 'Belum Siap', ShieldCheck]
+          ['Vault API Key', data ? (data.vaultReady ? 'Siap' : 'Belum Siap') : 'Belum terverifikasi', ShieldCheck]
         ].map(([label, value, Icon]: any) => (
           <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2">
@@ -191,7 +191,7 @@ export default function AiSettingsPage() {
         ))}
       </section>
 
-      {!data?.vaultReady && !loading && (
+      {data && !data.vaultReady && !loading && (
         <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
