@@ -4,6 +4,7 @@ import type { AiFeature, AiLevel, AiProvider, AiSensitivity } from './types';
 
 type D1DatabaseLike = {
   exec: (sql: string) => Promise<unknown>;
+  batch: (statements: unknown[]) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -581,4 +582,23 @@ export function environmentProviderConfigured(provider: AiProvider) {
   if (provider === 'groq') return Boolean(process.env.GROQ_API_KEY);
   if (provider === 'openrouter') return Boolean(process.env.OPENROUTER_API_KEY);
   return false;
+}
+
+
+export async function saveAiProviderOrder(institutionId: string, order: AiProvider[], actor: string) {
+  const allowed: AiProvider[] = ['openai', 'cloudflare', 'gemini', 'groq', 'openrouter'];
+  if (order.length !== allowed.length || new Set(order).size !== allowed.length ||
+      order.some(provider => !allowed.includes(provider))) throw new Error('AI_PROVIDER_ORDER_INVALID');
+  const db = await ensureSchema();
+  const now = new Date().toISOString();
+  await db.batch(order.map((provider, index) => db.prepare(`
+    INSERT INTO AIProviderAdminConfig (
+      id,institutionId,provider,enabled,model,aiLevel,priority,allowSensitive,featuresJson,
+      createdBy,updatedBy,createdAt,updatedAt
+    ) VALUES (?,?,?,0,?,'STANDARD',?,0,'[]',?,?,?,?)
+    ON CONFLICT(institutionId,provider) DO UPDATE SET
+      priority=excluded.priority,updatedBy=excluded.updatedBy,updatedAt=excluded.updatedAt
+  `).bind(crypto.randomUUID(), institutionId, provider, AI_PROVIDER_DEFAULTS[provider].model,
+    index + 1, actor, actor, now, now)));
+  return { order };
 }

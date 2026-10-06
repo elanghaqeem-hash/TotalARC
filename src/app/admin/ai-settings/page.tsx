@@ -39,6 +39,7 @@ const providerTone: Record<ProviderName, string> = {
 export default function AiSettingsPage() {
   const [data, setData] = useState<any>(null);
   const [forms, setForms] = useState<Record<string, ProviderForm>>({});
+  const [providerOrder, setProviderOrder] = useState<ProviderName[]>(['openai', 'cloudflare', 'gemini', 'groq', 'openrouter']);
   const [loading, setLoading] = useState(true);
   const [busyProvider, setBusyProvider] = useState('');
   const [error, setError] = useState('');
@@ -55,6 +56,7 @@ export default function AiSettingsPage() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || 'Konfigurasi AI tidak tersedia.');
       setData(payload);
+      setProviderOrder(payload.providerOrder || []);
 
       const next: Record<string, ProviderForm> = {};
       for (const item of payload.providers || []) {
@@ -133,6 +135,35 @@ export default function AiSettingsPage() {
     }
   };
 
+  const moveProvider = (index: number, direction: number) => {
+    setProviderOrder(current => {
+      const next = [...current];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  const saveOrder = async () => {
+    setBusyProvider('order');
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch('/api/admin/ai-settings', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'REORDER', order: providerOrder })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Urutan AI gagal disimpan.');
+      setMessage(payload.message);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Urutan AI gagal disimpan.');
+    } finally { setBusyProvider(''); }
+  };
+
   const configuredCount = useMemo(
     () => (data?.providers || []).filter((item: any) => item.config?.enabled).length,
     [data]
@@ -147,6 +178,21 @@ export default function AiSettingsPage() {
 
   return (
     <div className="space-y-5">
+      {data && <section id="urutan-provider" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-950">Urutan Penggunaan AI</h2>
+        <p className="mt-1 text-sm text-slate-600">Provider paling atas digunakan terlebih dahulu. Jika gagal atau tidak tersedia, sistem mencoba provider berikutnya yang aktif, memiliki akses fitur, dan diizinkan untuk data tersebut. Urutan berlaku pada institusi yang dipilih.</p>
+        <ol className="my-4 space-y-2">
+          {providerOrder.map((provider, index) => <li key={provider} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 p-3">
+            <span className="font-semibold">{index + 1}. {data.providers.find((item: any) => item.provider === provider)?.label || provider}</span>
+            <div className="flex gap-2">
+              <button type="button" disabled={index === 0 || !!busyProvider} onClick={() => moveProvider(index, -1)} aria-label={'Naikkan ' + provider} className="rounded-lg border px-3 py-1 disabled:opacity-40">↑ Naik</button>
+              <button type="button" disabled={index === providerOrder.length - 1 || !!busyProvider} onClick={() => moveProvider(index, 1)} aria-label={'Turunkan ' + provider} className="rounded-lg border px-3 py-1 disabled:opacity-40">↓ Turun</button>
+            </div>
+          </li>)}
+        </ol>
+        <button type="button" onClick={saveOrder} disabled={!!busyProvider} className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{busyProvider === 'order' ? 'Menyimpan…' : 'Simpan Urutan AI'}</button>
+        <p className="mt-2 text-xs text-slate-500">Penyimpanan urutan tidak mengaktifkan provider atau mengubah API key. Izin data sensitif tetap mengikuti pengaturan tiap provider.</p>
+      </section>}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-4xl">
