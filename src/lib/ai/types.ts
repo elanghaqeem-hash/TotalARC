@@ -1,4 +1,4 @@
-export type AiProvider = 'cloudflare' | 'gemini' | 'groq' | 'openrouter';
+export type AiProvider = 'cloudflare' | 'openai' | 'gemini' | 'groq' | 'openrouter';
 
 export type AiLevel = 'FAST' | 'STANDARD' | 'ADVANCED';
 

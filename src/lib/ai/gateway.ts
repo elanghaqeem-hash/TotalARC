@@ -1,3 +1,4 @@
+import { openAiRequestBody, parseOpenAiResponse } from './openai';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import type {
   AiGatewayRequest,
@@ -43,6 +44,10 @@ class ProviderError extends Error {
 }
 
 const PROVIDER_CONFIG: Record<AiProvider, ProviderConfig> = {
+  openai: {
+    model: process.env.OPENAI_MODEL || 'gpt-4.1',
+    role: 'Analisis GRC dan ICOFR melalui OpenAI API'
+  },
   cloudflare: {
     model: process.env.CLOUDFLARE_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8',
     role: 'Private/sensitive inference and low-cost internal processing'
@@ -103,6 +108,7 @@ function getWorkersAiBinding(): WorkersAiBinding | null {
 
 function configured(provider: AiProvider): boolean {
   if (provider === 'cloudflare') return Boolean(getWorkersAiBinding());
+  if (provider === 'openai') return Boolean(process.env.OPENAI_API_KEY);
   if (provider === 'gemini') return Boolean(process.env.GEMINI_API_KEY);
   if (provider === 'groq') return Boolean(process.env.GROQ_API_KEY);
   if (provider === 'openrouter') return Boolean(process.env.OPENROUTER_API_KEY);
@@ -115,7 +121,9 @@ function defaultRuntime(provider: AiProvider): RuntimeProvider {
     model: PROVIDER_CONFIG[provider].model,
     role: PROVIDER_CONFIG[provider].role,
     apiKey:
-      provider === 'gemini'
+      provider === 'openai'
+        ? process.env.OPENAI_API_KEY || null
+        : provider === 'gemini'
         ? process.env.GEMINI_API_KEY || null
         : provider === 'groq'
           ? process.env.GROQ_API_KEY || null
@@ -192,12 +200,12 @@ function providerOrder(task: AiTask, sensitivity: AiSensitivity): AiProvider[] {
 
   if (sensitive) {
     return EXTERNAL_SENSITIVE_FALLBACK
-      ? ['cloudflare', 'gemini', 'groq', 'openrouter']
+      ? ['cloudflare', 'openai', 'gemini', 'groq', 'openrouter']
       : ['cloudflare'];
   }
 
   if (task === 'chat') {
-    return ['groq', 'gemini', 'cloudflare', 'openrouter'];
+    return ['openai', 'groq', 'gemini', 'cloudflare', 'openrouter'];
   }
 
   if (
@@ -206,10 +214,10 @@ function providerOrder(task: AiTask, sensitivity: AiSensitivity): AiProvider[] {
     task === 'summarization' ||
     task === 'evidence_summary'
   ) {
-    return ['cloudflare', 'groq', 'gemini', 'openrouter'];
+    return ['cloudflare', 'groq', 'openai', 'gemini', 'openrouter'];
   }
 
-  return ['gemini', 'cloudflare', 'groq', 'openrouter'];
+  return ['openai', 'gemini', 'cloudflare', 'groq', 'openrouter'];
 }
 
 function truncateInput(value: string): string {
@@ -551,6 +559,14 @@ async function callProvider(
   try {
     if (provider === 'cloudflare') {
       return await callCloudflare(runtime, systemPrompt, prompt, temperature, maxOutputTokens);
+    }
+    if (provider === 'openai') {
+      const data = await fetchJson('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + runtime.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify(openAiRequestBody({ model: runtime.model, systemPrompt, prompt, maxOutputTokens, requireJson }))
+      });
+      return parseOpenAiResponse(data);
     }
     if (provider === 'gemini') {
       return await callGemini(runtime, systemPrompt, prompt, temperature, maxOutputTokens, requireJson);
