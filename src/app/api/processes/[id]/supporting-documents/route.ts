@@ -23,7 +23,7 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const AI_SOURCE_CHAR_LIMIT = 36000;
 const ALLOWED_EXTENSIONS = new Set(['docx', 'pdf', 'txt', 'pptx', 'jpg', 'jpeg', 'png', 'xlsx']);
 
@@ -282,7 +282,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
     }
     if (file.size <= 0) return noStore({ error: 'The supporting document is empty.' }, { status: 400 });
     if (file.size > MAX_FILE_BYTES) {
-      return noStore({ error: 'Supporting document exceeds the current 10 MB limit.' }, { status: 413 });
+      return noStore({ error: 'Supporting document exceeds the current 20 MB limit.' }, { status: 413 });
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -465,7 +465,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
     const known: Record<string, [string, number]> = {
       PROCESS_NOT_FOUND: ['Business process was not found in the active institution.', 404],
       FILE_TYPE_NOT_ALLOWED: ['This supporting document type is not allowed by the Evidence Repository.', 415],
-      FILE_TOO_LARGE: ['Supporting document exceeds the current 10 MB limit.', 413],
+      FILE_TOO_LARGE: ['Supporting document exceeds the current 20 MB limit.', 413],
       DOCUMENT_CONVERTER_UNAVAILABLE: ['Document conversion is temporarily unavailable.', 503],
       DOCUMENT_CONVERSION_FAILED: ['The document could not be converted to readable text.', 422],
       DOCUMENT_TEXT_EMPTY: ['No readable text or process information could be extracted from this file.', 422],
