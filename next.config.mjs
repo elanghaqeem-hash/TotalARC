@@ -1,3 +1,4 @@
+import './scripts/prepare-ocr-assets.cjs';
 import path from 'node:path';
 if (process.env.NODE_ENV === 'development') {
   const { initOpenNextCloudflareForDev } = await import('@opennextjs/cloudflare');
@@ -13,7 +14,7 @@ const contentSecurityPolicy = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",

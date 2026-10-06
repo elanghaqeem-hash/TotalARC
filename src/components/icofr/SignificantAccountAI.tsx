@@ -1,5 +1,7 @@
 'use client';
 
+import { preparePdfText } from '@/lib/pdf-ocr-client';
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -107,6 +109,8 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState('');
+  const [forceOcr, setForceOcr] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<'INITIAL' | 'COMPLEMENT' | 'REPLACE'>('INITIAL');
   const [baseAnalysisId, setBaseAnalysisId] = useState('');
   const [applying, setApplying] = useState(false);
@@ -195,6 +199,9 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
     try {
       const form = new FormData();
       form.append('file', file);
+      const pdfText = await preparePdfText(file, forceOcr, setOcrProgress);
+      if (pdfText) form.append('pdfText', JSON.stringify(pdfText));
+      setOcrProgress('Dokumen dibaca. Analisis AI sedang berlangsung…');
       form.append('analysisMode', hasUsableAnalysis ? analysisMode : 'INITIAL');
       if (hasUsableAnalysis && analysisMode === 'COMPLEMENT' && baseAnalysisId) {
         form.append('baseAnalysisId', baseAnalysisId);
@@ -219,6 +226,7 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
       setError(err instanceof Error ? err.message : 'Analisis AI belum dapat diselesaikan.');
     } finally {
       setAnalyzing(false);
+      setOcrProgress('');
     }
   };
 
@@ -425,6 +433,16 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                 </div>
               </div>
             )}
+            {file && /\.pdf$/i.test(file.name) && (
+              <div className="my-2 text-xs text-slate-600">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={forceOcr} disabled={analyzing} onChange={event => setForceOcr(event.target.checked)} />
+                  PDF hasil scan / campuran: gunakan OCR pada seluruh halaman
+                </label>
+                <p>OCR otomatis untuk halaman tanpa teks. Bahasa Indonesia dan Inggris didukung. Periksa kembali angka dan hasil bacanya.</p>
+              </div>
+            )}
+            {analyzing && <p role="status" aria-live="polite" className="my-2 text-xs text-sky-700">{ocrProgress}</p>}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <button
                 type="button"

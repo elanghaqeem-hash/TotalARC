@@ -96,6 +96,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/brand/') ||
+    pathname.startsWith('/ocr/') ||
     pathname === '/favicon.ico' ||
     pathname === '/robots.txt'
   ) {
