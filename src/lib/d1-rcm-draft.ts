@@ -719,7 +719,9 @@ export async function updateBpmDerivedRcmDraft(input: {
     if (value !== undefined) payload.control[field] = value;
   }
 
-  const requiredRiskFields = riskEditable ? ['name', 'cause', 'event', 'impact', 'category', 'ownerName'] : [];
+  const requiredRiskFields = riskEditable
+    ? ['name', 'description', 'cause', 'event', 'impact', 'category', 'ownerName']
+    : [];
   const requiredControlFields = [
     'name',
     'description',
@@ -829,8 +831,11 @@ export async function reviewBpmDerivedRcmDraft(input: {
 
   const process = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [payload?.process?.id]
+    `SELECT * FROM BusinessProcess
+      WHERE id = ?
+        ${tenantId ? 'AND institutionId = ?' : ''}
+      LIMIT 1`,
+    tenantId ? [payload?.process?.id, tenantId] : [payload?.process?.id]
   );
   if (!process) throw new Error('PROCESS_NOT_FOUND');
 
@@ -839,12 +844,71 @@ export async function reviewBpmDerivedRcmDraft(input: {
   const activityId = payload?.activity?.id || null;
   const now = nowIso();
 
+  const cleanRequiredText = (value: unknown) =>
+    typeof value === 'string' ? value.trim() : '';
+
+  const riskIsExisting = Boolean(cleanRequiredText(risk.existingRiskId));
+  if (!riskIsExisting) {
+    const riskName = cleanRequiredText(risk.name);
+    const riskEvent = cleanRequiredText(risk.event);
+    const normalizedDescription =
+      cleanRequiredText(risk.description) || riskEvent || riskName;
+
+    const requiredNewRiskValues = [
+      cleanRequiredText(risk.riskId),
+      riskName,
+      normalizedDescription,
+      cleanRequiredText(risk.cause),
+      riskEvent,
+      cleanRequiredText(risk.impact),
+      cleanRequiredText(risk.category),
+      cleanRequiredText(risk.ownerName)
+    ];
+
+    if (requiredNewRiskValues.some(value => !value)) {
+      throw new Error('DRAFT_REQUIRED_FIELD_MISSING');
+    }
+
+    // Older BPM-derived drafts may contain a null/blank risk description even
+    // though RiskMaster.description is NOT NULL. Use the already-reviewed risk
+    // event (or, as a final deterministic fallback, the risk name) so Validate
+    // & Use does not fail on a hidden nullable draft field. Persist the
+    // normalized payload below to preserve traceability.
+    if (!cleanRequiredText(risk.description)) {
+      risk.description = normalizedDescription;
+      payload.risk = risk;
+      payload.promotionNormalization = {
+        ...(payload.promotionNormalization || {}),
+        riskDescriptionFilledFrom: riskEvent ? 'risk.event' : 'risk.name',
+        normalizedAt: now
+      };
+    }
+  }
+
+  const requiredControlValues = [
+    cleanRequiredText(control.controlId),
+    cleanRequiredText(control.name),
+    cleanRequiredText(control.description),
+    cleanRequiredText(control.objective),
+    cleanRequiredText(control.controlOwner),
+    cleanRequiredText(control.type),
+    cleanRequiredText(control.nature),
+    cleanRequiredText(control.method),
+    cleanRequiredText(control.frequency)
+  ];
+  if (requiredControlValues.some(value => !value)) {
+    throw new Error('DRAFT_REQUIRED_FIELD_MISSING');
+  }
+
   let riskInternalId = risk.existingRiskId ? String(risk.existingRiskId) : '';
   if (riskInternalId) {
     const existingRisk = await first<Record<string, unknown>>(
       db,
-      'SELECT * FROM RiskMaster WHERE id = ? LIMIT 1',
-      [riskInternalId]
+      `SELECT * FROM RiskMaster
+        WHERE id = ?
+          ${tenantId ? 'AND institutionId = ?' : ''}
+        LIMIT 1`,
+      tenantId ? [riskInternalId, tenantId] : [riskInternalId]
     );
     if (!existingRisk || String(existingRisk.processId) !== String(process.id)) {
       throw new Error('RISK_PROCESS_MISMATCH');
@@ -998,12 +1062,13 @@ export async function reviewBpmDerivedRcmDraft(input: {
   await run(
     db,
     `UPDATE RCMDraftReference
-        SET sourceStatus = 'VALIDATED_PROMOTED',
+        SET payloadJson = ?,
+            sourceStatus = 'VALIDATED_PROMOTED',
             validationRequired = 0,
             operationalControlId = ?,
             updatedAt = ?
       WHERE id = ?`,
-    [controlInternalId, now, draft.id]
+    [JSON.stringify(payload), controlInternalId, now, draft.id]
   );
 
   await writeAudit(db, {
