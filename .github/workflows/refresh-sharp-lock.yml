@@ -28,7 +28,7 @@ jobs:
 
       - name: Refresh vulnerable sharp resolution
         run: |
-          npm update sharp --package-lock-only --ignore-scripts
+          npm audit fix --package-lock-only --omit=dev --ignore-scripts
           node -e "const p=require('./package-lock.json'); console.log('resolved sharp:',p.packages['node_modules/sharp']?.version)"
           npm audit --omit=dev --audit-level=moderate
 
