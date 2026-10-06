@@ -63,6 +63,9 @@ jobs:
       - name: Verify PDF OCR input validation
         run: npm run verify:pdf-ocr
 
+      - name: Verify process owner selection and isolation
+        run: node scripts/verify-process-owners.cjs
+
       - name: Verify TypeScript
         run: npm run typecheck
 

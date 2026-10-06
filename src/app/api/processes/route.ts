@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createBusinessProcess, deleteBusinessProcess, getBusinessProcessDetail, listBusinessProcesses, listBusinessProcessSummaries, listProcessLookups, reviewSourceBackedBusinessProcessDraft, updateBusinessProcess } from '@/lib/d1-core';
+import { listProcessOwnerUnits, createBusinessProcess, deleteBusinessProcess, getBusinessProcessDetail, listBusinessProcesses, listBusinessProcessSummaries, listProcessLookups, reviewSourceBackedBusinessProcessDraft, updateBusinessProcess } from '@/lib/d1-core';
 import { resolveInstitutionAccess } from '@/lib/institution-context';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +23,9 @@ export async function GET(request: Request) {
     }
     const url = new URL(request.url);
     const view = url.searchParams.get('view');
+    if (view === 'owners') {
+      return NextResponse.json({ units: await listProcessOwnerUnits(profile.institutionId) }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     if (view === 'lookup') {
       const processes = await listProcessLookups(profile.institutionId);
       return NextResponse.json({
@@ -107,6 +110,9 @@ export async function POST(request: Request) {
     if (code === 'INSTITUTION_REQUIRED') {
       return NextResponse.json({ error: 'Register an institution before creating processes.' }, { status: 409 });
     }
+    if (code === 'PROCESS_OWNERS_INVALID' || code === 'PROCESS_OWNER_UNIT_NOT_FOUND') {
+      return NextResponse.json({ error: 'Pilih unit pemilik yang aktif dari struktur organisasi institusi ini (maksimal 99 unit).' }, { status: 400 });
+    }
     if (code === 'CATEGORY_NOT_FOUND') {
       return NextResponse.json({ error: 'Selected process category does not exist.' }, { status: 400 });
     }
@@ -174,6 +180,9 @@ export async function PATCH(request: Request) {
     const code = error instanceof Error ? error.message : '';
     if (code === 'PROCESS_NOT_FOUND') {
       return NextResponse.json({ error: 'Business process was not found.' }, { status: 404 });
+    }
+    if (code === 'PROCESS_OWNERS_INVALID' || code === 'PROCESS_OWNER_UNIT_NOT_FOUND') {
+      return NextResponse.json({ error: 'Pilih unit pemilik yang aktif dari struktur organisasi institusi ini (maksimal 99 unit).' }, { status: 400 });
     }
     if (code === 'CATEGORY_NOT_FOUND') {
       return NextResponse.json({ error: 'Selected process category does not exist.' }, { status: 400 });
