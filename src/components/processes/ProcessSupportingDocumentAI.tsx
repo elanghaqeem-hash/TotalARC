@@ -1,5 +1,7 @@
 'use client';
 
+import { PdfCompressControl } from '@/components/documents/PdfCompressControl';
+
 import { preparePdfText } from '@/lib/pdf-ocr-client';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -37,6 +39,7 @@ function statusTone(status: string) {
 
 export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onApplied }: Props) {
   const [file, setFile] = useState<File | null>(null);
+  const [compressing, setCompressing] = useState(false);
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [activeAnalysis, setActiveAnalysis] = useState<any>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -118,7 +121,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
   }, [analyzing]);
 
   const analyze = async () => {
-    if (!file || !processId || analyzing) return;
+    if (!file || !processId || analyzing || compressing) return;
     setError('');
     setMessage('');
 
@@ -341,6 +344,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
       )}
 
       <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-white p-3">
+        <PdfCompressControl file={file} disabled={analyzing} onChange={setFile} onBusyChange={setCompressing} />
         {file && /\.pdf$/i.test(file.name) && (
           <div className="my-2 text-xs text-slate-600">
             <label className="flex items-center gap-2">
@@ -354,6 +358,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         <input
           ref={fileRef}
           type="file"
+                  disabled={compressing}
           accept=".docx,.pdf,.txt,.pptx,.jpg,.jpeg,.png,.xlsx"
           onChange={event => {
             const selected = event.target.files?.[0] || null;
@@ -375,7 +380,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
           <button
             type="button"
             onClick={() => void analyze()}
-            disabled={!file || analyzing}
+            disabled={!file || analyzing || compressing}
             className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-sky-500 px-3 text-[9px] font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
             {analyzing ? (

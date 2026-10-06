@@ -1,5 +1,7 @@
 'use client';
 
+import { PdfCompressControl } from '@/components/documents/PdfCompressControl';
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -151,6 +153,7 @@ export default function EvidenceRepositoryPage() {
     evidenceOwner: ''
   });
   const [file, setFile] = useState<File | null>(null);
+  const [compressing, setCompressing] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -258,6 +261,7 @@ export default function EvidenceRepositoryPage() {
 
   const upload = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (compressing) return;
     if (!file) {
       setError('Pilih file bukti yang valid sebelum mengunggah.');
       return;
@@ -525,6 +529,7 @@ export default function EvidenceRepositoryPage() {
                 <input
                   ref={fileRef}
                   type="file"
+                  disabled={compressing}
                   required
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.json,.docx,.xlsx,.pptx"
                   onChange={e => setFile(e.target.files?.[0] || null)}
@@ -535,6 +540,8 @@ export default function EvidenceRepositoryPage() {
                 </span>
               </label>
             </div>
+
+            <PdfCompressControl file={file} disabled={saving} onChange={setFile} onBusyChange={setCompressing} />
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Tautan assurance opsional saat unggah</div>
@@ -587,7 +594,7 @@ export default function EvidenceRepositoryPage() {
             </div>
 
             <div className="mt-4 flex justify-end">
-              <button disabled={saving || !file} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-xs font-black text-white disabled:opacity-40">
+              <button disabled={saving || compressing || !file} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-xs font-black text-white disabled:opacity-40">
                 <FilePlus2 className="h-4 w-4" /> {saving ? 'Menyimpan…' : uploadForm.documentId ? 'Simpan Versi Baru' : 'Simpan Bukti'}
               </button>
             </div>
