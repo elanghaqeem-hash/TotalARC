@@ -153,7 +153,7 @@ async function runtimeProviders(input: {
         sensitivity: input.sensitivity
       });
 
-      if (routing.managed && routing.providers.length > 0) {
+      if (routing.managed) {
         return routing.providers.map(item => ({
           provider: item.provider,
           model: item.model,
@@ -195,29 +195,10 @@ function applyProviderCooldown(provider: AiProvider, error: unknown) {
   providerCooldownUntil.set(provider, Date.now() + PROVIDER_RATE_LIMIT_COOLDOWN_MS);
 }
 
-function providerOrder(task: AiTask, sensitivity: AiSensitivity): AiProvider[] {
+function providerOrder(_task: AiTask, sensitivity: AiSensitivity): AiProvider[] {
   const sensitive = sensitivity === 'confidential' || sensitivity === 'restricted';
-
-  if (sensitive) {
-    return EXTERNAL_SENSITIVE_FALLBACK
-      ? ['cloudflare', 'openai', 'gemini', 'groq', 'openrouter']
-      : ['cloudflare'];
-  }
-
-  if (task === 'chat') {
-    return ['openai', 'groq', 'gemini', 'cloudflare', 'openrouter'];
-  }
-
-  if (
-    task === 'classification' ||
-    task === 'control_classification' ||
-    task === 'summarization' ||
-    task === 'evidence_summary'
-  ) {
-    return ['cloudflare', 'groq', 'openai', 'gemini', 'openrouter'];
-  }
-
-  return ['openai', 'gemini', 'cloudflare', 'groq', 'openrouter'];
+  if (sensitive && !EXTERNAL_SENSITIVE_FALLBACK) return ['cloudflare'];
+  return ['openai', 'cloudflare', 'gemini', 'groq', 'openrouter'];
 }
 
 function truncateInput(value: string): string {

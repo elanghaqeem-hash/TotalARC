@@ -10,12 +10,13 @@ import {
   environmentProviderConfigured,
   listAiAdminProviderConfigs,
   saveAiAdminProviderConfig,
+  saveAiProviderOrder,
   testAiAdminProviderConfig
 } from '@/lib/ai/admin-config';
 
 export const dynamic = 'force-dynamic';
 
-const PROVIDERS: AiProvider[] = ['cloudflare', 'openai', 'gemini', 'groq', 'openrouter'];
+const PROVIDERS: AiProvider[] = ['openai', 'cloudflare', 'gemini', 'groq', 'openrouter'];
 
 async function requireSystemAdmin(request: Request) {
   const context = await resolveInstitutionAccess(request);
@@ -54,7 +55,8 @@ function errorResponse(error: unknown) {
       400
     ],
     AI_PROVIDER_CONFIG_NOT_FOUND: ['Konfigurasi provider tidak ditemukan.', 404],
-    AI_PROVIDER_INVALID: ['Provider AI tidak valid.', 400]
+    AI_PROVIDER_INVALID: ['Provider AI tidak valid.', 400],
+    AI_PROVIDER_ORDER_INVALID: ['Urutan harus memuat setiap provider tepat satu kali.', 400]
   };
   const [message, status] = messages[code] || ['Konfigurasi AI tidak dapat diproses.', 500];
   if (status >= 500) console.error('AI administration failed:', error);
@@ -94,6 +96,9 @@ export async function GET(request: Request) {
           environmentConfigured: environmentProviderConfigured(provider),
           config: configMap.get(provider) || null
         })),
+        providerOrder: [...PROVIDERS].sort((a, b) =>
+          (configMap.get(a)?.priority ?? (PROVIDERS.indexOf(a) + 1)) -
+          (configMap.get(b)?.priority ?? (PROVIDERS.indexOf(b) + 1))),
         featureAssignments
       },
       { headers: { 'Cache-Control': 'no-store' } }
@@ -110,6 +115,12 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action || 'SAVE').toUpperCase();
+    if (action === 'REORDER') {
+      const order = Array.isArray(body.order) ? body.order as AiProvider[] : [];
+      const result = await saveAiProviderOrder(context.institution!.id, order, context.profile.email);
+      return NextResponse.json({ ...result, message: 'Urutan penggunaan AI berhasil disimpan.' },
+        { headers: { 'Cache-Control': 'no-store' } });
+    }
     const provider = providerValue(body.provider);
     if (!provider) return NextResponse.json({ error: 'Provider AI tidak valid.' }, { status: 400 });
 

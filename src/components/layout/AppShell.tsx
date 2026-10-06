@@ -148,7 +148,7 @@ const navGroups: NavGroup[] = [
       { name: 'Struktur Organisasi', href: '/organization', icon: FolderTree },
       { name: 'Manajemen Pengguna & Peran', href: '/admin/users', icon: Users, badge: 'RBAC' },
       { name: 'Keamanan Autentikasi', href: '/admin/security', icon: LockKeyhole, badge: 'AUTH' },
-      { name: 'Konfigurasi AI & API Key', href: '/admin/ai-settings', icon: Sparkles, badge: 'AI' },
+      { name: 'Urutan AI & API Key', href: '/admin/ai-settings', icon: Sparkles, badge: 'AI' },
       { name: 'Pusat Integrasi Data', href: '/admin/data-hub', icon: Database, badge: 'D1' },
       { name: 'Arsitektur Proses (BPM)', href: '/processes', icon: Layers, badge: 'L0–L5' },
       { name: 'Semesta Risiko & Peta Risiko', href: '/risks', icon: AlertTriangle },
