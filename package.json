@@ -38,7 +38,8 @@
     "prepare:d1-production-config": "node scripts/prepare-production-d1-config.cjs",
     "verify:github-gates": "node scripts/verify-github-gates.js",
     "migrate:d1-to-sqlite": "node scripts/migrate-d1-to-local-sqlite.cjs",
-    "verify:local-sqlite": "node scripts/verify-local-sqlite.cjs"
+    "verify:local-sqlite": "node scripts/verify-local-sqlite.cjs",
+    "verify:pdf-ocr": "node scripts/verify-pdf-ocr.cjs"
   },
   "keywords": [],
   "author": "",
@@ -46,28 +47,33 @@
   "type": "commonjs",
   "dependencies": {
     "@prisma/client": "5.21.1",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/ind": "1.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.47.0",
     "next": "15.5.25",
+    "pdfjs-dist": "6.4.299",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "1.20.6",
     "@types/node": "^26.6.1",
     "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.6.1",
     "postcss": "^8.5.28",
     "prisma": "5.21.1",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.9.3",
-    "@opennextjs/cloudflare": "1.20.6",
-    "wrangler": "4.135.0",
-    "@types/react-dom": "^19.2.3"
+    "wrangler": "4.135.0"
   },
   "overrides": {
     "next": {
       "postcss": "8.5.23"
-    }
+    },
+    "sharp": "0.35.5"
   }
 }

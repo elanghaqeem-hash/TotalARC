@@ -1,5 +1,7 @@
 'use client';
 
+import { preparePdfText } from '@/lib/pdf-ocr-client';
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -39,6 +41,8 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
   const [activeAnalysis, setActiveAnalysis] = useState<any>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState('');
+  const [forceOcr, setForceOcr] = useState(false);
   const [analysisSeconds, setAnalysisSeconds] = useState(0);
   const [documentMode, setDocumentMode] = useState<'INITIAL' | 'COMPLEMENT' | 'REPLACE'>('INITIAL');
   const [baseAnalysisId, setBaseAnalysisId] = useState('');
@@ -127,6 +131,9 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
     try {
       const form = new FormData();
       form.append('file', file);
+      const pdfText = await preparePdfText(file, forceOcr, setOcrProgress);
+      if (pdfText) form.append('pdfText', JSON.stringify(pdfText));
+      setOcrProgress('Dokumen dibaca. Analisis AI sedang berlangsung…');
       form.append('analysisMode', hasUsableAnalysis ? documentMode : 'INITIAL');
       if (hasUsableAnalysis && documentMode === 'COMPLEMENT' && baseAnalysisId) {
         form.append('baseAnalysisId', baseAnalysisId);
@@ -165,6 +172,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
       setError(err instanceof Error ? err.message : 'Upload dan analisis gagal.');
     } finally {
       setAnalyzing(false);
+      setOcrProgress('');
     }
   };
 
@@ -333,6 +341,16 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
       )}
 
       <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-white p-3">
+        {file && /\.pdf$/i.test(file.name) && (
+          <div className="my-2 text-xs text-slate-600">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={forceOcr} disabled={analyzing} onChange={event => setForceOcr(event.target.checked)} />
+              PDF hasil scan / campuran: gunakan OCR pada seluruh halaman
+            </label>
+            <p>OCR otomatis untuk halaman tanpa teks. Bahasa Indonesia dan Inggris didukung. Periksa kembali angka dan hasil bacanya.</p>
+          </div>
+        )}
+        {analyzing && <p role="status" aria-live="polite" className="my-2 text-xs text-sky-700">{ocrProgress}</p>}
         <input
           ref={fileRef}
           type="file"

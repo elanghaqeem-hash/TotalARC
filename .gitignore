@@ -51,3 +51,6 @@ prisma/*.db-journal
 *.db-wal
 *.db-shm
 /.totalarc-data/
+
+# Generated from pinned OCR dependencies during Next configuration
+/public/ocr/
