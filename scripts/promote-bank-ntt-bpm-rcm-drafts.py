@@ -93,6 +93,20 @@ legal_entity_id = str(legal_entity[0]['id']) if legal_entity else None
 existing = rows('SELECT * FROM BusinessProcess WHERE institutionId='+q(institution_id)+' AND processId='+q(bpm['processId'])+' LIMIT 1')
 process_internal_id = str(existing[0]['id']) if existing else hid(institution_id,bpm['processId'],'BUSINESS-PROCESS')
 created_at = str(existing[0].get('createdAt') or now) if existing else now
+operational_before = {
+    'riskCount': int(rows(
+        'SELECT COUNT(*) AS n FROM RiskMaster WHERE institutionId='
+        + q(institution_id)
+        + ' AND processId='
+        + q(process_internal_id)
+    )[0]['n']),
+    'controlCount': int(rows(
+        'SELECT COUNT(*) AS n FROM ControlMaster WHERE institutionId='
+        + q(institution_id)
+        + ' AND processId='
+        + q(process_internal_id)
+    )[0]['n'])
+}
 existing_tags = {}
 if existing and existing[0].get('tags'):
     try: existing_tags = json.loads(str(existing[0]['tags']))
@@ -332,8 +346,14 @@ verification = {
     'objectiveCount': objective_count,
     'rcmDraftTotal': draft_total,
     'pendingRcmDraftTotal': pending_draft,
+    'operationalRiskCountBefore': operational_before['riskCount'],
+    'operationalControlCountBefore': operational_before['controlCount'],
     'operationalRiskCount': risk_count,
     'operationalControlCount': control_count,
+    'operationalPromotionUnchanged': (
+        risk_count == operational_before['riskCount']
+        and control_count == operational_before['controlCount']
+    ),
     'crossTenantProcessCount': cross_tenant,
     'bankKalbarBefore': kalbar_before,
     'bankKalbarAfter': kalbar_after,
@@ -342,7 +362,7 @@ verification = {
 if activity_count != 9: raise RuntimeError('BANK_NTT_ACTIVITY_COUNT_'+str(activity_count))
 if objective_count != 1: raise RuntimeError('BANK_NTT_OBJECTIVE_COUNT_'+str(objective_count))
 if draft_total != 12: raise RuntimeError('BANK_NTT_RCM_DRAFT_COUNT_'+str(draft_total))
-if risk_count != 0 or control_count != 0: raise RuntimeError('BANK_NTT_DRAFTS_PROMOTED_PREMATURELY')
+if not verification['operationalPromotionUnchanged']: raise RuntimeError('BANK_NTT_DRAFT_IMPORT_MUTATED_OPERATIONAL_RCM')
 if cross_tenant != 0: raise RuntimeError('BANK_NTT_PROCESS_CROSS_TENANT_LEAKAGE')
 if not verification['bankKalbarUnchanged']: raise RuntimeError('BANK_KALBAR_CHANGED_DURING_BANK_NTT_DRAFT_IMPORT')
 
