@@ -18,7 +18,7 @@ type Props = {
   onApplied: () => void | Promise<void>;
 };
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = 20 * 1024 * 1024;
 
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -119,7 +119,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
     setMessage('');
 
     if (file.size > MAX_BYTES) {
-      setError('File melebihi batas 10 MB.');
+      setError('File melebihi batas 20 MB.');
       return;
     }
 
@@ -347,7 +347,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
         />
         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-[8px] leading-3.5 text-slate-400">
-            DOCX · PDF · TXT · PPTX · JPG/JPEG · PNG · XLSX · max 10 MB
+            DOCX · PDF · TXT · PPTX · JPG/JPEG · PNG · XLSX · max 20 MB
             {file ? (
               <span className="ml-1 font-bold text-slate-600">
                 — {file.name} ({formatBytes(file.size)})
