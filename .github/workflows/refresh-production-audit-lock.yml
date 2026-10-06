@@ -1,0 +1,42 @@
+name: Refresh production audit lock
+
+on:
+  push:
+    branches:
+      - fix/rcm-validate-use-20261006
+    paths:
+      - '.github/workflows/refresh-production-audit-lock.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/rcm-validate-use-20261006
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Refresh lockfile security fixes
+        run: npm audit fix --package-lock-only
+      - name: Verify production audit gate
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Commit refreshed lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: refresh audited production dependency lock"
+          git push origin HEAD:fix/rcm-validate-use-20261006
