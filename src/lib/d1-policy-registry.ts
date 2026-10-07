@@ -743,6 +743,24 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     }
   }
 
+  const sourceTargetCache = new Map<string, boolean>();
+  const sourceTargetExists = async (type: string, id: string) => {
+    const normalizedType = type.toUpperCase();
+    if (!['PROCESS', 'RISK', 'CONTROL'].includes(normalizedType) || !id) return false;
+    const cacheKey = normalizedType + ':' + id;
+    if (sourceTargetCache.has(cacheKey)) return Boolean(sourceTargetCache.get(cacheKey));
+
+    const sql =
+      normalizedType === 'PROCESS'
+        ? 'SELECT id FROM BusinessProcess WHERE id=? AND institutionId=? LIMIT 1'
+        : normalizedType === 'RISK'
+          ? 'SELECT id FROM RiskMaster WHERE id=? AND institutionId=? LIMIT 1'
+          : 'SELECT id FROM ControlMaster WHERE id=? AND institutionId=? LIMIT 1';
+    const exists = Boolean(await first(db, sql, [id, institutionId]));
+    sourceTargetCache.set(cacheKey, exists);
+    return exists;
+  };
+
   const sourceRows = await all<Record<string, unknown>>(
     db,
     `SELECT id,metadataJson
@@ -755,15 +773,19 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     const policies = policyBySource.get(String(source.id || '')) || [];
     if (!policies.length) continue;
     const metadata = safeJson(source.metadataJson);
+    const metadataEntityType = String(metadata.entityType || '').toUpperCase();
     const directTargets = [
       ['PROCESS', metadata.processId || metadata.businessProcessId],
       ['RISK', metadata.riskId],
       ['CONTROL', metadata.controlId],
-      [String(metadata.entityType || '').toUpperCase(), metadata.entityId]
+      [
+        ['PROCESS', 'RISK', 'CONTROL'].includes(metadataEntityType) ? metadataEntityType : '',
+        metadata.entityId
+      ]
     ] as Array<[string, unknown]>;
     for (const [type, id] of directTargets) {
       const targetId = clean(id);
-      if (!type || !targetId) continue;
+      if (!type || !targetId || !(await sourceTargetExists(type, targetId))) continue;
       for (const policyId of policies) {
         generated += await insertLink(
           db,
@@ -1084,6 +1106,32 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
           db, institutionId, policyId, 'RCM', controlId + ':' + riskId, 'GOVERNS_RCM', controlId
         ) ? 1 : 0;
       }
+    }
+  }
+
+  for (const policyId of Array.from(policyIds)) {
+    const processSet = processIdsByPolicy.get(policyId) || new Set<string>();
+    const riskSet = riskIdsByPolicy.get(policyId) || new Set<string>();
+    const controlSet = controlIdsByPolicy.get(policyId) || new Set<string>();
+
+    for (const link of evidenceLinks) {
+      const targetType = normalizeEvidenceTargetType(link.entityType);
+      const targetId = String(link.entityId || '');
+      const isRelated =
+        (targetType === 'PROCESS' && processSet.has(targetId)) ||
+        (targetType === 'RISK' && riskSet.has(targetId)) ||
+        (targetType === 'CONTROL' && controlSet.has(targetId));
+      if (!isRelated) continue;
+
+      generated += await insertLink(
+        db,
+        institutionId,
+        policyId,
+        'EVIDENCE',
+        String(link.documentId || ''),
+        'SUPPORTING_EVIDENCE',
+        targetId
+      ) ? 1 : 0;
     }
   }
 
