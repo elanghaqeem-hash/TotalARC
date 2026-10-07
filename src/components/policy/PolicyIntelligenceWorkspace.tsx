@@ -721,7 +721,7 @@ export function PolicyIntelligenceWorkspace({
                             <p className="mt-2 text-sm leading-6 text-violet-950">
                               {String(analysis.summary || 'Screening selesai.')}
                             </p>
-                            {analysis.recommendedAction && (
+                            {Boolean(analysis.recommendedAction) && (
                               <div className="mt-2 text-xs leading-5 text-violet-800">
                                 <span className="font-black">Rekomendasi:</span> {String(analysis.recommendedAction)}
                               </div>
