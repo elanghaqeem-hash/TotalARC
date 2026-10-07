@@ -1386,7 +1386,7 @@ export async function getPolicyRegistrySummary(institutionId: string) {
 
   const [
     registered,
-    unmappedRow,
+    unmappedRows,
     linkAggregates,
     lastSync,
     sourceFreshness,
@@ -1401,9 +1401,9 @@ export async function getPolicyRegistrySummary(institutionId: string) {
         LIMIT 10000`,
       [institutionId]
     ),
-    first<{ count?: number }>(
+    all<{ id: string }>(
       db,
-      `SELECT COUNT(*) AS count
+      `SELECT p.id
          FROM PolicyDocument p
          LEFT JOIN PolicyRegistrySource r
            ON r.institutionId=p.institutionId
@@ -1412,7 +1412,8 @@ export async function getPolicyRegistrySummary(institutionId: string) {
           AND r.sourceId=p.sourceDocumentId
         WHERE p.institutionId=?
           AND p.sourceDocumentId IS NOT NULL
-          AND r.id IS NULL`,
+          AND r.id IS NULL
+        LIMIT 2000`,
       [institutionId]
     ),
     all<{ policyDocumentId: string; targetType: string; count: number }>(
@@ -1477,12 +1478,12 @@ export async function getPolicyRegistrySummary(institutionId: string) {
   }
 
   const lastCompletedAt = clean(lastSync?.completedAt);
-  const newestSourceAt = [sourceFreshness?.updatedAt, evidenceFreshness?.updatedAt]
+  const freshnessValues = [sourceFreshness?.updatedAt, evidenceFreshness?.updatedAt]
     .filter(Boolean)
     .map(value => String(value))
-    .sort()
-    .at(-1) || null;
-  const unmappedPolicySources = Number(unmappedRow?.count || 0);
+    .sort();
+  const newestSourceAt = freshnessValues.length ? freshnessValues[freshnessValues.length - 1] : null;
+  const unmappedPolicySources = unmappedRows.length;
   const syncRequired =
     !lastSync ||
     String(lastSync.status || '') !== 'PASS' ||
