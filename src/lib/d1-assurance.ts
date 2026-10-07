@@ -75,6 +75,32 @@ async function assuranceSchemaIsCurrent(db: D1DatabaseLike) {
   return Number(row?.count || 0) === 13;
 }
 
+async function ensureAssuranceColumn(
+  db: D1DatabaseLike,
+  table: string,
+  column: string,
+  definition: string
+) {
+  const result = await db
+    .prepare('PRAGMA table_info(' + table + ')')
+    .all<{ name?: string }>();
+  const present = new Set((result.results || []).map(item => String(item.name || '')));
+  if (present.has(column)) return;
+  await db.prepare(
+    'ALTER TABLE ' + table + ' ADD COLUMN ' + column + ' ' + definition
+  ).run();
+}
+
+async function ensureAssuranceColumns(db: D1DatabaseLike) {
+  await ensureAssuranceColumn(
+    db,
+    'ControlDeficiency',
+    'humanApproved',
+    'INTEGER NOT NULL DEFAULT 0'
+  );
+  await ensureAssuranceColumn(db, 'ControlDeficiency', 'approvedBy', 'TEXT');
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -117,6 +143,7 @@ export async function ensureAssuranceSchema() {
     const db = await getDb();
 
     if (await assuranceSchemaIsCurrent(db)) {
+      await ensureAssuranceColumns(db);
       return db;
     }
 
@@ -343,6 +370,7 @@ export async function ensureAssuranceSchema() {
       ON AssuranceCalendarEvent(institutionId, status);
     `);
 
+    await ensureAssuranceColumns(db);
     return db;
   })().catch(error => {
     assuranceSchemaReady = null;
