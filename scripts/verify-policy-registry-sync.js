@@ -35,6 +35,12 @@ function verifyRegistryLayer() {
   assert(source.includes('FROM EvidenceDocument'), 'Evidence Repository discovery missing');
   assert(source.includes('ProcessDocumentAnalysis'), 'supporting-document BPM discovery missing');
   assert(source.includes("module === 'regulatory source'"), 'external-regulation source exclusion missing');
+  assert(source.includes('canonicalDocumentType'), 'explicit document-type metadata classification missing');
+  assert(source.includes('contentHash'), 'source hash deduplication missing');
+  assert(
+    source.includes("normalize(candidate.documentType) + ':' + normalize(candidate.title)"),
+    'policy deduplication must include document type and normalized title'
+  );
 
   for (const phrase of [
     'standar operasional prosedur',
@@ -73,10 +79,45 @@ function verifyRegistryLayer() {
     "'TOD_TEST'",
     "'TOE_TEST'",
     "'REMEDIATION_ISSUE'",
-    "'REMEDIATION_MAP'"
+    "'REMEDIATION_MAP'",
+    "'ICOFR_CONTROL'",
+    "'EVIDENCE'",
+    "'INTERNAL_POLICY'"
   ]) {
     assert(source.includes(target), 'relation target missing: ' + target);
   }
+
+  assert(
+    source.includes('OperationalRiskMetadata') &&
+      source.includes('RCMControlSourceMetadata') &&
+      source.includes('RCMDraftReference'),
+    'source-backed Risk/RCM relationships must be synchronized'
+  );
+
+  assert(
+    source.includes('PolicyRelationship') &&
+      source.includes("'INTERNAL_POLICY'"),
+    'internal/external policy relationship graph must be synchronized'
+  );
+
+  assert(
+    source.includes("['PROCESS', 'RISK', 'CONTROL'].includes") &&
+      source.includes('sourceTargetExists'),
+    'source metadata targets must be allow-listed and tenant-validated'
+  );
+
+  assert(
+    source.includes('isIcofrKey') &&
+      source.includes('isItgc') &&
+      source.includes("'ICOFR_CONTROL'"),
+    'ICOFR control relationship propagation missing'
+  );
+
+  assert(
+    source.includes("'SUPPORTING_EVIDENCE'") &&
+      source.includes("'EVIDENCE'"),
+    'related evidence propagation missing'
+  );
 
   assert(
     source.includes('GROUP BY policyDocumentId,targetType'),
@@ -110,7 +151,10 @@ function verifyUi() {
     'Control/RCM',
     'RCSA/CSA',
     'ICOFR/ToE',
-    'Remediation/MAP'
+    'Remediation/MAP',
+    'Ketentuan Lain',
+    'Evidence',
+    'ICOFR/ToD/ToE'
   ]) {
     assert(ui.includes(phrase), 'Policy Library UI missing: ' + phrase);
   }
