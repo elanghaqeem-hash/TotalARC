@@ -157,7 +157,6 @@ function verifyUi() {
     'Keterkaitan Ketentuan dengan TotalARC',
     'Control/RCM',
     'RCSA/CSA',
-    'ICOFR/ToE',
     'Remediation/MAP',
     'Ketentuan Lain',
     'Evidence',
