@@ -29,6 +29,9 @@ TOTAL_ARC_BOOTSTRAP_ADMIN_NAME=
 # Used only by authorized production health-check automation.
 TOTAL_ARC_HEALTHCHECK_TOKEN=
 
+# Regulatory Intelligence scheduled monitor (local/Cloudflare)
+REGULATORY_MONITOR_CRON_SECRET=
+
 # OpenAI API (server only; never use NEXT_PUBLIC_ for keys)
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1
