@@ -84,6 +84,16 @@ function normalize(value: unknown) {
     .replace(/\s+/g, ' ');
 }
 
+function policyIdentityKey(value: unknown) {
+  return normalize(value)
+    .replace(/\b(send new|review\s*\d*|reviewed|final|finalisasi|copy|salinan|draft)\b/g, ' ')
+    .replace(/\bv(?:ersi)?\s*\d+(?:\.\d+)*\b/g, ' ')
+    .replace(/\brevisi\s*\d*\b/g, ' ')
+    .replace(/\brev\s*\d+\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function shortHash(value: string) {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
