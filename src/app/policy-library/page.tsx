@@ -9,6 +9,7 @@ import {
   BookOpenCheck,
   CalendarClock,
   CheckCircle2,
+  ClipboardCheck,
   ClipboardList,
   FileCheck2,
   FileText,
