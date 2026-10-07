@@ -444,7 +444,7 @@ export default function PolicyLibraryPage() {
       {
         key: 'ICOFR',
         label: 'ICOFR/ToE',
-        count: Number(counts.ICOFR_PROCESS || 0) + Number(counts.TOE_TEST || 0)
+        count: Number(counts.ICOFR_PROCESS || 0) + Number(counts.TOD_TEST || 0) + Number(counts.TOE_TEST || 0)
       },
       {
         key: 'REMEDIATION',
