@@ -35,6 +35,7 @@ type Candidate = {
   sourceType: 'SOURCE_DOCUMENT' | 'EVIDENCE_DOCUMENT';
   sourceId: string;
   sourceVersionId?: string | null;
+  contentHash?: string | null;
   title: string;
   textPreview: string;
   category?: string | null;
@@ -105,11 +106,34 @@ function typeCode(type: string) {
   return mapping[type] || 'KET';
 }
 
+function canonicalDocumentType(value: unknown) {
+  const normalized = normalize(value);
+  const mapping: Array<[string, string[]]> = [
+    ['Peraturan Direksi', ['peraturan direksi', 'peraturan direktur']],
+    ['Surat Edaran', ['surat edaran']],
+    ['Keputusan', ['keputusan', 'surat keputusan', 'sk']],
+    ['SOP', ['sop', 'standar operasional prosedur', 'standard operating procedure']],
+    ['Kebijakan', ['kebijakan', 'policy']],
+    ['Pedoman', ['pedoman', 'guideline', 'manual kerja', 'manual operasional']],
+    ['Instruksi Kerja', ['instruksi kerja', 'work instruction']],
+    ['Prosedur', ['prosedur', 'procedure']],
+    ['Standar', ['standar', 'standard']],
+    ['Ketentuan Internal', ['ketentuan internal', 'peraturan internal', 'aturan internal', 'rulebook']]
+  ];
+  for (const [type, aliases] of mapping) {
+    if (aliases.some(alias => normalized === alias || normalized.startsWith(alias + ' '))) {
+      return type;
+    }
+  }
+  return null;
+}
+
 function classifyInternalRule(input: {
   title: string;
   textPreview?: string | null;
   category?: string | null;
   module?: string | null;
+  explicitType?: string | null;
 }) {
   const module = normalize(input.module);
   const category = normalize(input.category);
@@ -119,6 +143,18 @@ function classifyInternalRule(input: {
     category.includes('external regulation') ||
     category.includes('regulasi eksternal')
   ) return null;
+
+  const explicitType =
+    canonicalDocumentType(input.explicitType) ||
+    canonicalDocumentType(input.category) ||
+    canonicalDocumentType(input.module);
+  if (explicitType) {
+    return {
+      documentType: explicitType,
+      confidence: 'HIGH' as const,
+      classificationReason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
+    };
+  }
 
   const haystack = normalize(
     [input.title, input.category || '', input.textPreview || ''].join(' ')
@@ -266,7 +302,7 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
 
   const sources = await all<Record<string, unknown>>(
     db,
-    `SELECT s.id,s.title,s.module,s.sourceCreatedAt,s.sourceModifiedAt,s.metadataJson,
+    `SELECT s.id,s.title,s.module,s.sourceCreatedAt,s.sourceModifiedAt,s.rawSha256,s.textSha256,s.metadataJson,
             (SELECT t.textContent
                FROM SourceTextChunk t
               WHERE t.documentId=s.id AND t.institutionId=s.institutionId
@@ -283,13 +319,20 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
     const classification = classifyInternalRule({
       title: String(row.title || ''),
       textPreview: String(row.textPreview || ''),
-      module: row.module ? String(row.module) : null
+      module: row.module ? String(row.module) : null,
+      explicitType: clean(
+        metadata.documentType ||
+        metadata.policyType ||
+        metadata.ruleType ||
+        metadata.type
+      )
     });
     if (!classification) continue;
     candidates.push({
       sourceType: 'SOURCE_DOCUMENT',
       sourceId: String(row.id),
       sourceVersionId: null,
+      contentHash: clean(row.rawSha256 || row.textSha256),
       title: String(row.title || '').trim(),
       textPreview: String(row.textPreview || ''),
       module: clean(row.module),
@@ -305,7 +348,7 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
   const evidence = await all<Record<string, unknown>>(
     db,
     `SELECT e.id,e.title,e.description,e.category,e.ownerName,e.sourceSystem,e.createdAt,e.updatedAt,
-            e.currentVersionId,v.fileName,v.versionNo
+            e.currentVersionId,v.fileName,v.versionNo,v.sha256
        FROM EvidenceDocument e
        LEFT JOIN EvidenceVersion v
          ON v.id=e.currentVersionId AND v.institutionId=e.institutionId
@@ -340,13 +383,15 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
       title,
       textPreview: String(analysis?.sourceTextPreview || row.description || ''),
       category: row.category ? String(row.category) : null,
-      module: row.sourceSystem ? String(row.sourceSystem) : null
+      module: row.sourceSystem ? String(row.sourceSystem) : null,
+      explicitType: row.category ? String(row.category) : null
     });
     if (!classification) continue;
     candidates.push({
       sourceType: 'EVIDENCE_DOCUMENT',
       sourceId: String(row.id),
       sourceVersionId: clean(row.currentVersionId),
+      contentHash: clean(row.sha256),
       title,
       textPreview: String(analysis?.sourceTextPreview || ''),
       category: clean(row.category),
