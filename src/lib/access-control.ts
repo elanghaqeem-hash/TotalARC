@@ -62,7 +62,8 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/admin/users' },
     { path: '/admin/security' },
     { path: '/organization' },
-    { path: '/onboarding' }
+    { path: '/onboarding' },
+    { path: '/policy-library' }
   ],
   RiskManager: [
     ...COMMON_READ,
@@ -73,7 +74,8 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/rcsa' },
     { path: '/remediation' },
     { path: '/health' },
-    { path: '/ccm' }
+    { path: '/ccm' },
+    { path: '/policy-library' }
   ],
   ComplianceOfficer: [
     ...COMMON_READ,
@@ -83,6 +85,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/rcm' },
     { path: '/rcsa' },
     { path: '/evidence' },
+    { path: '/policy-library' },
     { path: '/remediation' },
     { path: '/health' },
     { path: '/certification' },
@@ -97,6 +100,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/rcsa' },
     { path: '/health' },
     { path: '/ccm' },
+    { path: '/policy-library' },
     ...ICOFR_PAGES
   ],
   ICOFRCoordinator: [
@@ -176,12 +180,14 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
   ],
   Executive: [
     ...COMMON_READ,
+    { path: '/policy-library' },
     { path: '/health' },
     { path: '/certification' },
     { path: '/icofr/reporting' }
   ],
   ReadOnlyAuditor: [
     ...COMMON_READ,
+    { path: '/policy-library' },
     { path: '/processes' },
     { path: '/risks' },
     { path: '/controls' },
@@ -232,6 +238,7 @@ const API_PAGE_MAP: Array<{ api: string; page: string }> = [
   { api: '/api/admin/users', page: '/admin/users' },
   { api: '/api/admin/security', page: '/admin/security' },
   { api: '/api/admin/ai-settings', page: '/admin/ai-settings' },
+  { api: '/api/policy-library', page: '/policy-library' },
   { api: '/api/assure/toe', page: '/toe' },
   { api: '/api/assure/remediation', page: '/remediation' },
   { api: '/api/monitor/ccm', page: '/ccm' },
@@ -270,6 +277,13 @@ export function canAccessApi(role: UserRole, pathname: string, method: string) {
 
   if (role === 'Admin' && pathname.startsWith('/api/ai/')) return false;
   if (pathname.startsWith('/api/ai/')) return true;
+
+  if (pathname.startsWith('/api/policy-library')) {
+    const readers = ['Admin', 'ComplianceOfficer', 'RiskManager', 'InternalAuditor', 'Executive', 'ReadOnlyAuditor'];
+    if (!readers.includes(role)) return false;
+    if (isReadOnlyMethod(method)) return true;
+    return role === 'Admin' || role === 'ComplianceOfficer';
+  }
   if (pathname === '/api/assurance') {
     if (isReadOnlyMethod(method)) {
       return [
