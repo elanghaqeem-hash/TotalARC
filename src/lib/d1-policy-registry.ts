@@ -1381,6 +1381,140 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   return Number(total?.count || 0);
 }
 
+export async function getPolicyRegistrySummary(institutionId: string) {
+  const db = await ensurePolicyRegistrySchema();
+
+  const [
+    registered,
+    unmappedRow,
+    linkAggregates,
+    lastSync,
+    sourceFreshness,
+    evidenceFreshness
+  ] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT r.policyDocumentId,r.sourceType,r.sourceId
+         FROM PolicyRegistrySource r
+         JOIN PolicyDocument p ON p.id=r.policyDocumentId AND p.institutionId=r.institutionId
+        WHERE r.institutionId=?
+        LIMIT 10000`,
+      [institutionId]
+    ),
+    first<{ count?: number }>(
+      db,
+      `SELECT COUNT(*) AS count
+         FROM PolicyDocument p
+         LEFT JOIN PolicyRegistrySource r
+           ON r.institutionId=p.institutionId
+          AND r.policyDocumentId=p.id
+          AND r.sourceType='SOURCE_DOCUMENT'
+          AND r.sourceId=p.sourceDocumentId
+        WHERE p.institutionId=?
+          AND p.sourceDocumentId IS NOT NULL
+          AND r.id IS NULL`,
+      [institutionId]
+    ),
+    all<{ policyDocumentId: string; targetType: string; count: number }>(
+      db,
+      `SELECT policyDocumentId,targetType,COUNT(*) AS count
+         FROM PolicyEntityLink
+        WHERE institutionId=?
+        GROUP BY policyDocumentId,targetType
+        ORDER BY policyDocumentId,targetType
+        LIMIT 10000`,
+      [institutionId]
+    ),
+    first<Record<string, unknown>>(
+      db,
+      `SELECT id,status,discoveredCandidates,insertedPolicies,mappedSources,generatedLinks,
+              syncVersion,actorName,startedAt,completedAt,errorCode
+         FROM PolicyRegistrySyncRun
+        WHERE institutionId=?
+        ORDER BY startedAt DESC
+        LIMIT 1`,
+      [institutionId]
+    ),
+    first<{ updatedAt?: string | null }>(
+      db,
+      `SELECT MAX(updatedAt) AS updatedAt
+         FROM SourceDocument
+        WHERE institutionId=? AND status='Active'`,
+      [institutionId]
+    ),
+    first<{ updatedAt?: string | null }>(
+      db,
+      `SELECT MAX(updatedAt) AS updatedAt
+         FROM EvidenceDocument
+        WHERE institutionId=? AND status='Active'`,
+      [institutionId]
+    )
+  ]);
+
+  const sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>> = {};
+  for (const row of registered) {
+    const policyId = String(row.policyDocumentId || '');
+    if (!policyId) continue;
+    sourcesByPolicy[policyId] ||= [];
+    sourcesByPolicy[policyId].push({
+      sourceType: String(row.sourceType || ''),
+      sourceId: String(row.sourceId || '')
+    });
+  }
+
+  const byPolicy: Record<string, Record<string, number>> = {};
+  const byTargetType: Record<string, number> = {};
+  let totalLinks = 0;
+  for (const row of linkAggregates) {
+    const policyId = String(row.policyDocumentId || '');
+    const targetType = String(row.targetType || '');
+    const count = Number(row.count || 0);
+    if (!policyId || !targetType || count <= 0) continue;
+    byPolicy[policyId] ||= {};
+    byPolicy[policyId][targetType] = count;
+    byTargetType[targetType] = (byTargetType[targetType] || 0) + count;
+    totalLinks += count;
+  }
+
+  const lastCompletedAt = clean(lastSync?.completedAt);
+  const newestSourceAt = [sourceFreshness?.updatedAt, evidenceFreshness?.updatedAt]
+    .filter(Boolean)
+    .map(value => String(value))
+    .sort()
+    .at(-1) || null;
+  const unmappedPolicySources = Number(unmappedRow?.count || 0);
+  const syncRequired =
+    !lastSync ||
+    String(lastSync.status || '') !== 'PASS' ||
+    String(lastSync.syncVersion || 'legacy') !== POLICY_REGISTRY_SYNC_VERSION ||
+    unmappedPolicySources > 0 ||
+    Boolean(newestSourceAt && (!lastCompletedAt || newestSourceAt > lastCompletedAt));
+
+  const discoveredCandidates = Number(lastSync?.discoveredCandidates || registered.length || 0);
+  const registeredCandidates = registered.length;
+
+  return {
+    metrics: {
+      discoveredCandidates,
+      registeredCandidates,
+      missingCandidates: syncRequired
+        ? Math.max(discoveredCandidates - registeredCandidates, 0)
+        : 0,
+      unmappedPolicySources,
+      totalLinks,
+      policiesWithLinks: Object.keys(byPolicy).length
+    },
+    byPolicy,
+    byTargetType,
+    sourcesByPolicy,
+    candidates: [],
+    syncRequired,
+    syncVersion: POLICY_REGISTRY_SYNC_VERSION,
+    lastSync: lastSync || null,
+    coverageMode: 'SUMMARY'
+  };
+}
+
 export async function getPolicyRegistryCoverage(institutionId: string) {
   const db = await ensurePolicyRegistrySchema();
   const candidates = await discoverCandidates(db, institutionId);
