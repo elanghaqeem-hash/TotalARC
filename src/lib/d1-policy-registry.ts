@@ -1268,6 +1268,64 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     }
   }
 
+  const monitoringRules = await all<Record<string, unknown>>(
+    db,
+    `SELECT mr.id,mr.ruleId,mr.controlId
+       FROM MonitoringRule mr
+       JOIN ControlMaster c ON c.id=mr.controlId
+      WHERE c.institutionId=?
+      LIMIT 10000`,
+    [institutionId]
+  );
+  const monitoringRuleIdsByPolicy = new Map<string, Set<string>>();
+  for (const policyId of Array.from(policyIds)) {
+    const controlSet = controlIdsByPolicy.get(policyId) || new Set<string>();
+    for (const rule of monitoringRules) {
+      const controlId = String(rule.controlId || '');
+      if (!controlSet.has(controlId)) continue;
+      const monitoringRuleId = String(rule.id || '');
+      generated += await insertLink(
+        db,
+        institutionId,
+        policyId,
+        'CCM_RULE',
+        monitoringRuleId,
+        'MONITORED_BY',
+        controlId
+      ) ? 1 : 0;
+      const set = monitoringRuleIdsByPolicy.get(policyId) || new Set<string>();
+      set.add(monitoringRuleId);
+      monitoringRuleIdsByPolicy.set(policyId, set);
+    }
+  }
+
+  const ccmExceptions = await all<Record<string, unknown>>(
+    db,
+    `SELECT ce.id,mr.id AS monitoringRuleId,mr.controlId
+       FROM CCMException ce
+       JOIN MonitoringRun run ON run.id=ce.runId
+       JOIN MonitoringRule mr ON mr.ruleId=run.ruleId
+       JOIN ControlMaster c ON c.id=mr.controlId
+      WHERE c.institutionId=?
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const policyId of Array.from(policyIds)) {
+    const ruleSet = monitoringRuleIdsByPolicy.get(policyId) || new Set<string>();
+    for (const exception of ccmExceptions) {
+      if (!ruleSet.has(String(exception.monitoringRuleId || ''))) continue;
+      generated += await insertLink(
+        db,
+        institutionId,
+        policyId,
+        'CCM_EXCEPTION',
+        String(exception.id || ''),
+        'CCM_EXCEPTION',
+        String(exception.controlId || '')
+      ) ? 1 : 0;
+    }
+  }
+
   const issues = await all<Record<string, unknown>>(
     db,
     `SELECT id,processId,riskId,controlId
