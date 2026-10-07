@@ -120,6 +120,13 @@ function verifyRegistryLayer() {
   );
 
   assert(
+    source.includes('POLICY_REGISTRY_SYNC_VERSION') &&
+      source.includes('syncVersion') &&
+      source.includes('syncRequired'),
+    'registry algorithm versioning and stale-rebuild detection missing'
+  );
+
+  assert(
     source.includes('GROUP BY policyDocumentId,targetType'),
     'dashboard relation counts must use aggregation rather than loading every link'
   );
@@ -159,6 +166,7 @@ function verifyUi() {
     assert(ui.includes(phrase), 'Policy Library UI missing: ' + phrase);
   }
   assert(ui.includes('registryAutoSyncAttempted'), 'automatic registry sync trigger missing');
+  assert(ui.includes('syncRequired'), 'stale registry version must trigger one-time auto rebuild');
   assert(ui.includes('missingCandidates'), 'registry coverage status missing');
   return { ui: 'PASS' };
 }
