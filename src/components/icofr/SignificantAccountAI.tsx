@@ -79,7 +79,7 @@ type Scope = {
   status: string;
 };
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = 40 * 1024 * 1024;
 
 function formatAmount(value: number | null | undefined, currency = '') {
   if (value === null || value === undefined || !Number.isFinite(value)) return 'Nilai belum terbaca';
@@ -192,7 +192,7 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
   const analyze = async () => {
     if (!file || !scope || analyzing || compressing) return;
     if (file.size > MAX_BYTES) {
-      setError('Ukuran dokumen melebihi batas 10 MB.');
+      setError('Ukuran dokumen melebihi batas 40 MB.');
       return;
     }
 
@@ -461,7 +461,7 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                     {file ? file.name : 'Pilih dokumen laporan keuangan'}
                   </span>
                   <span className="mt-0.5 block text-[10px] text-slate-400">
-                    PDF, XLSX, DOCX, TXT, JPG/PNG · maksimum 10 MB · 1 dokumen per analisis
+                    PDF, XLSX, DOCX, TXT, JPG/PNG · maksimum 40 MB · 1 dokumen per analisis
                   </span>
                 </span>
               </button>
