@@ -18,6 +18,8 @@ type D1DatabaseLike = {
   prepare: (sql: string) => Prepared;
 };
 
+const POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v2';
+
 export type PolicyEntityLinkRecord = {
   id: string;
   institutionId: string;
@@ -35,6 +37,7 @@ type Candidate = {
   sourceType: 'SOURCE_DOCUMENT' | 'EVIDENCE_DOCUMENT';
   sourceId: string;
   sourceVersionId?: string | null;
+  contentHash?: string | null;
   title: string;
   textPreview: string;
   category?: string | null;
@@ -105,11 +108,34 @@ function typeCode(type: string) {
   return mapping[type] || 'KET';
 }
 
+function canonicalDocumentType(value: unknown) {
+  const normalized = normalize(value);
+  const mapping: Array<[string, string[]]> = [
+    ['Peraturan Direksi', ['peraturan direksi', 'peraturan direktur']],
+    ['Surat Edaran', ['surat edaran']],
+    ['Keputusan', ['keputusan', 'surat keputusan', 'sk']],
+    ['SOP', ['sop', 'standar operasional prosedur', 'standard operating procedure']],
+    ['Kebijakan', ['kebijakan', 'policy']],
+    ['Pedoman', ['pedoman', 'guideline', 'manual kerja', 'manual operasional']],
+    ['Instruksi Kerja', ['instruksi kerja', 'work instruction']],
+    ['Prosedur', ['prosedur', 'procedure']],
+    ['Standar', ['standar', 'standard']],
+    ['Ketentuan Internal', ['ketentuan internal', 'peraturan internal', 'aturan internal', 'rulebook']]
+  ];
+  for (const [type, aliases] of mapping) {
+    if (aliases.some(alias => normalized === alias || normalized.startsWith(alias + ' '))) {
+      return type;
+    }
+  }
+  return null;
+}
+
 function classifyInternalRule(input: {
   title: string;
   textPreview?: string | null;
   category?: string | null;
   module?: string | null;
+  explicitType?: string | null;
 }) {
   const module = normalize(input.module);
   const category = normalize(input.category);
@@ -119,6 +145,18 @@ function classifyInternalRule(input: {
     category.includes('external regulation') ||
     category.includes('regulasi eksternal')
   ) return null;
+
+  const explicitType =
+    canonicalDocumentType(input.explicitType) ||
+    canonicalDocumentType(input.category) ||
+    canonicalDocumentType(input.module);
+  if (explicitType) {
+    return {
+      documentType: explicitType,
+      confidence: 'HIGH' as const,
+      classificationReason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
+    };
+  }
 
   const haystack = normalize(
     [input.title, input.category || '', input.textPreview || ''].join(' ')
@@ -235,6 +273,7 @@ async function executeSchema(db: D1DatabaseLike) {
       insertedPolicies INTEGER NOT NULL DEFAULT 0,
       mappedSources INTEGER NOT NULL DEFAULT 0,
       generatedLinks INTEGER NOT NULL DEFAULT 0,
+      syncVersion TEXT NOT NULL DEFAULT 'legacy',
       actorName TEXT NOT NULL,
       startedAt TEXT NOT NULL,
       completedAt TEXT,
@@ -244,6 +283,19 @@ async function executeSchema(db: D1DatabaseLike) {
       ON PolicyRegistrySyncRun(institutionId,startedAt)`
   ];
   for (const statement of statements) await run(db, statement);
+
+  const syncColumns = await all<{ name?: string }>(db, 'PRAGMA table_info(PolicyRegistrySyncRun)');
+  const syncColumnNames = new Set(syncColumns.map(column => String(column.name || '')));
+  if (!syncColumnNames.has('syncVersion')) {
+    try {
+      await run(
+        db,
+        "ALTER TABLE PolicyRegistrySyncRun ADD COLUMN syncVersion TEXT NOT NULL DEFAULT 'legacy'"
+      );
+    } catch (error) {
+      if (!String(error).toLowerCase().includes('duplicate column')) throw error;
+    }
+  }
 }
 
 let schemaReady: Promise<D1DatabaseLike> | null = null;
@@ -266,7 +318,7 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
 
   const sources = await all<Record<string, unknown>>(
     db,
-    `SELECT s.id,s.title,s.module,s.sourceCreatedAt,s.sourceModifiedAt,s.metadataJson,
+    `SELECT s.id,s.title,s.module,s.sourceCreatedAt,s.sourceModifiedAt,s.rawSha256,s.textSha256,s.metadataJson,
             (SELECT t.textContent
                FROM SourceTextChunk t
               WHERE t.documentId=s.id AND t.institutionId=s.institutionId
@@ -283,13 +335,20 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
     const classification = classifyInternalRule({
       title: String(row.title || ''),
       textPreview: String(row.textPreview || ''),
-      module: row.module ? String(row.module) : null
+      module: row.module ? String(row.module) : null,
+      explicitType: clean(
+        metadata.documentType ||
+        metadata.policyType ||
+        metadata.ruleType ||
+        metadata.type
+      )
     });
     if (!classification) continue;
     candidates.push({
       sourceType: 'SOURCE_DOCUMENT',
       sourceId: String(row.id),
       sourceVersionId: null,
+      contentHash: clean(row.rawSha256 || row.textSha256),
       title: String(row.title || '').trim(),
       textPreview: String(row.textPreview || ''),
       module: clean(row.module),
@@ -305,7 +364,7 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
   const evidence = await all<Record<string, unknown>>(
     db,
     `SELECT e.id,e.title,e.description,e.category,e.ownerName,e.sourceSystem,e.createdAt,e.updatedAt,
-            e.currentVersionId,v.fileName,v.versionNo
+            e.currentVersionId,v.fileName,v.versionNo,v.sha256
        FROM EvidenceDocument e
        LEFT JOIN EvidenceVersion v
          ON v.id=e.currentVersionId AND v.institutionId=e.institutionId
@@ -340,13 +399,15 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
       title,
       textPreview: String(analysis?.sourceTextPreview || row.description || ''),
       category: row.category ? String(row.category) : null,
-      module: row.sourceSystem ? String(row.sourceSystem) : null
+      module: row.sourceSystem ? String(row.sourceSystem) : null,
+      explicitType: row.category ? String(row.category) : null
     });
     if (!classification) continue;
     candidates.push({
       sourceType: 'EVIDENCE_DOCUMENT',
       sourceId: String(row.id),
       sourceVersionId: clean(row.currentVersionId),
+      contentHash: clean(row.sha256),
       title,
       textPreview: String(analysis?.sourceTextPreview || ''),
       category: clean(row.category),
@@ -364,18 +425,28 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
 }
 
 async function policyByNormalizedTitle(db: D1DatabaseLike, institutionId: string) {
-  const rows = await all<{ id: string; title: string; sourceDocumentId: string | null }>(
+  const rows = await all<{
+    id: string;
+    title: string;
+    documentType: string;
+    sourceDocumentId: string | null;
+  }>(
     db,
-    `SELECT id,title,sourceDocumentId
+    `SELECT id,title,documentType,sourceDocumentId
        FROM PolicyDocument
       WHERE institutionId=?
       LIMIT 5000`,
     [institutionId]
   );
-  const map = new Map<string, { id: string; title: string; sourceDocumentId: string | null }>();
+  const map = new Map<string, {
+    id: string;
+    title: string;
+    documentType: string;
+    sourceDocumentId: string | null;
+  }>();
   for (const row of rows) {
-    const key = normalize(row.title);
-    if (key && !map.has(key)) map.set(key, row);
+    const key = normalize(row.documentType) + ':' + normalize(row.title);
+    if (key !== ':' && !map.has(key)) map.set(key, row);
   }
   return map;
 }
@@ -431,7 +502,13 @@ async function ensureCandidateRegistration(
   institutionId: string,
   candidate: Candidate,
   actorName: string,
-  titleMap: Map<string, { id: string; title: string; sourceDocumentId: string | null }>
+  titleMap: Map<string, {
+    id: string;
+    title: string;
+    documentType: string;
+    sourceDocumentId: string | null;
+  }>,
+  hashMap: Map<string, string>
 ) {
   const existingRegistry = await first<{ policyDocumentId: string }>(
     db,
@@ -442,10 +519,13 @@ async function ensureCandidateRegistration(
     [institutionId, candidate.sourceType, candidate.sourceId]
   );
   if (existingRegistry) {
+    if (candidate.contentHash) hashMap.set(candidate.contentHash, existingRegistry.policyDocumentId);
     return { policyDocumentId: existingRegistry.policyDocumentId, inserted: false, mapped: false };
   }
 
-  let policyId: string | null = null;
+  let policyId: string | null = candidate.contentHash
+    ? hashMap.get(candidate.contentHash) || null
+    : null;
   if (candidate.sourceType === 'SOURCE_DOCUMENT') {
     const existing = await first<{ id: string }>(
       db,
@@ -459,7 +539,8 @@ async function ensureCandidateRegistration(
   }
 
   if (!policyId) {
-    policyId = titleMap.get(normalize(candidate.title))?.id || null;
+    const identityKey = normalize(candidate.documentType) + ':' + normalize(candidate.title);
+    policyId = titleMap.get(identityKey)?.id || null;
   }
 
   let inserted = false;
@@ -502,9 +583,10 @@ async function ensureCandidateRegistration(
       ]
     );
     inserted = true;
-    titleMap.set(normalize(candidate.title), {
+    titleMap.set(normalize(candidate.documentType) + ':' + normalize(candidate.title), {
       id: policyId,
       title: candidate.title,
+      documentType: candidate.documentType,
       sourceDocumentId: candidate.sourceType === 'SOURCE_DOCUMENT' ? candidate.sourceId : null
     });
   }
@@ -566,6 +648,30 @@ async function insertLink(
   return true;
 }
 
+function normalizeEvidenceTargetType(entityType: unknown) {
+  const value = String(entityType || '').trim().toUpperCase();
+  const mapping: Record<string, string> = {
+    PROCESS: 'PROCESS',
+    RISK: 'RISK',
+    CONTROL: 'CONTROL',
+    TOD: 'TOD_TEST',
+    TOE: 'TOE_TEST',
+    DEFICIENCY: 'DEFICIENCY',
+    MAP: 'REMEDIATION_MAP',
+    SCOPE: 'ICOFR_SCOPE',
+    WORKPAPER_REVIEW: 'ICOFR_WORKPAPER',
+    WORKPAPER_EVIDENCE: 'ICOFR_WORKPAPER_EVIDENCE',
+    TOE_SAMPLE: 'TOE_SAMPLE',
+    SAMPLING_PLAN: 'ICOFR_SAMPLING_PLAN',
+    PBC_REQUEST: 'ICOFR_PBC_REQUEST',
+    SUB_CERTIFICATION: 'ICOFR_SUB_CERTIFICATION',
+    ATTESTATION: 'ICOFR_ATTESTATION',
+    EVIDENCE_PACK: 'ICOFR_EVIDENCE_PACK',
+    TESTING_PLAN_ITEM: 'ICOFR_TESTING_PLAN_ITEM'
+  };
+  return mapping[value] || value;
+}
+
 async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   await run(
     db,
@@ -620,7 +726,7 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
         db,
         institutionId,
         policyId,
-        String(link.entityType || 'EVIDENCE').toUpperCase(),
+        normalizeEvidenceTargetType(link.entityType),
         String(link.entityId || ''),
         String(link.relationship || 'SUPPORTS'),
         String(link.documentId || '')
@@ -653,6 +759,24 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     }
   }
 
+  const sourceTargetCache = new Map<string, boolean>();
+  const sourceTargetExists = async (type: string, id: string) => {
+    const normalizedType = type.toUpperCase();
+    if (!['PROCESS', 'RISK', 'CONTROL'].includes(normalizedType) || !id) return false;
+    const cacheKey = normalizedType + ':' + id;
+    if (sourceTargetCache.has(cacheKey)) return Boolean(sourceTargetCache.get(cacheKey));
+
+    const sql =
+      normalizedType === 'PROCESS'
+        ? 'SELECT id FROM BusinessProcess WHERE id=? AND institutionId=? LIMIT 1'
+        : normalizedType === 'RISK'
+          ? 'SELECT id FROM RiskMaster WHERE id=? AND institutionId=? LIMIT 1'
+          : 'SELECT id FROM ControlMaster WHERE id=? AND institutionId=? LIMIT 1';
+    const exists = Boolean(await first(db, sql, [id, institutionId]));
+    sourceTargetCache.set(cacheKey, exists);
+    return exists;
+  };
+
   const sourceRows = await all<Record<string, unknown>>(
     db,
     `SELECT id,metadataJson
@@ -665,15 +789,19 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     const policies = policyBySource.get(String(source.id || '')) || [];
     if (!policies.length) continue;
     const metadata = safeJson(source.metadataJson);
+    const metadataEntityType = String(metadata.entityType || '').toUpperCase();
     const directTargets = [
       ['PROCESS', metadata.processId || metadata.businessProcessId],
       ['RISK', metadata.riskId],
       ['CONTROL', metadata.controlId],
-      [String(metadata.entityType || '').toUpperCase(), metadata.entityId]
+      [
+        ['PROCESS', 'RISK', 'CONTROL'].includes(metadataEntityType) ? metadataEntityType : '',
+        metadata.entityId
+      ]
     ] as Array<[string, unknown]>;
     for (const [type, id] of directTargets) {
       const targetId = clean(id);
-      if (!type || !targetId) continue;
+      if (!type || !targetId || !(await sourceTargetExists(type, targetId))) continue;
       for (const policyId of policies) {
         generated += await insertLink(
           db,
@@ -683,6 +811,111 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
           targetId,
           'SOURCE_METADATA',
           String(source.id || '')
+        ) ? 1 : 0;
+      }
+    }
+  }
+
+  const operationalRiskSources = await all<Record<string, unknown>>(
+    db,
+    `SELECT riskId,sourceDocumentId
+       FROM OperationalRiskMetadata
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of operationalRiskSources) {
+    const sourceId = String(row.sourceDocumentId || '');
+    const riskId = String(row.riskId || '');
+    for (const policyId of policyBySource.get(sourceId) || []) {
+      generated += await insertLink(
+        db, institutionId, policyId, 'RISK', riskId, 'SOURCE_RISK_MAPPING', sourceId
+      ) ? 1 : 0;
+    }
+  }
+
+  const rcmControlSources = await all<Record<string, unknown>>(
+    db,
+    `SELECT controlId,sourceDocumentId
+       FROM RCMControlSourceMetadata
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of rcmControlSources) {
+    const sourceId = String(row.sourceDocumentId || '');
+    const controlId = String(row.controlId || '');
+    for (const policyId of policyBySource.get(sourceId) || []) {
+      generated += await insertLink(
+        db, institutionId, policyId, 'CONTROL', controlId, 'SOURCE_CONTROL_MAPPING', sourceId
+      ) ? 1 : 0;
+      generated += await insertLink(
+        db, institutionId, policyId, 'RCM', controlId, 'SOURCE_RCM_MAPPING', sourceId
+      ) ? 1 : 0;
+    }
+  }
+
+  const rcmDraftSources = await all<Record<string, unknown>>(
+    db,
+    `SELECT id,sourceDocumentId,operationalControlId
+       FROM RCMDraftReference
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of rcmDraftSources) {
+    const sourceId = String(row.sourceDocumentId || '');
+    const draftId = String(row.id || '');
+    const controlId = String(row.operationalControlId || '');
+    for (const policyId of policyBySource.get(sourceId) || []) {
+      generated += await insertLink(
+        db, institutionId, policyId, 'RCM', draftId, 'SOURCE_RCM_REFERENCE', sourceId
+      ) ? 1 : 0;
+      if (controlId) {
+        generated += await insertLink(
+          db, institutionId, policyId, 'CONTROL', controlId, 'RCM_OPERATIONAL_CONTROL', draftId
+        ) ? 1 : 0;
+      }
+    }
+  }
+
+  if (await tableExists(db, 'PolicyRelationship')) {
+    const relationships = await all<Record<string, unknown>>(
+      db,
+      `SELECT sourceType,sourceId,targetType,targetId,relationType
+         FROM PolicyRelationship
+        WHERE institutionId=? AND status='Aktif'
+        LIMIT 10000`,
+      [institutionId]
+    );
+    for (const row of relationships) {
+      const sourceType = String(row.sourceType || '').toUpperCase();
+      const targetType = String(row.targetType || '').toUpperCase();
+      const sourceId = String(row.sourceId || '');
+      const targetId = String(row.targetId || '');
+      const relationType = String(row.relationType || 'RELATED_TO');
+
+      if (sourceType === 'INTERNAL' && sourceId) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          sourceId,
+          targetType === 'INTERNAL' ? 'INTERNAL_POLICY' : 'EXTERNAL_REGULATION',
+          targetId,
+          relationType,
+          String(row.sourceId || '')
+        ) ? 1 : 0;
+      }
+
+      if (targetType === 'INTERNAL' && targetId) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          targetId,
+          sourceType === 'INTERNAL' ? 'INTERNAL_POLICY' : 'EXTERNAL_REGULATION',
+          sourceId,
+          'REVERSE_' + relationType,
+          String(row.targetId || '')
         ) ? 1 : 0;
       }
     }
@@ -799,7 +1032,7 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   );
   const controls = await all<Record<string, unknown>>(
     db,
-    `SELECT id,processId,isKeyControl
+    `SELECT id,processId,isKeyControl,isIcofrKey,isItgc
        FROM ControlMaster
       WHERE institutionId=?
       LIMIT 10000`,
@@ -808,6 +1041,8 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   const processIcofr = new Map(processes.map(row => [String(row.id), Number(row.isIcofrRelevant || 0) === 1]));
   const risksByProcess = new Map<string, string[]>();
   const controlsByProcess = new Map<string, string[]>();
+  const controlProcess = new Map<string, string>();
+  const controlIcofr = new Map<string, boolean>();
   for (const row of risks) {
     const key = String(row.processId || '');
     const list = risksByProcess.get(key) || [];
@@ -816,9 +1051,15 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   }
   for (const row of controls) {
     const key = String(row.processId || '');
+    const controlId = String(row.id || '');
     const list = controlsByProcess.get(key) || [];
-    list.push(String(row.id));
+    list.push(controlId);
     controlsByProcess.set(key, list);
+    controlProcess.set(controlId, key);
+    controlIcofr.set(
+      controlId,
+      Number(row.isIcofrKey || 0) === 1 || Number(row.isItgc || 0) === 1
+    );
   }
 
   const policyIds = new Set([
@@ -840,6 +1081,22 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
       }
       if (processIcofr.get(processId)) {
         generated += await insertLink(db, institutionId, policyId, 'ICOFR_PROCESS', processId, 'ICOFR_RELEVANT', processId) ? 1 : 0;
+      }
+    }
+
+    const controlSet = controlIdsByPolicy.get(policyId) || new Set<string>();
+    for (const controlId of Array.from(controlSet)) {
+      const processId = controlProcess.get(controlId) || '';
+      if (controlIcofr.get(controlId) || (processId && processIcofr.get(processId))) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          policyId,
+          'ICOFR_CONTROL',
+          controlId,
+          'ICOFR_CONTROL_RELEVANT',
+          processId || controlId
+        ) ? 1 : 0;
       }
     }
   }
@@ -865,6 +1122,32 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
           db, institutionId, policyId, 'RCM', controlId + ':' + riskId, 'GOVERNS_RCM', controlId
         ) ? 1 : 0;
       }
+    }
+  }
+
+  for (const policyId of Array.from(policyIds)) {
+    const processSet = processIdsByPolicy.get(policyId) || new Set<string>();
+    const riskSet = riskIdsByPolicy.get(policyId) || new Set<string>();
+    const controlSet = controlIdsByPolicy.get(policyId) || new Set<string>();
+
+    for (const link of evidenceLinks) {
+      const targetType = normalizeEvidenceTargetType(link.entityType);
+      const targetId = String(link.entityId || '');
+      const isRelated =
+        (targetType === 'PROCESS' && processSet.has(targetId)) ||
+        (targetType === 'RISK' && riskSet.has(targetId)) ||
+        (targetType === 'CONTROL' && controlSet.has(targetId));
+      if (!isRelated) continue;
+
+      generated += await insertLink(
+        db,
+        institutionId,
+        policyId,
+        'EVIDENCE',
+        String(link.documentId || ''),
+        'SUPPORTING_EVIDENCE',
+        targetId
+      ) ? 1 : 0;
     }
   }
 
@@ -1067,7 +1350,7 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
   const lastSync = await first<Record<string, unknown>>(
     db,
     `SELECT id,status,discoveredCandidates,insertedPolicies,mappedSources,generatedLinks,
-            actorName,startedAt,completedAt,errorCode
+            syncVersion,actorName,startedAt,completedAt,errorCode
        FROM PolicyRegistrySyncRun
       WHERE institutionId=?
       ORDER BY startedAt DESC
@@ -1100,6 +1383,11 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
       classificationReason: item.classificationReason,
       registered: registeredKeys.has(item.sourceType + ':' + item.sourceId)
     })),
+    syncRequired:
+      !lastSync ||
+      String(lastSync.status || '') !== 'PASS' ||
+      String(lastSync.syncVersion || 'legacy') !== POLICY_REGISTRY_SYNC_VERSION,
+    syncVersion: POLICY_REGISTRY_SYNC_VERSION,
     lastSync: lastSync || null
   };
 }
@@ -1115,14 +1403,15 @@ export async function syncPolicyRegistryFromDatabase(
     db,
     `INSERT INTO PolicyRegistrySyncRun (
       id,institutionId,status,discoveredCandidates,insertedPolicies,mappedSources,
-      generatedLinks,actorName,startedAt,completedAt,errorCode
-    ) VALUES (?,?,'RUNNING',0,0,0,0,?,?,NULL,NULL)`,
-    [runId, institutionId, actorName, startedAt]
+      generatedLinks,syncVersion,actorName,startedAt,completedAt,errorCode
+    ) VALUES (?,?,'RUNNING',0,0,0,0,?,?,?,NULL,NULL)`,
+    [runId, institutionId, POLICY_REGISTRY_SYNC_VERSION, actorName, startedAt]
   );
 
   try {
     const candidates = await discoverCandidates(db, institutionId);
     const titleMap = await policyByNormalizedTitle(db, institutionId);
+    const hashMap = new Map<string, string>();
     let insertedPolicies = 0;
     let mappedSources = await mapExistingPolicySources(db, institutionId);
 
@@ -1132,8 +1421,10 @@ export async function syncPolicyRegistryFromDatabase(
         institutionId,
         candidate,
         actorName,
-        titleMap
+        titleMap,
+        hashMap
       );
+      if (candidate.contentHash) hashMap.set(candidate.contentHash, result.policyDocumentId);
       if (result.inserted) insertedPolicies += 1;
       if (result.mapped) mappedSources += 1;
     }
