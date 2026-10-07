@@ -10,7 +10,8 @@ export type AiFeature =
   | 'risk_heatmap'
   | 'materiality'
   | 'significant_accounts'
-  | 'enterprise_overview';
+  | 'enterprise_overview'
+  | 'regulatory_intelligence';
 
 export type AiSensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
 

@@ -27,6 +27,27 @@ function safeEqual(left: string, right: string) {
   return difference === 0;
 }
 
+async function authorizedRegulatoryCron(request: NextRequest) {
+  if (
+    request.nextUrl.pathname !== '/api/policy-library/intelligence/cron' ||
+    !['GET', 'POST'].includes(request.method)
+  ) {
+    return false;
+  }
+
+  const configured =
+    (await runtimeValue('REGULATORY_MONITOR_CRON_SECRET')) ||
+    (await runtimeValue('CRON_SECRET'));
+  if (!configured || configured.length < 24) return false;
+
+  const authorization = request.headers.get('authorization') || '';
+  const bearer = authorization.startsWith('Bearer ')
+    ? authorization.slice('Bearer '.length).trim()
+    : '';
+  const supplied = request.headers.get('x-totalarc-cron-secret') || bearer;
+  return safeEqual(configured, supplied);
+}
+
 async function authorizedHealthProbe(request: NextRequest) {
   if (!request.nextUrl.pathname.startsWith('/api/')) return false;
   const bootstrapPost =
@@ -117,6 +138,10 @@ export async function middleware(request: NextRequest) {
   }
 
   if (await authorizedHealthProbe(request)) {
+    return NextResponse.next();
+  }
+
+  if (await authorizedRegulatoryCron(request)) {
     return NextResponse.next();
   }
 

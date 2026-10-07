@@ -98,6 +98,14 @@ export const AI_FEATURE_CATALOG: Array<{
     buttonLabel: 'Analisis Total ARC',
     description: 'Analisis menyeluruh ICOFR, risiko, kontrol, dan kepatuhan.',
     recommendedLevel: 'ADVANCED'
+  },
+  {
+    id: 'regulatory_intelligence',
+    page: '/policy-library',
+    pageLabel: 'Policy & Regulatory Library',
+    buttonLabel: 'Analisis Dampak Regulasi',
+    description: 'Screening kandidat regulasi terhadap ketentuan internal Bank dan usulan relasi/dampak.',
+    recommendedLevel: 'ADVANCED'
   }
 ];
 

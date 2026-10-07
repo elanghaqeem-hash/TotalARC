@@ -1,0 +1,45 @@
+name: Regulatory Monitor
+
+on:
+  schedule:
+    # 08:10 WIB (01:10 UTC), offset from Vercel cron to avoid duplicate simultaneous scans.
+    - cron: '10 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: totalarc-regulatory-monitor
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan official regulatory sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run secured TotalARC regulatory monitor
+        env:
+          MONITOR_URL: ${{ secrets.TOTALARC_REGULATORY_MONITOR_URL }}
+          MONITOR_SECRET: ${{ secrets.REGULATORY_MONITOR_CRON_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MONITOR_URL:-}" ] || [ -z "${MONITOR_SECRET:-}" ]; then
+            echo "::notice::Regulatory monitor secrets are not configured. Scheduled scan is skipped."
+            exit 0
+          fi
+
+          endpoint="${MONITOR_URL%/}/api/policy-library/intelligence/cron"
+          response_file="$(mktemp)"
+
+          http_code="$(curl             --silent             --show-error             --location             --output "$response_file"             --write-out "%{http_code}"             --max-time 90             --request POST             --header "x-totalarc-cron-secret: $MONITOR_SECRET"             "$endpoint")"
+
+          cat "$response_file"
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Regulatory monitor returned HTTP $http_code"
+            exit 1
+          fi

@@ -39,7 +39,8 @@
     "verify:github-gates": "node scripts/verify-github-gates.js",
     "migrate:d1-to-sqlite": "node scripts/migrate-d1-to-local-sqlite.cjs",
     "verify:local-sqlite": "node scripts/verify-local-sqlite.cjs",
-    "verify:pdf-ocr": "node scripts/verify-pdf-ocr.cjs"
+    "verify:pdf-ocr": "node scripts/verify-pdf-ocr.cjs",
+    "verify:policy-intelligence": "node scripts/verify-policy-intelligence.js"
   },
   "keywords": [],
   "author": "",
