@@ -47,7 +47,10 @@ function verifyRegistryLayer() {
     'kebijakan',
     'peraturan (direksi|direktur)',
     'surat edaran',
-    'instruksi kerja'
+    'instruksi kerja',
+    'buku pedoman perusahaan',
+    'piagam',
+    'petunjuk teknis'
   ]) {
     assert(source.toLowerCase().includes(phrase), 'internal-rule classifier coverage missing: ' + phrase);
   }
@@ -129,6 +132,32 @@ function verifyRegistryLayer() {
   assert(
     source.includes('GROUP BY policyDocumentId,targetType'),
     'dashboard relation counts must use aggregation rather than loading every link'
+  );
+
+  assert(
+    source.includes('FROM PolicyRelationship') &&
+      source.includes("'INVERSE_' + relationType"),
+    'explicit internal/external policy relationships must feed the unified relation graph'
+  );
+
+  assert(
+    source.includes('FROM RCMControlSourceMetadata') &&
+      source.includes('FROM OperationalRiskMetadata') &&
+      source.includes('FROM RCMDraftReference'),
+    'source-backed RCM/Risk relationships must feed the policy graph'
+  );
+
+  assert(
+    source.includes('FROM MonitoringRule') &&
+      source.includes('FROM CCMException'),
+    'CCM monitoring and exception traceability must feed the policy graph'
+  );
+
+  assert(
+    source.includes('policyIdentityKey') &&
+      source.includes('send new') &&
+      source.includes('review\\s*\\d*'),
+    'artifact revision identity normalization must prevent duplicate policy registrations'
   );
 
   return {
