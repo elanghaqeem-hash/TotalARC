@@ -409,18 +409,28 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
 }
 
 async function policyByNormalizedTitle(db: D1DatabaseLike, institutionId: string) {
-  const rows = await all<{ id: string; title: string; sourceDocumentId: string | null }>(
+  const rows = await all<{
+    id: string;
+    title: string;
+    documentType: string;
+    sourceDocumentId: string | null;
+  }>(
     db,
-    `SELECT id,title,sourceDocumentId
+    `SELECT id,title,documentType,sourceDocumentId
        FROM PolicyDocument
       WHERE institutionId=?
       LIMIT 5000`,
     [institutionId]
   );
-  const map = new Map<string, { id: string; title: string; sourceDocumentId: string | null }>();
+  const map = new Map<string, {
+    id: string;
+    title: string;
+    documentType: string;
+    sourceDocumentId: string | null;
+  }>();
   for (const row of rows) {
-    const key = normalize(row.title);
-    if (key && !map.has(key)) map.set(key, row);
+    const key = normalize(row.documentType) + ':' + normalize(row.title);
+    if (key !== ':' && !map.has(key)) map.set(key, row);
   }
   return map;
 }
@@ -476,7 +486,13 @@ async function ensureCandidateRegistration(
   institutionId: string,
   candidate: Candidate,
   actorName: string,
-  titleMap: Map<string, { id: string; title: string; sourceDocumentId: string | null }>
+  titleMap: Map<string, {
+    id: string;
+    title: string;
+    documentType: string;
+    sourceDocumentId: string | null;
+  }>,
+  hashMap: Map<string, string>
 ) {
   const existingRegistry = await first<{ policyDocumentId: string }>(
     db,
@@ -487,10 +503,13 @@ async function ensureCandidateRegistration(
     [institutionId, candidate.sourceType, candidate.sourceId]
   );
   if (existingRegistry) {
+    if (candidate.contentHash) hashMap.set(candidate.contentHash, existingRegistry.policyDocumentId);
     return { policyDocumentId: existingRegistry.policyDocumentId, inserted: false, mapped: false };
   }
 
-  let policyId: string | null = null;
+  let policyId: string | null = candidate.contentHash
+    ? hashMap.get(candidate.contentHash) || null
+    : null;
   if (candidate.sourceType === 'SOURCE_DOCUMENT') {
     const existing = await first<{ id: string }>(
       db,
@@ -504,7 +523,8 @@ async function ensureCandidateRegistration(
   }
 
   if (!policyId) {
-    policyId = titleMap.get(normalize(candidate.title))?.id || null;
+    const identityKey = normalize(candidate.documentType) + ':' + normalize(candidate.title);
+    policyId = titleMap.get(identityKey)?.id || null;
   }
 
   let inserted = false;
@@ -547,9 +567,10 @@ async function ensureCandidateRegistration(
       ]
     );
     inserted = true;
-    titleMap.set(normalize(candidate.title), {
+    titleMap.set(normalize(candidate.documentType) + ':' + normalize(candidate.title), {
       id: policyId,
       title: candidate.title,
+      documentType: candidate.documentType,
       sourceDocumentId: candidate.sourceType === 'SOURCE_DOCUMENT' ? candidate.sourceId : null
     });
   }
@@ -1168,6 +1189,7 @@ export async function syncPolicyRegistryFromDatabase(
   try {
     const candidates = await discoverCandidates(db, institutionId);
     const titleMap = await policyByNormalizedTitle(db, institutionId);
+    const hashMap = new Map<string, string>();
     let insertedPolicies = 0;
     let mappedSources = await mapExistingPolicySources(db, institutionId);
 
@@ -1177,8 +1199,10 @@ export async function syncPolicyRegistryFromDatabase(
         institutionId,
         candidate,
         actorName,
-        titleMap
+        titleMap,
+        hashMap
       );
+      if (candidate.contentHash) hashMap.set(candidate.contentHash, result.policyDocumentId);
       if (result.inserted) insertedPolicies += 1;
       if (result.mapped) mappedSources += 1;
     }
