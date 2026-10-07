@@ -91,6 +91,11 @@ type Workspace = {
   drafts: Draft[];
   impacts: Impact[];
   runs: Lookup[];
+  targets: {
+    policies: Lookup[];
+    processes: Lookup[];
+    controls: Lookup[];
+  };
 };
 
 type CompareResult = {
@@ -220,11 +225,11 @@ export function RegulatoryClauseWorkspace() {
 
   const targetMaps = useMemo(() => {
     return {
-      INTERNAL_POLICY: new Map<string, Lookup>(),
-      PROCESS: new Map<string, Lookup>(),
-      CONTROL: new Map<string, Lookup>()
+      INTERNAL_POLICY: new Map((data?.targets.policies || []).map(item => [String(item.id), item])),
+      PROCESS: new Map((data?.targets.processes || []).map(item => [String(item.id), item])),
+      CONTROL: new Map((data?.targets.controls || []).map(item => [String(item.id), item]))
     };
-  }, []);
+  }, [data?.targets]);
 
   const selectedVersions = useMemo(
     () => (data?.sourceVersions || []).filter(item => !selectedRegulationId || item.regulationId === selectedRegulationId),
@@ -243,7 +248,12 @@ export function RegulatoryClauseWorkspace() {
 
   const targetLabel = useCallback((type: string, id: string) => {
     const target = targetMaps[type as keyof typeof targetMaps]?.get(id);
-    if (target) return String(target.title || target.name || id);
+    if (target) {
+      if (type === 'INTERNAL_POLICY') return String(target.documentCode || '') + ' — ' + String(target.title || '');
+      if (type === 'PROCESS') return String(target.processId || '') + ' — ' + String(target.name || '');
+      if (type === 'CONTROL') return String(target.controlId || '') + ' — ' + String(target.name || '');
+      return String(target.title || target.name || id);
+    }
     return id;
   }, [targetMaps]);
 
