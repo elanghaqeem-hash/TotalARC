@@ -170,7 +170,8 @@ const DOCUMENT_TYPES = [
   'Keputusan',
   'Prosedur',
   'Instruksi Kerja',
-  'Standar'
+  'Standar',
+  'Ketentuan Internal'
 ];
 
 function formatDate(value: string | null | undefined) {
@@ -430,8 +431,13 @@ export default function PolicyLibraryPage() {
       },
       {
         key: 'REGULATORY',
-        label: 'Regulasi',
+        label: 'Regulasi/Obligation',
         count: Number(counts.EXTERNAL_REGULATION || 0) + Number(counts.REGULATORY_OBLIGATION || 0)
+      },
+      {
+        key: 'INTERNAL_POLICY',
+        label: 'Ketentuan Lain',
+        count: Number(counts.INTERNAL_POLICY || 0)
       },
       { key: 'BPM', label: 'BPM', count: Number(counts.PROCESS || 0) },
       { key: 'RISK', label: 'Risk', count: Number(counts.RISK || 0) },
@@ -443,8 +449,18 @@ export default function PolicyLibraryPage() {
       { key: 'RCSA', label: 'RCSA/CSA', count: Number(counts.RCSA_SCOPE || 0) },
       {
         key: 'ICOFR',
-        label: 'ICOFR/ToE',
-        count: Number(counts.ICOFR_PROCESS || 0) + Number(counts.TOD_TEST || 0) + Number(counts.TOE_TEST || 0)
+        label: 'ICOFR/ToD/ToE',
+        count:
+          Number(counts.ICOFR_PROCESS || 0) +
+          Number(counts.ICOFR_CONTROL || 0) +
+          Number(counts.ICOFR_SCOPE || 0) +
+          Number(counts.TOD_TEST || 0) +
+          Number(counts.TOE_TEST || 0)
+      },
+      {
+        key: 'EVIDENCE',
+        label: 'Evidence',
+        count: Number(counts.EVIDENCE || 0)
       },
       {
         key: 'REMEDIATION',
@@ -997,9 +1013,9 @@ export default function PolicyLibraryPage() {
               <div>
                 <h2 className="font-black text-slate-950">Keterkaitan Ketentuan dengan TotalARC</h2>
                 <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">
-                  Relasi dibangun dari koneksi yang sudah ada di database: sumber dokumen, regulatory obligation,
-                  BPM, risk, control/RCM, RCSA/CSA, ICOFR/ToE, evidence, serta remediation/MAP. Tidak ada relasi
-                  yang dibuat hanya berdasarkan kemiripan judul.
+                  Relasi dibangun dari koneksi yang sudah ada di database: sumber dokumen, hubungan antar-ketentuan,
+                  regulatory obligation, BPM, risk, control/RCM, RCSA/CSA, ICOFR/ToD/ToE, evidence, serta
+                  remediation/MAP. Relasi modul tidak dibuat hanya berdasarkan kemiripan judul.
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
