@@ -20,7 +20,7 @@ import { extractProcessSupportingDocument } from '@/lib/process-document-extract
 
 export const dynamic = 'force-dynamic';
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['pdf', 'xlsx', 'docx', 'txt', 'jpg', 'jpeg', 'png']);
 
 function extOf(name: string) {
@@ -411,7 +411,7 @@ export async function POST(request: Request) {
       return noStore({ error: 'Dokumen laporan keuangan kosong.' }, { status: 400 });
     }
     if (file.size > MAX_FILE_BYTES) {
-      return noStore({ error: 'Ukuran dokumen melebihi batas 10 MB.' }, { status: 413 });
+      return noStore({ error: 'Ukuran dokumen melebihi batas 40 MB.' }, { status: 413 });
     }
 
     let pdfText;
@@ -631,7 +631,7 @@ export async function POST(request: Request) {
       AI_FINANCIAL_SCOPING_NO_ITEMS: ['Tidak ada akun atau disclosure yang dapat diidentifikasi secara defensible dari dokumen.', 422],
       AI_FINANCIAL_SCOPING_INVALID_ITEM: ['AI mengembalikan kandidat akun yang tidak valid.', 502],
       FILE_TYPE_NOT_ALLOWED: ['Tipe dokumen tidak diizinkan oleh Repositori Bukti.', 415],
-      FILE_TOO_LARGE: ['Ukuran dokumen melebihi batas 8 MB.', 413]
+      FILE_TOO_LARGE: ['Ukuran dokumen melebihi batas 40 MB.', 413]
     };
 
     if (known[code]) {
