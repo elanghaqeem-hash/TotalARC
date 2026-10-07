@@ -1,20 +1,21 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { preparePdfText } from '@/lib/pdf-ocr-client';
 import {
   AlertTriangle,
   ArrowRight,
   Check,
   CheckCircle2,
-  FileDiff,
+  Download,
   FileSearch,
   GitCompareArrows,
   Loader2,
   Plus,
   RefreshCw,
   ScanText,
-  ShieldCheck,
   Sparkles,
+  UploadCloud,
   X,
   XCircle
 } from 'lucide-react';
@@ -147,6 +148,10 @@ export function RegulatoryClauseWorkspace() {
   const [notice, setNotice] = useState('');
   const [mode, setMode] = useState<'sources' | 'compare' | 'drafts'>('sources');
   const [showLinkForm, setShowLinkForm] = useState(false);
+  const [showUploadForm, setShowUploadForm] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [forceOcr, setForceOcr] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [selectedRegulationId, setSelectedRegulationId] = useState('');
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
 
@@ -256,6 +261,53 @@ export function RegulatoryClauseWorkspace() {
     }
     return id;
   }, [targetMaps]);
+
+  async function submitUpload(event: FormEvent) {
+    event.preventDefault();
+    if (!uploadFile) return;
+
+    setWorking('upload-source');
+    setError('');
+    setNotice('');
+    setUploadProgress('');
+    try {
+      const form = new FormData();
+      form.set('file', uploadFile);
+
+      if (/\.pdf$/i.test(uploadFile.name)) {
+        const pdfText = await preparePdfText(uploadFile, forceOcr, message => setUploadProgress(message));
+        if (!pdfText) throw new Error('PDF tidak dapat diproses.');
+        form.set('pdfText', JSON.stringify(pdfText));
+      }
+
+      const response = await fetch('/api/policy-library/clauses/source-upload', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Upload dokumen regulasi gagal.');
+
+      setShowUploadForm(false);
+      setUploadFile(null);
+      setForceOcr(false);
+      setUploadProgress('');
+      setNotice('Dokumen regulasi berhasil disimpan ke Source Library dan siap dihubungkan.');
+      await load();
+
+      if (payload.document?.id) {
+        setSourceForm(current => ({
+          ...current,
+          sourceDocumentId: String(payload.document.id)
+        }));
+        setShowLinkForm(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload dokumen regulasi gagal.');
+    } finally {
+      setWorking('');
+    }
+  }
 
   async function submitSource(event: FormEvent) {
     event.preventDefault();
@@ -390,15 +442,25 @@ export function RegulatoryClauseWorkspace() {
               Refresh
             </button>
             {data?.canManage && (
-              <button
-                type="button"
-                onClick={() => setShowLinkForm(true)}
-                disabled={!data.regulations.length || !data.sources.length}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3.5 py-2 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50"
-              >
-                <Plus className="h-4 w-4" />
-                Hubungkan Dokumen Regulasi
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowUploadForm(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-sm font-black text-indigo-700 hover:bg-indigo-100"
+                >
+                  <UploadCloud className="h-4 w-4" />
+                  Upload Dokumen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowLinkForm(true)}
+                  disabled={!data.regulations.length || !data.sources.length}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3.5 py-2 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Hubungkan Dokumen Regulasi
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -508,6 +570,13 @@ export function RegulatoryClauseWorkspace() {
                     </div>
                     {data?.canManage && (
                       <div className="flex shrink-0 flex-wrap gap-2">
+                        <a
+                          href={'/api/policy-library/clauses/source-download?documentId=' + encodeURIComponent(version.sourceDocumentId)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download Sumber
+                        </a>
                         <button
                           type="button"
                           onClick={() => void buildSnapshot(version)}
@@ -749,6 +818,56 @@ export function RegulatoryClauseWorkspace() {
           </div>
         )}
       </div>
+
+      {showUploadForm && data?.canManage && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm md:items-center md:p-6">
+          <form onSubmit={submitUpload} className="w-full rounded-t-3xl bg-white shadow-2xl md:max-w-2xl md:rounded-3xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <div className="text-lg font-black text-slate-950">Upload Dokumen Regulasi</div>
+                <div className="mt-1 text-sm text-slate-500">
+                  File asli dan teks hasil extraction/OCR disimpan di Source Library institusi aktif.
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowUploadForm(false)} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="grid gap-4 p-5">
+              <label className="text-sm font-bold text-slate-700">
+                File PDF / TXT *
+                <input
+                  required
+                  type="file"
+                  accept=".pdf,.txt,application/pdf,text/plain"
+                  onChange={event => setUploadFile(event.target.files?.[0] || null)}
+                  className="mt-1.5 block w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-normal"
+                />
+              </label>
+              {uploadFile && /\.pdf$/i.test(uploadFile.name) && (
+                <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-700">
+                  <input type="checkbox" checked={forceOcr} onChange={event => setForceOcr(event.target.checked)} />
+                  Paksa OCR seluruh halaman
+                </label>
+              )}
+              {uploadProgress && (
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">
+                  {uploadProgress}
+                </div>
+              )}
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                Batas Source Library untuk file regulasi saat ini 8 MB. PDF scan diproses OCR di browser;
+                hasil OCR harus dicocokkan dengan dokumen asli sebelum draft obligation disetujui.
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button type="button" onClick={() => setShowUploadForm(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700">Batal</button>
+              <button disabled={working === 'upload-source' || !uploadFile} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white disabled:opacity-50">
+                {working === 'upload-source' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                Upload & Extract Text
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showLinkForm && data?.canManage && (
         <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm md:items-center md:p-6">
