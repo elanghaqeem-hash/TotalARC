@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { PolicyIntelligenceWorkspace } from '@/components/policy/PolicyIntelligenceWorkspace';
 import { RegulatoryObligationWorkspace } from '@/components/policy/RegulatoryObligationWorkspace';
+import { RegulatoryClauseWorkspace } from '@/components/policy/RegulatoryClauseWorkspace';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -18,6 +19,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ScanText,
   ShieldAlert,
   UploadCloud,
   X
@@ -119,7 +121,7 @@ type Dashboard = {
   uploadedSources: UploadedSource[];
 };
 
-type TabKey = 'library' | 'regulations' | 'impacts' | 'intelligence' | 'obligations' | 'uploads';
+type TabKey = 'library' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
 
 const DOCUMENT_TYPES = [
   'Kebijakan',
@@ -609,6 +611,7 @@ export default function PolicyLibraryPage() {
               ['regulations', 'Regulatory Watch', ShieldAlert],
               ['impacts', 'Impact & Action', Link2],
               ['intelligence', 'Regulatory Intelligence', ShieldAlert],
+              ['clauses', 'Clause Intelligence', ScanText],
               ['obligations', 'Compliance Universe', ClipboardCheck],
               ['uploads', 'File Terunggah', UploadCloud]
             ].map(([key, label, Icon]) => {
@@ -956,6 +959,10 @@ export default function PolicyLibraryPage() {
             canManage={Boolean(data.canManage)}
             onLibraryChanged={load}
           />
+        )}
+
+        {tab === 'clauses' && (
+          <RegulatoryClauseWorkspace />
         )}
 
         {tab === 'obligations' && (

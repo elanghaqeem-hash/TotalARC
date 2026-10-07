@@ -11,7 +11,8 @@ export type AiFeature =
   | 'materiality'
   | 'significant_accounts'
   | 'enterprise_overview'
-  | 'regulatory_intelligence';
+  | 'regulatory_intelligence'
+  | 'regulatory_clause_intelligence';
 
 export type AiSensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
 
