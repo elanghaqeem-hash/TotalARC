@@ -98,6 +98,69 @@ async function verifyRbacNegative() {
   };
 }
 
+function verifyPolicyLibrarySecurity() {
+  const access = loadTypeScriptModule('src/lib/access-control.ts');
+  const endpoint = '/api/policy-library';
+
+  assert(
+    access.canAccessApi('ComplianceOfficer', endpoint, 'GET') === true,
+    'ComplianceOfficer must be able to read Policy Library.'
+  );
+  assert(
+    access.canAccessApi('ComplianceOfficer', endpoint, 'POST') === true,
+    'ComplianceOfficer must be able to manage Policy Library.'
+  );
+  assert(
+    access.canAccessApi('Executive', endpoint, 'GET') === true,
+    'Executive must have read access to Policy Library.'
+  );
+  assert(
+    access.canAccessApi('Executive', endpoint, 'POST') === false,
+    'Executive must not mutate Policy Library.'
+  );
+  assert(
+    access.canAccessApi('ReadOnlyAuditor', endpoint, 'POST') === false,
+    'ReadOnlyAuditor must not mutate Policy Library.'
+  );
+  assert(
+    access.canAccessApi('RiskManager', endpoint, 'POST') === false,
+    'RiskManager must not mutate Policy Library.'
+  );
+
+  const intelligence = read('src/lib/d1-policy-intelligence.ts');
+  for (const required of [
+    'WHERE id = ? AND institutionId = ?',
+    'WHERE institutionId = ? AND sourceUrl = ?',
+    'ON PolicyRelationship(institutionId, sourceType, sourceId)',
+    'ON PolicyRelationship(institutionId, targetType, targetId)',
+    'POLICY_RELATION_ENTITY_NOT_FOUND'
+  ]) {
+    assert(
+      intelligence.includes(required),
+      'Policy Intelligence tenant isolation marker missing: ' + required
+    );
+  }
+
+  const cronRoute = read('src/app/api/policy-library/intelligence/cron/route.ts');
+  const middleware = read('src/middleware.ts');
+  assert(
+    cronRoute.includes('REGULATORY_MONITOR_CRON_SECRET') &&
+      cronRoute.includes('x-totalarc-cron-secret'),
+    'Regulatory cron endpoint must require a dedicated secret.'
+  );
+  assert(
+    middleware.includes('authorizedRegulatoryCron') &&
+      middleware.includes('x-totalarc-cron-secret'),
+    'Middleware must validate regulatory cron before bypassing session authentication.'
+  );
+
+  return {
+    label: 'Policy Library security',
+    expected:
+      'Compliance manages; Executive/Auditor/Risk read-only; relation lookup tenant-scoped; cron secret-protected'
+  };
+}
+
 async function verifyTenantIsolation() {
   const institutions = [
     { id: 'bank-ntt', name: 'Bank NTT', legalName: 'PT Bank Pembangunan Daerah Nusa Tenggara Timur' },
@@ -526,6 +589,7 @@ async function main() {
   const results = [];
   results.push(await verifyRbacNegative());
   results.push(await verifyTenantIsolation());
+  results.push(verifyPolicyLibrarySecurity());
   results.push(verifyRedaction());
   results.push(verifyTraceabilityFixtures());
 
