@@ -60,6 +60,9 @@ jobs:
       - name: Verify ICOFR traceability integrity
         run: npm run verify:icofr-traceability
 
+      - name: Verify ICOFR error-stage diagnostics
+        run: node scripts/verify-icofr-error-stages.cjs
+
       - name: Verify PDF OCR input validation
         run: npm run verify:pdf-ocr
 
