@@ -46,7 +46,8 @@ function errorResponse(error: unknown) {
     REG_OBLIGATION_LINK_DUPLICATE: ['Relasi yang sama sudah tersedia.', 409],
     REG_OBLIGATION_LINK_NOT_FOUND: ['Relasi kewajiban tidak ditemukan.', 404],
     REG_OBLIGATION_ASSESSMENT_REQUIRED: ['Status, tanggal, dan assessor kepatuhan wajib diisi.', 400],
-    REG_OBLIGATION_ACTION_OWNER_REQUIRED: ['PIC tindak lanjut wajib diisi untuk gap kepatuhan.', 400]
+    REG_OBLIGATION_ACTION_OWNER_REQUIRED: ['PIC tindak lanjut wajib diisi untuk gap kepatuhan.', 400],
+    REG_OBLIGATION_ACTION_DUE_REQUIRED: ['Due date tindak lanjut wajib diisi untuk gap kepatuhan.', 400]
   };
 
   const mapped = mapping[code];
