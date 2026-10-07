@@ -1,5 +1,7 @@
 'use client';
 
+import { ProcessOwnerPicker } from '@/components/processes/ProcessOwnerPicker';
+
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
@@ -69,6 +71,7 @@ export default function ProcessesPage() {
     name: '',
     categoryId: '',
     ownerName: '',
+    ownerOrgUnitIds: [] as string[] | undefined,
     criticality: 'Not Assessed',
     classification: 'Core',
     isIcofrRelevant: true,
@@ -185,6 +188,7 @@ export default function ProcessesPage() {
       name: '',
       categoryId: categories[0]?.id || '',
       ownerName: '',
+      ownerOrgUnitIds: [] as string[] | undefined,
       criticality: 'Not Assessed',
       classification: 'Core',
       isIcofrRelevant: true,
@@ -201,6 +205,7 @@ export default function ProcessesPage() {
       name: process.name || '',
       categoryId: process.categoryId || categories[0]?.id || '',
       ownerName: process.ownerName || '',
+      ownerOrgUnitIds: Array.isArray(process.ownerOrgUnitIds) ? process.ownerOrgUnitIds as string[] : undefined,
       criticality: process.criticality || 'Critical',
       classification: process.classification || 'Core',
       isIcofrRelevant: Boolean(process.isIcofrRelevant),
@@ -1184,14 +1189,8 @@ export default function ProcessesPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Pemilik Proses</label>
-                  <input
-                    type="text"
-                    placeholder="Kosongkan jika sumber/pemilik belum terkonfirmasi"
-                    value={formData.ownerName}
-                    onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                  />
+                  <ProcessOwnerPicker value={formData.ownerOrgUnitIds} legacyName={formData.ownerName} disabled={saving}
+                    onChange={ids => setFormData(current => ({ ...current, ownerOrgUnitIds: ids }))} />
                 </div>
 
                 <div>

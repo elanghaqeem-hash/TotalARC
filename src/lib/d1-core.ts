@@ -1,3 +1,4 @@
+import { parseStoredOwnerIds, validateOwnerIds, resolveOwnerNames, type ProcessOwnerUnit } from '@/lib/process-owners';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 
@@ -278,6 +279,7 @@ export async function ensureCoreDomainSchema() {
       parentProcessId TEXT,
       description TEXT,
       ownerName TEXT NOT NULL,
+      ownerOrgUnitIds TEXT,
       ownerEmail TEXT,
       managerName TEXT,
       criticality TEXT NOT NULL DEFAULT 'Critical',
@@ -669,6 +671,7 @@ async function writeAudit(
 function processRow(row: Record<string, unknown>) {
   return {
     ...row,
+    ownerOrgUnitIds: parseStoredOwnerIds(row.ownerOrgUnitIds),
     level: Number(row.level || 0),
     isIcofrRelevant: bool(row.isIcofrRelevant)
   };
@@ -1566,6 +1569,32 @@ export async function findBusinessProcessForAi(
   return row ? hydrateProcess(db, row) : null;
 }
 
+// Lazy additive migration keeps existing databases and legacy owner labels readable.
+async function ensureProcessOwnerColumn(db: D1DatabaseLike) {
+  const columns = await all<{ name: string }>(db, 'PRAGMA table_info(BusinessProcess)');
+  if (columns.some(column => column.name === 'ownerOrgUnitIds')) return;
+  try { await run(db, 'ALTER TABLE BusinessProcess ADD COLUMN ownerOrgUnitIds TEXT'); }
+  catch (error) {
+    const current = await all<{ name: string }>(db, 'PRAGMA table_info(BusinessProcess)');
+    if (!current.some(column => column.name === 'ownerOrgUnitIds')) throw error;
+  }
+}
+
+export async function listProcessOwnerUnits(institutionId: string) {
+  const db = await ensureCoreDomainSchema();
+  return all<ProcessOwnerUnit>(db,
+    "SELECT id, code, name, type, parentId FROM OrganizationUnit WHERE institutionId = ? AND status = 'Active' ORDER BY code, name",
+    [institutionId]);
+}
+
+async function resolveProcessOwners(db: D1DatabaseLike, institutionId: string, input: unknown) {
+  const ids = validateOwnerIds(input);
+  const units = ids.length ? await all<ProcessOwnerUnit>(db,
+    `SELECT id, code, name, type, parentId FROM OrganizationUnit WHERE institutionId = ? AND status = 'Active' AND id IN (${ids.map(() => '?').join(',')})`,
+    [institutionId, ...ids]) : [];
+  return { ids: JSON.stringify(ids), name: resolveOwnerNames(ids, units) };
+}
+
 export async function createBusinessProcess(input: Record<string, unknown>, institutionId?: string | null) {
   const db = await ensureCoreDomainSchema();
   const institution = institutionId
@@ -1594,17 +1623,18 @@ export async function createBusinessProcess(input: Record<string, unknown>, inst
 
   const id = crypto.randomUUID();
   const now = nowIso();
-  const ownerName =
-    typeof input.ownerName === 'string' ? input.ownerName.trim() : '';
+  const owners = input.ownerOrgUnitIds === undefined ? null : await resolveProcessOwners(db, String(institution.id), input.ownerOrgUnitIds);
+  await ensureProcessOwnerColumn(db);
+  const ownerName = owners ? owners.name : typeof input.ownerName === 'string' ? input.ownerName.trim() : '';
 
   await run(
     db,
     `INSERT INTO BusinessProcess (
       id, institutionId, legalEntityId, orgUnitId, categoryId, processId, name,
-      level, parentProcessId, description, ownerName, ownerEmail, managerName,
+      level, parentProcessId, description, ownerName, ownerOrgUnitIds, ownerEmail, managerName,
       criticality, classification, isIcofrRelevant, status, version,
       effectiveDate, reviewDate, tags, createdAt, updatedAt
-    ) VALUES (?, ?, NULL, NULL, ?, ?, ?, 2, NULL, ?, ?, NULL, NULL, ?, ?, ?, 'Draft', '1.0', ?, NULL, NULL, ?, ?)`,
+    ) VALUES (?, ?, NULL, NULL, ?, ?, ?, 2, NULL, ?, ?, ?, NULL, NULL, ?, ?, ?, 'Draft', '1.0', ?, NULL, NULL, ?, ?)`,
     [
       id,
       institution.id,
@@ -1613,6 +1643,7 @@ export async function createBusinessProcess(input: Record<string, unknown>, inst
       input.name,
       nullable(input.description),
       ownerName,
+      owners?.ids ?? null,
       input.criticality,
       input.classification,
       input.isIcofrRelevant ? 1 : 0,
@@ -1634,6 +1665,7 @@ export async function createBusinessProcess(input: Record<string, unknown>, inst
     parentProcessId: null,
     description: nullable(input.description),
     ownerName,
+    ownerOrgUnitIds: owners?.ids ?? null,
     ownerEmail: null,
     managerName: null,
     criticality: input.criticality,
@@ -1717,10 +1749,10 @@ export async function updateBusinessProcess(id: string, input: Record<string, un
     typeof input.name === 'string' && input.name.trim()
       ? input.name.trim()
       : String(existing.name);
-  const ownerName =
-    typeof input.ownerName === 'string' && input.ownerName.trim()
-      ? input.ownerName.trim()
-      : String(existing.ownerName);
+  const owners = input.ownerOrgUnitIds === undefined ? null : await resolveProcessOwners(db, String(existing.institutionId), input.ownerOrgUnitIds);
+  await ensureProcessOwnerColumn(db);
+  const ownerName = owners ? owners.name : existing.ownerOrgUnitIds != null ? String(existing.ownerName) :
+    typeof input.ownerName === 'string' && input.ownerName.trim() ? input.ownerName.trim() : String(existing.ownerName);
   const criticality =
     typeof input.criticality === 'string' && input.criticality.trim()
       ? input.criticality.trim()
@@ -1747,29 +1779,32 @@ export async function updateBusinessProcess(id: string, input: Record<string, un
             name = ?,
             description = ?,
             ownerName = ?,
+            ownerOrgUnitIds = ?,
             criticality = ?,
             classification = ?,
             isIcofrRelevant = ?,
             updatedAt = ?
-      WHERE id = ?`,
+      WHERE id = ? AND institutionId = ?`,
     [
       categoryId,
       enterpriseId,
       name,
       description,
       ownerName,
+      owners?.ids ?? existing.ownerOrgUnitIds ?? null,
       criticality,
       classification,
       isIcofrRelevant ? 1 : 0,
       updatedAt,
-      id
+      id,
+      existing.institutionId
     ]
   );
 
   const updated = await first<Record<string, unknown>>(
     db,
-    'SELECT * FROM BusinessProcess WHERE id = ? LIMIT 1',
-    [id]
+    'SELECT * FROM BusinessProcess WHERE id = ? AND institutionId = ? LIMIT 1',
+    [id, existing.institutionId]
   );
   if (!updated) throw new Error('PROCESS_NOT_FOUND');
 

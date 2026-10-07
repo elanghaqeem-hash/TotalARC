@@ -165,6 +165,7 @@ model BusinessProcess {
   parentProcessId String?
   description     String?
   ownerName       String
+  ownerOrgUnitIds String? // JSON array of institution-scoped OrganizationUnit IDs
   ownerEmail      String?
   managerName     String?
   criticality     String   @default("Critical") // Critical, High, Medium, Low
