@@ -8,6 +8,10 @@ import {
   recordPolicyReview,
   upsertPolicyRegulationImpact
 } from '@/lib/d1-policy-library';
+import {
+  getPolicyRegistryCoverage,
+  syncPolicyRegistryFromDatabase
+} from '@/lib/d1-policy-registry';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +54,8 @@ function errorResponse(error: unknown) {
     POLICY_LIBRARY_REGULATION_NOT_FOUND: { status: 404, error: 'Regulasi eksternal tidak ditemukan untuk institusi aktif.' },
     POLICY_LIBRARY_REVIEWER_REQUIRED: { status: 400, error: 'Nama reviewer wajib diisi.' },
     POLICY_LIBRARY_REVIEW_OUTCOME_REQUIRED: { status: 400, error: 'Hasil review wajib dipilih.' },
-    POLICY_LIBRARY_SOURCE_NOT_FOUND: { status: 404, error: 'File sumber tidak ditemukan atau bukan milik institusi aktif.' }
+    POLICY_LIBRARY_SOURCE_NOT_FOUND: { status: 404, error: 'File sumber tidak ditemukan atau bukan milik institusi aktif.' },
+    POLICY_REGISTRY_DATABASE_UNAVAILABLE: { status: 503, error: 'Database registry ketentuan belum tersedia.' }
   };
 
   const mapped = mapping[code];
@@ -73,6 +78,7 @@ export async function GET(request: Request) {
     const context = await getContext(request);
     if (!context) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
+    const registry = await getPolicyRegistryCoverage(context.institution.id);
     const [dashboard, sourceDocuments] = await Promise.all([
       listPolicyLibraryDashboard(context.institution.id),
       listEffectiveSourceDocuments(context.institution.id)
@@ -83,6 +89,7 @@ export async function GET(request: Request) {
       institutionName: context.institution.name,
       canManage: context.canManage,
       ...dashboard,
+      registry,
       uploadedSources: sourceDocuments.map(item => ({
         id: item.id,
         title: item.title,
@@ -116,6 +123,16 @@ export async function POST(request: Request) {
     const body = await request.json() as Record<string, unknown>;
     const action = String(body.action || '').trim().toUpperCase();
     const actorName = context.profile.name || context.profile.email || context.profile.id;
+
+    if (action === 'SYNC_REGISTRY') {
+      const result = await syncPolicyRegistryFromDatabase(
+        context.institution.id,
+        actorName
+      );
+      return NextResponse.json({ changed: true, result }, {
+        headers: { 'Cache-Control': 'no-store' }
+      });
+    }
 
     if (action === 'CREATE_POLICY') {
       const record = await createPolicyDocument(context.institution.id, {
