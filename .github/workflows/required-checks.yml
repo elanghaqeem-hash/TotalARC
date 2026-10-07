@@ -180,6 +180,7 @@ jobs:
       - run: npm run verify:policy-intelligence
       - run: npm run verify:regulatory-obligations
       - run: npm run verify:regulatory-clauses
+      - run: npm run verify:policy-registry
 
   vercel-build:
     name: Vercel Build
