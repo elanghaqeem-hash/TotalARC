@@ -952,23 +952,29 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
       sourceId: String(row.sourceId || '')
     });
   }
-  const links = await all<PolicyEntityLinkRecord>(
+  const linkAggregates = await all<{ policyDocumentId: string; targetType: string; count: number }>(
     db,
-    `SELECT id,institutionId,policyDocumentId,targetType,targetId,relationship,sourceType,sourceId,createdAt,updatedAt
+    `SELECT policyDocumentId,targetType,COUNT(*) AS count
        FROM PolicyEntityLink
       WHERE institutionId=?
+      GROUP BY policyDocumentId,targetType
       ORDER BY policyDocumentId,targetType
-      LIMIT 30000`,
+      LIMIT 10000`,
     [institutionId]
   );
 
   const byPolicy: Record<string, Record<string, number>> = {};
   const byTargetType: Record<string, number> = {};
-  for (const link of links) {
-    byPolicy[link.policyDocumentId] ||= {};
-    byPolicy[link.policyDocumentId][link.targetType] =
-      (byPolicy[link.policyDocumentId][link.targetType] || 0) + 1;
-    byTargetType[link.targetType] = (byTargetType[link.targetType] || 0) + 1;
+  let totalLinks = 0;
+  for (const row of linkAggregates) {
+    const policyId = String(row.policyDocumentId || '');
+    const targetType = String(row.targetType || '');
+    const count = Number(row.count || 0);
+    if (!policyId || !targetType || count <= 0) continue;
+    byPolicy[policyId] ||= {};
+    byPolicy[policyId][targetType] = count;
+    byTargetType[targetType] = (byTargetType[targetType] || 0) + count;
+    totalLinks += count;
   }
 
   const lastSync = await first<Record<string, unknown>>(
@@ -991,7 +997,7 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
       missingCandidates: candidates.filter(item =>
         !registeredKeys.has(item.sourceType + ':' + item.sourceId)
       ).length,
-      totalLinks: links.length,
+      totalLinks,
       policiesWithLinks: Object.keys(byPolicy).length
     },
     byPolicy,
@@ -1006,7 +1012,6 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
       classificationReason: item.classificationReason,
       registered: registeredKeys.has(item.sourceType + ':' + item.sourceId)
     })),
-    links,
     lastSync: lastSync || null
   };
 }
