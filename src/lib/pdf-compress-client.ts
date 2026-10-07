@@ -10,12 +10,34 @@ const presets = {
   small: { edge: 1500, quality: 0.65 }
 };
 
+async function importPdfDependencies() {
+  const [pdfLib, pdfjs] = await Promise.all([import('pdf-lib'), import('pdfjs-dist')]);
+  return { pdfLib, pdfjs };
+}
+
+let dependencyPromise: ReturnType<typeof importPdfDependencies> | null = null;
+
+function loadPdfDependencies() {
+  if (!dependencyPromise) {
+    dependencyPromise = importPdfDependencies().catch(error => {
+      dependencyPromise = null;
+      throw error;
+    });
+  }
+  return dependencyPromise;
+}
+
+export async function preloadPdfCompression() {
+  await loadPdfDependencies();
+}
+
 export async function compressPdf(file: File, quality: PdfCompressionQuality, progress: (text: string) => void, signal?: AbortSignal) {
   if (!/\.pdf$/i.test(file.name)) throw new Error('Pilih file PDF.');
   if (file.size > 100 * 1024 * 1024) throw new Error('Kompresi di browser dibatasi 100 MB. Pisahkan PDF terlebih dahulu.');
   const check = () => { if (signal?.aborted) throw new Error('Kompresi dibatalkan.'); };
   progress('Membuka PDF…');
-  const [{ PDFDocument, PDFName, PDFDict }, pdfjs] = await Promise.all([import('pdf-lib'), import('pdfjs-dist')]);
+  const { pdfLib, pdfjs } = await loadPdfDependencies();
+  const { PDFDocument, PDFName, PDFDict } = pdfLib;
   const bytes = new Uint8Array(await file.arrayBuffer());
   check();
   let source;
