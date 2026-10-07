@@ -476,6 +476,30 @@ export async function listRegulatoryCandidates(institutionId: string) {
   return result.results || [];
 }
 
+export async function updateRegulatoryCandidateStatus(
+  institutionId: string,
+  candidateId: string,
+  status: 'BARU' | 'DITINJAU' | 'TERDAFTAR' | 'DIABAIKAN'
+) {
+  const db = await ensurePolicyIntelligenceSchema();
+  const existing = await db.prepare(`
+    SELECT id FROM RegulatoryCandidate
+    WHERE id = ? AND institutionId = ?
+    LIMIT 1
+  `).bind(candidateId, institutionId).first<{ id: string }>();
+  if (!existing) throw new Error('POLICY_INTELLIGENCE_CANDIDATE_NOT_FOUND');
+
+  await db.prepare(`
+    UPDATE RegulatoryCandidate
+    SET status = ?, lastSeenAt = ?
+    WHERE id = ? AND institutionId = ?
+  `).bind(status, nowIso(), candidateId, institutionId).run();
+
+  return db.prepare(
+    'SELECT * FROM RegulatoryCandidate WHERE id = ? AND institutionId = ? LIMIT 1'
+  ).bind(candidateId, institutionId).first<RegulatoryCandidate>();
+}
+
 export async function scanRegulatorySource(institutionId: string, sourceId: string) {
   const db = await ensurePolicyIntelligenceSchema();
   const source = await db.prepare(`
