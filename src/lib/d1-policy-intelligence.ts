@@ -67,6 +67,19 @@ export type PolicyRelationship = {
   updatedAt: string;
 };
 
+const WATCH_SOURCE_COLUMNS =
+  'id, institutionId, regulator, name, sourceUrl, sourceType, sector, keywordsJson, ' +
+  'active, lastCheckedAt, lastStatus, lastResultCount, lastError, etag, lastModified, ' +
+  'createdBy, createdAt, updatedAt';
+
+const CANDIDATE_COLUMNS =
+  'id, institutionId, sourceId, regulator, title, sourceUrl, fingerprint, status, ' +
+  'discoveredAt, lastSeenAt, aiAnalysisJson, aiAnalyzedAt';
+
+const RELATIONSHIP_COLUMNS =
+  'id, institutionId, sourceType, sourceId, targetType, targetId, relationType, rationale, ' +
+  'effectiveDate, status, createdBy, createdAt, updatedAt';
+
 export const OFFICIAL_REGULATORY_SOURCES = [
   {
     regulator: 'OJK',
@@ -456,7 +469,8 @@ export async function addRegulatoryWatchSource(
   }
 
   return db.prepare(
-    'SELECT * FROM RegulatoryWatchSource WHERE id = ? AND institutionId = ? LIMIT 1'
+    'SELECT ' + WATCH_SOURCE_COLUMNS +
+    ' FROM RegulatoryWatchSource WHERE id = ? AND institutionId = ? LIMIT 1'
   ).bind(id, institutionId).first<RegulatoryWatchSource>();
 }
 
@@ -487,7 +501,7 @@ export async function seedOfficialSources(institutionId: string, actorName: stri
 export async function listRegulatoryWatchSources(institutionId: string) {
   const db = await ensurePolicyIntelligenceSchema();
   const result = await db.prepare(`
-    SELECT * FROM RegulatoryWatchSource
+    SELECT ${WATCH_SOURCE_COLUMNS} FROM RegulatoryWatchSource
     WHERE institutionId = ?
     ORDER BY active DESC, regulator ASC, name ASC
     LIMIT 200
@@ -498,7 +512,7 @@ export async function listRegulatoryWatchSources(institutionId: string) {
 export async function listRegulatoryCandidates(institutionId: string) {
   const db = await ensurePolicyIntelligenceSchema();
   const result = await db.prepare(`
-    SELECT * FROM RegulatoryCandidate
+    SELECT ${CANDIDATE_COLUMNS} FROM RegulatoryCandidate
     WHERE institutionId = ?
     ORDER BY CASE status WHEN 'BARU' THEN 0 WHEN 'DITINJAU' THEN 1 ELSE 2 END,
              discoveredAt DESC
@@ -527,14 +541,15 @@ export async function updateRegulatoryCandidateStatus(
   `).bind(status, nowIso(), candidateId, institutionId).run();
 
   return db.prepare(
-    'SELECT * FROM RegulatoryCandidate WHERE id = ? AND institutionId = ? LIMIT 1'
+    'SELECT ' + CANDIDATE_COLUMNS +
+    ' FROM RegulatoryCandidate WHERE id = ? AND institutionId = ? LIMIT 1'
   ).bind(candidateId, institutionId).first<RegulatoryCandidate>();
 }
 
 export async function scanRegulatorySource(institutionId: string, sourceId: string) {
   const db = await ensurePolicyIntelligenceSchema();
   const source = await db.prepare(`
-    SELECT * FROM RegulatoryWatchSource
+    SELECT ${WATCH_SOURCE_COLUMNS} FROM RegulatoryWatchSource
     WHERE id = ? AND institutionId = ? AND active = 1
     LIMIT 1
   `).bind(sourceId, institutionId).first<RegulatoryWatchSource>();
@@ -769,14 +784,15 @@ export async function createPolicyRelationship(
   }
 
   return db.prepare(
-    'SELECT * FROM PolicyRelationship WHERE id = ? AND institutionId = ? LIMIT 1'
+    'SELECT ' + RELATIONSHIP_COLUMNS +
+    ' FROM PolicyRelationship WHERE id = ? AND institutionId = ? LIMIT 1'
   ).bind(id, institutionId).first<PolicyRelationship>();
 }
 
 export async function listPolicyRelationships(institutionId: string) {
   const db = await ensurePolicyIntelligenceSchema();
   const result = await db.prepare(`
-    SELECT * FROM PolicyRelationship
+    SELECT ${RELATIONSHIP_COLUMNS} FROM PolicyRelationship
     WHERE institutionId = ?
     ORDER BY updatedAt DESC
     LIMIT 2000
@@ -801,7 +817,7 @@ export async function analyzeRegulatoryCandidate(
 ) {
   const db = await ensurePolicyIntelligenceSchema();
   const candidate = await db.prepare(`
-    SELECT * FROM RegulatoryCandidate
+    SELECT ${CANDIDATE_COLUMNS} FROM RegulatoryCandidate
     WHERE id = ? AND institutionId = ?
     LIMIT 1
   `).bind(candidateId, institutionId).first<RegulatoryCandidate>();
