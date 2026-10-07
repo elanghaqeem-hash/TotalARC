@@ -994,7 +994,7 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   );
   const controls = await all<Record<string, unknown>>(
     db,
-    `SELECT id,processId,isKeyControl
+    `SELECT id,processId,isKeyControl,isIcofrKey,isItgc
        FROM ControlMaster
       WHERE institutionId=?
       LIMIT 10000`,
@@ -1003,6 +1003,8 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   const processIcofr = new Map(processes.map(row => [String(row.id), Number(row.isIcofrRelevant || 0) === 1]));
   const risksByProcess = new Map<string, string[]>();
   const controlsByProcess = new Map<string, string[]>();
+  const controlProcess = new Map<string, string>();
+  const controlIcofr = new Map<string, boolean>();
   for (const row of risks) {
     const key = String(row.processId || '');
     const list = risksByProcess.get(key) || [];
@@ -1011,9 +1013,15 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   }
   for (const row of controls) {
     const key = String(row.processId || '');
+    const controlId = String(row.id || '');
     const list = controlsByProcess.get(key) || [];
-    list.push(String(row.id));
+    list.push(controlId);
     controlsByProcess.set(key, list);
+    controlProcess.set(controlId, key);
+    controlIcofr.set(
+      controlId,
+      Number(row.isIcofrKey || 0) === 1 || Number(row.isItgc || 0) === 1
+    );
   }
 
   const policyIds = new Set([
@@ -1035,6 +1043,22 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
       }
       if (processIcofr.get(processId)) {
         generated += await insertLink(db, institutionId, policyId, 'ICOFR_PROCESS', processId, 'ICOFR_RELEVANT', processId) ? 1 : 0;
+      }
+    }
+
+    const controlSet = controlIdsByPolicy.get(policyId) || new Set<string>();
+    for (const controlId of Array.from(controlSet)) {
+      const processId = controlProcess.get(controlId) || '';
+      if (controlIcofr.get(controlId) || (processId && processIcofr.get(processId))) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          policyId,
+          'ICOFR_CONTROL',
+          controlId,
+          'ICOFR_CONTROL_RELEVANT',
+          processId || controlId
+        ) ? 1 : 0;
       }
     }
   }
