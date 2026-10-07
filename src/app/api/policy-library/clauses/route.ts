@@ -47,7 +47,8 @@ function errorResponse(error: unknown) {
     REG_CLAUSE_DRAFT_NOT_PENDING: ['Draft obligation sudah pernah direview.', 409],
     REG_CLAUSE_IMPACT_NOT_FOUND: ['Usulan dampak tidak ditemukan.', 404],
     REG_CLAUSE_IMPACT_NOT_PENDING: ['Usulan dampak sudah pernah direview.', 409],
-    REG_CLAUSE_SOURCE_CONTEXT_MISSING: ['Konteks sumber draft tidak lengkap.', 409]
+    REG_CLAUSE_SOURCE_CONTEXT_MISSING: ['Konteks sumber draft tidak lengkap.', 409],
+    REG_CLAUSE_OBLIGATION_CREATE_FAILED: ['Draft lolos validasi tetapi obligation belum berhasil dibuat.', 500]
   };
   const mapped = mapping[code];
   if (mapped) {
