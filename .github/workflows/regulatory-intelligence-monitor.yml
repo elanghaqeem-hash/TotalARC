@@ -1,0 +1,40 @@
+name: Regulatory Intelligence Monitor
+
+on:
+  schedule:
+    # Daily at 07:15 WIB (00:15 UTC). Change this cadence if Compliance requires otherwise.
+    - cron: '15 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: regulatory-intelligence-monitor
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TOTALARC_REGULATORY_MONITOR_URL: ${{ secrets.TOTALARC_REGULATORY_MONITOR_URL }}
+      REGULATORY_MONITOR_CRON_SECRET: ${{ secrets.REGULATORY_MONITOR_CRON_SECRET }}
+    steps:
+      - name: Scan configured regulatory sources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TOTALARC_REGULATORY_MONITOR_URL}" ] || [ -z "${REGULATORY_MONITOR_CRON_SECRET}" ]; then
+            echo "::notice::Regulatory monitor is installed but inactive. Configure TOTALARC_REGULATORY_MONITOR_URL and REGULATORY_MONITOR_CRON_SECRET repository secrets."
+            exit 0
+          fi
+
+          BASE_URL="${TOTALARC_REGULATORY_MONITOR_URL%/}"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-delay 3 \
+            --max-time 180 \
+            -X POST \
+            -H "x-totalarc-cron-secret: ${REGULATORY_MONITOR_CRON_SECRET}" \
+            "${BASE_URL}/api/policy-library/intelligence/cron"
