@@ -9,7 +9,7 @@ import {
   upsertPolicyRegulationImpact
 } from '@/lib/d1-policy-library';
 import {
-  getPolicyRegistryCoverage,
+  getPolicyRegistrySummary,
   syncPolicyRegistryFromDatabase
 } from '@/lib/d1-policy-registry';
 
@@ -78,10 +78,33 @@ export async function GET(request: Request) {
     const context = await getContext(request);
     if (!context) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const registry = await getPolicyRegistryCoverage(context.institution.id);
-    const [dashboard, sourceDocuments] = await Promise.all([
-      listPolicyLibraryDashboard(context.institution.id),
-      listEffectiveSourceDocuments(context.institution.id)
+    const url = new URL(request.url);
+    const mode = String(url.searchParams.get('mode') || 'summary').toLowerCase();
+
+    if (mode === 'sources') {
+      const sourceDocuments = await listEffectiveSourceDocuments(context.institution.id);
+      return NextResponse.json({
+        institutionId: context.institution.id,
+        canManage: context.canManage,
+        uploadedSources: sourceDocuments.map(item => ({
+          id: item.id,
+          title: item.title,
+          provider: item.provider,
+          sourceKind: item.sourceKind,
+          mimeType: item.mimeType,
+          sourceCreatedAt: item.sourceCreatedAt,
+          sourceModifiedAt: item.sourceModifiedAt,
+          module: item.module,
+          rawSizeBytes: item.rawSizeBytes,
+          importedAt: item.importedAt,
+          updatedAt: item.updatedAt
+        }))
+      }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    const [registry, dashboard] = await Promise.all([
+      getPolicyRegistrySummary(context.institution.id),
+      listPolicyLibraryDashboard(context.institution.id)
     ]);
 
     return NextResponse.json({
@@ -90,19 +113,7 @@ export async function GET(request: Request) {
       canManage: context.canManage,
       ...dashboard,
       registry,
-      uploadedSources: sourceDocuments.map(item => ({
-        id: item.id,
-        title: item.title,
-        provider: item.provider,
-        sourceKind: item.sourceKind,
-        mimeType: item.mimeType,
-        sourceCreatedAt: item.sourceCreatedAt,
-        sourceModifiedAt: item.sourceModifiedAt,
-        module: item.module,
-        rawSizeBytes: item.rawSizeBytes,
-        importedAt: item.importedAt,
-        updatedAt: item.updatedAt
-      }))
+      uploadedSources: []
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);
