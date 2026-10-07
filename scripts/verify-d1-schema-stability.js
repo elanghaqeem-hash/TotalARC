@@ -128,6 +128,19 @@ if (fs.existsSync(assurancePath)) {
   const metricsBlock = metricsStart >= 0
     ? assurance.slice(metricsStart, metricsEnd > metricsStart ? metricsEnd : assurance.length)
     : '';
+  for (const required of [
+    'ensureAssuranceColumns',
+    "'humanApproved'",
+    "'INTEGER NOT NULL DEFAULT 0'",
+    "'approvedBy'"
+  ]) {
+    if (!assurance.includes(required)) {
+      findings.push(
+        'src/lib/d1-assurance.ts: existing assurance tables must migrate required columns: ' + required
+      );
+    }
+  }
+
   for (const marker of [
     "SUM(CASE WHEN status <> 'Closed'",
     "SUM(CASE WHEN m.status = 'Overdue'",
