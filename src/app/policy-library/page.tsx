@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PolicyIntelligenceWorkspace } from '@/components/policy/PolicyIntelligenceWorkspace';
 import { RegulatoryObligationWorkspace } from '@/components/policy/RegulatoryObligationWorkspace';
 import { RegulatoryClauseWorkspace } from '@/components/policy/RegulatoryClauseWorkspace';
@@ -12,10 +12,12 @@ import {
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
+  Database,
   FileCheck2,
   FileText,
   Link2,
   Loader2,
+  Network,
   Plus,
   RefreshCw,
   Search,
@@ -109,6 +111,39 @@ type UploadedSource = {
   updatedAt: string;
 };
 
+type Registry = {
+  metrics: {
+    discoveredCandidates: number;
+    registeredCandidates: number;
+    missingCandidates: number;
+    totalLinks: number;
+    policiesWithLinks: number;
+  };
+  byPolicy: Record<string, Record<string, number>>;
+  byTargetType: Record<string, number>;
+  candidates: Array<{
+    sourceType: string;
+    sourceId: string;
+    title: string;
+    documentType: string;
+    confidence: string;
+    classificationReason: string;
+    registered: boolean;
+  }>;
+  lastSync: {
+    id?: string;
+    status?: string;
+    discoveredCandidates?: number;
+    insertedPolicies?: number;
+    mappedSources?: number;
+    generatedLinks?: number;
+    actorName?: string;
+    startedAt?: string;
+    completedAt?: string;
+    errorCode?: string | null;
+  } | null;
+};
+
 type Dashboard = {
   institutionId: string;
   institutionName: string;
@@ -119,9 +154,10 @@ type Dashboard = {
   impacts: Impact[];
   reviews: Review[];
   uploadedSources: UploadedSource[];
+  registry: Registry;
 };
 
-type TabKey = 'library' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
+type TabKey = 'library' | 'relations' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
 
 const DOCUMENT_TYPES = [
   'Kebijakan',
@@ -178,7 +214,7 @@ function statusPill(value: string) {
   if (normalized.includes('dicabut') || normalized.includes('kadaluarsa') || normalized.includes('tidak')) {
     return 'bg-rose-100 text-rose-700';
   }
-  if (normalized.includes('review') || normalized.includes('proses') || normalized.includes('akan')) {
+  if (normalized.includes('review') || normalized.includes('proses') || normalized.includes('akan') || normalized.includes('validasi')) {
     return 'bg-amber-100 text-amber-800';
   }
   return 'bg-slate-100 text-slate-700';
@@ -190,6 +226,8 @@ export default function PolicyLibraryPage() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [registrySyncing, setRegistrySyncing] = useState(false);
+  const registryAutoSyncAttempted = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showPolicyForm, setShowPolicyForm] = useState(false);
