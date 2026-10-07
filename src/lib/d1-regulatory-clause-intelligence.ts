@@ -699,7 +699,7 @@ export async function analyzeRegulatoryClauses(
           requirementText,requirementType,applicability,frequency,criticality,rationale,
           confidence,status,acceptedObligationId,aiProvider,aiModel,aiRequestId,
           createdBy,createdAt,updatedAt
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',NULL,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',NULL,?,?,?,?,?,?)
       `).bind(
         id,
         institutionId,
@@ -881,6 +881,7 @@ export async function reviewRegulatoryClauseDraft(
     },
     actorName
   );
+  if (!obligation) throw new Error('REG_CLAUSE_OBLIGATION_CREATE_FAILED');
 
   const approved = await db.prepare(`
     SELECT id,targetType,targetId,impactType,rationale
@@ -935,7 +936,10 @@ export async function getRegulatoryClauseWorkspace(institutionId: string) {
     snapshots,
     drafts,
     impacts,
-    runs
+    runs,
+    policies,
+    processes,
+    controls
   ] = await Promise.all([
     db.prepare(`
       SELECT id,regulator,regulationCode,title,category,issueDate,effectiveDate,status,sourceUrl
@@ -991,6 +995,27 @@ export async function getRegulatoryClauseWorkspace(institutionId: string) {
       WHERE institutionId = ?
       ORDER BY startedAt DESC
       LIMIT 200
+    `).bind(institutionId).all<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT id,documentCode,documentType,title,ownerUnit,status
+      FROM PolicyDocument
+      WHERE institutionId = ? AND status != 'Dicabut'
+      ORDER BY documentCode ASC
+      LIMIT 2000
+    `).bind(institutionId).all<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT id,processId,name,ownerName,criticality,status
+      FROM BusinessProcess
+      WHERE institutionId = ?
+      ORDER BY processId ASC
+      LIMIT 3000
+    `).bind(institutionId).all<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT id,controlId,name,controlOwner,frequency,isKeyControl,status
+      FROM ControlMaster
+      WHERE institutionId = ?
+      ORDER BY controlId ASC
+      LIMIT 5000
     `).bind(institutionId).all<Record<string, unknown>>()
   ]);
 
@@ -1013,6 +1038,11 @@ export async function getRegulatoryClauseWorkspace(institutionId: string) {
     snapshots: snapshots.results || [],
     drafts: draftRows,
     impacts: impactRows,
-    runs: runs.results || []
+    runs: runs.results || [],
+    targets: {
+      policies: policies.results || [],
+      processes: processes.results || [],
+      controls: controls.results || []
+    }
   };
 }
