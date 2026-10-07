@@ -695,6 +695,9 @@ export function PolicyIntelligenceWorkspace({
                 const impacts = Array.isArray(analysis?.potentialImpacts)
                   ? analysis?.potentialImpacts as Array<Record<string, unknown>>
                   : [];
+                const externalSuggestions = Array.isArray(analysis?.potentialExternalRelations)
+                  ? analysis?.potentialExternalRelations as Array<Record<string, unknown>>
+                  : [];
                 return (
                   <article key={candidate.id} className="p-4">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -764,6 +767,38 @@ export function PolicyIntelligenceWorkspace({
                                     </div>
                                   );
                                 })}
+                              </div>
+                            )}
+                            {externalSuggestions.length > 0 && (
+                              <div className="mt-4 border-t border-violet-200 pt-3">
+                                <div className="text-[11px] font-black uppercase tracking-[0.08em] text-violet-700">
+                                  Relasi dengan regulasi eksternal terdahulu
+                                </div>
+                                <div className="mt-2 grid gap-2">
+                                  {externalSuggestions.slice(0, 6).map((relation, index) => {
+                                    const existing = regulationById.get(String(relation.regulationId || ''));
+                                    return (
+                                      <div key={index} className="rounded-xl border border-indigo-100 bg-white p-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="text-xs font-black text-slate-900">
+                                            {existing
+                                              ? existing.regulator + ' · ' + existing.regulationCode + ' — ' + existing.title
+                                              : 'Regulasi eksternal terdaftar'}
+                                          </span>
+                                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+                                            {String(relation.confidence || 'LOW')}
+                                          </span>
+                                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                                            {relationLabel(String(relation.suggestedRelationType || 'RELATED_TO'))}
+                                          </span>
+                                        </div>
+                                        <div className="mt-1 text-xs leading-5 text-slate-600">
+                                          {String(relation.rationale || '')}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
                           </div>
