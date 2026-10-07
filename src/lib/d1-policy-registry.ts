@@ -942,6 +942,16 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
     [institutionId]
   );
   const registeredKeys = new Set(registered.map(row => String(row.sourceType) + ':' + String(row.sourceId)));
+  const sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>> = {};
+  for (const row of registered) {
+    const policyId = String(row.policyDocumentId || '');
+    if (!policyId) continue;
+    sourcesByPolicy[policyId] ||= [];
+    sourcesByPolicy[policyId].push({
+      sourceType: String(row.sourceType || ''),
+      sourceId: String(row.sourceId || '')
+    });
+  }
   const links = await all<PolicyEntityLinkRecord>(
     db,
     `SELECT id,institutionId,policyDocumentId,targetType,targetId,relationship,sourceType,sourceId,createdAt,updatedAt
@@ -986,6 +996,7 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
     },
     byPolicy,
     byTargetType,
+    sourcesByPolicy,
     candidates: candidates.map(item => ({
       sourceType: item.sourceType,
       sourceId: item.sourceId,
