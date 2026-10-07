@@ -46,6 +46,17 @@ const INTEGRITY_REQUIRED_TABLES = [
   'ICOFREvidencePack'
 ] as const;
 
+// Keep SQL/error details in server logs; expose only a stable check identifier.
+async function integrityStage<T>(code: string, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('ICOFR_INTEGRITY_')) throw error;
+    console.error('ICOFR integrity stage failed:', code, error);
+    throw new Error('ICOFR_INTEGRITY_CHECK_FAILED:' + code);
+  }
+}
+
 async function assertIntegrityTablesReady(db: D1DatabaseLike) {
   const placeholders = INTEGRITY_REQUIRED_TABLES.map(() => '?').join(',');
   const result = await db
@@ -72,7 +83,7 @@ async function getDb(): Promise<D1DatabaseLike> {
   // Integrity verification is deliberately read-only. Schema creation and
   // migrations belong to deployment/provisioning, not a production health
   // endpoint, because runtime DDL can consume D1 write quota on cold isolates.
-  await assertIntegrityTablesReady(db);
+  await integrityStage('SCHEMA_READ', () => assertIntegrityTablesReady(db));
   return db;
 }
 
@@ -121,9 +132,9 @@ type CompletenessCheck = {
 
 export async function getIcofrReferentialIntegrityReport() {
   const db = await getDb();
-  const institutions = await db.prepare(
+  const institutions = await integrityStage('INSTITUTION_READ', () => db.prepare(
     'SELECT id, name, legalName FROM Institution ORDER BY createdAt ASC'
-  ).all<Record<string, unknown>>();
+  ).all<Record<string, unknown>>());
 
   const checkDefinitions: Array<{
     code: string;
@@ -756,7 +767,9 @@ export async function getIcofrReferentialIntegrityReport() {
       (SELECT COUNT(*) FROM issue_map_missing) AS issueMapMissing
   `;
 
-  const completenessRow = await firstRow<Record<string, unknown>>(db, completenessSql);
+  const completenessRow = await integrityStage('COMPLETENESS_METRICS', () =>
+    firstRow<Record<string, unknown>>(db, completenessSql)
+  );
   const inScopeAssertions = Number(completenessRow?.inScopeAssertions || 0);
   const completeChains = Number(completenessRow?.completeChains || 0);
   const incompleteChains = Number(completenessRow?.incompleteChains || 0);
@@ -839,7 +852,7 @@ export async function getIcofrReferentialIntegrityReport() {
     }
   ];
 
-  const certificationMetricsRow = await firstRow<Record<string, unknown>>(
+  const certificationMetricsRow = await integrityStage('CERTIFICATION_METRICS', () => firstRow<Record<string, unknown>>(
     db,
     `SELECT
        (SELECT COUNT(*) FROM ICOFRSubCertification) AS subCertifications,
@@ -847,7 +860,7 @@ export async function getIcofrReferentialIntegrityReport() {
        (SELECT COUNT(*) FROM ICOFRManagementAttestation) AS managementAttestations,
        (SELECT COUNT(*) FROM ICOFRManagementAttestation WHERE status IN ('Submitted','Approved','Signed')) AS progressedAttestations,
        (SELECT COUNT(*) FROM ICOFREvidencePack) AS evidencePacks`
-  );
+  ));
 
   const certificationMetrics = {
     subCertifications: Number(certificationMetricsRow?.subCertifications || 0),

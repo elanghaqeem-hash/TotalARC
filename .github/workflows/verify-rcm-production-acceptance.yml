@@ -157,6 +157,25 @@ jobs:
               "integrity": str((latest or {}).get("status") or "PENDING"),
           }
 
+          # Read-only drift evidence: do not delete controls or relax acceptance.
+          control_drift = {}
+          if actual["controls"] != EXPECTED["controls"]:
+              control_drift = {
+                  "delta": actual["controls"] - EXPECTED["controls"],
+                  "withoutSourceMetadata": rows(
+                      "SELECT c.id,c.controlId FROM ControlMaster c "
+                      "WHERE c.institutionId=" + q(iid) +
+                      " AND NOT EXISTS (SELECT 1 FROM RCMControlSourceMetadata sm "
+                      "WHERE sm.controlId=c.id AND sm.institutionId=c.institutionId) "
+                      "ORDER BY c.id LIMIT 50"
+                  ),
+                  "duplicateControlCodes": rows(
+                      "SELECT controlId,COUNT(*) AS count FROM ControlMaster "
+                      "WHERE institutionId=" + q(iid) +
+                      " GROUP BY controlId HAVING COUNT(*)>1 ORDER BY controlId LIMIT 50"
+                  ),
+              }
+
           pass_all = all(actual[key] == expected for key, expected in EXPECTED.items())
           latest_summary = {}
           if latest:
@@ -171,6 +190,7 @@ jobs:
               "institution": institution,
               "expected": EXPECTED,
               "actual": actual,
+              "controlDrift": control_drift,
               "latestIntegrityRun": {
                   "id": latest.get("id") if latest else None,
                   "batchCode": latest.get("batchCode") if latest else None,
