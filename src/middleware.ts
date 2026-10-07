@@ -30,14 +30,21 @@ function safeEqual(left: string, right: string) {
 async function authorizedRegulatoryCron(request: NextRequest) {
   if (
     request.nextUrl.pathname !== '/api/policy-library/intelligence/cron' ||
-    request.method !== 'POST'
+    !['GET', 'POST'].includes(request.method)
   ) {
     return false;
   }
 
-  const configured = await runtimeValue('REGULATORY_MONITOR_CRON_SECRET');
+  const configured =
+    (await runtimeValue('REGULATORY_MONITOR_CRON_SECRET')) ||
+    (await runtimeValue('CRON_SECRET'));
   if (!configured || configured.length < 24) return false;
-  const supplied = request.headers.get('x-totalarc-cron-secret') || '';
+
+  const authorization = request.headers.get('authorization') || '';
+  const bearer = authorization.startsWith('Bearer ')
+    ? authorization.slice('Bearer '.length).trim()
+    : '';
+  const supplied = request.headers.get('x-totalarc-cron-secret') || bearer;
   return safeEqual(configured, supplied);
 }
 
