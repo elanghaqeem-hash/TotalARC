@@ -894,6 +894,36 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     }
   }
 
+  const todTests =
+    await tableExists(db, 'ICOFRDesignAssessment') && await tableExists(db, 'ICOFRControlDomain')
+      ? await all<Record<string, unknown>>(
+          db,
+          `SELECT d.id,cd.sourceControlId
+             FROM ICOFRDesignAssessment d
+             JOIN ICOFRControlDomain cd
+               ON cd.id=d.controlDomainId AND cd.institutionId=d.institutionId
+            WHERE d.institutionId=? AND cd.sourceControlId IS NOT NULL
+            LIMIT 10000`,
+          [institutionId]
+        )
+      : [];
+  for (const policyId of Array.from(policyIds)) {
+    const controlSet = controlIdsByPolicy.get(policyId) || new Set<string>();
+    for (const test of todTests) {
+      if (controlSet.has(String(test.sourceControlId || ''))) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          policyId,
+          'TOD_TEST',
+          String(test.id || ''),
+          'DESIGN_TESTED_BY',
+          String(test.sourceControlId || '')
+        ) ? 1 : 0;
+      }
+    }
+  }
+
   const toeTests = await all<Record<string, unknown>>(
     db,
     `SELECT t.id,t.processId,t.riskId,t.controlId
