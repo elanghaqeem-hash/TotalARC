@@ -823,14 +823,25 @@ export async function analyzeRegulatoryCandidate(
   `).bind(candidateId, institutionId).first<RegulatoryCandidate>();
   if (!candidate) throw new Error('POLICY_INTELLIGENCE_CANDIDATE_NOT_FOUND');
 
-  const policyResult = await db.prepare(`
-    SELECT id, documentCode, documentType, title, ownerUnit, status, version, summary, scope
-    FROM PolicyDocument
-    WHERE institutionId = ? AND status != 'Dicabut'
-    ORDER BY updatedAt DESC
-    LIMIT 400
-  `).bind(institutionId).all<Record<string, unknown>>();
+  const [policyResult, regulationResult] = await Promise.all([
+    db.prepare(`
+      SELECT id, documentCode, documentType, title, ownerUnit, status, version, summary, scope
+      FROM PolicyDocument
+      WHERE institutionId = ? AND status != 'Dicabut'
+      ORDER BY updatedAt DESC
+      LIMIT 400
+    `).bind(institutionId).all<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT id, regulator, regulationCode, title, category, issueDate,
+             effectiveDate, status, summary
+      FROM ExternalRegulationWatch
+      WHERE institutionId = ?
+      ORDER BY COALESCE(issueDate, createdAt) DESC, updatedAt DESC
+      LIMIT 300
+    `).bind(institutionId).all<Record<string, unknown>>()
+  ]);
   const policies = policyResult.results || [];
+  const externalRegulations = regulationResult.results || [];
 
   const result = await runAiGateway({
     task: 'classification',
@@ -846,8 +857,10 @@ export async function analyzeRegulatoryCandidate(
       'Jangan menyatakan bank pasti tidak patuh. Kembalikan JSON valid saja.',
     prompt: JSON.stringify({
       instruction:
-        'Identifikasi ketentuan internal yang paling mungkin terdampak kandidat regulasi. ' +
-        'Gunakan hanya metadata yang diberikan. Bila bukti tidak cukup, confidence harus rendah dan requiresLegalReview=true.',
+        'Lakukan screening dua lapis: (1) identifikasi ketentuan internal yang mungkin terdampak, ' +
+        'dan (2) identifikasi regulasi eksternal terdahulu yang mungkin diubah, digantikan, dicabut, ' +
+        'dirujuk, atau berkaitan dengan kandidat ini. Gunakan hanya metadata yang diberikan. ' +
+        'Jangan mengarang nomor pasal. Bila bukti tidak cukup, confidence harus rendah dan requiresLegalReview=true.',
       candidate: {
         id: candidate.id,
         regulator: candidate.regulator,
@@ -855,6 +868,7 @@ export async function analyzeRegulatoryCandidate(
         sourceUrl: candidate.sourceUrl
       },
       internalPolicies: policies,
+      existingExternalRegulations: externalRegulations,
       outputSchema: {
         summary: 'string',
         recommendedAction: 'string',
@@ -864,7 +878,15 @@ export async function analyzeRegulatoryCandidate(
             policyDocumentId: 'string',
             confidence: 'LOW|MEDIUM|HIGH',
             impactLevel: 'Rendah|Sedang|Tinggi|Kritis',
-            suggestedRelationType: 'IMPLEMENTS|REFERENCES|AMENDS|SUPERSEDES|REVOKES|RELATED_TO|IMPACTED_BY|DERIVED_FROM',
+            suggestedRelationType: 'IMPLEMENTS|REFERENCES|RELATED_TO|IMPACTED_BY|DERIVED_FROM',
+            rationale: 'string'
+          }
+        ],
+        potentialExternalRelations: [
+          {
+            regulationId: 'string',
+            confidence: 'LOW|MEDIUM|HIGH',
+            suggestedRelationType: 'REFERENCES|AMENDS|SUPERSEDES|REVOKES|RELATED_TO|DERIVED_FROM',
             rationale: 'string'
           }
         ]
