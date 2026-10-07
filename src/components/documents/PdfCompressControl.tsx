@@ -48,7 +48,7 @@ export function PdfCompressControl({ file, disabled, onChange, onBusyChange }: P
       <button type="button" onClick={start} disabled={busy || disabled} className="rounded-lg bg-sky-700 px-3 py-2 font-bold text-white disabled:opacity-50">{busy ? 'Mengompres…' : 'Kompres PDF'}</button>
       {busy && <button type="button" onClick={() => { abort.current?.abort(); setMessage('Membatalkan…'); }} className="underline">Batalkan</button>}
     </div>
-    <p className="mt-2 text-slate-600">Kompresi berlangsung di perangkat Anda. Paling efektif untuk PDF scan. Pilih kualitas tinggi untuk teks kecil dan tabel; periksa hasil sebelum digunakan.</p>
+    <p className="mt-2 text-slate-600">Kompresi berlangsung di perangkat Anda dan mendukung sampai 300 halaman per PDF. Paling efektif untuk PDF scan. Pilih kualitas tinggi untuk teks kecil dan tabel; periksa hasil sebelum digunakan.</p>
     {message && <p role="status" aria-live="polite" className="mt-2 font-semibold text-sky-800">{message}</p>}
     {error && <p role="alert" className="mt-2 text-red-700">{error}</p>}
     {result && <div className="mt-2 flex flex-wrap gap-3">
