@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Run secured TotalARC regulatory monitor
         env:
-          MONITOR_URL: ${{ secrets.REGULATORY_MONITOR_URL }}
+          MONITOR_URL: ${{ secrets.TOTALARC_REGULATORY_MONITOR_URL }}
           MONITOR_SECRET: ${{ secrets.REGULATORY_MONITOR_CRON_SECRET }}
         shell: bash
         run: |
