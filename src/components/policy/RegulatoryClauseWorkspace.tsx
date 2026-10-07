@@ -4,7 +4,6 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { preparePdfText } from '@/lib/pdf-ocr-client';
 import {
   AlertTriangle,
-  ArrowRight,
   Check,
   CheckCircle2,
   Download,
