@@ -177,7 +177,7 @@ export async function POST(request: Request) {
     if (action === 'SCAN_ALL') {
       const results = await scanAllRegulatorySources(context.institutionId);
       return NextResponse.json({
-        changed: results.some(item => item.ok && Number(item.newCount || 0) > 0),
+        changed: results.some(item => item.ok && 'newCount' in item && Number(item.newCount || 0) > 0),
         results
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
