@@ -71,7 +71,7 @@ export const OFFICIAL_REGULATORY_SOURCES = [
   {
     regulator: 'OJK',
     name: 'OJK - Portal Regulasi',
-    sourceUrl: 'https://ojk.go.id/id/regulasi/olddefault.aspx',
+    sourceUrl: 'https://ojk.go.id/id/regulasi/pages/forms/allitems.aspx',
     sourceType: 'HTML',
     sector: 'Jasa Keuangan',
     keywords: ['POJK', 'SEOJK', 'PADK', 'Perbankan', 'Bank']
@@ -79,18 +79,34 @@ export const OFFICIAL_REGULATORY_SOURCES = [
   {
     regulator: 'BI',
     name: 'Bank Indonesia - Peraturan',
-    sourceUrl: 'https://www.bi.go.id/id/publikasi/peraturan/Default.aspx',
+    sourceUrl: 'https://www.bi.go.id/id/publikasi/peraturan/default.aspx',
     sourceType: 'HTML',
     sector: 'Perbankan dan Sistem Pembayaran',
     keywords: ['PBI', 'PADG', 'Peraturan Bank Indonesia', 'Bank']
   },
   {
     regulator: 'LPS',
-    name: 'LPS - Peraturan',
+    name: 'LPS - JDIH',
+    sourceUrl: 'https://jdih.lps.go.id/',
+    sourceType: 'HTML',
+    sector: 'Penjaminan Simpanan dan Resolusi Bank',
+    keywords: ['Peraturan Lembaga Penjamin Simpanan', 'PLPS', 'Surat Edaran', 'Bank']
+  },
+  {
+    regulator: 'LPS',
+    name: 'LPS - PPID Peraturan (fallback)',
     sourceUrl: 'https://ppid.lps.go.id/informasi-setiap-saat/peraturan/',
     sourceType: 'HTML',
     sector: 'Penjaminan Simpanan dan Resolusi Bank',
     keywords: ['Peraturan Lembaga Penjamin Simpanan', 'PLPS', 'Bank']
+  },
+  {
+    regulator: 'PPATK',
+    name: 'PPATK - Portal Resmi',
+    sourceUrl: 'https://www.ppatk.go.id/?id=18',
+    sourceType: 'HTML',
+    sector: 'APU PPT dan Pelaporan Transaksi Keuangan',
+    keywords: ['Peraturan PPATK', 'Pencucian Uang', 'Pendanaan Terorisme', 'goAML', 'Penyedia Jasa Keuangan']
   },
   {
     regulator: 'Kemenkeu',
@@ -99,6 +115,14 @@ export const OFFICIAL_REGULATORY_SOURCES = [
     sourceType: 'HTML',
     sector: 'Keuangan Negara',
     keywords: ['PMK', 'Peraturan Menteri Keuangan', 'Bank', 'Lembaga Keuangan']
+  },
+  {
+    regulator: 'Komdigi',
+    name: 'JDIH Kementerian Komunikasi dan Digital',
+    sourceUrl: 'https://jdih.komdigi.go.id/',
+    sourceType: 'HTML',
+    sector: 'Digital, Data, Telekomunikasi dan Sistem Elektronik',
+    keywords: ['Peraturan Menteri', 'Keputusan Menteri', 'Data Pribadi', 'Sistem Elektronik', 'Keamanan Siber']
   }
 ] as const;
 
@@ -233,6 +257,13 @@ function safePublicUrl(value: string) {
     host.includes(':')
   ) {
     throw new Error('POLICY_INTELLIGENCE_INVALID_SOURCE_URL');
+  }
+
+  // Regulatory monitoring is intentionally restricted to Indonesian
+  // government/regulator domains to prevent the scanner from becoming
+  // a generic server-side URL fetcher.
+  if (!host.endsWith('.go.id')) {
+    throw new Error('POLICY_INTELLIGENCE_SOURCE_DOMAIN_NOT_ALLOWED');
   }
   return url;
 }
@@ -529,8 +560,7 @@ export async function scanRegulatorySource(institutionId: string, sourceId: stri
     for (const link of links.slice(0, 50)) {
       const fingerprint = await sha256(
         source.regulator.toLowerCase() + '|' +
-        normalizeText(link.title).toLowerCase() + '|' +
-        link.url.toLowerCase()
+        normalizeText(link.title).toLowerCase()
       );
 
       const existing = await db.prepare(`
