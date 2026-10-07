@@ -18,7 +18,7 @@ type D1DatabaseLike = {
   prepare: (sql: string) => Prepared;
 };
 
-const POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v2';
+const POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v3';
 
 export type PolicyEntityLinkRecord = {
   id: string;
@@ -83,6 +83,16 @@ function normalize(value: unknown) {
     .replace(/\s+/g, ' ');
 }
 
+function policyIdentityTitle(value: unknown) {
+  return normalize(value)
+    .replace(/\b(send new|review\s*\d*|reviewed|final|finalisasi|copy|salinan|draft)\b/g, ' ')
+    .replace(/\bv(?:ersi)?\s*\d+(?:\.\d+)*\b/g, ' ')
+    .replace(/\brevisi\s*\d*\b/g, ' ')
+    .replace(/\brev\s*\d+\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function shortHash(value: string) {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -103,6 +113,9 @@ function typeCode(type: string) {
     'Prosedur': 'PRO',
     'Instruksi Kerja': 'IK',
     'Standar': 'STD',
+    'Buku Pedoman Perusahaan': 'BPP',
+    'Piagam': 'PIG',
+    'Petunjuk Teknis': 'JUKNIS',
     'Ketentuan Internal': 'KET'
   };
   return mapping[type] || 'KET';
@@ -116,6 +129,9 @@ function canonicalDocumentType(value: unknown) {
     ['Keputusan', ['keputusan', 'surat keputusan', 'sk']],
     ['SOP', ['sop', 'standar operasional prosedur', 'standard operating procedure']],
     ['Kebijakan', ['kebijakan', 'policy']],
+    ['Buku Pedoman Perusahaan', ['buku pedoman perusahaan', 'bpp']],
+    ['Piagam', ['piagam', 'charter']],
+    ['Petunjuk Teknis', ['petunjuk teknis', 'juknis', 'technical guideline']],
     ['Pedoman', ['pedoman', 'guideline', 'manual kerja', 'manual operasional']],
     ['Instruksi Kerja', ['instruksi kerja', 'work instruction']],
     ['Prosedur', ['prosedur', 'procedure']],
@@ -146,6 +162,22 @@ function classifyInternalRule(input: {
     category.includes('regulasi eksternal')
   ) return null;
 
+  const titleOnly = normalize(input.title);
+  const externalTitlePatterns = [
+    /\bpojk\b/,
+    /\bseojk\b/,
+    /\bperaturan otoritas jasa keuangan\b/,
+    /\bperaturan bank indonesia\b/,
+    /\bpbi\b/,
+    /\bpadg\b/,
+    /\bplps\b/,
+    /\bperaturan lembaga penjamin simpanan\b/,
+    /\bperaturan ppatk\b/,
+    /\bundang undang\b/,
+    /\bperaturan pemerintah\b/
+  ];
+  if (externalTitlePatterns.some(pattern => pattern.test(titleOnly))) return null;
+
   const explicitType =
     canonicalDocumentType(input.explicitType) ||
     canonicalDocumentType(input.category) ||
@@ -168,6 +200,9 @@ function classifyInternalRule(input: {
     ['Keputusan', /\bsurat keputusan\b|\bkeputusan direksi\b|\bsk (?:direksi|no|nomor)\b/, 'Keputusan internal terdeteksi pada judul/teks sumber.'],
     ['SOP', /\bstandar operasional prosedur\b|\bstandard operating procedure\b|\bsop\b/, 'SOP terdeteksi pada judul/teks sumber.'],
     ['Kebijakan', /\bkebijakan\b|\bpolicy\b/, 'Kebijakan/Policy terdeteksi pada judul/teks sumber.'],
+    ['Buku Pedoman Perusahaan', /\bbuku pedoman perusahaan\b|\bbpp\b/, 'Buku Pedoman Perusahaan terdeteksi pada judul/teks sumber.'],
+    ['Piagam', /\bpiagam\b|\bcharter\b/, 'Piagam/charter internal terdeteksi pada judul/teks sumber.'],
+    ['Petunjuk Teknis', /\bpetunjuk teknis\b|\bjuknis\b|\btechnical guideline\b/, 'Petunjuk teknis internal terdeteksi pada judul/teks sumber.'],
     ['Pedoman', /\bpedoman\b|\bguideline\b|\bmanual kerja\b|\bmanual operasional\b/, 'Pedoman/manual internal terdeteksi pada judul/teks sumber.'],
     ['Instruksi Kerja', /\binstruksi kerja\b|\bwork instruction\b/, 'Instruksi kerja terdeteksi pada judul/teks sumber.'],
     ['Prosedur', /\bprosedur\b|\bprocedure\b/, 'Prosedur terdeteksi pada judul/teks sumber.'],
@@ -445,7 +480,7 @@ async function policyByNormalizedTitle(db: D1DatabaseLike, institutionId: string
     sourceDocumentId: string | null;
   }>();
   for (const row of rows) {
-    const key = normalize(row.documentType) + ':' + normalize(row.title);
+    const key = normalize(row.documentType) + ':' + policyIdentityTitle(row.title);
     if (key !== ':' && !map.has(key)) map.set(key, row);
   }
   return map;
@@ -539,7 +574,7 @@ async function ensureCandidateRegistration(
   }
 
   if (!policyId) {
-    const identityKey = normalize(candidate.documentType) + ':' + normalize(candidate.title);
+    const identityKey = normalize(candidate.documentType) + ':' + policyIdentityTitle(candidate.title);
     policyId = titleMap.get(identityKey)?.id || null;
   }
 
@@ -583,7 +618,7 @@ async function ensureCandidateRegistration(
       ]
     );
     inserted = true;
-    titleMap.set(normalize(candidate.documentType) + ':' + normalize(candidate.title), {
+    titleMap.set(normalize(candidate.documentType) + ':' + policyIdentityTitle(candidate.title), {
       id: policyId,
       title: candidate.title,
       documentType: candidate.documentType,
