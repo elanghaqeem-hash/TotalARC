@@ -24,7 +24,7 @@ requireText(route, "actionType !== 'APPLY'", 'Explicit user apply gate', errors)
 requireText(route, "status: 'Draft'", 'Applied records remain draft', errors);
 requireText(route, 'qualitativeSignificant', 'Qualitative significance support', errors);
 requireText(route, 'detectDocumentUnitMultiplier', 'Financial statement unit normalization', errors);
-requireText(route, "const MAX_FILE_BYTES = 10 * 1024 * 1024", '10 MB document limit', errors);
+requireText(route, "const MAX_FILE_BYTES = 40 * 1024 * 1024", '40 MB document limit', errors);
 requireText(route, "analysisMode", 'Sequential analysis mode', errors);
 requireText(route, "baseAnalysisId", 'Analysis lineage', errors);
 requireText(route, "COMPLEMENT", 'Complement document mode', errors);
