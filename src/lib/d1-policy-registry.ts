@@ -542,10 +542,21 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     const policyId = String(item.policyDocumentId || '');
     const sourceId = String(item.sourceId || '');
     if (!policyId || !sourceId) continue;
-    const map = String(item.sourceType) === 'EVIDENCE_DOCUMENT' ? policyByEvidence : policyBySource;
+    const sourceType = String(item.sourceType || '');
+    const map = sourceType === 'EVIDENCE_DOCUMENT' ? policyByEvidence : policyBySource;
     const list = map.get(sourceId) || [];
     list.push(policyId);
     map.set(sourceId, list);
+
+    generated += await insertLink(
+      db,
+      institutionId,
+      policyId,
+      sourceType === 'EVIDENCE_DOCUMENT' ? 'EVIDENCE_DOCUMENT' : 'SOURCE_DOCUMENT',
+      sourceId,
+      'REGISTERED_FROM',
+      sourceId
+    ) ? 1 : 0;
   }
 
   const evidenceLinks = await all<Record<string, unknown>>(
@@ -910,7 +921,12 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
     }
   }
 
-  return generated;
+  const total = await first<{ count?: number }>(
+    db,
+    "SELECT COUNT(*) AS count FROM PolicyEntityLink WHERE institutionId=? AND sourceType='AUTO_SYNC'",
+    [institutionId]
+  );
+  return Number(total?.count || 0);
 }
 
 export async function getPolicyRegistryCoverage(institutionId: string) {
