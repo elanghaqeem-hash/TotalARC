@@ -123,6 +123,8 @@ type Registry = {
   byPolicy: Record<string, Record<string, number>>;
   byTargetType: Record<string, number>;
   sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>>;
+  syncRequired: boolean;
+  syncVersion: string;
   candidates: Array<{
     sourceType: string;
     sourceId: string;
@@ -139,6 +141,7 @@ type Registry = {
     insertedPolicies?: number;
     mappedSources?: number;
     generatedLinks?: number;
+    syncVersion?: string;
     actorName?: string;
     startedAt?: string;
     completedAt?: string;
@@ -369,11 +372,13 @@ export default function PolicyLibraryPage() {
     const missing =
       (data?.registry?.metrics.missingCandidates || 0) +
       (data?.registry?.metrics.unmappedPolicySources || 0);
-    if (!data?.canManage || missing <= 0 || registryAutoSyncAttempted.current) return;
+    const requiresSync = Boolean(data?.registry?.syncRequired) || missing > 0;
+    if (!data?.canManage || !requiresSync || registryAutoSyncAttempted.current) return;
     registryAutoSyncAttempted.current = true;
     void syncRegistry(true);
   }, [
     data?.canManage,
+    data?.registry?.syncRequired,
     data?.registry?.metrics.missingCandidates,
     data?.registry?.metrics.unmappedPolicySources,
     syncRegistry
@@ -735,36 +740,49 @@ export default function PolicyLibraryPage() {
         registryMetrics.discoveredCandidates > 0) && (
         <section className={
           'flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between ' +
-          (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+          (data?.registry?.syncRequired ||
+            registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
             ? 'border-sky-200 bg-sky-50'
             : 'border-emerald-200 bg-emerald-50')
         }>
           <div className="flex items-start gap-3">
             <Database className={
               'mt-0.5 h-5 w-5 shrink-0 ' +
-              (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-700' : 'text-emerald-700')
+              (data?.registry?.syncRequired ||
+                registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                ? 'text-sky-700'
+                : 'text-emerald-700')
             } />
             <div>
               <div className={
                 'font-black ' +
-                (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-950' : 'text-emerald-950')
+                (data?.registry?.syncRequired ||
+                  registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                  ? 'text-sky-950'
+                  : 'text-emerald-950')
               }>
                 Registry database TotalARC
               </div>
               <p className={
                 'mt-1 text-sm leading-5 ' +
-                (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-800' : 'text-emerald-800')
+                (data?.registry?.syncRequired ||
+                  registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                  ? 'text-sky-800'
+                  : 'text-emerald-800')
               }>
                 {registryMetrics.registeredCandidates} dari {registryMetrics.discoveredCandidates} file SOP/Policy/ketentuan
-                yang terdeteksi sudah terdaftar. {registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
-                  ? (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources) +
-                    ' sumber/ketentuan existing akan disinkronkan tanpa menduplikasi file sumber.'
-                  : ' Registry saat ini sudah mencakup seluruh kandidat yang terdeteksi di database.'}
+                yang terdeteksi sudah terdaftar. {data?.registry?.syncRequired
+                  ? ' Registry akan dibangun ulang satu kali dengan algoritma relasi terbaru agar semua koneksi lintas modul ikut diperbarui.'
+                  : registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                    ? (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources) +
+                      ' sumber/ketentuan existing akan disinkronkan tanpa menduplikasi file sumber.'
+                    : ' Registry saat ini sudah mencakup seluruh kandidat yang terdeteksi di database.'}
               </p>
             </div>
           </div>
           {data?.canManage &&
-            registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 && (
+            (Boolean(data?.registry?.syncRequired) ||
+              registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0) && (
             <button
               type="button"
               onClick={() => void syncRegistry(false)}
