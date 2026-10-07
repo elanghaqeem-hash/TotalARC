@@ -2,12 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { PolicyIntelligenceWorkspace } from '@/components/policy/PolicyIntelligenceWorkspace';
+import { RegulatoryObligationWorkspace } from '@/components/policy/RegulatoryObligationWorkspace';
 import {
   AlertTriangle,
   ArrowUpRight,
   BookOpenCheck,
   CalendarClock,
   CheckCircle2,
+  ClipboardCheck,
   ClipboardList,
   FileCheck2,
   FileText,
@@ -117,7 +119,7 @@ type Dashboard = {
   uploadedSources: UploadedSource[];
 };
 
-type TabKey = 'library' | 'regulations' | 'impacts' | 'intelligence' | 'uploads';
+type TabKey = 'library' | 'regulations' | 'impacts' | 'intelligence' | 'obligations' | 'uploads';
 
 const DOCUMENT_TYPES = [
   'Kebijakan',
@@ -607,6 +609,7 @@ export default function PolicyLibraryPage() {
               ['regulations', 'Regulatory Watch', ShieldAlert],
               ['impacts', 'Impact & Action', Link2],
               ['intelligence', 'Regulatory Intelligence', ShieldAlert],
+              ['obligations', 'Compliance Universe', ClipboardCheck],
               ['uploads', 'File Terunggah', UploadCloud]
             ].map(([key, label, Icon]) => {
               const ItemIcon = Icon as typeof FileText;
@@ -953,6 +956,10 @@ export default function PolicyLibraryPage() {
             canManage={Boolean(data.canManage)}
             onLibraryChanged={load}
           />
+        )}
+
+        {tab === 'obligations' && (
+          <RegulatoryObligationWorkspace />
         )}
 
         {tab === 'uploads' && (

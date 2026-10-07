@@ -178,6 +178,7 @@ jobs:
       - run: npm run verify:ai-materiality
       - run: npm run verify:rcsa-campaign-units
       - run: npm run verify:policy-intelligence
+      - run: npm run verify:regulatory-obligations
 
   vercel-build:
     name: Vercel Build
