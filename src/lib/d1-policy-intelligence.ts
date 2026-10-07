@@ -577,21 +577,24 @@ export async function scanRegulatorySource(institutionId: string, sourceId: stri
 }
 
 export async function scanAllRegulatorySources(institutionId: string) {
-  const sources = await listRegulatoryWatchSources(institutionId);
-  const results: Array<Record<string, unknown>> = [];
-  for (const source of sources.filter(item => item.active === 1).slice(0, 12)) {
-    try {
-      results.push({ ok: true, ...(await scanRegulatorySource(institutionId, source.id)) });
-    } catch (error) {
-      results.push({
-        ok: false,
-        sourceId: source.id,
-        name: source.name,
-        error: error instanceof Error ? error.message : 'UNKNOWN'
-      });
-    }
-  }
-  return results;
+  const sources = (await listRegulatoryWatchSources(institutionId))
+    .filter(item => item.active === 1)
+    .slice(0, 8);
+
+  return Promise.all(
+    sources.map(async source => {
+      try {
+        return { ok: true, ...(await scanRegulatorySource(institutionId, source.id)) };
+      } catch (error) {
+        return {
+          ok: false,
+          sourceId: source.id,
+          name: source.name,
+          error: error instanceof Error ? error.message : 'UNKNOWN'
+        };
+      }
+    })
+  );
 }
 
 async function entityExists(
