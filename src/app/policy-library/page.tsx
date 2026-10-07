@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PolicyIntelligenceWorkspace } from '@/components/policy/PolicyIntelligenceWorkspace';
 import { RegulatoryObligationWorkspace } from '@/components/policy/RegulatoryObligationWorkspace';
 import { RegulatoryClauseWorkspace } from '@/components/policy/RegulatoryClauseWorkspace';
@@ -12,10 +12,12 @@ import {
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
+  Database,
   FileCheck2,
   FileText,
   Link2,
   Loader2,
+  Network,
   Plus,
   RefreshCw,
   Search,
@@ -109,6 +111,41 @@ type UploadedSource = {
   updatedAt: string;
 };
 
+type Registry = {
+  metrics: {
+    discoveredCandidates: number;
+    registeredCandidates: number;
+    missingCandidates: number;
+    unmappedPolicySources: number;
+    totalLinks: number;
+    policiesWithLinks: number;
+  };
+  byPolicy: Record<string, Record<string, number>>;
+  byTargetType: Record<string, number>;
+  sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>>;
+  candidates: Array<{
+    sourceType: string;
+    sourceId: string;
+    title: string;
+    documentType: string;
+    confidence: string;
+    classificationReason: string;
+    registered: boolean;
+  }>;
+  lastSync: {
+    id?: string;
+    status?: string;
+    discoveredCandidates?: number;
+    insertedPolicies?: number;
+    mappedSources?: number;
+    generatedLinks?: number;
+    actorName?: string;
+    startedAt?: string;
+    completedAt?: string;
+    errorCode?: string | null;
+  } | null;
+};
+
 type Dashboard = {
   institutionId: string;
   institutionName: string;
@@ -119,9 +156,10 @@ type Dashboard = {
   impacts: Impact[];
   reviews: Review[];
   uploadedSources: UploadedSource[];
+  registry: Registry;
 };
 
-type TabKey = 'library' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
+type TabKey = 'library' | 'relations' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
 
 const DOCUMENT_TYPES = [
   'Kebijakan',
@@ -178,7 +216,7 @@ function statusPill(value: string) {
   if (normalized.includes('dicabut') || normalized.includes('kadaluarsa') || normalized.includes('tidak')) {
     return 'bg-rose-100 text-rose-700';
   }
-  if (normalized.includes('review') || normalized.includes('proses') || normalized.includes('akan')) {
+  if (normalized.includes('review') || normalized.includes('proses') || normalized.includes('akan') || normalized.includes('validasi')) {
     return 'bg-amber-100 text-amber-800';
   }
   return 'bg-slate-100 text-slate-700';
@@ -190,6 +228,8 @@ export default function PolicyLibraryPage() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [registrySyncing, setRegistrySyncing] = useState(false);
+  const registryAutoSyncAttempted = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showPolicyForm, setShowPolicyForm] = useState(false);
@@ -292,6 +332,52 @@ export default function PolicyLibraryPage() {
     }
   }, [load]);
 
+  const syncRegistry = useCallback(async (automatic = false) => {
+    setRegistrySyncing(true);
+    if (!automatic) {
+      setError('');
+      setNotice('');
+    }
+    try {
+      const response = await fetch('/api/policy-library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'SYNC_REGISTRY' })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Sinkronisasi registry ketentuan gagal.');
+      const result = payload.result || {};
+      setNotice(
+        'Sinkronisasi database selesai: ' +
+        Number(result.insertedPolicies || 0) + ' ketentuan baru, ' +
+        Number(result.mappedSources || 0) + ' sumber terhubung, dan ' +
+        Number(result.generatedLinks || 0) + ' relasi aktif.'
+      );
+      await load();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sinkronisasi registry ketentuan gagal.');
+      return false;
+    } finally {
+      setRegistrySyncing(false);
+    }
+  }, [load]);
+
+  useEffect(() => {
+    const missing =
+      (data?.registry?.metrics.missingCandidates || 0) +
+      (data?.registry?.metrics.unmappedPolicySources || 0);
+    if (!data?.canManage || missing <= 0 || registryAutoSyncAttempted.current) return;
+    registryAutoSyncAttempted.current = true;
+    void syncRegistry(true);
+  }, [
+    data?.canManage,
+    data?.registry?.metrics.missingCandidates,
+    data?.registry?.metrics.unmappedPolicySources,
+    syncRegistry
+  ]);
+
   const registeredSourceIds = useMemo(
     () => new Set((data?.policies || []).map(item => item.sourceDocumentId).filter(Boolean)),
     [data?.policies]
@@ -333,6 +419,45 @@ export default function PolicyLibraryPage() {
     () => new Map((data?.regulations || []).map(item => [item.id, item])),
     [data?.regulations]
   );
+
+  const relationModules = useCallback((policyId: string) => {
+    const counts = data?.registry?.byPolicy?.[policyId] || {};
+    return [
+      {
+        key: 'SOURCE',
+        label: 'Sumber',
+        count: Number(counts.SOURCE_DOCUMENT || 0) + Number(counts.EVIDENCE_DOCUMENT || 0)
+      },
+      {
+        key: 'REGULATORY',
+        label: 'Regulasi',
+        count: Number(counts.EXTERNAL_REGULATION || 0) + Number(counts.REGULATORY_OBLIGATION || 0)
+      },
+      { key: 'BPM', label: 'BPM', count: Number(counts.PROCESS || 0) },
+      { key: 'RISK', label: 'Risk', count: Number(counts.RISK || 0) },
+      {
+        key: 'CONTROL_RCM',
+        label: 'Control/RCM',
+        count: Number(counts.CONTROL || 0) + Number(counts.RCM || 0)
+      },
+      { key: 'RCSA', label: 'RCSA/CSA', count: Number(counts.RCSA_SCOPE || 0) },
+      {
+        key: 'ICOFR',
+        label: 'ICOFR/ToE',
+        count: Number(counts.ICOFR_PROCESS || 0) + Number(counts.TOD_TEST || 0) + Number(counts.TOE_TEST || 0)
+      },
+      {
+        key: 'REMEDIATION',
+        label: 'Remediation/MAP',
+        count: Number(counts.REMEDIATION_ISSUE || 0) + Number(counts.REMEDIATION_MAP || 0) +
+          Number(counts.MAP || 0) + Number(counts.DEFICIENCY || 0)
+      }
+    ];
+  }, [data?.registry?.byPolicy]);
+
+  const relationCount = useCallback((policyId: string) => {
+    return relationModules(policyId).reduce((sum, item) => sum + item.count, 0);
+  }, [relationModules]);
 
   const startSourceRegistration = (source: UploadedSource) => {
     setSelectedSource(source);
@@ -464,6 +589,14 @@ export default function PolicyLibraryPage() {
     openRegulatoryActions: 0,
     highImpactOpen: 0
   };
+  const registryMetrics = data?.registry?.metrics || {
+    discoveredCandidates: 0,
+    registeredCandidates: 0,
+    missingCandidates: 0,
+    unmappedPolicySources: 0,
+    totalLinks: 0,
+    policiesWithLinks: 0
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -501,6 +634,20 @@ export default function PolicyLibraryPage() {
               {data?.canManage && (
                 <button
                   type="button"
+                  onClick={() => void syncRegistry(false)}
+                  disabled={registrySyncing}
+                  className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-4 py-2.5 text-sm font-black text-cyan-50 hover:bg-cyan-300/15 disabled:opacity-60"
+                >
+                  {registrySyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                  Sinkronkan Database
+                  {registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                    ? ' (' + (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources) + ')'
+                    : ''}
+                </button>
+              )}
+              {data?.canManage && (
+                <button
+                  type="button"
                   onClick={() => {
                     setSelectedSource(null);
                     setShowPolicyForm(true);
@@ -515,7 +662,7 @@ export default function PolicyLibraryPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 md:p-6">
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5 md:p-6">
           {[
             {
               label: 'Ketentuan Terdaftar',
@@ -540,6 +687,12 @@ export default function PolicyLibraryPage() {
               value: metrics.openRegulatoryActions,
               sub: metrics.highImpactOpen + ' berdampak tinggi/kritis',
               icon: ClipboardList
+            },
+            {
+              label: 'Relasi TotalARC',
+              value: registryMetrics.totalLinks,
+              sub: registryMetrics.policiesWithLinks + ' ketentuan sudah terkoneksi',
+              icon: Network
             }
           ].map(card => {
             const Icon = card.icon;
@@ -560,6 +713,54 @@ export default function PolicyLibraryPage() {
           })}
         </div>
       </section>
+
+      {(registryMetrics.missingCandidates > 0 ||
+        registryMetrics.unmappedPolicySources > 0 ||
+        registryMetrics.discoveredCandidates > 0) && (
+        <section className={
+          'flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between ' +
+          (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+            ? 'border-sky-200 bg-sky-50'
+            : 'border-emerald-200 bg-emerald-50')
+        }>
+          <div className="flex items-start gap-3">
+            <Database className={
+              'mt-0.5 h-5 w-5 shrink-0 ' +
+              (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-700' : 'text-emerald-700')
+            } />
+            <div>
+              <div className={
+                'font-black ' +
+                (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-950' : 'text-emerald-950')
+              }>
+                Registry database TotalARC
+              </div>
+              <p className={
+                'mt-1 text-sm leading-5 ' +
+                (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-800' : 'text-emerald-800')
+              }>
+                {registryMetrics.registeredCandidates} dari {registryMetrics.discoveredCandidates} file SOP/Policy/ketentuan
+                yang terdeteksi sudah terdaftar. {registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                  ? (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources) +
+                    ' sumber/ketentuan existing akan disinkronkan tanpa menduplikasi file sumber.'
+                  : ' Registry saat ini sudah mencakup seluruh kandidat yang terdeteksi di database.'}
+              </p>
+            </div>
+          </div>
+          {data?.canManage &&
+            registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 && (
+            <button
+              type="button"
+              onClick={() => void syncRegistry(false)}
+              disabled={registrySyncing}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-900 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60"
+            >
+              {registrySyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Sinkronkan Sekarang
+            </button>
+          )}
+        </section>
+      )}
 
       {(metrics.overdueReview > 0 || metrics.highImpactOpen > 0) && (
         <section className="grid gap-3 lg:grid-cols-2">
@@ -608,6 +809,7 @@ export default function PolicyLibraryPage() {
           <div className="flex flex-wrap gap-2">
             {[
               ['library', 'Library Ketentuan', FileText],
+              ['relations', 'Relasi TotalARC', Network],
               ['regulations', 'Regulatory Watch', ShieldAlert],
               ['impacts', 'Impact & Action', Link2],
               ['intelligence', 'Regulatory Intelligence', ShieldAlert],
@@ -678,6 +880,7 @@ export default function PolicyLibraryPage() {
                     <th className="px-4 py-3">Terbit / Efektif</th>
                     <th className="px-4 py-3">Review</th>
                     <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Relasi</th>
                     <th className="px-4 py-3">Sumber</th>
                     <th className="px-5 py-3 text-right">Aksi</th>
                   </tr>
@@ -727,8 +930,26 @@ export default function PolicyLibraryPage() {
                             {item.status}
                           </span>
                         </td>
+                                                <td className="px-4 py-4">
+                          <span className={'inline-flex rounded-full px-2.5 py-1 text-xs font-black ' +
+                            (relationCount(item.id) > 0
+                              ? 'bg-indigo-100 text-indigo-700'
+                              : 'bg-slate-100 text-slate-500')
+                          }>
+                            {relationCount(item.id)} relasi
+                          </span>
+                        </td>
                         <td className="px-4 py-4 text-xs text-slate-500">
-                          {item.sourceDocumentId ? 'File terunggah terhubung' : 'Metadata/manual'}
+                          {(() => {
+                            const sources = data?.registry?.sourcesByPolicy?.[item.id] || [];
+                            if (sources.some(source => source.sourceType === 'SOURCE_DOCUMENT')) {
+                              return 'Source Library terhubung';
+                            }
+                            if (sources.some(source => source.sourceType === 'EVIDENCE_DOCUMENT')) {
+                              return 'Evidence Repository terhubung';
+                            }
+                            return item.sourceDocumentId ? 'File terunggah terhubung' : 'Metadata/manual';
+                          })()}
                         </td>
                         <td className="px-5 py-4 text-right">
                           {data?.canManage ? (
@@ -755,7 +976,7 @@ export default function PolicyLibraryPage() {
                   })}
                   {filteredPolicies.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-5 py-14 text-center">
+                      <td colSpan={8} className="px-5 py-14 text-center">
                         <FileText className="mx-auto h-8 w-8 text-slate-300" />
                         <div className="mt-3 font-bold text-slate-700">Belum ada ketentuan yang cocok.</div>
                         <div className="mt-1 text-sm text-slate-500">
@@ -766,6 +987,74 @@ export default function PolicyLibraryPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {tab === 'relations' && (
+          <div>
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
+              <div>
+                <h2 className="font-black text-slate-950">Keterkaitan Ketentuan dengan TotalARC</h2>
+                <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">
+                  Relasi dibangun dari koneksi yang sudah ada di database: sumber dokumen, regulatory obligation,
+                  BPM, risk, control/RCM, RCSA/CSA, ICOFR/ToE, evidence, serta remediation/MAP. Tidak ada relasi
+                  yang dibuat hanya berdasarkan kemiripan judul.
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+                {registryMetrics.totalLinks} relasi · {registryMetrics.policiesWithLinks} ketentuan terkoneksi
+              </div>
+            </div>
+
+            <div className="grid gap-3 p-4 md:p-5">
+              {filteredPolicies.map(item => {
+                const modules = relationModules(item.id);
+                const total = modules.reduce((sum, module) => sum + module.count, 0);
+                return (
+                  <article key={item.id} className="rounded-2xl border border-slate-200 p-4">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-xs font-black uppercase tracking-[0.08em] text-indigo-600">
+                          {item.documentCode} · {item.documentType}
+                        </div>
+                        <div className="mt-1 font-black text-slate-950">{item.title}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {modules.map(module => (
+                            <span
+                              key={module.key}
+                              className={
+                                'rounded-full px-2.5 py-1 text-xs font-bold ' +
+                                (module.count > 0
+                                  ? 'bg-indigo-100 text-indigo-700'
+                                  : 'bg-slate-100 text-slate-400')
+                              }
+                            >
+                              {module.label}: {module.count}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className={
+                        'shrink-0 rounded-xl px-3 py-2 text-center ' +
+                        (total > 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800')
+                      }>
+                        <div className="text-xl font-black">{total}</div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.08em]">Relasi aktif</div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+              {filteredPolicies.length === 0 && (
+                <div className="py-12 text-center">
+                  <Network className="mx-auto h-8 w-8 text-slate-300" />
+                  <div className="mt-3 font-bold text-slate-700">Belum ada ketentuan untuk ditampilkan.</div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    Jalankan sinkronisasi database agar SOP, Policy, dan ketentuan existing diregistrasikan.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
