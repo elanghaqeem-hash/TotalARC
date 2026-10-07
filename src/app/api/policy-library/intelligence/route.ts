@@ -6,7 +6,8 @@ import {
   getPolicyIntelligenceDashboard,
   scanAllRegulatorySources,
   scanRegulatorySource,
-  seedOfficialSources
+  seedOfficialSources,
+  updateRegulatoryCandidateStatus
 } from '@/lib/d1-policy-intelligence';
 
 export const dynamic = 'force-dynamic';
@@ -180,6 +181,25 @@ export async function POST(request: Request) {
         changed: results.some(item => item.ok && 'newCount' in item && Number(item.newCount || 0) > 0),
         results
       }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (action === 'MARK_CANDIDATE') {
+      const status = String(body.status || '').toUpperCase();
+      if (!['BARU', 'DITINJAU', 'TERDAFTAR', 'DIABAIKAN'].includes(status)) {
+        return NextResponse.json(
+          { error: 'Status kandidat tidak valid.' },
+          { status: 400, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
+
+      const record = await updateRegulatoryCandidateStatus(
+        context.institutionId,
+        String(body.candidateId || ''),
+        status as 'BARU' | 'DITINJAU' | 'TERDAFTAR' | 'DIABAIKAN'
+      );
+      return NextResponse.json({ changed: true, record }, {
+        headers: { 'Cache-Control': 'no-store' }
+      });
     }
 
     if (action === 'CREATE_RELATION') {
