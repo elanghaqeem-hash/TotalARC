@@ -1,6 +1,9 @@
 'use client';
 
 export type PdfCompressionQuality = 'high' | 'balanced' | 'small';
+const MAX_PDF_PAGES = 300;
+const YIELD_EVERY_PAGES = 4;
+
 const presets = {
   high: { edge: 2600, quality: 0.9 },
   balanced: { edge: 2000, quality: 0.8 },
@@ -24,7 +27,7 @@ export async function compressPdf(file: File, quality: PdfCompressionQuality, pr
     }
   }
   const count = source.getPageCount();
-  if (!count || count > 100) throw new Error('Kompresi mendukung 1–100 halaman per file. Pisahkan PDF yang lebih panjang.');
+  if (!count || count > MAX_PDF_PAGES) throw new Error(`Kompresi mendukung 1–${MAX_PDF_PAGES} halaman per file. Pisahkan PDF yang lebih panjang.`);
   // Documents with interactive/navigation structures only use lossless rewriting.
   const preserveStructure = ['AcroForm', 'Outlines', 'Names', 'StructTreeRoot'].some(key => source.catalog.has(PDFName.of(key))) ||
     source.getPages().some(page => (page.node.Annots()?.size() || 0) > 0);
@@ -43,27 +46,33 @@ export async function compressPdf(file: File, quality: PdfCompressionQuality, pr
         check();
         progress(`Mengompres halaman ${i + 1}/${count}…`);
         const page = await pdf.getPage(i + 1);
-        const text = await page.getTextContent();
-        const hasText = text.items.some(item => 'str' in item && item.str.trim());
-        if (hasText) {
-          const [copied] = await output.copyPages(source, [i]);
-          output.addPage(copied);
-        } else {
-          const base = page.getViewport({ scale: 1 });
-          const viewport = page.getViewport({ scale: Math.min(2.5, preset.edge / Math.max(base.width, base.height)) });
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
-          try {
-            await page.render({ canvas, viewport, background: 'white' }).promise;
-            check();
-            const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Gambar halaman gagal dikompres.')), 'image/jpeg', preset.quality));
-            const image = await output.embedJpg(await blob.arrayBuffer());
-            const target = output.addPage([base.width, base.height]);
-            target.drawImage(image, { x: 0, y: 0, width: base.width, height: base.height });
-            scannedPages++;
-          } finally { canvas.width = canvas.height = 0; }
+        try {
+          const text = await page.getTextContent();
+          const hasText = text.items.some(item => 'str' in item && item.str.trim());
+          if (hasText) {
+            const [copied] = await output.copyPages(source, [i]);
+            output.addPage(copied);
+          } else {
+            const base = page.getViewport({ scale: 1 });
+            const viewport = page.getViewport({ scale: Math.min(2.5, preset.edge / Math.max(base.width, base.height)) });
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+            try {
+              await page.render({ canvas, viewport, background: 'white' }).promise;
+              check();
+              const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Gambar halaman gagal dikompres.')), 'image/jpeg', preset.quality));
+              const image = await output.embedJpg(await blob.arrayBuffer());
+              const target = output.addPage([base.width, base.height]);
+              target.drawImage(image, { x: 0, y: 0, width: base.width, height: base.height });
+              scannedPages++;
+            } finally { canvas.width = canvas.height = 0; }
+          }
+        } finally {
+          page.cleanup();
         }
-        page.cleanup();
+        if ((i + 1) % YIELD_EVERY_PAGES === 0) {
+          await new Promise<void>(resolve => setTimeout(resolve, 0));
+        }
       }
       if (scannedPages) {
         const candidate = await output.save({ useObjectStreams: true });
