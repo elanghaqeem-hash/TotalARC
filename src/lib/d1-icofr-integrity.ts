@@ -756,7 +756,13 @@ export async function getIcofrReferentialIntegrityReport() {
       (SELECT COUNT(*) FROM issue_map_missing) AS issueMapMissing
   `;
 
-  const completenessRow = await firstRow<Record<string, unknown>>(db, completenessSql);
+  let completenessRow: Record<string, unknown> | null = null;
+  try {
+    completenessRow = await firstRow<Record<string, unknown>>(db, completenessSql);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'UNKNOWN_D1_ERROR';
+    throw new Error('ICOFR_INTEGRITY_CHECK_FAILED:TRACEABILITY_COMPLETENESS:' + message);
+  }
   const inScopeAssertions = Number(completenessRow?.inScopeAssertions || 0);
   const completeChains = Number(completenessRow?.completeChains || 0);
   const incompleteChains = Number(completenessRow?.incompleteChains || 0);
@@ -839,15 +845,21 @@ export async function getIcofrReferentialIntegrityReport() {
     }
   ];
 
-  const certificationMetricsRow = await firstRow<Record<string, unknown>>(
-    db,
-    `SELECT
+  let certificationMetricsRow: Record<string, unknown> | null = null;
+  try {
+    certificationMetricsRow = await firstRow<Record<string, unknown>>(
+      db,
+      `SELECT
        (SELECT COUNT(*) FROM ICOFRSubCertification) AS subCertifications,
        (SELECT COUNT(*) FROM ICOFRSubCertification WHERE status IN ('Submitted','Approved')) AS submittedOrApprovedSubCertifications,
        (SELECT COUNT(*) FROM ICOFRManagementAttestation) AS managementAttestations,
        (SELECT COUNT(*) FROM ICOFRManagementAttestation WHERE status IN ('Submitted','Approved','Signed')) AS progressedAttestations,
        (SELECT COUNT(*) FROM ICOFREvidencePack) AS evidencePacks`
-  );
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'UNKNOWN_D1_ERROR';
+    throw new Error('ICOFR_INTEGRITY_CHECK_FAILED:CERTIFICATION_METRICS:' + message);
+  }
 
   const certificationMetrics = {
     subCertifications: Number(certificationMetricsRow?.subCertifications || 0),

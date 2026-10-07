@@ -158,6 +158,51 @@ jobs:
           }
 
           pass_all = all(actual[key] == expected for key, expected in EXPECTED.items())
+
+          latest_run_at = str((latest or {}).get("runAt") or "")
+          created_after = (
+              " AND c.createdAt > " + q(latest_run_at)
+              if latest_run_at
+              else ""
+          )
+          diagnostics = {
+              "sourceMetadataRows": scalar(
+                  "SELECT COUNT(*) AS count FROM RCMControlSourceMetadata "
+                  "WHERE institutionId=" + q(iid)
+              ),
+              "controlsWithSourceMetadata": scalar(
+                  "SELECT COUNT(DISTINCT c.id) AS count "
+                  "FROM ControlMaster c "
+                  "JOIN RCMControlSourceMetadata sm "
+                  "ON sm.controlId=c.id AND sm.institutionId=c.institutionId "
+                  "WHERE c.institutionId=" + q(iid)
+              ),
+              "controlsWithoutSourceMetadata": scalar(
+                  "SELECT COUNT(DISTINCT c.id) AS count "
+                  "FROM ControlMaster c "
+                  "LEFT JOIN RCMControlSourceMetadata sm "
+                  "ON sm.controlId=c.id AND sm.institutionId=c.institutionId "
+                  "WHERE c.institutionId=" + q(iid) + " AND sm.controlId IS NULL"
+              ),
+              "controlsCreatedAfterLatestIntegrity": scalar(
+                  "SELECT COUNT(*) AS count FROM ControlMaster c "
+                  "WHERE c.institutionId=" + q(iid) + created_after
+              ) if latest_run_at else 0,
+              "controlsWithoutMetadataCreatedAfterLatestIntegrity": scalar(
+                  "SELECT COUNT(DISTINCT c.id) AS count "
+                  "FROM ControlMaster c "
+                  "LEFT JOIN RCMControlSourceMetadata sm "
+                  "ON sm.controlId=c.id AND sm.institutionId=c.institutionId "
+                  "WHERE c.institutionId=" + q(iid) +
+                  " AND sm.controlId IS NULL" + created_after
+              ) if latest_run_at else 0,
+              "controlCreatesInAuditAfterLatestIntegrity": scalar(
+                  "SELECT COUNT(*) AS count FROM AuditLog "
+                  "WHERE institutionId=" + q(iid) +
+                  " AND entityType='ControlMaster' AND action='CREATE'" +
+                  (" AND timestamp > " + q(latest_run_at) if latest_run_at else "")
+              ),
+          }
           latest_summary = {}
           if latest:
               try:
@@ -171,6 +216,7 @@ jobs:
               "institution": institution,
               "expected": EXPECTED,
               "actual": actual,
+              "diagnostics": diagnostics,
               "latestIntegrityRun": {
                   "id": latest.get("id") if latest else None,
                   "batchCode": latest.get("batchCode") if latest else None,
@@ -253,6 +299,14 @@ jobs:
               "| CKPN | " + (.expected.ckpnRequirements|tostring) + " | " + (.actual.ckpnRequirements|tostring) + " |",
               "| Reverse Repo | " + (.expected.reverseRepoRequirements|tostring) + " | " + (.actual.reverseRepoRequirements|tostring) + " |",
               "| ELC draft references | " + (.expected.elcDraftReferences|tostring) + " | " + (.actual.elcDraftReferences|tostring) + " |",
-              "| Integrity | " + .expected.integrity + " | " + .actual.integrity + " |"
+              "| Integrity | " + .expected.integrity + " | " + .actual.integrity + " |",
+              "",
+              "### Drift diagnostics",
+              "- Source metadata rows: " + (.diagnostics.sourceMetadataRows|tostring),
+              "- Controls with source metadata: " + (.diagnostics.controlsWithSourceMetadata|tostring),
+              "- Controls without source metadata: " + (.diagnostics.controlsWithoutSourceMetadata|tostring),
+              "- Controls created after latest integrity run: " + (.diagnostics.controlsCreatedAfterLatestIntegrity|tostring),
+              "- Controls without metadata created after latest integrity run: " + (.diagnostics.controlsWithoutMetadataCreatedAfterLatestIntegrity|tostring),
+              "- Audited ControlMaster CREATE actions after latest integrity run: " + (.diagnostics.controlCreatesInAuditAfterLatestIntegrity|tostring)
             ' /tmp/rcm-production-acceptance.json >> "$GITHUB_STEP_SUMMARY"
           fi
