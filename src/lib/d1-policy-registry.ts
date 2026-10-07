@@ -18,6 +18,8 @@ type D1DatabaseLike = {
   prepare: (sql: string) => Prepared;
 };
 
+const POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v2';
+
 export type PolicyEntityLinkRecord = {
   id: string;
   institutionId: string;
@@ -271,6 +273,7 @@ async function executeSchema(db: D1DatabaseLike) {
       insertedPolicies INTEGER NOT NULL DEFAULT 0,
       mappedSources INTEGER NOT NULL DEFAULT 0,
       generatedLinks INTEGER NOT NULL DEFAULT 0,
+      syncVersion TEXT NOT NULL DEFAULT 'legacy',
       actorName TEXT NOT NULL,
       startedAt TEXT NOT NULL,
       completedAt TEXT,
@@ -280,6 +283,19 @@ async function executeSchema(db: D1DatabaseLike) {
       ON PolicyRegistrySyncRun(institutionId,startedAt)`
   ];
   for (const statement of statements) await run(db, statement);
+
+  const syncColumns = await all<{ name?: string }>(db, 'PRAGMA table_info(PolicyRegistrySyncRun)');
+  const syncColumnNames = new Set(syncColumns.map(column => String(column.name || '')));
+  if (!syncColumnNames.has('syncVersion')) {
+    try {
+      await run(
+        db,
+        "ALTER TABLE PolicyRegistrySyncRun ADD COLUMN syncVersion TEXT NOT NULL DEFAULT 'legacy'"
+      );
+    } catch (error) {
+      if (!String(error).toLowerCase().includes('duplicate column')) throw error;
+    }
+  }
 }
 
 let schemaReady: Promise<D1DatabaseLike> | null = null;
@@ -1334,7 +1350,7 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
   const lastSync = await first<Record<string, unknown>>(
     db,
     `SELECT id,status,discoveredCandidates,insertedPolicies,mappedSources,generatedLinks,
-            actorName,startedAt,completedAt,errorCode
+            syncVersion,actorName,startedAt,completedAt,errorCode
        FROM PolicyRegistrySyncRun
       WHERE institutionId=?
       ORDER BY startedAt DESC
@@ -1367,6 +1383,11 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
       classificationReason: item.classificationReason,
       registered: registeredKeys.has(item.sourceType + ':' + item.sourceId)
     })),
+    syncRequired:
+      !lastSync ||
+      String(lastSync.status || '') !== 'PASS' ||
+      String(lastSync.syncVersion || 'legacy') !== POLICY_REGISTRY_SYNC_VERSION,
+    syncVersion: POLICY_REGISTRY_SYNC_VERSION,
     lastSync: lastSync || null
   };
 }
@@ -1382,9 +1403,9 @@ export async function syncPolicyRegistryFromDatabase(
     db,
     `INSERT INTO PolicyRegistrySyncRun (
       id,institutionId,status,discoveredCandidates,insertedPolicies,mappedSources,
-      generatedLinks,actorName,startedAt,completedAt,errorCode
-    ) VALUES (?,?,'RUNNING',0,0,0,0,?,?,NULL,NULL)`,
-    [runId, institutionId, actorName, startedAt]
+      generatedLinks,syncVersion,actorName,startedAt,completedAt,errorCode
+    ) VALUES (?,?,'RUNNING',0,0,0,0,?,?,?,NULL,NULL)`,
+    [runId, institutionId, POLICY_REGISTRY_SYNC_VERSION, actorName, startedAt]
   );
 
   try {
