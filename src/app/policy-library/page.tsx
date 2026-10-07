@@ -116,6 +116,7 @@ type Registry = {
     discoveredCandidates: number;
     registeredCandidates: number;
     missingCandidates: number;
+    unmappedPolicySources: number;
     totalLinks: number;
     policiesWithLinks: number;
   };
@@ -364,11 +365,18 @@ export default function PolicyLibraryPage() {
   }, [load]);
 
   useEffect(() => {
-    const missing = data?.registry?.metrics.missingCandidates || 0;
+    const missing =
+      (data?.registry?.metrics.missingCandidates || 0) +
+      (data?.registry?.metrics.unmappedPolicySources || 0);
     if (!data?.canManage || missing <= 0 || registryAutoSyncAttempted.current) return;
     registryAutoSyncAttempted.current = true;
     void syncRegistry(true);
-  }, [data?.canManage, data?.registry?.metrics.missingCandidates, syncRegistry]);
+  }, [
+    data?.canManage,
+    data?.registry?.metrics.missingCandidates,
+    data?.registry?.metrics.unmappedPolicySources,
+    syncRegistry
+  ]);
 
   const registeredSourceIds = useMemo(
     () => new Set((data?.policies || []).map(item => item.sourceDocumentId).filter(Boolean)),
@@ -585,6 +593,7 @@ export default function PolicyLibraryPage() {
     discoveredCandidates: 0,
     registeredCandidates: 0,
     missingCandidates: 0,
+    unmappedPolicySources: 0,
     totalLinks: 0,
     policiesWithLinks: 0
   };
@@ -631,7 +640,9 @@ export default function PolicyLibraryPage() {
                 >
                   {registrySyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
                   Sinkronkan Database
-                  {registryMetrics.missingCandidates > 0 ? ' (' + registryMetrics.missingCandidates + ')' : ''}
+                  {registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                    ? ' (' + (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources) + ')'
+                    : ''}
                 </button>
               )}
               {data?.canManage && (
@@ -703,37 +714,41 @@ export default function PolicyLibraryPage() {
         </div>
       </section>
 
-      {(registryMetrics.missingCandidates > 0 || registryMetrics.discoveredCandidates > 0) && (
+      {(registryMetrics.missingCandidates > 0 ||
+        registryMetrics.unmappedPolicySources > 0 ||
+        registryMetrics.discoveredCandidates > 0) && (
         <section className={
           'flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between ' +
-          (registryMetrics.missingCandidates > 0
+          (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
             ? 'border-sky-200 bg-sky-50'
             : 'border-emerald-200 bg-emerald-50')
         }>
           <div className="flex items-start gap-3">
             <Database className={
               'mt-0.5 h-5 w-5 shrink-0 ' +
-              (registryMetrics.missingCandidates > 0 ? 'text-sky-700' : 'text-emerald-700')
+              (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-700' : 'text-emerald-700')
             } />
             <div>
               <div className={
                 'font-black ' +
-                (registryMetrics.missingCandidates > 0 ? 'text-sky-950' : 'text-emerald-950')
+                (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-950' : 'text-emerald-950')
               }>
                 Registry database TotalARC
               </div>
               <p className={
                 'mt-1 text-sm leading-5 ' +
-                (registryMetrics.missingCandidates > 0 ? 'text-sky-800' : 'text-emerald-800')
+                (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 ? 'text-sky-800' : 'text-emerald-800')
               }>
                 {registryMetrics.registeredCandidates} dari {registryMetrics.discoveredCandidates} file SOP/Policy/ketentuan
-                yang terdeteksi sudah terdaftar. {registryMetrics.missingCandidates > 0
-                  ? registryMetrics.missingCandidates + ' kandidat akan disinkronkan tanpa menduplikasi file sumber.'
+                yang terdeteksi sudah terdaftar. {registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0
+                  ? (registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources) +
+                    ' sumber/ketentuan existing akan disinkronkan tanpa menduplikasi file sumber.'
                   : ' Registry saat ini sudah mencakup seluruh kandidat yang terdeteksi di database.'}
               </p>
             </div>
           </div>
-          {data?.canManage && registryMetrics.missingCandidates > 0 && (
+          {data?.canManage &&
+            registryMetrics.missingCandidates + registryMetrics.unmappedPolicySources > 0 && (
             <button
               type="button"
               onClick={() => void syncRegistry(false)}
