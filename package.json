@@ -42,7 +42,8 @@
     "verify:pdf-ocr": "node scripts/verify-pdf-ocr.cjs",
     "verify:policy-intelligence": "node scripts/verify-policy-intelligence.js",
     "verify:regulatory-obligations": "node scripts/verify-regulatory-obligation-register.js",
-    "verify:regulatory-clauses": "node scripts/verify-regulatory-clause-intelligence.js"
+    "verify:regulatory-clauses": "node scripts/verify-regulatory-clause-intelligence.js",
+    "verify:policy-registry": "node scripts/verify-policy-registry-sync.js"
   },
   "keywords": [],
   "author": "",
