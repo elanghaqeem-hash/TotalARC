@@ -443,7 +443,7 @@ export function SignificantAccountAI({ onApplied }: { onApplied?: () => void | P
                   <input type="checkbox" checked={forceOcr} disabled={analyzing} onChange={event => setForceOcr(event.target.checked)} />
                   PDF hasil scan / campuran: gunakan OCR pada seluruh halaman
                 </label>
-                <p>OCR otomatis untuk halaman tanpa teks. Bahasa Indonesia dan Inggris didukung. Periksa kembali angka dan hasil bacanya.</p>
+                <p>OCR otomatis untuk halaman tanpa teks hingga 300 halaman. Bahasa Indonesia dan Inggris didukung. Dokumen scan besar dapat memerlukan waktu lebih lama, terutama di HP. Periksa kembali angka dan hasil bacanya.</p>
               </div>
             )}
             {analyzing && <p role="status" aria-live="polite" className="my-2 text-xs text-sky-700">{ocrProgress}</p>}
