@@ -330,6 +330,45 @@ export default function PolicyLibraryPage() {
     }
   }, [load]);
 
+  const syncRegistry = useCallback(async (automatic = false) => {
+    setRegistrySyncing(true);
+    if (!automatic) {
+      setError('');
+      setNotice('');
+    }
+    try {
+      const response = await fetch('/api/policy-library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: 'SYNC_REGISTRY' })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Sinkronisasi registry ketentuan gagal.');
+      const result = payload.result || {};
+      setNotice(
+        'Sinkronisasi database selesai: ' +
+        Number(result.insertedPolicies || 0) + ' ketentuan baru, ' +
+        Number(result.mappedSources || 0) + ' sumber terhubung, dan ' +
+        Number(result.generatedLinks || 0) + ' relasi aktif.'
+      );
+      await load();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sinkronisasi registry ketentuan gagal.');
+      return false;
+    } finally {
+      setRegistrySyncing(false);
+    }
+  }, [load]);
+
+  useEffect(() => {
+    const missing = data?.registry?.metrics.missingCandidates || 0;
+    if (!data?.canManage || missing <= 0 || registryAutoSyncAttempted.current) return;
+    registryAutoSyncAttempted.current = true;
+    void syncRegistry(true);
+  }, [data?.canManage, data?.registry?.metrics.missingCandidates, syncRegistry]);
+
   const registeredSourceIds = useMemo(
     () => new Set((data?.policies || []).map(item => item.sourceDocumentId).filter(Boolean)),
     [data?.policies]
@@ -371,6 +410,45 @@ export default function PolicyLibraryPage() {
     () => new Map((data?.regulations || []).map(item => [item.id, item])),
     [data?.regulations]
   );
+
+  const relationModules = useCallback((policyId: string) => {
+    const counts = data?.registry?.byPolicy?.[policyId] || {};
+    return [
+      {
+        key: 'SOURCE',
+        label: 'Sumber',
+        count: Number(counts.SOURCE_DOCUMENT || 0) + Number(counts.EVIDENCE_DOCUMENT || 0)
+      },
+      {
+        key: 'REGULATORY',
+        label: 'Regulasi',
+        count: Number(counts.EXTERNAL_REGULATION || 0) + Number(counts.REGULATORY_OBLIGATION || 0)
+      },
+      { key: 'BPM', label: 'BPM', count: Number(counts.PROCESS || 0) },
+      { key: 'RISK', label: 'Risk', count: Number(counts.RISK || 0) },
+      {
+        key: 'CONTROL_RCM',
+        label: 'Control/RCM',
+        count: Number(counts.CONTROL || 0) + Number(counts.RCM || 0)
+      },
+      { key: 'RCSA', label: 'RCSA/CSA', count: Number(counts.RCSA_SCOPE || 0) },
+      {
+        key: 'ICOFR',
+        label: 'ICOFR/ToE',
+        count: Number(counts.ICOFR_PROCESS || 0) + Number(counts.TOE_TEST || 0)
+      },
+      {
+        key: 'REMEDIATION',
+        label: 'Remediation/MAP',
+        count: Number(counts.REMEDIATION_ISSUE || 0) + Number(counts.REMEDIATION_MAP || 0) +
+          Number(counts.MAP || 0) + Number(counts.DEFICIENCY || 0)
+      }
+    ];
+  }, [data?.registry?.byPolicy]);
+
+  const relationCount = useCallback((policyId: string) => {
+    return relationModules(policyId).reduce((sum, item) => sum + item.count, 0);
+  }, [relationModules]);
 
   const startSourceRegistration = (source: UploadedSource) => {
     setSelectedSource(source);
