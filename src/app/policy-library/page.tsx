@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { PolicyIntelligenceWorkspace } from '@/components/policy/PolicyIntelligenceWorkspace';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -116,7 +117,7 @@ type Dashboard = {
   uploadedSources: UploadedSource[];
 };
 
-type TabKey = 'library' | 'regulations' | 'impacts' | 'uploads';
+type TabKey = 'library' | 'regulations' | 'impacts' | 'intelligence' | 'uploads';
 
 const DOCUMENT_TYPES = [
   'Kebijakan',
@@ -605,6 +606,7 @@ export default function PolicyLibraryPage() {
               ['library', 'Library Ketentuan', FileText],
               ['regulations', 'Regulatory Watch', ShieldAlert],
               ['impacts', 'Impact & Action', Link2],
+              ['intelligence', 'Regulatory Intelligence', ShieldAlert],
               ['uploads', 'File Terunggah', UploadCloud]
             ].map(([key, label, Icon]) => {
               const ItemIcon = Icon as typeof FileText;
@@ -942,6 +944,15 @@ export default function PolicyLibraryPage() {
               )}
             </div>
           </div>
+        )}
+
+        {tab === 'intelligence' && data && (
+          <PolicyIntelligenceWorkspace
+            policies={data.policies}
+            regulations={data.regulations}
+            canManage={Boolean(data.canManage)}
+            onLibraryChanged={load}
+          />
         )}
 
         {tab === 'uploads' && (
