@@ -381,8 +381,23 @@ export function PolicyIntelligenceWorkspace({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Kandidat belum dapat diregistrasikan.');
+
+      const statusResponse = await fetch('/api/policy-library/intelligence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          action: 'MARK_CANDIDATE',
+          candidateId: registerCandidate.id,
+          status: 'TERDAFTAR'
+        })
+      });
+      if (!statusResponse.ok) {
+        console.warn('Regulation registered but candidate status could not be updated.');
+      }
+
       setRegisterCandidate(null);
-      setNotice('Kandidat sudah diregistrasikan sebagai regulasi eksternal.');
+      setNotice('Kandidat sudah divalidasi dan diregistrasikan sebagai regulasi eksternal.');
       await Promise.all([load(), Promise.resolve(onLibraryChanged?.())]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kandidat belum dapat diregistrasikan.');
@@ -775,6 +790,23 @@ export function PolicyIntelligenceWorkspace({
                             <Plus className="h-4 w-4" />
                             Registrasikan
                           </button>
+                          {candidate.status !== 'TERDAFTAR' && candidate.status !== 'DIABAIKAN' && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const payload = await postAction({
+                                  action: 'MARK_CANDIDATE',
+                                  candidateId: candidate.id,
+                                  status: 'DIABAIKAN'
+                                }, 'ignore-' + candidate.id);
+                                if (payload) setNotice('Kandidat ditandai DIABAIKAN.');
+                              }}
+                              disabled={workingId === 'ignore-' + candidate.id}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              Abaikan
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
