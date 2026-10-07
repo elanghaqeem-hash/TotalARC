@@ -485,7 +485,7 @@ export async function compareRegulationSourceVersions(
 
   const oldMap = new Map(older.map(item => [item.clauseKey, item]));
   const newMap = new Map(newer.map(item => [item.clauseKey, item]));
-  const keys = new Set([...oldMap.keys(), ...newMap.keys()]);
+  const keys = new Set([...Array.from(oldMap.keys()), ...Array.from(newMap.keys())]);
 
   const changes = Array.from(keys).map(key => {
     const before = oldMap.get(key) || null;
