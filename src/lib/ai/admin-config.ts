@@ -106,6 +106,14 @@ export const AI_FEATURE_CATALOG: Array<{
     buttonLabel: 'Analisis Dampak Regulasi',
     description: 'Screening kandidat regulasi terhadap ketentuan internal Bank dan usulan relasi/dampak.',
     recommendedLevel: 'ADVANCED'
+  },
+  {
+    id: 'regulatory_clause_intelligence',
+    page: '/policy-library',
+    pageLabel: 'Regulatory Clause Intelligence',
+    buttonLabel: 'Ekstrak Draft Obligation',
+    description: 'Ekstraksi klausul tervalidasi menjadi draft obligation dan usulan dampak terhadap ketentuan/proses/kontrol.',
+    recommendedLevel: 'ADVANCED'
   }
 ];
 
