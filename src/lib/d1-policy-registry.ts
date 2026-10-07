@@ -6,6 +6,7 @@ import { ensurePolicyLibrarySchema } from '@/lib/d1-policy-library';
 import { ensureRegulatoryObligationSchema } from '@/lib/d1-regulatory-obligations';
 import { ensureRcsaSchema } from '@/lib/d1-rcsa';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
+import { ensurePolicyIntelligenceSchema } from '@/lib/d1-policy-intelligence';
 
 type Prepared = {
   bind: (...values: unknown[]) => Prepared;
@@ -103,6 +104,9 @@ function typeCode(type: string) {
     'Prosedur': 'PRO',
     'Instruksi Kerja': 'IK',
     'Standar': 'STD',
+    'Buku Pedoman Perusahaan': 'BPP',
+    'Piagam': 'PIG',
+    'Petunjuk Teknis': 'JUKNIS',
     'Ketentuan Internal': 'KET'
   };
   return mapping[type] || 'KET';
@@ -116,6 +120,9 @@ function canonicalDocumentType(value: unknown) {
     ['Keputusan', ['keputusan', 'surat keputusan', 'sk']],
     ['SOP', ['sop', 'standar operasional prosedur', 'standard operating procedure']],
     ['Kebijakan', ['kebijakan', 'policy']],
+    ['Buku Pedoman Perusahaan', ['buku pedoman perusahaan', 'bpp']],
+    ['Piagam', ['piagam', 'charter']],
+    ['Petunjuk Teknis', ['petunjuk teknis', 'juknis', 'technical guideline']],
     ['Pedoman', ['pedoman', 'guideline', 'manual kerja', 'manual operasional']],
     ['Instruksi Kerja', ['instruksi kerja', 'work instruction']],
     ['Prosedur', ['prosedur', 'procedure']],
@@ -158,6 +165,22 @@ function classifyInternalRule(input: {
     };
   }
 
+  const titleOnly = normalize(input.title);
+  const externalTitlePatterns = [
+    /\bpojk\b/,
+    /\bseojk\b/,
+    /\bperaturan otoritas jasa keuangan\b/,
+    /\bperaturan bank indonesia\b/,
+    /\bpbi\b/,
+    /\bpadg\b/,
+    /\bplps\b/,
+    /\bperaturan lembaga penjamin simpanan\b/,
+    /\bperaturan ppatk\b/,
+    /\bundang undang\b/,
+    /\bperaturan pemerintah\b/
+  ];
+  if (externalTitlePatterns.some(pattern => pattern.test(titleOnly))) return null;
+
   const haystack = normalize(
     [input.title, input.category || '', input.textPreview || ''].join(' ')
   ).slice(0, 16000);
@@ -168,6 +191,9 @@ function classifyInternalRule(input: {
     ['Keputusan', /\bsurat keputusan\b|\bkeputusan direksi\b|\bsk (?:direksi|no|nomor)\b/, 'Keputusan internal terdeteksi pada judul/teks sumber.'],
     ['SOP', /\bstandar operasional prosedur\b|\bstandard operating procedure\b|\bsop\b/, 'SOP terdeteksi pada judul/teks sumber.'],
     ['Kebijakan', /\bkebijakan\b|\bpolicy\b/, 'Kebijakan/Policy terdeteksi pada judul/teks sumber.'],
+    ['Buku Pedoman Perusahaan', /\bbuku pedoman perusahaan\b|\bbpp\b/, 'Buku Pedoman Perusahaan terdeteksi pada judul/teks sumber.'],
+    ['Piagam', /\bpiagam\b|\bcharter\b/, 'Piagam/charter internal terdeteksi pada judul/teks sumber.'],
+    ['Petunjuk Teknis', /\bpetunjuk teknis\b|\bjuknis\b|\btechnical guideline\b/, 'Petunjuk teknis internal terdeteksi pada judul/teks sumber.'],
     ['Pedoman', /\bpedoman\b|\bguideline\b|\bmanual kerja\b|\bmanual operasional\b/, 'Pedoman/manual internal terdeteksi pada judul/teks sumber.'],
     ['Instruksi Kerja', /\binstruksi kerja\b|\bwork instruction\b/, 'Instruksi kerja terdeteksi pada judul/teks sumber.'],
     ['Prosedur', /\bprosedur\b|\bprocedure\b/, 'Prosedur terdeteksi pada judul/teks sumber.'],
@@ -196,6 +222,7 @@ async function getDb() {
   await ensureRegulatoryObligationSchema();
   await ensureRcsaSchema();
   await ensureAssuranceSchema();
+  await ensurePolicyIntelligenceSchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -918,6 +945,126 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
           String(row.targetId || '')
         ) ? 1 : 0;
       }
+    }
+  }
+
+  const rcmSourceMetadata = await all<Record<string, unknown>>(
+    db,
+    `SELECT controlId,sourceDocumentId
+       FROM RCMControlSourceMetadata
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of rcmSourceMetadata) {
+    const policies = policyBySource.get(String(row.sourceDocumentId || '')) || [];
+    for (const policyId of policies) {
+      const controlId = String(row.controlId || '');
+      if (!controlId) continue;
+      generated += await insertLink(
+        db, institutionId, policyId, 'CONTROL', controlId, 'SOURCE_RCM_CONTROL', String(row.sourceDocumentId || '')
+      ) ? 1 : 0;
+      generated += await insertLink(
+        db, institutionId, policyId, 'RCM', controlId, 'SOURCE_RCM', String(row.sourceDocumentId || '')
+      ) ? 1 : 0;
+    }
+  }
+
+  const operationalRiskSources = await all<Record<string, unknown>>(
+    db,
+    `SELECT riskId,sourceDocumentId
+       FROM OperationalRiskMetadata
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of operationalRiskSources) {
+    const policies = policyBySource.get(String(row.sourceDocumentId || '')) || [];
+    for (const policyId of policies) {
+      generated += await insertLink(
+        db,
+        institutionId,
+        policyId,
+        'RISK',
+        String(row.riskId || ''),
+        'SOURCE_RISK',
+        String(row.sourceDocumentId || '')
+      ) ? 1 : 0;
+    }
+  }
+
+  const draftReferences = await all<Record<string, unknown>>(
+    db,
+    `SELECT id,sourceDocumentId,operationalControlId,referenceType,referenceCode
+       FROM RCMDraftReference
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of draftReferences) {
+    const policies = policyBySource.get(String(row.sourceDocumentId || '')) || [];
+    for (const policyId of policies) {
+      const operationalControlId = String(row.operationalControlId || '');
+      if (operationalControlId) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          policyId,
+          'CONTROL',
+          operationalControlId,
+          'SOURCE_RCM_DRAFT',
+          String(row.sourceDocumentId || '')
+        ) ? 1 : 0;
+      }
+      generated += await insertLink(
+        db,
+        institutionId,
+        policyId,
+        'RCM',
+        String(row.id || ''),
+        'SOURCE_RCM_REFERENCE',
+        String(row.sourceDocumentId || '')
+      ) ? 1 : 0;
+    }
+  }
+
+  const explicitPolicyRelations = await all<Record<string, unknown>>(
+    db,
+    `SELECT id,sourceType,sourceId,targetType,targetId,relationType,status
+       FROM PolicyRelationship
+      WHERE institutionId=? AND status!='Dicabut'
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const relation of explicitPolicyRelations) {
+    const sourceType = String(relation.sourceType || '');
+    const targetType = String(relation.targetType || '');
+    const sourceId = String(relation.sourceId || '');
+    const targetId = String(relation.targetId || '');
+    const relationType = String(relation.relationType || 'RELATED_TO');
+
+    if (sourceType === 'INTERNAL') {
+      generated += await insertLink(
+        db,
+        institutionId,
+        sourceId,
+        targetType === 'INTERNAL' ? 'INTERNAL_POLICY' : 'EXTERNAL_REGULATION',
+        targetId,
+        relationType,
+        String(relation.id || '')
+      ) ? 1 : 0;
+    }
+
+    if (targetType === 'INTERNAL') {
+      generated += await insertLink(
+        db,
+        institutionId,
+        targetId,
+        sourceType === 'INTERNAL' ? 'INTERNAL_POLICY' : 'EXTERNAL_REGULATION',
+        sourceId,
+        'INVERSE_' + relationType,
+        String(relation.id || '')
+      ) ? 1 : 0;
     }
   }
 
