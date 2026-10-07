@@ -38,8 +38,9 @@ function verifyRegistryLayer() {
   assert(source.includes('canonicalDocumentType'), 'explicit document-type metadata classification missing');
   assert(source.includes('contentHash'), 'source hash deduplication missing');
   assert(
-    source.includes("normalize(candidate.documentType) + ':' + normalize(candidate.title)"),
-    'policy deduplication must include document type and normalized title'
+    source.includes('policyIdentityTitle') &&
+      source.includes("normalize(candidate.documentType) + ':' + policyIdentityTitle(candidate.title)"),
+    'policy deduplication must include document type and normalized artifact identity'
   );
 
   for (const phrase of [
@@ -47,7 +48,10 @@ function verifyRegistryLayer() {
     'kebijakan',
     'peraturan (direksi|direktur)',
     'surat edaran',
-    'instruksi kerja'
+    'instruksi kerja',
+    'buku pedoman perusahaan',
+    'piagam',
+    'petunjuk teknis'
   ]) {
     assert(source.toLowerCase().includes(phrase), 'internal-rule classifier coverage missing: ' + phrase);
   }
@@ -82,7 +86,9 @@ function verifyRegistryLayer() {
     "'REMEDIATION_MAP'",
     "'ICOFR_CONTROL'",
     "'EVIDENCE'",
-    "'INTERNAL_POLICY'"
+    "'INTERNAL_POLICY'",
+    "'CCM_RULE'",
+    "'CCM_EXCEPTION'"
   ]) {
     assert(source.includes(target), 'relation target missing: ' + target);
   }
@@ -120,10 +126,23 @@ function verifyRegistryLayer() {
   );
 
   assert(
-    source.includes('POLICY_REGISTRY_SYNC_VERSION') &&
+    source.includes("POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v3'") &&
       source.includes('syncVersion') &&
       source.includes('syncRequired'),
     'registry algorithm versioning and stale-rebuild detection missing'
+  );
+
+  assert(
+    source.includes('FROM MonitoringRule') &&
+      source.includes('FROM CCMException'),
+    'CCM relationship propagation missing'
+  );
+
+  assert(
+    source.includes('externalTitlePatterns') &&
+      source.includes('peraturan otoritas jasa keuangan') &&
+      source.includes('peraturan bank indonesia'),
+    'external regulatory documents must be excluded from internal policy registration'
   );
 
   assert(
@@ -160,13 +179,19 @@ function verifyUi() {
     'Remediation/MAP',
     'Ketentuan Lain',
     'Evidence',
-    'ICOFR/ToD/ToE'
+    'ICOFR/ToD/ToE',
+    'CCM',
+    'Buku Pedoman Perusahaan',
+    'Petunjuk Teknis'
   ]) {
     assert(ui.includes(phrase), 'Policy Library UI missing: ' + phrase);
   }
   assert(ui.includes('registryAutoSyncAttempted'), 'automatic registry sync trigger missing');
   assert(ui.includes('syncRequired'), 'stale registry version must trigger one-time auto rebuild');
   assert(ui.includes('missingCandidates'), 'registry coverage status missing');
+  assert(ui.includes("href: '/ccm'"), 'CCM navigation missing from policy relations');
+  assert(ui.includes("href: '/processes'"), 'BPM navigation missing from policy relations');
+  assert(ui.includes("href: '/rcm'"), 'RCM navigation missing from policy relations');
   return { ui: 'PASS' };
 }
 
