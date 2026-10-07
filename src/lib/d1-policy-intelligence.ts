@@ -597,6 +597,33 @@ export async function scanAllRegulatorySources(institutionId: string) {
   );
 }
 
+export async function scanAllRegulatoryInstitutions() {
+  const db = await ensurePolicyIntelligenceSchema();
+  const rows = await db.prepare(`
+    SELECT DISTINCT institutionId
+    FROM RegulatoryWatchSource
+    WHERE active = 1
+    ORDER BY institutionId ASC
+    LIMIT 100
+  `).all<{ institutionId: string }>();
+
+  const institutions = rows.results || [];
+  const results = [];
+  for (const item of institutions) {
+    const scans = await scanAllRegulatorySources(item.institutionId);
+    results.push({
+      institutionId: item.institutionId,
+      sources: scans.length,
+      newCandidates: scans.reduce(
+        (total, scan) => total + (scan.ok && 'newCount' in scan ? Number(scan.newCount || 0) : 0),
+        0
+      ),
+      failedSources: scans.filter(scan => scan.ok === false).length
+    });
+  }
+  return results;
+}
+
 async function entityExists(
   db: D1DatabaseLike,
   institutionId: string,
