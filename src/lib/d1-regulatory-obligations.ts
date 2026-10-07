@@ -542,6 +542,9 @@ export async function recordRegulatoryObligationAssessment(
   if (remediationRequired && !clean(input.actionOwner)) {
     throw new Error('REG_OBLIGATION_ACTION_OWNER_REQUIRED');
   }
+  if (remediationRequired && !normalizeDate(input.dueDate)) {
+    throw new Error('REG_OBLIGATION_ACTION_DUE_REQUIRED');
+  }
 
   const id = crypto.randomUUID();
   const createdAt = nowIso();
@@ -602,7 +605,8 @@ export async function getRegulatoryComplianceUniverse(institutionId: string) {
     risksResult,
     controlsResult,
     evidenceResult,
-    orgUnitsResult
+    orgUnitsResult,
+    controlRiskMappingsResult
   ] = await Promise.all([
     db.prepare(`
       SELECT id,institutionId,regulationId,obligationCode,sourceArticle,requirementText,
@@ -651,14 +655,14 @@ export async function getRegulatoryComplianceUniverse(institutionId: string) {
       LIMIT 3000
     `).bind(institutionId).all<Record<string, unknown>>(),
     db.prepare(`
-      SELECT id,riskId,name,category,ownerName,inherentRating,residualRating,status
+      SELECT id,processId,riskId,name,category,ownerName,inherentRating,residualRating,status
       FROM RiskMaster
       WHERE institutionId = ?
       ORDER BY riskId ASC
       LIMIT 5000
     `).bind(institutionId).all<Record<string, unknown>>(),
     db.prepare(`
-      SELECT id,controlId,name,controlOwner,type,nature,frequency,isKeyControl,overallHealth,status
+      SELECT id,processId,controlId,name,controlOwner,type,nature,frequency,isKeyControl,overallHealth,status
       FROM ControlMaster
       WHERE institutionId = ?
       ORDER BY controlId ASC
@@ -677,7 +681,15 @@ export async function getRegulatoryComplianceUniverse(institutionId: string) {
       WHERE institutionId = ? AND status = 'Active'
       ORDER BY code ASC
       LIMIT 3000
-    `).bind(institutionId).all<Record<string, unknown>>()
+    `).bind(institutionId).all<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT m.controlId,m.riskId
+      FROM ControlRiskMapping m
+      JOIN ControlMaster c ON c.id = m.controlId
+      JOIN RiskMaster r ON r.id = m.riskId
+      WHERE c.institutionId = ? AND r.institutionId = ?
+      LIMIT 10000
+    `).bind(institutionId, institutionId).all<{ controlId: string; riskId: string }>()
   ]);
 
   const obligations = obligationsResult.results || [];
@@ -693,6 +705,63 @@ export async function getRegulatoryComplianceUniverse(institutionId: string) {
 
   const today = new Date().toISOString().slice(0, 10);
   const gapStatuses = new Set(['PARTIAL', 'NON_COMPLIANT']);
+  const processByRisk = new Map(
+    (risksResult.results || []).map(item => [String(item.id), String(item.processId || '')])
+  );
+  const processByControl = new Map(
+    (controlsResult.results || []).map(item => [String(item.id), String(item.processId || '')])
+  );
+  const riskIdsByControl = new Map<string, Set<string>>();
+  for (const mapping of controlRiskMappingsResult.results || []) {
+    const set = riskIdsByControl.get(String(mapping.controlId)) || new Set<string>();
+    set.add(String(mapping.riskId));
+    riskIdsByControl.set(String(mapping.controlId), set);
+  }
+
+  const linksByObligation = new Map<string, RegulatoryObligationLink[]>();
+  for (const link of links) {
+    const current = linksByObligation.get(link.obligationId) || [];
+    current.push(link);
+    linksByObligation.set(link.obligationId, current);
+  }
+
+  const coherentChain = (obligationId: string) => {
+    const obligationLinks = linksByObligation.get(obligationId) || [];
+    const policyLinks = obligationLinks.filter(item => item.targetType === 'INTERNAL_POLICY');
+    const processLinks = obligationLinks.filter(item => item.targetType === 'PROCESS');
+    const riskLinks = obligationLinks.filter(item => item.targetType === 'RISK');
+    const controlLinks = obligationLinks.filter(item => item.targetType === 'CONTROL');
+    const evidenceLinks = obligationLinks.filter(item => item.targetType === 'EVIDENCE');
+
+    if (!policyLinks.length || !processLinks.length || !riskLinks.length ||
+        !controlLinks.length || !evidenceLinks.length) return false;
+
+    const processIds = new Set(processLinks.map(item => item.targetId));
+    for (const riskLink of riskLinks) {
+      const riskProcessId = processByRisk.get(riskLink.targetId);
+      if (!riskProcessId || !processIds.has(riskProcessId)) continue;
+
+      for (const controlLink of controlLinks) {
+        const controlProcessId = processByControl.get(controlLink.targetId);
+        const mappedRisks = riskIdsByControl.get(controlLink.targetId);
+        if (
+          controlProcessId === riskProcessId &&
+          mappedRisks?.has(riskLink.targetId)
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const latestAssessmentByObligation = new Map<string, RegulatoryObligationAssessment>();
+  for (const assessment of assessments) {
+    if (!latestAssessmentByObligation.has(assessment.obligationId)) {
+      latestAssessmentByObligation.set(assessment.obligationId, assessment);
+    }
+  }
+
   const metrics = {
     totalObligations: obligations.length,
     activeObligations: obligations.filter(item => item.status === 'Active').length,
@@ -701,16 +770,13 @@ export async function getRegulatoryComplianceUniverse(institutionId: string) {
     nonCompliant: obligations.filter(item => item.complianceStatus === 'NON_COMPLIANT').length,
     notAssessed: obligations.filter(item => item.complianceStatus === 'NOT_ASSESSED').length,
     gapObligations: obligations.filter(item => gapStatuses.has(item.complianceStatus)).length,
-    overdueActions: assessments.filter(
+    overdueActions: Array.from(latestAssessmentByObligation.values()).filter(
       item => item.remediationRequired === 1 &&
         Boolean(item.dueDate) &&
         String(item.dueDate) < today &&
         gapStatuses.has(item.complianceStatus)
     ).length,
-    completeTraceability: obligations.filter(item => {
-      const types = linkTypesByObligation.get(item.id);
-      return OBLIGATION_TARGET_TYPES.every(type => types?.has(type));
-    }).length,
+    completeTraceability: obligations.filter(item => coherentChain(item.id)).length,
     unmapped: obligations.filter(item => !linkTypesByObligation.get(item.id)?.size).length
   };
 
