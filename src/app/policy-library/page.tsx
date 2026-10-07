@@ -168,6 +168,9 @@ const DOCUMENT_TYPES = [
   'Kebijakan',
   'SOP',
   'Pedoman',
+  'Buku Pedoman Perusahaan',
+  'Piagam',
+  'Petunjuk Teknis',
   'Peraturan Direksi',
   'Surat Edaran',
   'Keputusan',
@@ -432,29 +435,34 @@ export default function PolicyLibraryPage() {
       {
         key: 'SOURCE',
         label: 'Sumber',
+        href: '/evidence',
         count: Number(counts.SOURCE_DOCUMENT || 0) + Number(counts.EVIDENCE_DOCUMENT || 0)
       },
       {
         key: 'REGULATORY',
         label: 'Regulasi/Obligation',
+        href: '/policy-library',
         count: Number(counts.EXTERNAL_REGULATION || 0) + Number(counts.REGULATORY_OBLIGATION || 0)
       },
       {
         key: 'INTERNAL_POLICY',
         label: 'Ketentuan Lain',
+        href: '/policy-library',
         count: Number(counts.INTERNAL_POLICY || 0)
       },
-      { key: 'BPM', label: 'BPM', count: Number(counts.PROCESS || 0) },
-      { key: 'RISK', label: 'Risk', count: Number(counts.RISK || 0) },
+      { key: 'BPM', label: 'BPM', href: '/processes', count: Number(counts.PROCESS || 0) },
+      { key: 'RISK', label: 'Risk', href: '/risks', count: Number(counts.RISK || 0) },
       {
         key: 'CONTROL_RCM',
         label: 'Control/RCM',
+        href: '/rcm',
         count: Number(counts.CONTROL || 0) + Number(counts.RCM || 0)
       },
-      { key: 'RCSA', label: 'RCSA/CSA', count: Number(counts.RCSA_SCOPE || 0) },
+      { key: 'RCSA', label: 'RCSA/CSA', href: '/rcsa', count: Number(counts.RCSA_SCOPE || 0) },
       {
         key: 'ICOFR',
         label: 'ICOFR/ToD/ToE',
+        href: '/icofr',
         count:
           Number(counts.ICOFR_PROCESS || 0) +
           Number(counts.ICOFR_CONTROL || 0) +
@@ -465,13 +473,21 @@ export default function PolicyLibraryPage() {
       {
         key: 'EVIDENCE',
         label: 'Evidence',
+        href: '/evidence',
         count: Number(counts.EVIDENCE || 0)
       },
       {
         key: 'REMEDIATION',
         label: 'Remediation/MAP',
+        href: '/remediation',
         count: Number(counts.REMEDIATION_ISSUE || 0) + Number(counts.REMEDIATION_MAP || 0) +
           Number(counts.MAP || 0) + Number(counts.DEFICIENCY || 0)
+      },
+      {
+        key: 'CCM',
+        label: 'CCM',
+        href: '/ccm',
+        count: Number(counts.CCM_RULE || 0) + Number(counts.CCM_EXCEPTION || 0)
       }
     ];
   }, [data?.registry?.byPolicy]);
@@ -1032,8 +1048,8 @@ export default function PolicyLibraryPage() {
                 <h2 className="font-black text-slate-950">Keterkaitan Ketentuan dengan TotalARC</h2>
                 <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">
                   Relasi dibangun dari koneksi yang sudah ada di database: sumber dokumen, hubungan antar-ketentuan,
-                  regulatory obligation, BPM, risk, control/RCM, RCSA/CSA, ICOFR/ToD/ToE, evidence, serta
-                  remediation/MAP. Relasi modul tidak dibuat hanya berdasarkan kemiripan judul.
+                  regulatory obligation, BPM, risk, control/RCM, RCSA/CSA, ICOFR/ToD/ToE, evidence,
+                  remediation/MAP, serta CCM. Relasi modul tidak dibuat hanya berdasarkan kemiripan judul.
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
@@ -1055,17 +1071,22 @@ export default function PolicyLibraryPage() {
                         <div className="mt-1 font-black text-slate-950">{item.title}</div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {modules.map(module => (
-                            <span
-                              key={module.key}
-                              className={
-                                'rounded-full px-2.5 py-1 text-xs font-bold ' +
-                                (module.count > 0
-                                  ? 'bg-indigo-100 text-indigo-700'
-                                  : 'bg-slate-100 text-slate-400')
-                              }
-                            >
-                              {module.label}: {module.count}
-                            </span>
+                            module.count > 0 && module.href ? (
+                              <a
+                                key={module.key}
+                                href={module.href}
+                                className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-200"
+                              >
+                                {module.label}: {module.count}
+                              </a>
+                            ) : (
+                              <span
+                                key={module.key}
+                                className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-400"
+                              >
+                                {module.label}: {module.count}
+                              </span>
+                            )
                           ))}
                         </div>
                       </div>
