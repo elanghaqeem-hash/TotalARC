@@ -50,7 +50,7 @@ export const EVIDENCE_LINK_TYPES = [
   'TESTING_PLAN_ITEM'
 ] as const;
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const CHUNK_BYTES = 192 * 1024;
 
 const ALLOWED_EXTENSIONS = new Set([
