@@ -168,6 +168,9 @@ const DOCUMENT_TYPES = [
   'Kebijakan',
   'SOP',
   'Pedoman',
+  'Buku Pedoman Perusahaan',
+  'Piagam',
+  'Petunjuk Teknis',
   'Peraturan Direksi',
   'Surat Edaran',
   'Keputusan',
@@ -444,14 +447,15 @@ export default function PolicyLibraryPage() {
         label: 'Ketentuan Lain',
         count: Number(counts.INTERNAL_POLICY || 0)
       },
-      { key: 'BPM', label: 'BPM', count: Number(counts.PROCESS || 0) },
-      { key: 'RISK', label: 'Risk', count: Number(counts.RISK || 0) },
+      { key: 'BPM', label: 'BPM', href: '/processes', count: Number(counts.PROCESS || 0) },
+      { key: 'RISK', label: 'Risk', href: '/risks', count: Number(counts.RISK || 0) },
       {
         key: 'CONTROL_RCM',
         label: 'Control/RCM',
+        href: '/rcm',
         count: Number(counts.CONTROL || 0) + Number(counts.RCM || 0)
       },
-      { key: 'RCSA', label: 'RCSA/CSA', count: Number(counts.RCSA_SCOPE || 0) },
+      { key: 'RCSA', label: 'RCSA/CSA', href: '/rcsa', count: Number(counts.RCSA_SCOPE || 0) },
       {
         key: 'ICOFR',
         label: 'ICOFR/ToD/ToE',
@@ -470,8 +474,15 @@ export default function PolicyLibraryPage() {
       {
         key: 'REMEDIATION',
         label: 'Remediation/MAP',
+        href: '/remediation',
         count: Number(counts.REMEDIATION_ISSUE || 0) + Number(counts.REMEDIATION_MAP || 0) +
           Number(counts.MAP || 0) + Number(counts.DEFICIENCY || 0)
+      },
+      {
+        key: 'CCM',
+        label: 'CCM',
+        href: '/ccm',
+        count: Number(counts.CCM_RULE || 0) + Number(counts.CCM_EXCEPTION || 0)
       }
     ];
   }, [data?.registry?.byPolicy]);
@@ -1055,17 +1066,22 @@ export default function PolicyLibraryPage() {
                         <div className="mt-1 font-black text-slate-950">{item.title}</div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {modules.map(module => (
-                            <span
-                              key={module.key}
-                              className={
-                                'rounded-full px-2.5 py-1 text-xs font-bold ' +
-                                (module.count > 0
-                                  ? 'bg-indigo-100 text-indigo-700'
-                                  : 'bg-slate-100 text-slate-400')
-                              }
-                            >
-                              {module.label}: {module.count}
-                            </span>
+                            module.count > 0 && module.href ? (
+                              <a
+                                key={module.key}
+                                href={module.href}
+                                className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-200"
+                              >
+                                {module.label}: {module.count}
+                              </a>
+                            ) : (
+                              <span
+                                key={module.key}
+                                className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-400"
+                              >
+                                {module.label}: {module.count}
+                              </span>
+                            )
                           ))}
                         </div>
                       </div>
