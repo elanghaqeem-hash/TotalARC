@@ -632,6 +632,30 @@ async function insertLink(
   return true;
 }
 
+function normalizeEvidenceTargetType(entityType: unknown) {
+  const value = String(entityType || '').trim().toUpperCase();
+  const mapping: Record<string, string> = {
+    PROCESS: 'PROCESS',
+    RISK: 'RISK',
+    CONTROL: 'CONTROL',
+    TOD: 'TOD_TEST',
+    TOE: 'TOE_TEST',
+    DEFICIENCY: 'DEFICIENCY',
+    MAP: 'REMEDIATION_MAP',
+    SCOPE: 'ICOFR_SCOPE',
+    WORKPAPER_REVIEW: 'ICOFR_WORKPAPER',
+    WORKPAPER_EVIDENCE: 'ICOFR_WORKPAPER_EVIDENCE',
+    TOE_SAMPLE: 'TOE_SAMPLE',
+    SAMPLING_PLAN: 'ICOFR_SAMPLING_PLAN',
+    PBC_REQUEST: 'ICOFR_PBC_REQUEST',
+    SUB_CERTIFICATION: 'ICOFR_SUB_CERTIFICATION',
+    ATTESTATION: 'ICOFR_ATTESTATION',
+    EVIDENCE_PACK: 'ICOFR_EVIDENCE_PACK',
+    TESTING_PLAN_ITEM: 'ICOFR_TESTING_PLAN_ITEM'
+  };
+  return mapping[value] || value;
+}
+
 async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   await run(
     db,
@@ -686,7 +710,7 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
         db,
         institutionId,
         policyId,
-        String(link.entityType || 'EVIDENCE').toUpperCase(),
+        normalizeEvidenceTargetType(link.entityType),
         String(link.entityId || ''),
         String(link.relationship || 'SUPPORTS'),
         String(link.documentId || '')
@@ -749,6 +773,111 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
           targetId,
           'SOURCE_METADATA',
           String(source.id || '')
+        ) ? 1 : 0;
+      }
+    }
+  }
+
+  const operationalRiskSources = await all<Record<string, unknown>>(
+    db,
+    `SELECT riskId,sourceDocumentId
+       FROM OperationalRiskMetadata
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of operationalRiskSources) {
+    const sourceId = String(row.sourceDocumentId || '');
+    const riskId = String(row.riskId || '');
+    for (const policyId of policyBySource.get(sourceId) || []) {
+      generated += await insertLink(
+        db, institutionId, policyId, 'RISK', riskId, 'SOURCE_RISK_MAPPING', sourceId
+      ) ? 1 : 0;
+    }
+  }
+
+  const rcmControlSources = await all<Record<string, unknown>>(
+    db,
+    `SELECT controlId,sourceDocumentId
+       FROM RCMControlSourceMetadata
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of rcmControlSources) {
+    const sourceId = String(row.sourceDocumentId || '');
+    const controlId = String(row.controlId || '');
+    for (const policyId of policyBySource.get(sourceId) || []) {
+      generated += await insertLink(
+        db, institutionId, policyId, 'CONTROL', controlId, 'SOURCE_CONTROL_MAPPING', sourceId
+      ) ? 1 : 0;
+      generated += await insertLink(
+        db, institutionId, policyId, 'RCM', controlId, 'SOURCE_RCM_MAPPING', sourceId
+      ) ? 1 : 0;
+    }
+  }
+
+  const rcmDraftSources = await all<Record<string, unknown>>(
+    db,
+    `SELECT id,sourceDocumentId,operationalControlId
+       FROM RCMDraftReference
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 10000`,
+    [institutionId]
+  );
+  for (const row of rcmDraftSources) {
+    const sourceId = String(row.sourceDocumentId || '');
+    const draftId = String(row.id || '');
+    const controlId = String(row.operationalControlId || '');
+    for (const policyId of policyBySource.get(sourceId) || []) {
+      generated += await insertLink(
+        db, institutionId, policyId, 'RCM', draftId, 'SOURCE_RCM_REFERENCE', sourceId
+      ) ? 1 : 0;
+      if (controlId) {
+        generated += await insertLink(
+          db, institutionId, policyId, 'CONTROL', controlId, 'RCM_OPERATIONAL_CONTROL', draftId
+        ) ? 1 : 0;
+      }
+    }
+  }
+
+  if (await tableExists(db, 'PolicyRelationship')) {
+    const relationships = await all<Record<string, unknown>>(
+      db,
+      `SELECT sourceType,sourceId,targetType,targetId,relationType
+         FROM PolicyRelationship
+        WHERE institutionId=? AND status='Aktif'
+        LIMIT 10000`,
+      [institutionId]
+    );
+    for (const row of relationships) {
+      const sourceType = String(row.sourceType || '').toUpperCase();
+      const targetType = String(row.targetType || '').toUpperCase();
+      const sourceId = String(row.sourceId || '');
+      const targetId = String(row.targetId || '');
+      const relationType = String(row.relationType || 'RELATED_TO');
+
+      if (sourceType === 'INTERNAL' && sourceId) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          sourceId,
+          targetType === 'INTERNAL' ? 'INTERNAL_POLICY' : 'EXTERNAL_REGULATION',
+          targetId,
+          relationType,
+          String(row.sourceId || '')
+        ) ? 1 : 0;
+      }
+
+      if (targetType === 'INTERNAL' && targetId) {
+        generated += await insertLink(
+          db,
+          institutionId,
+          targetId,
+          sourceType === 'INTERNAL' ? 'INTERNAL_POLICY' : 'EXTERNAL_REGULATION',
+          sourceId,
+          'REVERSE_' + relationType,
+          String(row.targetId || '')
         ) ? 1 : 0;
       }
     }
