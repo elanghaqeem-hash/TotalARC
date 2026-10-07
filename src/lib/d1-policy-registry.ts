@@ -380,6 +380,52 @@ async function policyByNormalizedTitle(db: D1DatabaseLike, institutionId: string
   return map;
 }
 
+async function mapExistingPolicySources(
+  db: D1DatabaseLike,
+  institutionId: string
+) {
+  const rows = await all<Record<string, unknown>>(
+    db,
+    `SELECT p.id AS policyDocumentId,p.sourceDocumentId,s.title
+       FROM PolicyDocument p
+       JOIN SourceDocument s
+         ON s.id=p.sourceDocumentId AND s.institutionId=p.institutionId
+      WHERE p.institutionId=? AND p.sourceDocumentId IS NOT NULL
+      LIMIT 5000`,
+    [institutionId]
+  );
+  let mapped = 0;
+  const now = nowIso();
+  for (const row of rows) {
+    const existing = await first<{ id: string }>(
+      db,
+      `SELECT id FROM PolicyRegistrySource
+        WHERE institutionId=? AND sourceType='SOURCE_DOCUMENT' AND sourceId=?
+        LIMIT 1`,
+      [institutionId, String(row.sourceDocumentId || '')]
+    );
+    if (existing) continue;
+    await run(
+      db,
+      `INSERT INTO PolicyRegistrySource (
+        id,institutionId,policyDocumentId,sourceType,sourceId,sourceVersionId,
+        sourceTitle,classificationReason,confidence,discoveredAt,updatedAt
+      ) VALUES (?,?,?,'SOURCE_DOCUMENT',?,NULL,?,'Existing PolicyDocument source mapping.','HIGH',?,?)`,
+      [
+        crypto.randomUUID(),
+        institutionId,
+        String(row.policyDocumentId || ''),
+        String(row.sourceDocumentId || ''),
+        String(row.title || ''),
+        now,
+        now
+      ]
+    );
+    mapped += 1;
+  }
+  return mapped;
+}
+
 async function ensureCandidateRegistration(
   db: D1DatabaseLike,
   institutionId: string,
@@ -942,6 +988,17 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
     [institutionId]
   );
   const registeredKeys = new Set(registered.map(row => String(row.sourceType) + ':' + String(row.sourceId)));
+  const existingPolicySources = await all<{ sourceDocumentId: string }>(
+    db,
+    `SELECT sourceDocumentId
+       FROM PolicyDocument
+      WHERE institutionId=? AND sourceDocumentId IS NOT NULL
+      LIMIT 5000`,
+    [institutionId]
+  );
+  const unmappedPolicySources = existingPolicySources.filter(row =>
+    !registeredKeys.has('SOURCE_DOCUMENT:' + String(row.sourceDocumentId || ''))
+  ).length;
   const sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>> = {};
   for (const row of registered) {
     const policyId = String(row.policyDocumentId || '');
@@ -997,6 +1054,7 @@ export async function getPolicyRegistryCoverage(institutionId: string) {
       missingCandidates: candidates.filter(item =>
         !registeredKeys.has(item.sourceType + ':' + item.sourceId)
       ).length,
+      unmappedPolicySources,
       totalLinks,
       policiesWithLinks: Object.keys(byPolicy).length
     },
@@ -1036,7 +1094,7 @@ export async function syncPolicyRegistryFromDatabase(
     const candidates = await discoverCandidates(db, institutionId);
     const titleMap = await policyByNormalizedTitle(db, institutionId);
     let insertedPolicies = 0;
-    let mappedSources = 0;
+    let mappedSources = await mapExistingPolicySources(db, institutionId);
 
     for (const candidate of candidates) {
       const result = await ensureCandidateRegistration(
