@@ -121,6 +121,7 @@ type Registry = {
   };
   byPolicy: Record<string, Record<string, number>>;
   byTargetType: Record<string, number>;
+  sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>>;
   candidates: Array<{
     sourceType: string;
     sourceId: string;
@@ -924,7 +925,16 @@ export default function PolicyLibraryPage() {
                           </span>
                         </td>
                         <td className="px-4 py-4 text-xs text-slate-500">
-                          {item.sourceDocumentId ? 'File terunggah terhubung' : 'Metadata/manual'}
+                          {(() => {
+                            const sources = data?.registry?.sourcesByPolicy?.[item.id] || [];
+                            if (sources.some(source => source.sourceType === 'SOURCE_DOCUMENT')) {
+                              return 'Source Library terhubung';
+                            }
+                            if (sources.some(source => source.sourceType === 'EVIDENCE_DOCUMENT')) {
+                              return 'Evidence Repository terhubung';
+                            }
+                            return item.sourceDocumentId ? 'File terunggah terhubung' : 'Metadata/manual';
+                          })()}
                         </td>
                         <td className="px-5 py-4 text-right">
                           {data?.canManage ? (
