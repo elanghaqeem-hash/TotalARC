@@ -386,7 +386,7 @@ export async function addRegulatoryWatchSource(
     sourceUrl: string;
     sourceType?: string | null;
     sector?: string | null;
-    keywords?: string[] | null;
+    keywords?: readonly string[] | null;
   },
   actorName: string
 ) {
