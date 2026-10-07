@@ -45,6 +45,10 @@ function errorResponse(error: unknown) {
       status: 400,
       error: 'URL sumber harus berupa HTTPS publik yang valid.'
     },
+    POLICY_INTELLIGENCE_SOURCE_DOMAIN_NOT_ALLOWED: {
+      status: 400,
+      error: 'Sumber pantauan harus berasal dari domain resmi pemerintah/regulator Indonesia (*.go.id).'
+    },
     POLICY_INTELLIGENCE_DUPLICATE_SOURCE: {
       status: 409,
       error: 'Sumber pantauan tersebut sudah terdaftar.'
@@ -52,6 +56,10 @@ function errorResponse(error: unknown) {
     POLICY_INTELLIGENCE_SOURCE_NOT_FOUND: {
       status: 404,
       error: 'Sumber pantauan tidak ditemukan atau tidak aktif.'
+    },
+    POLICY_INTELLIGENCE_CANDIDATE_NOT_FOUND: {
+      status: 404,
+      error: 'Kandidat regulasi tidak ditemukan pada institusi aktif.'
     },
     POLICY_INTELLIGENCE_UNSUPPORTED_SOURCE_CONTENT: {
       status: 415,
