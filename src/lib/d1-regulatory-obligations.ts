@@ -108,11 +108,9 @@ export async function ensureRegulatoryObligationSchema() {
   if (schemaReady) return schemaReady;
 
   schemaReady = (async () => {
-    const [coreDb] = await Promise.all([
-      ensureCoreDomainSchema(),
-      ensurePolicyLibrarySchema(),
-      ensureEvidenceRepositorySchema()
-    ]);
+    const coreDb = await ensureCoreDomainSchema();
+    await ensurePolicyLibrarySchema();
+    await ensureEvidenceRepositorySchema();
     const db = coreDb as D1DatabaseLike;
 
     await executeSchemaScript(db, `
