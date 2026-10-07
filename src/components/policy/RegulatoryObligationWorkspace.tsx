@@ -5,8 +5,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   ClipboardCheck,
-  FileCheck2,
-  FileText,
   GitBranch,
   Loader2,
   Plus,
@@ -821,8 +819,8 @@ export function RegulatoryObligationWorkspace() {
               <label className="text-sm font-bold text-slate-700">Tanggal Assessment<input required type="date" value={assessmentForm.assessmentDate} onChange={event => setAssessmentForm({ ...assessmentForm, assessmentDate: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
               <label className="md:col-span-2 text-sm font-bold text-slate-700">Kesimpulan<textarea rows={3} value={assessmentForm.conclusion} onChange={event => setAssessmentForm({ ...assessmentForm, conclusion: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
               <label className="md:col-span-2 text-sm font-bold text-slate-700">Gap / Deficiency<textarea rows={3} value={assessmentForm.gapSummary} onChange={event => setAssessmentForm({ ...assessmentForm, gapSummary: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
-              <label className="text-sm font-bold text-slate-700">PIC Tindak Lanjut<input value={assessmentForm.actionOwner} onChange={event => setAssessmentForm({ ...assessmentForm, actionOwner: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
-              <label className="text-sm font-bold text-slate-700">Due Date Tindak Lanjut<input type="date" value={assessmentForm.dueDate} onChange={event => setAssessmentForm({ ...assessmentForm, dueDate: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
+              <label className="text-sm font-bold text-slate-700">PIC Tindak Lanjut<input required={assessmentForm.complianceStatus === 'PARTIAL' || assessmentForm.complianceStatus === 'NON_COMPLIANT'} value={assessmentForm.actionOwner} onChange={event => setAssessmentForm({ ...assessmentForm, actionOwner: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
+              <label className="text-sm font-bold text-slate-700">Due Date Tindak Lanjut<input required={assessmentForm.complianceStatus === 'PARTIAL' || assessmentForm.complianceStatus === 'NON_COMPLIANT'} type="date" value={assessmentForm.dueDate} onChange={event => setAssessmentForm({ ...assessmentForm, dueDate: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
               <label className="md:col-span-2 text-sm font-bold text-slate-700">Assessment Berikutnya<input type="date" value={assessmentForm.nextAssessmentDate} onChange={event => setAssessmentForm({ ...assessmentForm, nextAssessmentDate: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
               <div className="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
                 Status <strong>Partial</strong> dan <strong>Non-Compliant</strong> otomatis dianggap memerlukan tindak lanjut dan wajib memiliki PIC.
