@@ -43,7 +43,8 @@
     "verify:policy-intelligence": "node scripts/verify-policy-intelligence.js",
     "verify:regulatory-obligations": "node scripts/verify-regulatory-obligation-register.js",
     "verify:regulatory-clauses": "node scripts/verify-regulatory-clause-intelligence.js",
-    "verify:policy-registry": "node scripts/verify-policy-registry-sync.js"
+    "verify:policy-registry": "node scripts/verify-policy-registry-sync.js",
+    "verify:compliance-dashboard": "node scripts/verify-compliance-dashboard.cjs"
   },
   "keywords": [],
   "author": "",
