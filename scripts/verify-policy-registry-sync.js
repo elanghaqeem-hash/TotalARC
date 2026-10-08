@@ -165,8 +165,11 @@ function verifyApi() {
   assert(route.includes("action === 'SYNC_REGISTRY'"), 'SYNC_REGISTRY action missing');
   assert(route.includes('syncPolicyRegistryFromDatabase'), 'registry sync action not wired');
   assert(route.includes("mode === 'sources'"), 'Source Library must be lazy-loaded instead of blocking initial page load');
+  assert(route.includes("mode === 'regulatory'"), 'Regulatory data must be lazy-loaded instead of blocking initial page load');
+  assert(route.includes('listPolicyLibraryOverview'), 'initial Policy Library GET must use aggregate overview');
+  assert(route.includes('listPolicyLibraryRegulatoryData'), 'lazy regulatory bundle endpoint missing');
   assert(!route.includes('const registry = await getPolicyRegistryCoverage'), 'initial Policy Library GET must not run deep registry discovery');
-  return { api: 'PASS', fastInitialLoad: 'PASS' };
+  return { api: 'PASS', fastInitialLoad: 'PASS', lazyRegulatory: 'PASS' };
 }
 
 function verifyUi() {
@@ -193,6 +196,8 @@ function verifyUi() {
   assert(ui.includes('missingCandidates'), 'registry coverage status missing');
   assert(ui.includes('loadSources'), 'source files must lazy-load only when needed');
   assert(ui.includes("tab !== 'uploads'"), 'source lazy-load tab guard missing');
+  assert(ui.includes('loadRegulatory'), 'regulatory data must lazy-load only when needed');
+  assert(ui.includes("['regulations', 'impacts', 'intelligence'].includes(tab)"), 'regulatory lazy-load tab guard missing');
   assert(ui.includes('setTimeout(() =>') && ui.includes('1200'), 'registry auto-sync must be deferred after initial render');
   assert(ui.includes("href: '/ccm'"), 'CCM navigation missing from policy relations');
   assert(ui.includes("href: '/processes'"), 'BPM navigation missing from policy relations');
