@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { resolveInstitutionAccess } from '@/lib/institution-context';
 import {
-  addMonitoringActivity, createMonitoringPlan, listMonitoringPlans,
+  addMonitoringActivity, cancelMonitoringActivity, createMonitoringPlan,
+  updateMonitoringDraft, listMonitoringPlans,
   monitoringDetail, monitoringOptions, progressMonitoringActivity,
   transitionMonitoringPlan
 } from '@/lib/d1-compliance-monitoring';
@@ -93,6 +94,17 @@ export async function POST(request: Request) {
         ownerUnitId:String(body.ownerUnitId || ''),
         startDate:String(body.startDate || ''),endDate:String(body.endDate || '')
       },ctx.actor);
+    } else if (action === 'UPDATE_DRAFT') {
+      result = await updateMonitoringDraft(ctx.id,String(body.planId || ''),{
+        code:String(body.code || ''),title:String(body.title || ''),
+        year:Number(body.year),period:String(body.period || ''),
+        quarter:body.quarter === undefined ? null : Number(body.quarter),
+        objective:String(body.objective || ''),scope:String(body.scope || ''),
+        ownerUnitId:String(body.ownerUnitId || ''),
+        startDate:String(body.startDate || ''),endDate:String(body.endDate || '')
+      },ctx.actor);
+    } else if (action === 'CANCEL_ACTIVITY') {
+      result = await cancelMonitoringActivity(ctx.id,String(body.activityId || ''),ctx.actor);
     } else if (action === 'ADD_ACTIVITY') {
       result = await addMonitoringActivity(ctx.id,{
         planId:String(body.planId || ''),obligationId:String(body.obligationId || ''),
