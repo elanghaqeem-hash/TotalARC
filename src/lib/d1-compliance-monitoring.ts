@@ -112,12 +112,13 @@ export async function listMonitoringPlans(institutionId: string, page = 1, year?
 }
 export async function monitoringOptions(institutionId: string) {
   const db = await ensureMonitoringSchema();
-  const [units, obligations, processes] = await Promise.all([
+  const [units, obligations, processes, processLinks] = await Promise.all([
     db.prepare('SELECT id,code,name,type FROM OrganizationUnit WHERE institutionId = ? AND status = \'Active\' ORDER BY code LIMIT 500').bind(institutionId).all(),
     db.prepare('SELECT id,obligationCode,requirementText,criticality,ownerUnitId,complianceStatus FROM RegulatoryObligation WHERE institutionId = ? AND status = \'Active\' AND complianceStatus != \'NOT_APPLICABLE\' ORDER BY CASE criticality WHEN \'Kritis\' THEN 0 WHEN \'Tinggi\' THEN 1 ELSE 2 END,obligationCode LIMIT 500').bind(institutionId).all(),
-    db.prepare('SELECT id,processId,name FROM BusinessProcess WHERE institutionId = ? ORDER BY processId LIMIT 500').bind(institutionId).all()
+    db.prepare('SELECT id,processId,name FROM BusinessProcess WHERE institutionId = ? ORDER BY processId LIMIT 500').bind(institutionId).all(),
+    db.prepare('SELECT obligationId,targetId FROM RegulatoryObligationLink WHERE institutionId = ? AND targetType = \'PROCESS\' LIMIT 5000').bind(institutionId).all()
   ]);
-  return {units: units.results || [], obligations: obligations.results || [], processes: processes.results || [], truncatedAt: 500};
+  return {units: units.results || [], obligations: obligations.results || [], processes: processes.results || [], processLinks: processLinks.results || [], truncatedAt: 500};
 }
 export async function monitoringDetail(institutionId: string, planId: string) {
   const db = await ensureMonitoringSchema();
