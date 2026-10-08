@@ -344,7 +344,7 @@ export default function PolicyLibraryPage() {
       setData(current => ({
         ...payload,
         // Keep the independently loaded graph during overview refresh.
-        registry: current?.institutionId === payload.institutionId ? current.registry : null,
+        registry: current && current.institutionId === payload.institutionId ? current.registry : null,
         uploadedSources: uploadedSourcesRef.current,
         regulations: regulatoryDataRef.current.regulations,
         impacts: regulatoryDataRef.current.impacts,
@@ -402,7 +402,7 @@ export default function PolicyLibraryPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Relasi TotalARC gagal dimuat.');
       if (!payload.registry || !payload.institutionId) throw new Error('Respons data relasi tidak lengkap.');
-      setData(current => current?.institutionId === payload.institutionId
+      setData(current => current && current.institutionId === payload.institutionId
         ? { ...current, registry: payload.registry }
         : current
       );
