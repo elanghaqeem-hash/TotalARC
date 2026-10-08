@@ -520,6 +520,7 @@ export default function PolicyLibraryPage() {
       setNotice(
         'Sinkronisasi database selesai: ' +
         Number(result.insertedPolicies || 0) + ' ketentuan baru, ' +
+        Number(result.reclassifiedNonPolicies || 0) + ' file direklasifikasi keluar dari ketentuan, ' +
         Number(result.mappedSources || 0) + ' sumber terhubung, dan ' +
         Number(result.generatedLinks || 0) + ' relasi aktif.'
       );
@@ -543,14 +544,15 @@ export default function PolicyLibraryPage() {
       (data?.registry?.metrics.missingCandidates || 0) +
       (data?.registry?.metrics.unmappedPolicySources || 0);
     const requiresSync = Boolean(data?.registry?.syncRequired) || missing > 0;
-    // Only rebuild a stale registry after visiting the relations tab (or on manual request).
-    if (tab !== 'relations' || !registryLoaded || !data?.canManage ||
+    // Rebuild stale classification only after the page has painted.
+    // Library uses a longer idle delay so background discovery never blocks first paint.
+    if (!['library', 'relations', 'structure'].includes(tab) || !registryLoaded || !data?.canManage ||
         !requiresSync || registrySyncing || registryAutoSyncAttempted.current) return;
 
     registryAutoSyncAttempted.current = true;
     const timer = window.setTimeout(() => {
       void syncRegistry(true);
-    }, 1200);
+    }, tab === 'library' ? 2500 : 800);
     return () => window.clearTimeout(timer);
   }, [
     tab,
