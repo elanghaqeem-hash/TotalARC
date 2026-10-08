@@ -18,7 +18,7 @@ type D1DatabaseLike = {
   prepare: (sql: string) => Prepared;
 };
 
-const POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v3';
+const POLICY_REGISTRY_SYNC_VERSION = '2026-10-08-v4';
 
 export type PolicyEntityLinkRecord = {
   id: string;
@@ -31,6 +31,24 @@ export type PolicyEntityLinkRecord = {
   sourceId: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type DocumentCluster =
+  | 'INTERNAL_RULE'
+  | 'WORKPAPER_EVIDENCE'
+  | 'PROCESS_RCM'
+  | 'REGULATORY_EXTERNAL'
+  | 'FORM_TEMPLATE'
+  | 'OTHER';
+
+type ClusterCandidate = {
+  sourceType: 'SOURCE_DOCUMENT' | 'EVIDENCE_DOCUMENT';
+  sourceId: string;
+  sourceTitle: string;
+  cluster: DocumentCluster;
+  documentType: string | null;
+  confidence: 'HIGH' | 'MEDIUM';
+  reason: string;
 };
 
 type Candidate = {
@@ -146,7 +164,7 @@ function canonicalDocumentType(value: unknown) {
   return null;
 }
 
-function classifyInternalRule(input: {
+function classifyDocumentCluster(input: {
   title: string;
   textPreview?: string | null;
   category?: string | null;
@@ -155,14 +173,9 @@ function classifyInternalRule(input: {
 }) {
   const module = normalize(input.module);
   const category = normalize(input.category);
-  if (
-    module === 'regulatory source' ||
-    module === 'regulatory_source' ||
-    category.includes('external regulation') ||
-    category.includes('regulasi eksternal')
-  ) return null;
-
   const titleOnly = normalize(input.title);
+  const metadataHaystack = [titleOnly, module, category].join(' ');
+
   const externalTitlePatterns = [
     /\bpojk\b/,
     /\bseojk\b/,
@@ -176,19 +189,86 @@ function classifyInternalRule(input: {
     /\bundang undang\b/,
     /\bperaturan pemerintah\b/
   ];
-  if (externalTitlePatterns.some(pattern => pattern.test(titleOnly))) return null;
+  if (
+    module === 'regulatory source' ||
+    module === 'regulatory_source' ||
+    category.includes('external regulation') ||
+    category.includes('regulasi eksternal') ||
+    externalTitlePatterns.some(pattern => pattern.test(titleOnly))
+  ) {
+    return {
+      cluster: 'REGULATORY_EXTERNAL' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Dokumen regulator/ketentuan eksternal dipisahkan dari ketentuan internal.'
+    };
+  }
+
+  const workpaperPatterns = [
+    /\bkertas kerja\b/,
+    /\bworking paper\b/,
+    /\bworkpaper\b/,
+    /\bwalkthrough\b/,
+    /\btest of one\b/,
+    /\btest of design\b/,
+    /\btest of operating effectiveness\b/,
+    /\btod\b/,
+    /\btoe\b/,
+    /\bsampling\b/,
+    /\btesting evidence\b/,
+    /\bbukti pengujian\b/,
+    /\bevidence\b/
+  ];
+  if (workpaperPatterns.some(pattern => pattern.test(metadataHaystack))) {
+    return {
+      cluster: 'WORKPAPER_EVIDENCE' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Kertas kerja/walkthrough/evidence pengujian bukan SOP atau ketentuan internal.'
+    };
+  }
+
+  const processPatterns = [
+    /\bbusiness process mapping\b/,
+    /\bprocess mapping\b/,
+    /\bprocess map\b/,
+    /\bbpm\b/,
+    /\brisk control matrix\b/,
+    /\brcm\b/,
+    /\brisk register\b/,
+    /\bflowchart\b/,
+    /\bflow process\b/
+  ];
+  if (processPatterns.some(pattern => pattern.test(metadataHaystack))) {
+    return {
+      cluster: 'PROCESS_RCM' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Dokumen BPM/RCM/risk register diperlakukan sebagai artefak proses dan kontrol.'
+    };
+  }
+
+  const formPatterns = [
+    /\bform\b/,
+    /\btemplate\b/,
+    /\bchecklist\b/,
+    /\bdaftar periksa\b/,
+    /\bblank form\b/,
+    /\bworksheet\b/
+  ];
+  if (formPatterns.some(pattern => pattern.test(titleOnly))) {
+    return {
+      cluster: 'FORM_TEMPLATE' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Form/template/checklist dipisahkan dari ketentuan internal.'
+    };
+  }
 
   const explicitType =
     canonicalDocumentType(input.explicitType) ||
     canonicalDocumentType(input.category) ||
     canonicalDocumentType(input.module);
-  if (explicitType) {
-    return {
-      documentType: explicitType,
-      confidence: 'HIGH' as const,
-      classificationReason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
-    };
-  }
 
   const haystack = normalize(
     [input.title, input.category || '', input.textPreview || ''].join(' ')
@@ -210,17 +290,50 @@ function classifyInternalRule(input: {
     ['Ketentuan Internal', /\bketentuan\b|\baturan internal\b|\bperaturan internal\b|\brulebook\b/, 'Ketentuan/aturan internal terdeteksi pada judul/teks sumber.']
   ];
 
+  if (explicitType) {
+    return {
+      cluster: 'INTERNAL_RULE' as const,
+      documentType: explicitType,
+      confidence: 'HIGH' as const,
+      reason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
+    };
+  }
+
   for (const [documentType, pattern, reason] of rules) {
     if (pattern.test(haystack)) {
-      const titleHit = pattern.test(normalize(input.title));
+      const titleHit = pattern.test(titleOnly);
       return {
+        cluster: 'INTERNAL_RULE' as const,
         documentType,
         confidence: titleHit ? 'HIGH' as const : 'MEDIUM' as const,
-        classificationReason: reason
+        reason
       };
     }
   }
-  return null;
+
+  return {
+    cluster: 'OTHER' as const,
+    documentType: null,
+    confidence: 'MEDIUM' as const,
+    reason: 'Tidak ada indikator memadai bahwa file merupakan ketentuan internal.'
+  };
+}
+
+function classifyInternalRule(input: {
+  title: string;
+  textPreview?: string | null;
+  category?: string | null;
+  module?: string | null;
+  explicitType?: string | null;
+}) {
+  const decision = classifyDocumentCluster(input);
+  if (decision.cluster !== 'INTERNAL_RULE' || !decision.documentType) return null;
+  return {
+    documentType: decision.documentType,
+    confidence: decision.confidence,
+    classificationReason: decision.reason
+  };
+
 }
 
 async function getDb() {
@@ -300,6 +413,26 @@ async function executeSchema(db: D1DatabaseLike) {
       ON PolicyEntityLink(institutionId,policyDocumentId,targetType)`,
     `CREATE INDEX IF NOT EXISTS idx_policy_entity_link_target
       ON PolicyEntityLink(institutionId,targetType,targetId)`,
+    `CREATE TABLE IF NOT EXISTS PolicyDocumentCluster (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceType TEXT NOT NULL,
+      sourceId TEXT NOT NULL,
+      sourceTitle TEXT NOT NULL,
+      cluster TEXT NOT NULL,
+      documentType TEXT,
+      confidence TEXT NOT NULL DEFAULT 'MEDIUM',
+      reason TEXT,
+      policyDocumentId TEXT,
+      detectedAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_document_cluster_unique
+      ON PolicyDocumentCluster(institutionId,sourceType,sourceId)`,
+    `CREATE INDEX IF NOT EXISTS idx_policy_document_cluster_group
+      ON PolicyDocumentCluster(institutionId,cluster,updatedAt)`,
+    `CREATE INDEX IF NOT EXISTS idx_policy_document_cluster_policy
+      ON PolicyDocumentCluster(institutionId,policyDocumentId)`,
     `CREATE TABLE IF NOT EXISTS PolicyRegistrySyncRun (
       id TEXT PRIMARY KEY NOT NULL,
       institutionId TEXT NOT NULL,
