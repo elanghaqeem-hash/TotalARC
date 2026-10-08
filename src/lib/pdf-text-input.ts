@@ -33,7 +33,9 @@ export function readPdfTextInput(value: FormDataEntryValue | null, fileName: str
 
   const chunks = Array.isArray(result?.chunks)
     ? result.chunks.filter((item): item is string => typeof item === 'string')
-    : [];
+    : typeof result?.text === 'string' && result.text.trim()
+      ? [result.text]
+      : [];
 
   const totalChunkChars = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const chunksValid =
