@@ -172,6 +172,25 @@ export async function ensurePolicyLibrarySchema() {
   if (schemaReady) return schemaReady;
   schemaReady = (async () => {
     const db = await getDb();
+    // D1 cold starts previously ran 14 sequential CREATE IF NOT EXISTS statements
+    // even on databases already migrated. Verify schema objects in one indexed
+    // sqlite_master lookup, and only run the idempotent migration when incomplete.
+    const requiredObjects = [
+      'PolicyDocument', 'idx_policy_document_code', 'idx_policy_document_review',
+      'idx_policy_document_status', 'idx_policy_document_source',
+      'ExternalRegulationWatch', 'idx_external_regulation_code',
+      'idx_external_regulation_issue', 'idx_external_regulation_status',
+      'PolicyRegulationImpact', 'idx_policy_regulation_pair',
+      'idx_policy_regulation_action', 'PolicyReviewHistory',
+      'idx_policy_review_history'
+    ];
+    const existing = await db.prepare(
+      'SELECT name FROM sqlite_master WHERE name IN (' +
+      requiredObjects.map(() => '?').join(',') + ')'
+    ).bind(...requiredObjects).all<{ name: string }>();
+    const names = new Set((existing.results || []).map(row => row.name));
+    if (requiredObjects.every(name => names.has(name))) return db;
+
     await executeSchemaScript(db, `
       CREATE TABLE IF NOT EXISTS PolicyDocument (
         id TEXT PRIMARY KEY NOT NULL,
