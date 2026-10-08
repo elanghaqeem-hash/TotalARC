@@ -351,7 +351,7 @@ export function ProcessSupportingDocumentAI({ process, onUseSuggestions, onAppli
               <input type="checkbox" checked={forceOcr} disabled={analyzing} onChange={event => setForceOcr(event.target.checked)} />
               PDF hasil scan / campuran: gunakan OCR pada seluruh halaman
             </label>
-            <p>OCR otomatis untuk halaman tanpa teks hingga 300 halaman. Bahasa Indonesia dan Inggris didukung. Dokumen scan besar dapat memerlukan waktu lebih lama, terutama di HP. Periksa kembali angka dan hasil bacanya.</p>
+            <p>OCR otomatis hingga 300 halaman. Untuk dokumen panjang, seluruh bagian diproses bertahap oleh AI tanpa membuang bagian tengah dokumen. Bahasa Indonesia dan Inggris didukung; scan besar dapat memerlukan waktu lebih lama, terutama di HP. Periksa kembali angka dan hasil bacanya.</p>
           </div>
         )}
         {analyzing && <p role="status" aria-live="polite" className="my-2 text-xs text-sky-700">{ocrProgress}</p>}
