@@ -568,7 +568,18 @@ export async function listPolicyLibraryOverview(institutionId: string) {
              lastReviewDate, nextReviewDate, reviewCycleMonths, expiryDate,
              scope, summary, createdBy, createdAt, updatedAt
       FROM PolicyDocument
-      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
+      WHERE institutionId = ?
+        AND status != 'Bukan Ketentuan'
+        AND NOT (
+          documentCode LIKE 'AUTO-%'
+          AND (
+            lower(replace(title,'_',' ')) LIKE '%kertas kerja%' OR
+            lower(replace(title,'_',' ')) LIKE '%walkthrough%' OR
+            lower(replace(title,'_',' ')) LIKE '%test of one%' OR
+            lower(replace(title,'_',' ')) LIKE '%working paper%' OR
+            lower(replace(title,'_',' ')) LIKE '%testing evidence%'
+          )
+        )
       ORDER BY updatedAt DESC
       LIMIT 1000
     `).bind(institutionId).all<PolicyDocumentRecord>(),
@@ -586,7 +597,18 @@ export async function listPolicyLibraryOverview(institutionId: string) {
            AND date(nextReviewDate) < date('now')
           THEN 1 ELSE 0 END) AS overdueReview
       FROM PolicyDocument
-      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
+      WHERE institutionId = ?
+        AND status != 'Bukan Ketentuan'
+        AND NOT (
+          documentCode LIKE 'AUTO-%'
+          AND (
+            lower(replace(title,'_',' ')) LIKE '%kertas kerja%' OR
+            lower(replace(title,'_',' ')) LIKE '%walkthrough%' OR
+            lower(replace(title,'_',' ')) LIKE '%test of one%' OR
+            lower(replace(title,'_',' ')) LIKE '%working paper%' OR
+            lower(replace(title,'_',' ')) LIKE '%testing evidence%'
+          )
+        )
     `).bind(institutionId).first<Record<string, unknown>>(),
     db.prepare(`
       SELECT COUNT(*) AS totalRegulations
@@ -692,7 +714,18 @@ export async function listPolicyLibraryDashboard(institutionId: string) {
              lastReviewDate, nextReviewDate, reviewCycleMonths, expiryDate,
              scope, summary, createdBy, createdAt, updatedAt
       FROM PolicyDocument
-      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
+      WHERE institutionId = ?
+        AND status != 'Bukan Ketentuan'
+        AND NOT (
+          documentCode LIKE 'AUTO-%'
+          AND (
+            lower(replace(title,'_',' ')) LIKE '%kertas kerja%' OR
+            lower(replace(title,'_',' ')) LIKE '%walkthrough%' OR
+            lower(replace(title,'_',' ')) LIKE '%test of one%' OR
+            lower(replace(title,'_',' ')) LIKE '%working paper%' OR
+            lower(replace(title,'_',' ')) LIKE '%testing evidence%'
+          )
+        )
       ORDER BY updatedAt DESC
       LIMIT 1000
     `).bind(institutionId).all<PolicyDocumentRecord>(),
