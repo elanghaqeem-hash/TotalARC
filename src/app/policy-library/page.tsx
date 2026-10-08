@@ -1,5 +1,6 @@
 'use client';
 
+import { PolicyDocumentAI } from '@/components/policy/PolicyDocumentAI';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PolicyIntelligenceWorkspace } from '@/components/policy/PolicyIntelligenceWorkspace';
 import { RegulatoryObligationWorkspace } from '@/components/policy/RegulatoryObligationWorkspace';
@@ -1455,6 +1456,7 @@ export default function PolicyLibraryPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
+            <PolicyDocumentAI key={data.institutionId} kind="policy" onApply={draft => setPolicyForm(current => ({ ...current, ...draft }))} />
             <div className="grid gap-4 p-5 md:grid-cols-2 md:p-6">
               <label className="text-sm font-bold text-slate-700">
                 Kode / Nomor Ketentuan *
@@ -1538,6 +1540,7 @@ export default function PolicyLibraryPage() {
               </div>
               <button type="button" onClick={() => setShowRegulationForm(false)} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
             </div>
+            <PolicyDocumentAI key={data.institutionId} kind="regulation" onApply={draft => setRegulationForm(current => ({ ...current, ...draft }))} />
             <div className="grid gap-4 p-5 md:grid-cols-2 md:p-6">
               <label className="text-sm font-bold text-slate-700">
                 Regulator *

@@ -69,6 +69,9 @@ jobs:
       - name: Verify process owner selection and isolation
         run: node scripts/verify-process-owners.cjs
 
+      - name: Verify Policy document AI safeguards
+        run: node scripts/verify-policy-document-ai.cjs
+
       - name: Verify TypeScript
         run: npm run typecheck
 
