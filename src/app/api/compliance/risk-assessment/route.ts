@@ -31,7 +31,10 @@ function fail(e:unknown){
     CRA_OWNER_ONLY:[403,'Hanya pembuat atau administrator dapat mengubah draft.'],
     CRA_SELF_APPROVAL:[403,'Pembuat tidak boleh memvalidasi penilaiannya sendiri.'],
     CRA_FORBIDDEN:[403,'Tidak berwenang melakukan review.'],
-    CRA_CONFLICT:[409,'Rekaman telah berubah, muat ulang.']
+    CRA_CONFLICT:[409,'Rekaman telah berubah, muat ulang.'],
+    CRA_REASSESSMENT_SOURCE_INVALID:[409,'Penilaian sumber harus telah disetujui pada institusi yang sama.'],
+    CRA_REASSESSMENT_OBLIGATION_MISMATCH:[400,'Penilaian ulang harus merujuk kewajiban regulasi yang sama.'],
+    CRA_ALREADY_REASSESSED:[409,'Penilaian ini sudah mempunyai reassessment. Buka penilaian lanjutannya.']
   };
   if(messages[key])return NextResponse.json({error:messages[key][1],code:key},{status:messages[key][0],headers:HEADERS});
   console.error('Compliance Risk Assessment:',e);
@@ -59,7 +62,9 @@ export async function POST(request:Request){
     const b=JSON.parse(raw) as Record<string,unknown>;
     if(!b||typeof b!=='object'||Array.isArray(b))throw new Error('CRA_INVALID_INPUT');
     const action=String(b.action||'').toUpperCase();
-    if((action==='CREATE'||action==='SAVE')&&a.mayEdit){
+    if(action==='REASSESS' && (typeof b.reassessmentOfId!=='string' || !b.reassessmentOfId.trim()))
+      throw new Error('CRA_INVALID_INPUT');
+    if((action==='CREATE'||action==='SAVE'||action==='REASSESS')&&a.mayEdit){
       const input:RiskInput={
         obligationId:String(b.obligationId||''),processId:String(b.processId||''),
         riskId:String(b.riskId||''),controlId:String(b.controlId||''),
@@ -71,7 +76,8 @@ export async function POST(request:Request){
         mitigationPlan:String(b.mitigationPlan||''),nextReviewDate:String(b.nextReviewDate||'')
       };
       return NextResponse.json({record:await saveComplianceRisk(a.tenant,input,a.actor,
-        action==='SAVE'?String(b.id||''):undefined)},{status:action==='CREATE'?201:200,headers:HEADERS});
+        action==='SAVE'?String(b.id||''):undefined,
+        action==='REASSESS'?String(b.reassessmentOfId||''):undefined)},{status:action==='CREATE'||action==='REASSESS'?201:200,headers:HEADERS});
     }
     if(action==='SUBMIT'&&a.mayEdit || ['APPROVE','REJECT'].includes(action)&&a.mayReview){
       return NextResponse.json({record:await transitionComplianceRisk(a.tenant,

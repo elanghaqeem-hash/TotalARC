@@ -12,6 +12,7 @@ export type RiskInput = {
 };
 type RecordRisk = RiskInput & {
   id: string; institutionId: string; status: string; preparedById: string;
+  reassessmentOfId: string | null;
   inherentScore: number; residualScore: number; reviewerId: string | null;
   reviewNote: string | null; reviewedAt: string | null; updatedAt: string;
 };
@@ -51,7 +52,7 @@ export function ensureComplianceRiskSchema(): Promise<DB> {
     for (const statement of [
       `CREATE TABLE IF NOT EXISTS ComplianceRiskAssessment (
         id TEXT PRIMARY KEY, institutionId TEXT NOT NULL, obligationId TEXT NOT NULL,
-        processId TEXT, riskId TEXT, controlId TEXT, ownerUnitId TEXT NOT NULL,
+        reassessmentOfId TEXT, processId TEXT, riskId TEXT, controlId TEXT, ownerUnitId TEXT NOT NULL,
         productName TEXT, period TEXT NOT NULL,
         inherentLikelihood INTEGER NOT NULL, inherentImpact INTEGER NOT NULL,
         residualLikelihood INTEGER NOT NULL, residualImpact INTEGER NOT NULL,
@@ -72,6 +73,17 @@ export function ensureComplianceRiskSchema(): Promise<DB> {
       )`,
       'CREATE INDEX IF NOT EXISTS idx_cra_event ON ComplianceRiskEvent(institutionId,assessmentId,createdAt)'
     ]) await db.prepare(statement).run();
+    // Additive schema migration: preserve previously approved bank assessments.
+    const cols = await db.prepare('PRAGMA table_info(ComplianceRiskAssessment)').all<{name:string}>();
+    if (!(cols.results||[]).some(column=>column.name==='reassessmentOfId')) {
+      try {
+        await db.prepare('ALTER TABLE ComplianceRiskAssessment ADD COLUMN reassessmentOfId TEXT').run();
+      } catch (e) {
+        // Concurrent first requests can observe the old schema before the other migration finishes.
+        if (!String(e).toLowerCase().includes('duplicate column')) throw e;
+      }
+    }
+    await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_cra_reassessment_lineage ON ComplianceRiskAssessment(institutionId,reassessmentOfId)').run();
     return db;
   })().catch(e=>{cached=null;throw e;});
   return cached;
@@ -150,7 +162,7 @@ async function validate(db:DB, tenant:string, input:RiskInput) {
   };
 }
 async function get(db:DB, tenant:string, id:string) {
-  return db.prepare(`SELECT id,institutionId,obligationId,processId,riskId,controlId,ownerUnitId,
+  return db.prepare(`SELECT id,institutionId,obligationId,reassessmentOfId,processId,riskId,controlId,ownerUnitId,
       productName,period,inherentLikelihood,inherentImpact,residualLikelihood,residualImpact,
       inherentScore,residualScore,threatDescription,existingControls,rationale,mitigationPlan,
       nextReviewDate,status,preparedById,reviewerId,reviewNote,reviewedAt,createdAt,updatedAt
@@ -164,7 +176,7 @@ export async function listComplianceRisks(tenant:string, page:number, period?:st
   const args=value?[tenant,value]:[tenant];
   const where=value?'a.institutionId=? AND a.period=?':'a.institutionId=?';
   const [items,total] = await Promise.all([
-    db.prepare(`SELECT a.id,a.obligationId,o.obligationCode,a.processId,a.riskId,a.controlId,
+    db.prepare(`SELECT a.id,a.obligationId,a.reassessmentOfId,o.obligationCode,a.processId,a.riskId,a.controlId,
       a.productName,a.period,a.ownerUnitId,u.name AS ownerName,a.inherentScore,a.residualScore,
       a.status,a.preparedById,a.nextReviewDate,a.updatedAt
       FROM ComplianceRiskAssessment a
@@ -183,7 +195,14 @@ export async function complianceRiskDetail(tenant:string,id:string) {
   const history=await db.prepare(`SELECT action,actorId,actorRole,comment,createdAt
     FROM ComplianceRiskEvent WHERE institutionId=? AND assessmentId=?
     ORDER BY createdAt DESC LIMIT 50`).bind(tenant,id).all();
-  return {record,history:history.results||[]};
+  const predecessor = record.reassessmentOfId
+    ? await db.prepare(`SELECT id,period,status,inherentScore,residualScore,reviewedAt
+      FROM ComplianceRiskAssessment WHERE institutionId=? AND id=? LIMIT 1`)
+      .bind(tenant,record.reassessmentOfId).first() : null;
+  const successor = await db.prepare(`SELECT id,period,status,inherentScore,residualScore,reviewedAt
+    FROM ComplianceRiskAssessment WHERE institutionId=? AND reassessmentOfId=? LIMIT 1`)
+    .bind(tenant,id).first();
+  return {record,history:history.results||[],predecessor,successor};
 }
 export async function complianceRiskOptions(tenant:string) {
   const db=await ensureComplianceRiskSchema();
@@ -203,9 +222,18 @@ export async function complianceRiskOptions(tenant:string) {
     processes:processes.results||[],risks:risks.results||[],controls:controls.results||[],
     referenceLimit:500};
 }
-export async function saveComplianceRisk(tenant:string,input:RiskInput,actor:ComplianceActor,id?:string) {
+export async function saveComplianceRisk(tenant:string,input:RiskInput,actor:ComplianceActor,id?:string,reassessmentOfId?:string) {
   const db=await ensureComplianceRiskSchema();
   const data=await validate(db,tenant,input);
+  if(id && reassessmentOfId)throw new Error('CRA_INVALID_INPUT');
+  const prior=reassessmentOfId?await get(db,tenant,text(reassessmentOfId,100)):null;
+  if(reassessmentOfId && (!prior || prior.status!=='APPROVED'))throw new Error('CRA_REASSESSMENT_SOURCE_INVALID');
+  if(prior && prior.obligationId!==data.obligationId)throw new Error('CRA_REASSESSMENT_OBLIGATION_MISMATCH');
+  if(prior) {
+    const existing=await db.prepare('SELECT id FROM ComplianceRiskAssessment WHERE institutionId=? AND reassessmentOfId=? LIMIT 1')
+      .bind(tenant,prior.id).first();
+    if(existing)throw new Error('CRA_ALREADY_REASSESSED');
+  }
   const current=id?await get(db,tenant,text(id,100)):null;
   if(id && !current) throw new Error('CRA_NOT_FOUND');
   if(current && current.status!=='DRAFT' && current.status!=='REJECTED') throw new Error('CRA_LOCKED');
@@ -230,18 +258,23 @@ export async function saveComplianceRisk(tenant:string,input:RiskInput,actor:Com
     return get(db,tenant,current.id);
   }
   const recordId=crypto.randomUUID();
-  await db.prepare(`INSERT INTO ComplianceRiskAssessment (
-    id,institutionId,obligationId,processId,riskId,controlId,ownerUnitId,productName,period,
+  try {
+    await db.prepare(`INSERT INTO ComplianceRiskAssessment (
+    id,institutionId,obligationId,reassessmentOfId,processId,riskId,controlId,ownerUnitId,productName,period,
     inherentLikelihood,inherentImpact,residualLikelihood,residualImpact,inherentScore,residualScore,
     threatDescription,existingControls,rationale,mitigationPlan,nextReviewDate,status,
     preparedById,createdAt,updatedAt
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'DRAFT',?,?,?)`)
-    .bind(recordId,tenant,data.obligationId,data.processId,data.riskId,data.controlId,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'DRAFT',?,?,?)`)
+    .bind(recordId,tenant,data.obligationId,prior?.id||null,data.processId,data.riskId,data.controlId,
       data.ownerUnitId,data.productName,data.period,data.inherentLikelihood,
       data.inherentImpact,data.residualLikelihood,data.residualImpact,data.inherentScore,
       data.residualScore,data.threatDescription,data.existingControls,data.rationale,
       data.mitigationPlan,data.nextReviewDate,actor.id,time,time).run();
-  await log(db,tenant,recordId,actor,'CREATE',null);
+  } catch(e) {
+    if(prior && String(e).toLowerCase().includes('unique'))throw new Error('CRA_ALREADY_REASSESSED');
+    throw e;
+  }
+  await log(db,tenant,recordId,actor,prior?'CREATE_REASSESSMENT':'CREATE',prior?.id||null);
   return get(db,tenant,recordId);
 }
 export async function transitionComplianceRisk(tenant:string,id:string,action:string,actor:ComplianceActor,note:string) {
