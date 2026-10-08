@@ -1,7 +1,7 @@
 import type { ProcessDocumentDraft } from '@/lib/d1-process-document-analysis';
 
-const DEFAULT_CHUNK_CHARS = 85_000;
-const DEFAULT_MAX_CHUNKS = 16;
+const DEFAULT_CHUNK_CHARS = 50_000;
+const DEFAULT_MAX_CHUNKS = 24;
 
 function compactKey(value: unknown) {
   return String(value || '')
