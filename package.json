@@ -45,7 +45,8 @@
     "verify:regulatory-clauses": "node scripts/verify-regulatory-clause-intelligence.js",
     "verify:policy-registry": "node scripts/verify-policy-registry-sync.js",
     "verify:compliance-dashboard": "node scripts/verify-compliance-dashboard.cjs",
-    "verify:compliance-monitoring": "node scripts/verify-compliance-monitoring.cjs"
+    "verify:compliance-monitoring": "node scripts/verify-compliance-monitoring.cjs",
+    "verify:compliance-risk-testing": "node scripts/verify-compliance-risk-testing.cjs"
   },
   "keywords": [],
   "author": "",
