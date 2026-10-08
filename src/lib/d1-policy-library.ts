@@ -626,6 +626,24 @@ export async function listPolicyLibraryOverview(institutionId: string) {
   };
 }
 
+export async function listExternalRegulationOptions(institutionId: string) {
+  const db = await ensurePolicyLibrarySchema();
+  const result = await db.prepare(`
+    SELECT id,regulator,regulationCode,title,status
+    FROM ExternalRegulationWatch
+    WHERE institutionId = ?
+    ORDER BY regulator ASC, regulationCode ASC
+    LIMIT 2000
+  `).bind(institutionId).all<{
+    id: string;
+    regulator: string;
+    regulationCode: string;
+    title: string;
+    status: string;
+  }>();
+  return result.results || [];
+}
+
 export async function listPolicyLibraryRegulatoryData(institutionId: string) {
   const db = await ensurePolicyLibrarySchema();
   const [regulationResult, impactResult, reviewResult] = await Promise.all([
