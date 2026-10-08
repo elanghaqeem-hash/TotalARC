@@ -543,6 +543,66 @@ export async function getSourceLibraryMetrics(institutionId: string) {
   return row || {};
 }
 
+export async function getSourceTextExcerpt(
+  documentId: string,
+  institutionId: string,
+  maxChars = 90000
+) {
+  const db = await ensureSourceLibrarySchema();
+  const document = await db.prepare(`
+    SELECT id,title,mimeType,textLength,textSha256,status
+    FROM SourceDocument
+    WHERE id = ? AND institutionId = ? AND status = 'Active'
+    LIMIT 1
+  `).bind(documentId, institutionId).first<{
+    id: string;
+    title: string;
+    mimeType: string | null;
+    textLength: number;
+    textSha256: string | null;
+    status: string;
+  }>();
+  if (!document) throw new Error('SOURCE_LIBRARY_DOCUMENT_NOT_FOUND');
+  if (!document.textLength) throw new Error('SOURCE_LIBRARY_TEXT_NOT_AVAILABLE');
+
+  const chunks = await db.prepare(`
+    SELECT chunkIndex,charCount,textContent
+    FROM SourceTextChunk
+    WHERE documentId = ? AND institutionId = ?
+    ORDER BY chunkIndex ASC
+    LIMIT 200
+  `).bind(documentId, institutionId).all<{
+    chunkIndex: number;
+    charCount: number;
+    textContent: string;
+  }>();
+
+  const rows = chunks.results || [];
+  if (!rows.length) throw new Error('SOURCE_LIBRARY_TEXT_NOT_AVAILABLE');
+
+  const safeLimit = Math.max(1000, Math.min(maxChars, 120000));
+  const fullLength = rows.reduce((sum, row) => sum + Number(row.charCount || row.textContent?.length || 0), 0);
+  let text = '';
+  for (const row of rows) {
+    if (text.length >= safeLimit) break;
+    const remaining = safeLimit - text.length;
+    const section = String(row.textContent || '').slice(0, remaining);
+    text += (text ? '\n\n' : '') + section;
+  }
+  text = text.slice(0, safeLimit).trim();
+  if (!text) throw new Error('SOURCE_LIBRARY_TEXT_NOT_AVAILABLE');
+
+  return {
+    documentId: document.id,
+    title: document.title,
+    mimeType: document.mimeType,
+    text,
+    textLength: Number(document.textLength || fullLength || text.length),
+    textSha256: document.textSha256,
+    truncated: Number(document.textLength || fullLength || text.length) > text.length
+  };
+}
+
 export async function getSourceBinary(documentId: string, institutionId: string) {
   const db = await ensureSourceLibrarySchema();
   const document = await db.prepare(`
