@@ -15,7 +15,7 @@ type Work={
  monitoringActivityId:string|null;icofrReviewId:string|null;sourceTestId:string|null;
  testType:string;period:string;objective:string;procedures:string;populationDescription:string;
  populationSize:number;sampleSize:number;samplingMethod:string;targetDate:string;status:string;
- conclusion:string;preparedById:string;reviewNote:string|null
+ conclusion:string;testerConclusion:string;testerResultNote:string|null;preparedById:string;reviewNote:string|null
 };
 type Detail={
  record:Work;
