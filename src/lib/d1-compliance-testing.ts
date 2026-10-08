@@ -1,6 +1,7 @@
 import { ensureComplianceRiskSchema, type ComplianceActor } from '@/lib/d1-compliance-risk-assessment';
 import { ensureIcofrWorkpaperReviewSchema } from '@/lib/d1-icofr-workpaper-review';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
+import { ensureMonitoringSchema } from '@/lib/d1-compliance-monitoring';
 
 type DB=Awaited<ReturnType<typeof ensureComplianceRiskSchema>>;
 export const COMPLIANCE_TEST_READ = new Set([
@@ -133,13 +134,14 @@ async function validateScope(db:DB,tenant:string,input:WorkprogramInput){
   if(!control)throw new Error('CT_CONTROL_NOT_MAPPED');
   const assessment=optional(input.riskAssessmentId,100);
   if(assessment){
-    const risk=await db.prepare(`SELECT id FROM ComplianceRiskAssessment
+    const risk=await db.prepare(`SELECT id,controlId FROM ComplianceRiskAssessment
       WHERE institutionId=? AND id=? AND obligationId=? AND status='APPROVED' LIMIT 1`)
-      .bind(tenant,assessment,obligationId).first<{id:string}>();
-    if(!risk)throw new Error('CT_RISK_NOT_APPROVED');
+      .bind(tenant,assessment,obligationId).first<{id:string;controlId:string|null}>();
+    if(!risk || (risk.controlId && risk.controlId!==controlId))throw new Error('CT_RISK_NOT_APPROVED');
   }
   const activity=optional(input.monitoringActivityId,100);
   if(activity){
+    await ensureMonitoringSchema();
     const monitored=await db.prepare(`SELECT a.id FROM ComplianceMonitoringActivity a
       JOIN ComplianceMonitoringPlan p ON p.id=a.planId AND p.institutionId=a.institutionId
       WHERE a.institutionId=? AND a.id=? AND a.obligationId=? AND a.status!='CANCELLED'
@@ -158,7 +160,7 @@ async function validateScope(db:DB,tenant:string,input:WorkprogramInput){
     if(!linked)throw new Error('CT_ICOFR_NOT_FOUND');
   }
   const populationSize=nint(input.populationSize),sampleSize=nint(input.sampleSize);
-  if(sampleSize>populationSize || (testType==='TOE' && (sampleSize===0||populationSize===0)))
+  if(sampleSize>populationSize || (testType==='TOE' && (sampleSize===0||populationSize===0)) || (testType==='TOD' && sampleSize!==0))
     throw new Error('CT_INVALID_SAMPLE');
   return {
     code,obligationId,controlId,riskAssessmentId:assessment,monitoringActivityId:activity,
@@ -171,6 +173,7 @@ async function validateScope(db:DB,tenant:string,input:WorkprogramInput){
 }
 export async function testingOptions(tenant:string){
   const db=await ensureComplianceTestingSchema();
+  await ensureMonitoringSchema();
   const [obligations,links,controls,risks,activities,units,evidence]=await Promise.all([
     db.prepare(`SELECT id,obligationCode,requirementText FROM RegulatoryObligation
       WHERE institutionId=? AND status='Active' AND complianceStatus!='NOT_APPLICABLE'
@@ -361,7 +364,9 @@ export async function transitionTest(tenant:string,id:string,actor:ComplianceAct
       const failed=await db.prepare(`SELECT id FROM ComplianceTestSample
         WHERE institutionId=? AND workpaperId=? AND result='FAIL' LIMIT 1`)
         .bind(tenant,id).first<{id:string}>();
-      if(failed && decision==='EFFECTIVE')throw new Error('CT_FALSE_PASS');
+      const finding=await db.prepare('SELECT id FROM ComplianceTestFinding WHERE institutionId=? AND workpaperId=? LIMIT 1')
+        .bind(tenant,id).first<{id:string}>();
+      if((failed || finding) && decision==='EFFECTIVE')throw new Error('CT_FALSE_PASS');
       target='APPROVED';
     }
   }else if(action==='REVISE'){
