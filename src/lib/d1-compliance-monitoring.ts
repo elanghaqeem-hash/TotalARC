@@ -2,7 +2,7 @@ import { ensureRegulatoryObligationSchema } from '@/lib/d1-regulatory-obligation
 
 type Db = Awaited<ReturnType<typeof ensureRegulatoryObligationSchema>>;
 type PlanStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'IN_PROGRESS' | 'COMPLETED';
-type ActivityStatus = 'PLANNED' | 'IN_PROGRESS' | 'DONE';
+type ActivityStatus = 'PLANNED' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
 type Actor = { id: string; role: string };
 export type MonitoringPlanInput = {
   code: string; title: string; year: number; period: string; quarter?: number | null;
@@ -104,7 +104,7 @@ export async function listMonitoringPlans(institutionId: string, page = 1, year?
   const where = targetYear ? 'p.institutionId = ? AND p.year = ?' : 'p.institutionId = ?';
   const args: Array<string | number> = targetYear ? [institutionId,targetYear] : [institutionId];
   const [result, count] = await Promise.all([
-    db.prepare('SELECT p.id,p.code,p.title,p.year,p.period,p.quarter,p.startDate,p.endDate,p.status,p.ownerUnitId,u.name AS ownerUnitName,p.preparedById,p.updatedAt, (SELECT COUNT(*) FROM ComplianceMonitoringActivity a WHERE a.institutionId = p.institutionId AND a.planId = p.id) AS activityCount, (SELECT COUNT(*) FROM ComplianceMonitoringActivity a WHERE a.institutionId = p.institutionId AND a.planId = p.id AND a.status = \'DONE\') AS completedCount FROM ComplianceMonitoringPlan p LEFT JOIN OrganizationUnit u ON u.id=p.ownerUnitId AND u.institutionId=p.institutionId WHERE '+where+' ORDER BY p.year DESC,p.updatedAt DESC LIMIT 25 OFFSET ?')
+    db.prepare('SELECT p.id,p.code,p.title,p.year,p.period,p.quarter,p.startDate,p.endDate,p.status,p.ownerUnitId,u.name AS ownerUnitName,p.preparedById,p.updatedAt, (SELECT COUNT(*) FROM ComplianceMonitoringActivity a WHERE a.institutionId = p.institutionId AND a.planId = p.id AND a.status != 'CANCELLED') AS activityCount, (SELECT COUNT(*) FROM ComplianceMonitoringActivity a WHERE a.institutionId = p.institutionId AND a.planId = p.id AND a.status = \'DONE\') AS completedCount FROM ComplianceMonitoringPlan p LEFT JOIN OrganizationUnit u ON u.id=p.ownerUnitId AND u.institutionId=p.institutionId WHERE '+where+' ORDER BY p.year DESC,p.updatedAt DESC LIMIT 25 OFFSET ?')
       .bind(...args, (safePage-1)*25).all(),
     db.prepare('SELECT COUNT(*) AS total FROM ComplianceMonitoringPlan p WHERE '+where).bind(...args).first<{total:number}>()
   ]);
@@ -161,6 +161,59 @@ export async function createMonitoringPlan(institutionId: string, input: Monitor
   await event(db,institutionId,id,actor,'CREATE','Rencana disimpan sebagai draft.');
   return getPlan(db,institutionId,id);
 }
+export async function updateMonitoringDraft(institutionId: string, planId: string,
+  input: MonitoringPlanInput, actor: Actor) {
+  assertScope(institutionId,actor);
+  const db = await ensureMonitoringSchema();
+  const plan = await planOrThrow(db,institutionId,planId);
+  if (plan.status !== 'DRAFT') throw new Error('MONITORING_LOCKED');
+  if (plan.preparedById !== actor.id && !['SystemAdmin','Admin'].includes(actor.role))
+    throw new Error('MONITORING_OWNER_ONLY');
+  const code = required(input.code,40).toUpperCase();
+  const year = Number(input.year);
+  const period = required(input.period,12).toUpperCase();
+  const quarter = period === 'TRIWULAN' ? Number(input.quarter) : null;
+  const startDate = date(input.startDate), endDate = date(input.endDate);
+  if (!/^[A-Z0-9][A-Z0-9_-]{2,39}$/.test(code) || !Number.isInteger(year) ||
+      year < 2000 || year > 2100 || !['TAHUNAN','TRIWULAN'].includes(period) ||
+      (period === 'TRIWULAN' && ![1,2,3,4].includes(Number(quarter))) ||
+      endDate < startDate || Number(startDate.slice(0,4)) !== year ||
+      Number(endDate.slice(0,4)) !== year ||
+      (period === 'TRIWULAN' && (Math.ceil(Number(startDate.slice(5,7))/3) !== quarter ||
+       Math.ceil(Number(endDate.slice(5,7))/3) !== quarter)))
+    throw new Error('MONITORING_INVALID_INPUT');
+  const ownerUnitId = required(input.ownerUnitId,100);
+  if (!(await unitExists(db,institutionId,ownerUnitId))) throw new Error('MONITORING_UNIT_NOT_FOUND');
+  const outside = await db.prepare('SELECT id FROM ComplianceMonitoringActivity WHERE institutionId = ? AND planId = ? AND status != \'CANCELLED\' AND (scheduledDate < ? OR scheduledDate > ?) LIMIT 1')
+    .bind(institutionId,plan.id,startDate,endDate).first<{id:string}>();
+  if (outside) throw new Error('MONITORING_DATE_OUTSIDE_PLAN');
+  try {
+    const result = await db.prepare('UPDATE ComplianceMonitoringPlan SET code=?,title=?,year=?,period=?,quarter=?,objective=?,scope=?,ownerUnitId=?,startDate=?,endDate=?,updatedAt=? WHERE institutionId=? AND id=? AND status=\'DRAFT\'')
+      .bind(code,required(input.title,180),year,period,quarter,
+        required(input.objective,2000),required(input.scope,2000),ownerUnitId,startDate,endDate,timestamp(),institutionId,plan.id).run() as {meta?:{changes?:number}};
+    if (result.meta?.changes === 0) throw new Error('MONITORING_CONFLICT');
+  } catch(error) {
+    if (String(error).toLowerCase().includes('unique')) throw new Error('MONITORING_DUPLICATE');
+    throw error;
+  }
+  await event(db,institutionId,plan.id,actor,'UPDATE_DRAFT','Rincian rencana diperbarui.');
+  return getPlan(db,institutionId,plan.id);
+}
+export async function cancelMonitoringActivity(institutionId: string, activityId: string, actor: Actor) {
+  assertScope(institutionId,actor);
+  const db = await ensureMonitoringSchema();
+  const activity = await db.prepare('SELECT id,planId,status FROM ComplianceMonitoringActivity WHERE institutionId = ? AND id = ? LIMIT 1')
+    .bind(institutionId,required(activityId,100)).first<{id:string;planId:string;status:string}>();
+  if (!activity) throw new Error('MONITORING_ACTIVITY_NOT_FOUND');
+  const plan = await planOrThrow(db,institutionId,activity.planId);
+  if (plan.status !== 'DRAFT' || activity.status !== 'PLANNED') throw new Error('MONITORING_LOCKED');
+  const result = await db.prepare('UPDATE ComplianceMonitoringActivity SET status=\'CANCELLED\',updatedAt=? WHERE institutionId=? AND id=? AND status=\'PLANNED\'')
+    .bind(timestamp(),institutionId,activity.id).run() as {meta?:{changes?:number}};
+  if (result.meta?.changes === 0) throw new Error('MONITORING_CONFLICT');
+  await event(db,institutionId,plan.id,actor,'CANCEL_ACTIVITY',activity.id);
+  return {id:activity.id,status:'CANCELLED'};
+}
+
 export async function addMonitoringActivity(institutionId: string, input: MonitoringActivityInput, actor: Actor) {
   assertScope(institutionId,actor);
   const db = await ensureMonitoringSchema();
@@ -208,12 +261,12 @@ export async function transitionMonitoringPlan(institutionId: string, planId: st
     throw new Error('MONITORING_OWNER_ONLY');
   }
   if (action === 'SUBMIT') {
-    const count = await db.prepare('SELECT COUNT(*) AS total FROM ComplianceMonitoringActivity WHERE institutionId = ? AND planId = ?')
+    const count = await db.prepare('SELECT COUNT(*) AS total FROM ComplianceMonitoringActivity WHERE institutionId = ? AND planId = ? AND status != \'CANCELLED\'')
       .bind(institutionId,plan.id).first<{total:number}>();
     if (!count?.total) throw new Error('MONITORING_ACTIVITY_REQUIRED');
   }
   if (action === 'COMPLETE') {
-    const count = await db.prepare('SELECT COUNT(*) AS pending FROM ComplianceMonitoringActivity WHERE institutionId = ? AND planId = ? AND status != \'DONE\'')
+    const count = await db.prepare('SELECT COUNT(*) AS pending FROM ComplianceMonitoringActivity WHERE institutionId = ? AND planId = ? AND status NOT IN (\'DONE\',\'CANCELLED\')')
       .bind(institutionId,plan.id).first<{pending:number}>();
     if (Number(count?.pending) > 0) throw new Error('MONITORING_ACTIVITIES_PENDING');
   }
