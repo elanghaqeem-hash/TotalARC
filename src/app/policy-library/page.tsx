@@ -108,6 +108,7 @@ type UploadedSource = {
   sourceModifiedAt: string | null;
   module: string | null;
   rawSizeBytes: number;
+  textLength: number;
   importedAt: string;
   updatedAt: string;
 };
@@ -1501,7 +1502,14 @@ export default function PolicyLibraryPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <PolicyDocumentAI key={data.institutionId} kind="policy" onApply={draft => setPolicyForm(current => ({ ...current, ...draft }))} />
+            <PolicyDocumentAI
+              key={selectedSource?.id || data.institutionId}
+              kind="policy"
+              sourceDocumentId={selectedSource?.id || null}
+              sourceTitle={selectedSource?.title || null}
+              sourceTextLength={selectedSource?.textLength ?? null}
+              onApply={draft => setPolicyForm(current => ({ ...current, ...draft }))}
+            />
             <div className="grid gap-4 p-5 md:grid-cols-2 md:p-6">
               <label className="text-sm font-bold text-slate-700">
                 Kode / Nomor Ketentuan *
