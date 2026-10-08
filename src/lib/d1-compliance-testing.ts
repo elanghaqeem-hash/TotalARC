@@ -22,7 +22,7 @@ export type WorkprogramInput={
   samplingMethod:string; targetDate:string;
 };
 type Workpaper=WorkprogramInput&{
-  id:string;institutionId:string;status:string;conclusion:string;
+  id:string;institutionId:string;status:string;conclusion:string;testerConclusion:string;testerResultNote:string|null;
   preparedById:string;reviewerId:string|null;reviewNote:string|null;
   reviewedAt:string|null;sourceTestId:string|null;createdAt:string;updatedAt:string;
 };
@@ -64,6 +64,7 @@ export function ensureComplianceTestingSchema():Promise<DB>{
         populationSize INTEGER NOT NULL,sampleSize INTEGER NOT NULL,
         samplingMethod TEXT NOT NULL,targetDate TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'DRAFT', conclusion TEXT NOT NULL DEFAULT 'NOT_ASSESSED',
+        testerConclusion TEXT NOT NULL DEFAULT 'NOT_ASSESSED', testerResultNote TEXT,
         preparedById TEXT NOT NULL,reviewerId TEXT,reviewNote TEXT,reviewedAt TEXT,
         createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
       )`,
@@ -109,9 +110,13 @@ async function get(db:DB,tenant:string,id:string){
   return db.prepare(`SELECT id,institutionId,code,obligationId,controlId,riskAssessmentId,
     monitoringActivityId,icofrReviewId,sourceTestId,testType,period,objective,procedures,
     populationDescription,populationSize,sampleSize,samplingMethod,targetDate,status,
-    conclusion,preparedById,reviewerId,reviewNote,reviewedAt,createdAt,updatedAt
+    conclusion,testerConclusion,testerResultNote,preparedById,reviewerId,reviewNote,reviewedAt,createdAt,updatedAt
     FROM ComplianceTestWorkpaper WHERE institutionId=? AND id=? LIMIT 1`)
     .bind(tenant,id).first<Workpaper>();
+}
+function assertPreparer(w:Workpaper,actor:ComplianceActor){
+  if(w.preparedById!==actor.id&&!['Admin','SystemAdmin'].includes(actor.role))
+    throw new Error('CT_OWNER_ONLY');
 }
 async function requireWorkpaper(db:DB,tenant:string,id:string){
   const w=await get(db,tenant,required(id,100));
@@ -258,6 +263,7 @@ export async function createTest(tenant:string,input:WorkprogramInput,actor:Comp
 export async function addSample(tenant:string,id:string,actor:ComplianceActor,ref:string,result:string,exceptionNote:string){
   const db=await ensureComplianceTestingSchema(),w=await requireWorkpaper(db,tenant,id);
   if(w.status!=='DRAFT'||w.testType!=='TOE')throw new Error('CT_LOCKED');
+  assertPreparer(w,actor);
   if(!['PASS','FAIL','NOT_TESTED'].includes(result))throw new Error('CT_INVALID_INPUT');
   if(result==='FAIL'&&!exceptionNote.trim())throw new Error('CT_EXCEPTION_REQUIRED');
   const count=await db.prepare(`SELECT COUNT(*) AS n FROM ComplianceTestSample
@@ -276,6 +282,7 @@ export async function addSample(tenant:string,id:string,actor:ComplianceActor,re
 export async function addEvidence(tenant:string,id:string,actor:ComplianceActor,documentId:string,description:string){
   const db=await ensureComplianceTestingSchema(),w=await requireWorkpaper(db,tenant,id);
   if(w.status!=='DRAFT')throw new Error('CT_LOCKED');
+  assertPreparer(w,actor);
   const doc=await db.prepare(`SELECT id,currentVersionId FROM EvidenceDocument
     WHERE institutionId=? AND id=? AND status='Active' AND currentVersionId IS NOT NULL LIMIT 1`)
     .bind(tenant,required(documentId,100)).first<{id:string;currentVersionId:string}>();
@@ -297,6 +304,7 @@ export async function addFinding(tenant:string,id:string,actor:ComplianceActor,i
 }){
   const db=await ensureComplianceTestingSchema(),w=await requireWorkpaper(db,tenant,id);
   if(w.status!=='DRAFT')throw new Error('CT_LOCKED');
+  assertPreparer(w,actor);
   if(!['CRITICAL','HIGH','MEDIUM','LOW'].includes(input.severity))throw new Error('CT_INVALID_INPUT');
   const unit=await db.prepare(`SELECT id FROM OrganizationUnit
     WHERE institutionId=? AND id=? AND status='Active' LIMIT 1`)
@@ -313,6 +321,7 @@ export async function addFinding(tenant:string,id:string,actor:ComplianceActor,i
 export async function linkFindingMap(tenant:string,workpaperId:string,findingId:string,mapId:string,actor:ComplianceActor){
   const db=await ensureComplianceTestingSchema(),w=await requireWorkpaper(db,tenant,workpaperId);
   if(!['DRAFT','SUBMITTED','APPROVED'].includes(w.status))throw new Error('CT_LOCKED');
+  assertPreparer(w,actor);
   const found=await db.prepare('SELECT id FROM ComplianceTestFinding WHERE institutionId=? AND workpaperId=? AND id=? LIMIT 1')
     .bind(tenant,w.id,required(findingId,100)).first<{id:string}>();
   if(!found)throw new Error('CT_FINDING_NOT_FOUND');
@@ -328,14 +337,37 @@ export async function linkFindingMap(tenant:string,workpaperId:string,findingId:
   await event(db,tenant,w.id,actor,'LINK_MAP',findingId);
   return {id:found.id,mapId:map.id};
 }
+export async function recordTesterConclusion(tenant:string,id:string,actor:ComplianceActor,
+  conclusion:string,note:string){
+  const db=await ensureComplianceTestingSchema();
+  const w=await requireWorkpaper(db,tenant,id);
+  if(w.status!=='DRAFT')throw new Error('CT_LOCKED');
+  assertPreparer(w,actor);
+  if(!['EFFECTIVE','PARTIAL','INEFFECTIVE','INCONCLUSIVE'].includes(conclusion))
+    throw new Error('CT_DECISION_REQUIRED');
+  const testerResultNote=required(note,2000);
+  if(conclusion==='EFFECTIVE'){
+    const failed=await db.prepare("SELECT id FROM ComplianceTestSample WHERE institutionId=? AND workpaperId=? AND result='FAIL' LIMIT 1")
+      .bind(tenant,id).first<{id:string}>();
+    const finding=await db.prepare('SELECT id FROM ComplianceTestFinding WHERE institutionId=? AND workpaperId=? LIMIT 1')
+      .bind(tenant,id).first<{id:string}>();
+    if(failed||finding)throw new Error('CT_FALSE_PASS');
+  }
+  const result=await db.prepare(`UPDATE ComplianceTestWorkpaper SET testerConclusion=?,testerResultNote=?,updatedAt=?
+    WHERE institutionId=? AND id=? AND status='DRAFT'`)
+    .bind(conclusion,testerResultNote,now(),tenant,id).run() as {meta?:{changes?:number}};
+  if(result.meta?.changes===0)throw new Error('CT_CONFLICT');
+  await event(db,tenant,id,actor,'TESTER_CONCLUSION',conclusion);
+  return get(db,tenant,id);
+}
+
 export async function transitionTest(tenant:string,id:string,actor:ComplianceActor,
   action:string,decision:string,note:string){
   const db=await ensureComplianceTestingSchema(),w=await requireWorkpaper(db,tenant,id);
   let target='';
   if(action==='SUBMIT'){
     if(w.status!=='DRAFT')throw new Error('CT_LOCKED');
-    if(w.preparedById!==actor.id&&!['Admin','SystemAdmin'].includes(actor.role))
-      throw new Error('CT_OWNER_ONLY');
+    assertPreparer(w,actor);
     const stats=await Promise.all([
       db.prepare(`SELECT COUNT(*) AS n,
         COALESCE(SUM(CASE WHEN result='FAIL' THEN 1 ELSE 0 END),0) AS failed,
@@ -347,9 +379,12 @@ export async function transitionTest(tenant:string,id:string,actor:ComplianceAct
       db.prepare('SELECT COUNT(*) AS n FROM ComplianceTestFinding WHERE institutionId=? AND workpaperId=?')
         .bind(tenant,id).first<{n:number}>()
     ]);
+    if(!w.testerResultNote || w.testerConclusion==='NOT_ASSESSED')throw new Error('CT_TESTER_CONCLUSION_REQUIRED');
     if(Number(stats[1]?.n)<1)throw new Error('CT_EVIDENCE_REQUIRED');
     if(w.testType==='TOE'&&(Number(stats[0]?.n)!==w.sampleSize || Number(stats[0]?.pending)>0))
       throw new Error('CT_SAMPLES_INCOMPLETE');
+    if((Number(stats[0]?.failed)>0 || Number(stats[2]?.n)>0) && w.testerConclusion==='EFFECTIVE')
+      throw new Error('CT_FALSE_PASS');
     if(Number(stats[0]?.failed)>0 && Number(stats[2]?.n)<1)
       throw new Error('CT_FINDING_REQUIRED');
     target='SUBMITTED';
