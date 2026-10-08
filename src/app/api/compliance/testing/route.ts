@@ -3,7 +3,7 @@ import { resolveInstitutionAccess } from '@/lib/institution-context';
 import {
   COMPLIANCE_TEST_READ,COMPLIANCE_TEST_WRITE,COMPLIANCE_TEST_REVIEW,
   addEvidence,addFinding,addSample,createTest,linkFindingMap,listTests,
-  testingDetail,testingOptions,transitionTest,type WorkprogramInput
+  testingDetail,testingOptions,transitionTest,recordTesterConclusion,type WorkprogramInput
 } from '@/lib/d1-compliance-testing';
 export const dynamic='force-dynamic';
 const HEADERS={'Cache-Control':'private, no-store','Vary':'Cookie'};
@@ -37,6 +37,7 @@ function fail(e:unknown){
     CT_EXCEPTION_REQUIRED:[400,'Keterangan pengecualian wajib saat sampel gagal.'],
     CT_SAMPLE_LIMIT:[409,'Jumlah sampel sudah mencapai target.'],
     CT_EVIDENCE_REQUIRED:[400,'Bukti nyata wajib ditautkan sebelum submission.'],
+    CT_TESTER_CONCLUSION_REQUIRED:[400,'Penguji harus mencatat hasil pelaksanaan beserta justifikasi sebelum submission.'],
     CT_SAMPLES_INCOMPLETE:[400,'Semua sampel ToE harus dinilai sebelum submission.'],
     CT_FINDING_REQUIRED:[400,'Minimal satu temuan harus dicatat bila terdapat sampel gagal.'],
     CT_FALSE_PASS:[409,'Tidak dapat menyatakan EFFECTIVE jika sampel gagal.'],
@@ -86,6 +87,9 @@ export async function POST(request:Request){
       return NextResponse.json({record:await createTest(a.tenant,input,a.actor,
         action==='RETEST'?String(b.sourceTestId||''):undefined)},{status:201,headers:HEADERS});
     }
+    if(action==='RECORD_RESULT'&&a.mayWrite)return NextResponse.json({
+      record:await recordTesterConclusion(a.tenant,id,a.actor,String(b.conclusion||''),String(b.note||''))},
+      {headers:HEADERS});
     if(action==='ADD_SAMPLE'&&a.mayWrite)return NextResponse.json({
       result:await addSample(a.tenant,id,a.actor,String(b.reference||''),
         String(b.result||''),String(b.exceptionNote||''))},{status:201,headers:HEADERS});
