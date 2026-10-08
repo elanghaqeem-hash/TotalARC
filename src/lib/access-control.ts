@@ -63,7 +63,8 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/admin/security' },
     { path: '/organization' },
     { path: '/onboarding' },
-    { path: '/policy-library' }
+    { path: '/policy-library' },
+    { path: '/compliance' }
   ],
   RiskManager: [
     ...COMMON_READ,
@@ -75,7 +76,8 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/remediation' },
     { path: '/health' },
     { path: '/ccm' },
-    { path: '/policy-library' }
+    { path: '/policy-library' },
+    { path: '/compliance' }
   ],
   ComplianceOfficer: [
     ...COMMON_READ,
@@ -86,6 +88,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/rcsa' },
     { path: '/evidence' },
     { path: '/policy-library' },
+    { path: '/compliance' },
     { path: '/remediation' },
     { path: '/health' },
     { path: '/certification' },
@@ -101,6 +104,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/health' },
     { path: '/ccm' },
     { path: '/policy-library' },
+    { path: '/compliance' },
     ...ICOFR_PAGES
   ],
   ICOFRCoordinator: [
@@ -181,6 +185,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
   Executive: [
     ...COMMON_READ,
     { path: '/policy-library' },
+    { path: '/compliance' },
     { path: '/health' },
     { path: '/certification' },
     { path: '/icofr/reporting' }
@@ -188,6 +193,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
   ReadOnlyAuditor: [
     ...COMMON_READ,
     { path: '/policy-library' },
+    { path: '/compliance' },
     { path: '/processes' },
     { path: '/risks' },
     { path: '/controls' },
@@ -239,6 +245,7 @@ const API_PAGE_MAP: Array<{ api: string; page: string }> = [
   { api: '/api/admin/security', page: '/admin/security' },
   { api: '/api/admin/ai-settings', page: '/admin/ai-settings' },
   { api: '/api/policy-library', page: '/policy-library' },
+  { api: '/api/compliance/dashboard', page: '/compliance' },
   { api: '/api/assure/toe', page: '/toe' },
   { api: '/api/assure/remediation', page: '/remediation' },
   { api: '/api/monitor/ccm', page: '/ccm' },
