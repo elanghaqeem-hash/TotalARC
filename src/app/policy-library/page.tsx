@@ -236,6 +236,9 @@ export default function PolicyLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [registrySyncing, setRegistrySyncing] = useState(false);
+  const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
+  const uploadedSourcesRef = useRef<UploadedSource[]>([]);
   const registryAutoSyncAttempted = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -296,24 +299,63 @@ export default function PolicyLibraryPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch('/api/policy-library', {
         credentials: 'same-origin',
-        cache: 'no-store'
+        cache: 'no-store',
+        signal: controller.signal
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Data Policy & Regulatory Library gagal dimuat.');
-      setData(payload);
+      setData({
+        ...payload,
+        uploadedSources: uploadedSourcesRef.current
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Data gagal dimuat.');
+      setError(
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'Policy Library terlalu lama merespons. Silakan coba Refresh.'
+          : err instanceof Error
+            ? err.message
+            : 'Data gagal dimuat.'
+      );
     } finally {
+      window.clearTimeout(timeout);
       setLoading(false);
     }
   }, []);
 
+  const loadSources = useCallback(async () => {
+    if (sourcesLoading) return;
+    setSourcesLoading(true);
+    try {
+      const response = await fetch('/api/policy-library?mode=sources', {
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Daftar file sumber gagal dimuat.');
+      const next = Array.isArray(payload.uploadedSources) ? payload.uploadedSources : [];
+      uploadedSourcesRef.current = next;
+      setData(current => current ? { ...current, uploadedSources: next } : current);
+      setSourcesLoaded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Daftar file sumber gagal dimuat.');
+    } finally {
+      setSourcesLoading(false);
+    }
+  }, [sourcesLoading]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab !== 'uploads' || sourcesLoaded || sourcesLoading) return;
+    void loadSources();
+  }, [tab, sourcesLoaded, sourcesLoading, loadSources]);
 
   const postAction = useCallback(async (body: Record<string, unknown>) => {
     setSaving(true);
@@ -377,8 +419,12 @@ export default function PolicyLibraryPage() {
       (data?.registry?.metrics.unmappedPolicySources || 0);
     const requiresSync = Boolean(data?.registry?.syncRequired) || missing > 0;
     if (!data?.canManage || !requiresSync || registryAutoSyncAttempted.current) return;
+
     registryAutoSyncAttempted.current = true;
-    void syncRegistry(true);
+    const timer = window.setTimeout(() => {
+      void syncRegistry(true);
+    }, 1200);
+    return () => window.clearTimeout(timer);
   }, [
     data?.canManage,
     data?.registry?.syncRequired,
