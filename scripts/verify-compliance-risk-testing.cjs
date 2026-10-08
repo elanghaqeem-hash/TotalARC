@@ -33,6 +33,8 @@ has(testing,"w.preparedById",'tester ownership');
 has(testing,"actor.id===w.preparedById",'no self-review');
 has(testing,'CT_FALSE_PASS','block failed workpaper success');
 has(testing,'CT_EVIDENCE_REQUIRED','no approval without evidence');
+has(testing,'CT_TESTER_CONCLUSION_REQUIRED','tested outcome before reviewer');
+has(testing,'assertPreparer(w,actor)','draft ownership');
 has(testing,'CT_SAMPLES_INCOMPLETE','no untested sample inferred pass');
 has(testing,'CT_FINDING_REQUIRED','require finding for sample failures');
 has(testing,'sourceTestId','separate retest provenance');
