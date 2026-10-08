@@ -56,6 +56,7 @@ export default function ComplianceTestingPage(){
  const [evidence,setEvidence]=useState({documentId:'',description:''});
  const [finding,setFinding]=useState({title:'',description:'',severity:'HIGH',ownerUnitId:'',dueDate:''});
  const [review,setReview]=useState({decision:'INCONCLUSIVE',note:''});
+ const [testerResult,setTesterResult]=useState({conclusion:'INCONCLUSIVE',note:''});
  const [linkMap,setLinkMap]=useState<Record<string,string>>({});
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const load=useCallback(async(p:number)=>{
@@ -167,7 +168,8 @@ export default function ComplianceTestingPage(){
       <h2 className="mt-1 text-lg font-bold text-slate-950">{w?.objective}</h2>
       <p className="mt-2 text-sm text-slate-600">{w?.procedures}</p>
       <p className="mt-2 text-xs text-slate-500">Populasi {w?.populationSize} · Target sampel {w?.sampleSize} · {w?.samplingMethod}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-800">Kesimpulan tersimpan: {w?.conclusion||'NOT_ASSESSED'}</p></div>
+      <p className="mt-1 text-sm font-semibold text-slate-800">Hasil penguji: {w?.testerConclusion||'NOT_ASSESSED'} · Keputusan reviewer: {w?.conclusion||'NOT_ASSESSED'}</p>
+      {w?.testerResultNote&&<p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-700">Catatan pelaksanaan: {w.testerResultNote}</p>}</div>
      {mayWrite&&w?.status==='APPROVED'&&<button className={ghost} onClick={async()=>{
       setSourceId(w.id);setForm({code:w.code+'-RT',obligationId:w.obligationId,controlId:w.controlId,
        riskAssessmentId:w.riskAssessmentId||'',monitoringActivityId:w.monitoringActivityId||'',icofrReviewId:w.icofrReviewId||'',
@@ -230,6 +232,19 @@ export default function ComplianceTestingPage(){
      </div>
      <div className="border-t border-slate-100 pt-4">
       <h3 className="text-sm font-bold text-slate-900">Pengajuan dan review independen</h3>
+      {draft&&mayWrite&&<form className="mt-3 space-y-3 rounded-xl border border-sky-100 bg-sky-50 p-4" onSubmit={e=>{
+       e.preventDefault();void action({action:'RECORD_RESULT',id:w?.id,conclusion:testerResult.conclusion,note:testerResult.note});
+      }}>
+       <h4 className="text-xs font-bold text-slate-800">Hasil pelaksanaan oleh penguji</h4>
+       <label className="block text-xs text-slate-700">Kesimpulan penguji
+        <select className={field} value={testerResult.conclusion} onChange={e=>setTesterResult({...testerResult,conclusion:e.target.value})}>
+         {['EFFECTIVE','PARTIAL','INEFFECTIVE','INCONCLUSIVE'].map(x=><option key={x} value={x}>{x}</option>)}
+        </select></label>
+       <label className="block text-xs text-slate-700">Hasil aktual dan justifikasi yang didukung bukti
+        <textarea required rows={3} maxLength={2000} className={field} value={testerResult.note} onChange={e=>setTesterResult({...testerResult,note:e.target.value})}/>
+       </label>
+       <button className={ghost} disabled={busy||!testerResult.note.trim()} type="submit">Simpan hasil penguji</button>
+      </form>}
       <div className="mt-3 flex flex-wrap gap-2">
        {draft&&mayWrite&&<button className={primary} disabled={busy} onClick={()=>void action({action:'SUBMIT',id:w.id})}>Ajukan review hasil</button>}
        {w?.status==='RETURNED'&&mayWrite&&<button className={ghost} disabled={busy} onClick={()=>void action({action:'REVISE',id:w.id})}>Kembalikan ke draft</button>}
