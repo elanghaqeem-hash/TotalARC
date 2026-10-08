@@ -47,6 +47,8 @@ const ddl=[
   'CREATE INDEX IF NOT EXISTS idx_cra_tenant_period ON ComplianceRiskAssessment(institutionId,period,status)',
   'CREATE INDEX IF NOT EXISTS idx_cra_obligation ON ComplianceRiskAssessment(institutionId,obligationId,updatedAt)',
   'CREATE INDEX IF NOT EXISTS idx_cra_review ON ComplianceRiskAssessment(institutionId,status,nextReviewDate)',
+  'CREATE INDEX IF NOT EXISTS idx_cra_list_updated ON ComplianceRiskAssessment(institutionId,updatedAt DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_cra_period_updated ON ComplianceRiskAssessment(institutionId,period,updatedAt DESC)',
   'CREATE INDEX IF NOT EXISTS idx_cra_event ON ComplianceRiskEvent(institutionId,assessmentId,createdAt)'
 ];
 for(const sql of ddl)query(sql);
@@ -58,7 +60,7 @@ if(!columns.some(x=>x.name==='reassessmentOfId')){
 assert.ok(columns.some(x=>x.name==='reassessmentOfId'),'Missing reassessment lineage column');
 query('CREATE UNIQUE INDEX IF NOT EXISTS idx_cra_reassessment_lineage ON ComplianceRiskAssessment(institutionId,reassessmentOfId)');
 const idx=query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='ComplianceRiskAssessment'");
-for(const key of ['idx_cra_tenant_period','idx_cra_obligation','idx_cra_review','idx_cra_reassessment_lineage'])
+for(const key of ['idx_cra_tenant_period','idx_cra_obligation','idx_cra_review','idx_cra_list_updated','idx_cra_period_updated','idx_cra_reassessment_lineage'])
  assert.ok(idx.some(x=>x.name===key),'Missing CRA query index '+key);
 const orphan=query(`SELECT a.id FROM ComplianceRiskAssessment a
  LEFT JOIN ComplianceRiskAssessment parent

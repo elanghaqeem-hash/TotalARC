@@ -66,6 +66,8 @@ export function ensureComplianceRiskSchema(): Promise<DB> {
       'CREATE INDEX IF NOT EXISTS idx_cra_tenant_period ON ComplianceRiskAssessment(institutionId,period,status)',
       'CREATE INDEX IF NOT EXISTS idx_cra_obligation ON ComplianceRiskAssessment(institutionId,obligationId,updatedAt)',
       'CREATE INDEX IF NOT EXISTS idx_cra_review ON ComplianceRiskAssessment(institutionId,status,nextReviewDate)',
+      'CREATE INDEX IF NOT EXISTS idx_cra_list_updated ON ComplianceRiskAssessment(institutionId,updatedAt DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_cra_period_updated ON ComplianceRiskAssessment(institutionId,period,updatedAt DESC)',
       `CREATE TABLE IF NOT EXISTS ComplianceRiskEvent (
         id TEXT PRIMARY KEY, institutionId TEXT NOT NULL, assessmentId TEXT NOT NULL,
         actorId TEXT NOT NULL, actorRole TEXT NOT NULL, action TEXT NOT NULL,
