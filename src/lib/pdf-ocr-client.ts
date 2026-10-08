@@ -4,8 +4,8 @@ import type { Worker } from 'tesseract.js';
 
 const MAX_PDF_PAGES = 300;
 const MAX_TOTAL_TEXT_CHARS = 1_100_000;
-const AI_CHUNK_CHARS = 85_000;
-const MAX_AI_CHUNKS = 16;
+const AI_CHUNK_CHARS = 50_000;
+const MAX_AI_CHUNKS = 24;
 const PREVIEW_CHARS = 90_000;
 const PREVIEW_HEAD_CHARS = 62_000;
 const PREVIEW_MARKER = '\n\n[...preview dipersingkat; seluruh bagian tetap dikirim ke analisis bertahap Total ARC...]\n\n';
