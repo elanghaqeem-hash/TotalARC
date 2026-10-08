@@ -568,7 +568,7 @@ export async function listPolicyLibraryOverview(institutionId: string) {
              lastReviewDate, nextReviewDate, reviewCycleMonths, expiryDate,
              scope, summary, createdBy, createdAt, updatedAt
       FROM PolicyDocument
-      WHERE institutionId = ?
+      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
       ORDER BY updatedAt DESC
       LIMIT 1000
     `).bind(institutionId).all<PolicyDocumentRecord>(),
@@ -586,7 +586,7 @@ export async function listPolicyLibraryOverview(institutionId: string) {
            AND date(nextReviewDate) < date('now')
           THEN 1 ELSE 0 END) AS overdueReview
       FROM PolicyDocument
-      WHERE institutionId = ?
+      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
     `).bind(institutionId).first<Record<string, unknown>>(),
     db.prepare(`
       SELECT COUNT(*) AS totalRegulations
@@ -643,7 +643,7 @@ export async function listPolicyLibraryRegulatoryData(institutionId: string) {
              changeRequired, impactSummary, actionOwner, dueDate, actionStatus,
              completedAt, createdBy, createdAt, updatedAt
       FROM PolicyRegulationImpact
-      WHERE institutionId = ?
+      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
       ORDER BY updatedAt DESC
       LIMIT 2000
     `).bind(institutionId).all<PolicyRegulationImpactRecord>(),
@@ -674,7 +674,7 @@ export async function listPolicyLibraryDashboard(institutionId: string) {
              lastReviewDate, nextReviewDate, reviewCycleMonths, expiryDate,
              scope, summary, createdBy, createdAt, updatedAt
       FROM PolicyDocument
-      WHERE institutionId = ?
+      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
       ORDER BY updatedAt DESC
       LIMIT 1000
     `).bind(institutionId).all<PolicyDocumentRecord>(),
@@ -692,7 +692,7 @@ export async function listPolicyLibraryDashboard(institutionId: string) {
              changeRequired, impactSummary, actionOwner, dueDate, actionStatus,
              completedAt, createdBy, createdAt, updatedAt
       FROM PolicyRegulationImpact
-      WHERE institutionId = ?
+      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
       ORDER BY updatedAt DESC
       LIMIT 2000
     `).bind(institutionId).all<PolicyRegulationImpactRecord>(),
