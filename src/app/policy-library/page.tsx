@@ -160,7 +160,7 @@ type Dashboard = {
   impacts: Impact[];
   reviews: Review[];
   uploadedSources: UploadedSource[];
-  registry: Registry;
+  registry: Registry | null;
 };
 
 type TabKey = 'library' | 'relations' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
@@ -230,6 +230,23 @@ function statusPill(value: string) {
   return 'bg-slate-100 text-slate-700';
 }
 
+async function fetchPolicyLibraryBundle(mode: 'sources' | 'regulatory') {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch('/api/policy-library?mode=' + mode, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Data ' + mode + ' gagal dimuat.');
+    return payload;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export default function PolicyLibraryPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [tab, setTab] = useState<TabKey>('library');
@@ -237,9 +254,16 @@ export default function PolicyLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [registrySyncing, setRegistrySyncing] = useState(false);
+  const [registryLoading, setRegistryLoading] = useState(false);
+  const [registryLoaded, setRegistryLoaded] = useState(false);
+  const [registryError, setRegistryError] = useState('');
+  const registryRequestRunning = useRef(false);
+  const registrySyncRequestRunning = useRef(false);
   const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [sourcesError, setSourcesError] = useState('');
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [regulatoryLoading, setRegulatoryLoading] = useState(false);
+  const [regulatoryError, setRegulatoryError] = useState('');
   const [regulatoryLoaded, setRegulatoryLoaded] = useState(false);
   const uploadedSourcesRef = useRef<UploadedSource[]>([]);
   const regulatoryDataRef = useRef<{
@@ -317,13 +341,15 @@ export default function PolicyLibraryPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Data Policy & Regulatory Library gagal dimuat.');
-      setData({
+      setData(current => ({
         ...payload,
+        // Keep the independently loaded graph during overview refresh.
+        registry: current && current.institutionId === payload.institutionId ? current.registry : null,
         uploadedSources: uploadedSourcesRef.current,
         regulations: regulatoryDataRef.current.regulations,
         impacts: regulatoryDataRef.current.impacts,
         reviews: regulatoryDataRef.current.reviews
-      });
+      }));
     } catch (err) {
       setError(
         err instanceof DOMException && err.name === 'AbortError'
@@ -341,19 +367,16 @@ export default function PolicyLibraryPage() {
   const loadSources = useCallback(async () => {
     if (sourcesLoading) return;
     setSourcesLoading(true);
+    setSourcesError('');
     try {
-      const response = await fetch('/api/policy-library?mode=sources', {
-        credentials: 'same-origin',
-        cache: 'no-store'
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Daftar file sumber gagal dimuat.');
+      const payload = await fetchPolicyLibraryBundle('sources');
       const next = Array.isArray(payload.uploadedSources) ? payload.uploadedSources : [];
       uploadedSourcesRef.current = next;
       setData(current => current ? { ...current, uploadedSources: next } : current);
       setSourcesLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Daftar file sumber gagal dimuat.');
+      setSourcesError(err instanceof DOMException && err.name === 'AbortError'
+        ? 'Daftar file sumber melewati batas 15 detik.' : err instanceof Error ? err.message : 'Daftar file sumber gagal dimuat.');
     } finally {
       setSourcesLoading(false);
     }
@@ -363,16 +386,53 @@ export default function PolicyLibraryPage() {
     void load();
   }, [load]);
 
+  const loadRegistry = useCallback(async () => {
+    if (registryRequestRunning.current) return;
+    registryRequestRunning.current = true;
+    setRegistryLoading(true);
+    setRegistryError('');
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch('/api/policy-library?mode=registry', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Relasi TotalARC gagal dimuat.');
+      if (!payload.registry || !payload.institutionId) throw new Error('Respons data relasi tidak lengkap.');
+      setData(current => current && current.institutionId === payload.institutionId
+        ? { ...current, registry: payload.registry }
+        : current
+      );
+      setRegistryLoaded(true);
+    } catch (err) {
+      setRegistryError(
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'Ringkasan relasi belum merespons. Coba muat ulang relasi.'
+          : err instanceof Error ? err.message : 'Ringkasan relasi gagal dimuat.'
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      registryRequestRunning.current = false;
+      setRegistryLoading(false);
+    }
+  }, []);
+
+  // Do not await cross-module schema work before showing the policy overview.
+  useEffect(() => {
+    if (!data || registryLoaded || registryLoading || registryError) return;
+    const timer = window.setTimeout(() => void loadRegistry(), tab === 'relations' ? 0 : 800);
+    return () => window.clearTimeout(timer);
+  }, [data, tab, registryLoaded, registryLoading, registryError, loadRegistry]);
+
   const loadRegulatory = useCallback(async () => {
     if (regulatoryLoading) return;
     setRegulatoryLoading(true);
+    setRegulatoryError('');
     try {
-      const response = await fetch('/api/policy-library?mode=regulatory', {
-        credentials: 'same-origin',
-        cache: 'no-store'
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Data Regulatory Watch gagal dimuat.');
+      const payload = await fetchPolicyLibraryBundle('regulatory');
       const next = {
         regulations: Array.isArray(payload.regulations) ? payload.regulations : [],
         impacts: Array.isArray(payload.impacts) ? payload.impacts : [],
@@ -382,25 +442,27 @@ export default function PolicyLibraryPage() {
       setData(current => current ? { ...current, ...next } : current);
       setRegulatoryLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Data Regulatory Watch gagal dimuat.');
+      setRegulatoryError(err instanceof DOMException && err.name === 'AbortError'
+        ? 'Data Regulatory Watch melewati batas 15 detik.' : err instanceof Error ? err.message : 'Data Regulatory Watch gagal dimuat.');
     } finally {
       setRegulatoryLoading(false);
     }
   }, [regulatoryLoading]);
 
   useEffect(() => {
-    if (tab !== 'uploads' || sourcesLoaded || sourcesLoading) return;
+    if (tab !== 'uploads' || sourcesLoaded || sourcesLoading || sourcesError) return;
     void loadSources();
-  }, [tab, sourcesLoaded, sourcesLoading, loadSources]);
+  }, [tab, sourcesLoaded, sourcesLoading, sourcesError, loadSources]);
 
   useEffect(() => {
     if (
       !['regulations', 'impacts', 'intelligence'].includes(tab) ||
       regulatoryLoaded ||
-      regulatoryLoading
+      regulatoryLoading ||
+      regulatoryError
     ) return;
     void loadRegulatory();
-  }, [tab, regulatoryLoaded, regulatoryLoading, loadRegulatory]);
+  }, [tab, regulatoryLoaded, regulatoryLoading, regulatoryError, loadRegulatory]);
 
   const postAction = useCallback(async (body: Record<string, unknown>) => {
     setSaving(true);
@@ -428,6 +490,9 @@ export default function PolicyLibraryPage() {
   }, [load]);
 
   const syncRegistry = useCallback(async (automatic = false) => {
+    // A user click and deferred auto-sync must never start two full graph rebuilds.
+    if (registrySyncRequestRunning.current) return false;
+    registrySyncRequestRunning.current = true;
     setRegistrySyncing(true);
     if (!automatic) {
       setError('');
@@ -449,22 +514,29 @@ export default function PolicyLibraryPage() {
         Number(result.mappedSources || 0) + ' sumber terhubung, dan ' +
         Number(result.generatedLinks || 0) + ' relasi aktif.'
       );
-      await load();
+      await Promise.all([load(), loadRegistry()]);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sinkronisasi registry ketentuan gagal.');
+      if (automatic) {
+        setRegistryError(err instanceof Error ? err.message : 'Sinkronisasi registry ketentuan gagal.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Sinkronisasi registry ketentuan gagal.');
+      }
       return false;
     } finally {
+      registrySyncRequestRunning.current = false;
       setRegistrySyncing(false);
     }
-  }, [load]);
+  }, [load, loadRegistry]);
 
   useEffect(() => {
     const missing =
       (data?.registry?.metrics.missingCandidates || 0) +
       (data?.registry?.metrics.unmappedPolicySources || 0);
     const requiresSync = Boolean(data?.registry?.syncRequired) || missing > 0;
-    if (!data?.canManage || !requiresSync || registryAutoSyncAttempted.current) return;
+    // Only rebuild a stale registry after visiting the relations tab (or on manual request).
+    if (tab !== 'relations' || !registryLoaded || !data?.canManage ||
+        !requiresSync || registrySyncing || registryAutoSyncAttempted.current) return;
 
     registryAutoSyncAttempted.current = true;
     const timer = window.setTimeout(() => {
@@ -472,6 +544,9 @@ export default function PolicyLibraryPage() {
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [
+    tab,
+    registryLoaded,
+    registrySyncing,
     data?.canManage,
     data?.registry?.syncRequired,
     data?.registry?.metrics.missingCandidates,
@@ -698,12 +773,36 @@ export default function PolicyLibraryPage() {
     [data?.regulations]
   );
 
+  if (!data && error) {
+    return (
+      <section className="mx-auto mt-8 max-w-xl rounded-2xl border border-amber-200 bg-white p-6 shadow-sm" role="alert">
+        <div className="flex items-center gap-2 font-bold text-slate-900">
+          <AlertTriangle className="h-5 w-5 text-amber-700" />
+          Library belum dapat dimuat
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-600">{error}</p>
+        <button type="button" onClick={() => void load()}
+          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+          <RefreshCw className="h-4 w-4" /> Coba Lagi
+        </button>
+      </section>
+    );
+  }
+
   if (loading && !data) {
     return (
-      <div className="flex min-h-[55vh] items-center justify-center">
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-600 shadow-sm">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Memuat Policy & Regulatory Library...
+      <div className="mx-auto mt-6 max-w-5xl space-y-4 px-2" role="status" aria-live="polite">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Menyiapkan daftar ketentuan...
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Relasi dan file pendukung dimuat terpisah agar tidak menghambat halaman.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[0, 1, 2, 3].map(item => (
+            <div key={item} className="h-28 animate-pulse rounded-2xl border border-slate-100 bg-slate-100" />
+          ))}
         </div>
       </div>
     );
@@ -819,8 +918,10 @@ export default function PolicyLibraryPage() {
             },
             {
               label: 'Relasi TotalARC',
-              value: registryMetrics.totalLinks,
-              sub: registryMetrics.policiesWithLinks + ' ketentuan sudah terkoneksi',
+              value: registryLoaded ? registryMetrics.totalLinks : '—',
+              sub: registryLoaded
+                ? registryMetrics.policiesWithLinks + ' ketentuan sudah terkoneksi'
+                : registryError ? 'Relasi belum tersedia' : 'Memuat relasi terpisah...',
               icon: Network
             }
           ].map(card => {
@@ -842,6 +943,16 @@ export default function PolicyLibraryPage() {
           })}
         </div>
       </section>
+
+      {registryError && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4" role="status">
+          <p className="text-sm font-medium text-amber-900">{registryError} Data ketentuan lainnya tetap dapat digunakan.</p>
+          <button type="button" onClick={() => void loadRegistry()} disabled={registryLoading}
+            className="rounded-lg bg-white px-3 py-2 text-sm font-bold text-amber-900 shadow-sm disabled:opacity-60">
+            Coba Muat Relasi
+          </button>
+        </section>
+      )}
 
       {(registryMetrics.missingCandidates > 0 ||
         registryMetrics.unmappedPolicySources > 0 ||
@@ -943,6 +1054,25 @@ export default function PolicyLibraryPage() {
         <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{notice}</span>
+        </div>
+      )}
+
+      {((tab === 'uploads' && (sourcesError || sourcesLoading)) ||
+        (['regulations', 'impacts', 'intelligence'].includes(tab) && (regulatoryError || regulatoryLoading))) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm" role="status">
+          <span className="text-slate-700">
+            {tab === 'uploads'
+              ? sourcesError || 'Memuat file sumber secara terpisah...'
+              : regulatoryError || 'Memuat data regulasi secara terpisah...'}
+          </span>
+          {tab === 'uploads' && sourcesError && (
+            <button type="button" className="rounded-lg bg-slate-900 px-3 py-2 font-semibold text-white"
+              onClick={() => void loadSources()}>Coba Lagi</button>
+          )}
+          {tab !== 'uploads' && regulatoryError && (
+            <button type="button" className="rounded-lg bg-slate-900 px-3 py-2 font-semibold text-white"
+              onClick={() => void loadRegulatory()}>Coba Lagi</button>
+          )}
         </div>
       )}
 
@@ -1145,7 +1275,9 @@ export default function PolicyLibraryPage() {
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
-                {registryMetrics.totalLinks} relasi · {registryMetrics.policiesWithLinks} ketentuan terkoneksi
+                {registryLoaded
+                  ? registryMetrics.totalLinks + ' relasi · ' + registryMetrics.policiesWithLinks + ' ketentuan terkoneksi'
+                  : registryLoading ? 'Memuat hubungan antar modul...' : 'Data relasi belum tersedia'}
               </div>
             </div>
 
@@ -1277,7 +1409,7 @@ export default function PolicyLibraryPage() {
                       </td>
                     </tr>
                   ))}
-                  {filteredRegulations.length === 0 && (
+                  {regulatoryLoaded && filteredRegulations.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-5 py-14 text-center">
                         <ShieldAlert className="mx-auto h-8 w-8 text-slate-300" />
@@ -1375,7 +1507,7 @@ export default function PolicyLibraryPage() {
                   </article>
                 );
               })}
-              {(data?.impacts || []).length === 0 && (
+              {regulatoryLoaded && (data?.impacts || []).length === 0 && (
                 <div className="py-12 text-center">
                   <Link2 className="mx-auto h-8 w-8 text-slate-300" />
                   <div className="mt-3 font-bold text-slate-700">Belum ada mapping dampak regulasi.</div>
@@ -1464,7 +1596,7 @@ export default function PolicyLibraryPage() {
                   </article>
                 );
               })}
-              {filteredSources.length === 0 && (
+              {sourcesLoaded && filteredSources.length === 0 && (
                 <div className="col-span-full py-12 text-center">
                   <UploadCloud className="mx-auto h-8 w-8 text-slate-300" />
                   <div className="mt-3 font-bold text-slate-700">Belum ada file sumber.</div>

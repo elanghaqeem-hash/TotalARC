@@ -167,6 +167,10 @@ function verifyApi() {
   assert(route.includes("mode === 'sources'"), 'Source Library must be lazy-loaded instead of blocking initial page load');
   assert(route.includes("mode === 'regulatory'"), 'Regulatory data must be lazy-loaded instead of blocking initial page load');
   assert(route.includes('listPolicyLibraryOverview'), 'initial Policy Library GET must use aggregate overview');
+  assert(route.includes("mode === 'registry'"), 'cross-module registry must be fetched independently');
+  assert(route.includes('registry: null'), 'initial overview must not wait on registry summary');
+  assert(!route.includes('const [registry, dashboard] = await Promise.all('),
+    'initial page must not block on registry/database aggregation');
   assert(route.includes('listPolicyLibraryRegulatoryData'), 'lazy regulatory bundle endpoint missing');
   assert(!route.includes('const registry = await getPolicyRegistryCoverage'), 'initial Policy Library GET must not run deep registry discovery');
   return { api: 'PASS', fastInitialLoad: 'PASS', lazyRegulatory: 'PASS' };
@@ -197,6 +201,16 @@ function verifyUi() {
   assert(ui.includes('loadSources'), 'source files must lazy-load only when needed');
   assert(ui.includes("tab !== 'uploads'"), 'source lazy-load tab guard missing');
   assert(ui.includes('loadRegulatory'), 'regulatory data must lazy-load only when needed');
+  assert(ui.includes('loadRegistry') && ui.includes('mode=registry'),
+    'registry must load in a separate request after first paint');
+  assert(ui.includes("tab !== 'relations'") && ui.includes('registryLoaded'),
+    'expensive auto-sync must not run on the initial library tab');
+  assert(ui.includes('registrySyncRequestRunning.current'),
+    'concurrent registry rebuild attempts must be deduplicated');
+  assert(ui.includes('sourcesError') && ui.includes('regulatoryError'),
+    'lazy-load failures must have retry guards rather than a request loop');
+  assert(ui.includes('registryLoaded ? registryMetrics.totalLinks'),
+    'not-yet-loaded relation counts must not be shown as zero');
   assert(ui.includes("['regulations', 'impacts', 'intelligence'].includes(tab)"), 'regulatory lazy-load tab guard missing');
   assert(ui.includes('setTimeout(() =>') && ui.includes('1200'), 'registry auto-sync must be deferred after initial render');
   assert(ui.includes("href: '/ccm'"), 'CCM navigation missing from policy relations');
