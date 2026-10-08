@@ -250,6 +250,13 @@ async function fetchPolicyLibraryBundle(mode: 'sources' | 'regulatory') {
 export default function PolicyLibraryPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [tab, setTab] = useState<TabKey>('library');
+  // Open the requested workspace directly from Compliance Dashboard links.
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    if (requestedTab && ['library','relations','regulations','impacts','intelligence','clauses','obligations','uploads'].includes(requestedTab)) {
+      setTab(requestedTab as TabKey);
+    }
+  }, []);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
