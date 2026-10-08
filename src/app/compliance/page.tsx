@@ -217,6 +217,7 @@ export default function ComplianceDashboardPage() {
               className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60">
               <RefreshCw className={'h-4 w-4 ' + (loading ? 'animate-spin' : '')} /> Refresh
             </button>
+            <Link href="/compliance/monitoring" className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-900 hover:bg-sky-100">Monitoring Plan <ArrowRight className="h-4 w-4" /></Link>
             <Link href="/policy-library?tab=obligations"
               className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
               Compliance Universe <ArrowRight className="h-4 w-4" />
