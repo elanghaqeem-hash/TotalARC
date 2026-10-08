@@ -112,17 +112,22 @@ export async function GET(request: Request) {
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const [registry, dashboard] = await Promise.all([
-      getPolicyRegistrySummary(context.institution.id),
-      listPolicyLibraryOverview(context.institution.id)
-    ]);
+    // The registry traverses multiple schema layers and must never block the first paint.
+    // Fetch it separately after the lightweight policy overview has rendered.
+    if (mode === 'registry') {
+      const registry = await getPolicyRegistrySummary(context.institution.id);
+      return NextResponse.json({ institutionId: context.institution.id, registry }, {
+        headers: { 'Cache-Control': 'no-store' }
+      });
+    }
 
+    const dashboard = await listPolicyLibraryOverview(context.institution.id);
     return NextResponse.json({
       institutionId: context.institution.id,
       institutionName: context.institution.name,
       canManage: context.canManage,
       ...dashboard,
-      registry,
+      registry: null,
       uploadedSources: []
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
