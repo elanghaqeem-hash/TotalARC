@@ -238,7 +238,14 @@ export default function PolicyLibraryPage() {
   const [registrySyncing, setRegistrySyncing] = useState(false);
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
+  const [regulatoryLoading, setRegulatoryLoading] = useState(false);
+  const [regulatoryLoaded, setRegulatoryLoaded] = useState(false);
   const uploadedSourcesRef = useRef<UploadedSource[]>([]);
+  const regulatoryDataRef = useRef<{
+    regulations: Regulation[];
+    impacts: Impact[];
+    reviews: Review[];
+  }>({ regulations: [], impacts: [], reviews: [] });
   const registryAutoSyncAttempted = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -311,7 +318,10 @@ export default function PolicyLibraryPage() {
       if (!response.ok) throw new Error(payload.error || 'Data Policy & Regulatory Library gagal dimuat.');
       setData({
         ...payload,
-        uploadedSources: uploadedSourcesRef.current
+        uploadedSources: uploadedSourcesRef.current,
+        regulations: regulatoryDataRef.current.regulations,
+        impacts: regulatoryDataRef.current.impacts,
+        reviews: regulatoryDataRef.current.reviews
       });
     } catch (err) {
       setError(
@@ -352,10 +362,44 @@ export default function PolicyLibraryPage() {
     void load();
   }, [load]);
 
+  const loadRegulatory = useCallback(async () => {
+    if (regulatoryLoading) return;
+    setRegulatoryLoading(true);
+    try {
+      const response = await fetch('/api/policy-library?mode=regulatory', {
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Data Regulatory Watch gagal dimuat.');
+      const next = {
+        regulations: Array.isArray(payload.regulations) ? payload.regulations : [],
+        impacts: Array.isArray(payload.impacts) ? payload.impacts : [],
+        reviews: Array.isArray(payload.reviews) ? payload.reviews : []
+      };
+      regulatoryDataRef.current = next;
+      setData(current => current ? { ...current, ...next } : current);
+      setRegulatoryLoaded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Data Regulatory Watch gagal dimuat.');
+    } finally {
+      setRegulatoryLoading(false);
+    }
+  }, [regulatoryLoading]);
+
   useEffect(() => {
     if (tab !== 'uploads' || sourcesLoaded || sourcesLoading) return;
     void loadSources();
   }, [tab, sourcesLoaded, sourcesLoading, loadSources]);
+
+  useEffect(() => {
+    if (
+      !['regulations', 'impacts', 'intelligence'].includes(tab) ||
+      regulatoryLoaded ||
+      regulatoryLoading
+    ) return;
+    void loadRegulatory();
+  }, [tab, regulatoryLoaded, regulatoryLoading, loadRegulatory]);
 
   const postAction = useCallback(async (body: Record<string, unknown>) => {
     setSaving(true);
@@ -372,6 +416,7 @@ export default function PolicyLibraryPage() {
       if (!response.ok) throw new Error(payload.error || 'Perubahan tidak dapat disimpan.');
       setNotice('Perubahan berhasil disimpan.');
       await load();
+      setRegulatoryLoaded(false);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Perubahan tidak dapat disimpan.');
