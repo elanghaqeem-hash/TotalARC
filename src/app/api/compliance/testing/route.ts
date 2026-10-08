@@ -73,6 +73,7 @@ export async function POST(request:Request){
     if(!b||typeof b!=='object'||Array.isArray(b))throw new Error('CT_INVALID_INPUT');
     const action=String(b.action||'').toUpperCase(),id=String(b.id||'');
     if(['CREATE','RETEST'].includes(action)&&a.mayWrite){
+      if(action==='RETEST'&&!String(b.sourceTestId||'').trim())throw new Error('CT_RETEST_INVALID');
       const input:WorkprogramInput={
         code:String(b.code||''),obligationId:String(b.obligationId||''),controlId:String(b.controlId||''),
         riskAssessmentId:String(b.riskAssessmentId||''),monitoringActivityId:String(b.monitoringActivityId||''),
