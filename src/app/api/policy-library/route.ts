@@ -6,13 +6,16 @@ import {
   createPolicyDocument,
   listPolicyLibraryOverview,
   listPolicyLibraryRegulatoryData,
+  listExternalRegulationOptions,
   recordPolicyReview,
   upsertPolicyRegulationImpact
 } from '@/lib/d1-policy-library';
 import {
   getPolicyRegistrySummary,
+  listPolicyDocumentClusters,
   syncPolicyRegistryFromDatabase
 } from '@/lib/d1-policy-registry';
+import { listPolicyRelationships } from '@/lib/d1-policy-intelligence';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +103,21 @@ export async function GET(request: Request) {
           importedAt: item.importedAt,
           updatedAt: item.updatedAt
         }))
+      }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (mode === 'structure') {
+      const [clusters, relationships, regulations] = await Promise.all([
+        listPolicyDocumentClusters(context.institution.id),
+        listPolicyRelationships(context.institution.id),
+        listExternalRegulationOptions(context.institution.id)
+      ]);
+      return NextResponse.json({
+        institutionId: context.institution.id,
+        canManage: context.canManage,
+        clusters,
+        relationships,
+        regulations
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
 

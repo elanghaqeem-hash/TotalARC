@@ -6,6 +6,7 @@ import { ensurePolicyLibrarySchema } from '@/lib/d1-policy-library';
 import { ensureRegulatoryObligationSchema } from '@/lib/d1-regulatory-obligations';
 import { ensureRcsaSchema } from '@/lib/d1-rcsa';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
+import { ensurePolicyIntelligenceSchema } from '@/lib/d1-policy-intelligence';
 
 type Prepared = {
   bind: (...values: unknown[]) => Prepared;
@@ -18,7 +19,7 @@ type D1DatabaseLike = {
   prepare: (sql: string) => Prepared;
 };
 
-const POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v3';
+const POLICY_REGISTRY_SYNC_VERSION = '2026-10-08-v4';
 
 export type PolicyEntityLinkRecord = {
   id: string;
@@ -31,6 +32,24 @@ export type PolicyEntityLinkRecord = {
   sourceId: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type DocumentCluster =
+  | 'INTERNAL_RULE'
+  | 'WORKPAPER_EVIDENCE'
+  | 'PROCESS_RCM'
+  | 'REGULATORY_EXTERNAL'
+  | 'FORM_TEMPLATE'
+  | 'OTHER';
+
+type ClusterCandidate = {
+  sourceType: 'SOURCE_DOCUMENT' | 'EVIDENCE_DOCUMENT';
+  sourceId: string;
+  sourceTitle: string;
+  cluster: DocumentCluster;
+  documentType: string | null;
+  confidence: 'HIGH' | 'MEDIUM';
+  reason: string;
 };
 
 type Candidate = {
@@ -146,7 +165,7 @@ function canonicalDocumentType(value: unknown) {
   return null;
 }
 
-function classifyInternalRule(input: {
+function classifyDocumentCluster(input: {
   title: string;
   textPreview?: string | null;
   category?: string | null;
@@ -155,14 +174,9 @@ function classifyInternalRule(input: {
 }) {
   const module = normalize(input.module);
   const category = normalize(input.category);
-  if (
-    module === 'regulatory source' ||
-    module === 'regulatory_source' ||
-    category.includes('external regulation') ||
-    category.includes('regulasi eksternal')
-  ) return null;
-
   const titleOnly = normalize(input.title);
+  const metadataHaystack = [titleOnly, module, category].join(' ');
+
   const externalTitlePatterns = [
     /\bpojk\b/,
     /\bseojk\b/,
@@ -176,17 +190,95 @@ function classifyInternalRule(input: {
     /\bundang undang\b/,
     /\bperaturan pemerintah\b/
   ];
-  if (externalTitlePatterns.some(pattern => pattern.test(titleOnly))) return null;
+  if (
+    module === 'regulatory source' ||
+    module === 'regulatory_source' ||
+    category.includes('external regulation') ||
+    category.includes('regulasi eksternal') ||
+    externalTitlePatterns.some(pattern => pattern.test(titleOnly))
+  ) {
+    return {
+      cluster: 'REGULATORY_EXTERNAL' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Dokumen regulator/ketentuan eksternal dipisahkan dari ketentuan internal.'
+    };
+  }
+
+  const workpaperPatterns = [
+    /\bkertas kerja\b/,
+    /\bworking paper\b/,
+    /\bworkpaper\b/,
+    /\bwalkthrough\b/,
+    /\btest of one\b/,
+    /\btest of design\b/,
+    /\btest of operating effectiveness\b/,
+    /\btod\b/,
+    /\btoe\b/,
+    /\bsampling\b/,
+    /\btesting evidence\b/,
+    /\bbukti pengujian\b/,
+    /\bevidence\b/
+  ];
+  if (workpaperPatterns.some(pattern => pattern.test(metadataHaystack))) {
+    return {
+      cluster: 'WORKPAPER_EVIDENCE' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Kertas kerja/walkthrough/evidence pengujian bukan SOP atau ketentuan internal.'
+    };
+  }
 
   const explicitType =
     canonicalDocumentType(input.explicitType) ||
     canonicalDocumentType(input.category) ||
     canonicalDocumentType(input.module);
+
+  // Explicit governance metadata wins over generic BPM/RCM/Form keywords,
+  // but never over strong workpaper/evidence signals above.
   if (explicitType) {
     return {
+      cluster: 'INTERNAL_RULE' as const,
       documentType: explicitType,
       confidence: 'HIGH' as const,
-      classificationReason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
+      reason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
+    };
+  }
+
+  const processPatterns = [
+    /\bbusiness process mapping\b/,
+    /\bprocess mapping\b/,
+    /\bprocess map\b/,
+    /\bbpm\b/,
+    /\brisk control matrix\b/,
+    /\brcm\b/,
+    /\brisk register\b/,
+    /\bflowchart\b/,
+    /\bflow process\b/
+  ];
+  if (processPatterns.some(pattern => pattern.test(metadataHaystack))) {
+    return {
+      cluster: 'PROCESS_RCM' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Dokumen BPM/RCM/risk register diperlakukan sebagai artefak proses dan kontrol.'
+    };
+  }
+
+  const formPatterns = [
+    /\bform\b/,
+    /\btemplate\b/,
+    /\bchecklist\b/,
+    /\bdaftar periksa\b/,
+    /\bblank form\b/,
+    /\bworksheet\b/
+  ];
+  if (formPatterns.some(pattern => pattern.test(titleOnly))) {
+    return {
+      cluster: 'FORM_TEMPLATE' as const,
+      documentType: null,
+      confidence: 'HIGH' as const,
+      reason: 'Form/template/checklist dipisahkan dari ketentuan internal.'
     };
   }
 
@@ -212,16 +304,24 @@ function classifyInternalRule(input: {
 
   for (const [documentType, pattern, reason] of rules) {
     if (pattern.test(haystack)) {
-      const titleHit = pattern.test(normalize(input.title));
+      const titleHit = pattern.test(titleOnly);
       return {
+        cluster: 'INTERNAL_RULE' as const,
         documentType,
         confidence: titleHit ? 'HIGH' as const : 'MEDIUM' as const,
-        classificationReason: reason
+        reason
       };
     }
   }
-  return null;
+
+  return {
+    cluster: 'OTHER' as const,
+    documentType: null,
+    confidence: 'MEDIUM' as const,
+    reason: 'Tidak ada indikator memadai bahwa file merupakan ketentuan internal.'
+  };
 }
+
 
 async function getDb() {
   await ensureCoreDomainSchema();
@@ -231,6 +331,7 @@ async function getDb() {
   await ensureRegulatoryObligationSchema();
   await ensureRcsaSchema();
   await ensureAssuranceSchema();
+  await ensurePolicyIntelligenceSchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -300,6 +401,26 @@ async function executeSchema(db: D1DatabaseLike) {
       ON PolicyEntityLink(institutionId,policyDocumentId,targetType)`,
     `CREATE INDEX IF NOT EXISTS idx_policy_entity_link_target
       ON PolicyEntityLink(institutionId,targetType,targetId)`,
+    `CREATE TABLE IF NOT EXISTS PolicyDocumentCluster (
+      id TEXT PRIMARY KEY NOT NULL,
+      institutionId TEXT NOT NULL,
+      sourceType TEXT NOT NULL,
+      sourceId TEXT NOT NULL,
+      sourceTitle TEXT NOT NULL,
+      cluster TEXT NOT NULL,
+      documentType TEXT,
+      confidence TEXT NOT NULL DEFAULT 'MEDIUM',
+      reason TEXT,
+      policyDocumentId TEXT,
+      detectedAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_document_cluster_unique
+      ON PolicyDocumentCluster(institutionId,sourceType,sourceId)`,
+    `CREATE INDEX IF NOT EXISTS idx_policy_document_cluster_group
+      ON PolicyDocumentCluster(institutionId,cluster,updatedAt)`,
+    `CREATE INDEX IF NOT EXISTS idx_policy_document_cluster_policy
+      ON PolicyDocumentCluster(institutionId,policyDocumentId)`,
     `CREATE TABLE IF NOT EXISTS PolicyRegistrySyncRun (
       id TEXT PRIMARY KEY NOT NULL,
       institutionId TEXT NOT NULL,
@@ -348,8 +469,9 @@ export async function ensurePolicyRegistrySchema() {
   return schemaReady;
 }
 
-async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
+async function discoverPolicyInputs(db: D1DatabaseLike, institutionId: string) {
   const candidates: Candidate[] = [];
+  const clusters: ClusterCandidate[] = [];
 
   const sources = await all<Record<string, unknown>>(
     db,
@@ -367,7 +489,7 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
 
   for (const row of sources) {
     const metadata = safeJson(row.metadataJson);
-    const classification = classifyInternalRule({
+    const cluster = classifyDocumentCluster({
       title: String(row.title || ''),
       textPreview: String(row.textPreview || ''),
       module: row.module ? String(row.module) : null,
@@ -378,7 +500,16 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
         metadata.type
       )
     });
-    if (!classification) continue;
+    clusters.push({
+      sourceType: 'SOURCE_DOCUMENT',
+      sourceId: String(row.id),
+      sourceTitle: String(row.title || '').trim(),
+      cluster: cluster.cluster,
+      documentType: cluster.documentType,
+      confidence: cluster.confidence,
+      reason: cluster.reason
+    });
+    if (cluster.cluster !== 'INTERNAL_RULE' || !cluster.documentType) continue;
     candidates.push({
       sourceType: 'SOURCE_DOCUMENT',
       sourceId: String(row.id),
@@ -392,7 +523,9 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
       issueDate: clean(row.sourceCreatedAt || row.sourceModifiedAt),
       version: clean(metadata.version || metadata.documentVersion),
       metadata,
-      ...classification
+      documentType: cluster.documentType,
+      confidence: cluster.confidence,
+      classificationReason: cluster.reason
     });
   }
 
@@ -430,14 +563,23 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
   for (const row of evidence) {
     const analysis = analysisByEvidence.get(String(row.id)) || null;
     const title = String(row.fileName || row.title || '').trim();
-    const classification = classifyInternalRule({
+    const cluster = classifyDocumentCluster({
       title,
       textPreview: String(analysis?.sourceTextPreview || row.description || ''),
       category: row.category ? String(row.category) : null,
       module: row.sourceSystem ? String(row.sourceSystem) : null,
       explicitType: row.category ? String(row.category) : null
     });
-    if (!classification) continue;
+    clusters.push({
+      sourceType: 'EVIDENCE_DOCUMENT',
+      sourceId: String(row.id),
+      sourceTitle: title,
+      cluster: cluster.cluster,
+      documentType: cluster.documentType,
+      confidence: cluster.confidence,
+      reason: cluster.reason
+    });
+    if (cluster.cluster !== 'INTERNAL_RULE' || !cluster.documentType) continue;
     candidates.push({
       sourceType: 'EVIDENCE_DOCUMENT',
       sourceId: String(row.id),
@@ -452,11 +594,181 @@ async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
       issueDate: clean(row.createdAt),
       version: row.versionNo ? String(row.versionNo) : null,
       metadata: analysis ? { processId: analysis.processId, analysisStatus: analysis.status } : {},
-      ...classification
+      documentType: cluster.documentType,
+      confidence: cluster.confidence,
+      classificationReason: cluster.reason
     });
   }
 
-  return candidates;
+  return { candidates, clusters };
+}
+
+async function discoverCandidates(db: D1DatabaseLike, institutionId: string) {
+  return (await discoverPolicyInputs(db, institutionId)).candidates;
+}
+
+async function persistDocumentClusters(
+  db: D1DatabaseLike,
+  institutionId: string,
+  clusters: ClusterCandidate[]
+) {
+  const now = nowIso();
+  for (const item of clusters) {
+    await run(
+      db,
+      `INSERT INTO PolicyDocumentCluster (
+        id,institutionId,sourceType,sourceId,sourceTitle,cluster,documentType,
+        confidence,reason,policyDocumentId,detectedAt,updatedAt
+      ) VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?)
+      ON CONFLICT(institutionId,sourceType,sourceId) DO UPDATE SET
+        sourceTitle=excluded.sourceTitle,
+        cluster=excluded.cluster,
+        documentType=excluded.documentType,
+        confidence=excluded.confidence,
+        reason=excluded.reason,
+        updatedAt=excluded.updatedAt`,
+      [
+        crypto.randomUUID(),
+        institutionId,
+        item.sourceType,
+        item.sourceId,
+        item.sourceTitle,
+        item.cluster,
+        item.documentType,
+        item.confidence,
+        item.reason,
+        now,
+        now
+      ]
+    );
+  }
+}
+
+async function reconcileNonPolicyAutoRegistrations(
+  db: D1DatabaseLike,
+  institutionId: string,
+  clusters: ClusterCandidate[]
+) {
+  const nonPolicy = new Map<string, ClusterCandidate>(
+    clusters
+      .filter(item => item.cluster !== 'INTERNAL_RULE')
+      .map(item => [item.sourceType + ':' + item.sourceId, item] as [string, ClusterCandidate])
+  );
+  if (!nonPolicy.size) return 0;
+
+  const rows = await all<Record<string, unknown>>(
+    db,
+    `SELECT r.id AS registryId,r.sourceType,r.sourceId,r.policyDocumentId,
+            p.documentCode,p.status,p.summary,p.createdAt,p.updatedAt
+       FROM PolicyRegistrySource r
+       JOIN PolicyDocument p
+         ON p.id=r.policyDocumentId AND p.institutionId=r.institutionId
+      WHERE r.institutionId=?
+        AND p.documentCode LIKE 'AUTO-%'
+        AND p.status='Perlu Validasi'
+        AND p.summary LIKE 'Terdaftar otomatis dari database TotalARC.%'
+      LIMIT 5000`,
+    [institutionId]
+  );
+
+  let moved = 0;
+  for (const row of rows) {
+    const key = String(row.sourceType || '') + ':' + String(row.sourceId || '');
+    const cluster = nonPolicy.get(key);
+    if (!cluster) continue;
+    if (String(row.createdAt || '') !== String(row.updatedAt || '')) continue;
+
+    const policyId = String(row.policyDocumentId || '');
+    const activity = await first<{ count?: number }>(
+      db,
+      `SELECT (
+          (SELECT COUNT(*) FROM PolicyReviewHistory
+            WHERE institutionId=? AND policyDocumentId=?) +
+          (SELECT COUNT(*) FROM PolicyRegulationImpact
+            WHERE institutionId=? AND policyDocumentId=?) +
+          (SELECT COUNT(*) FROM PolicyRelationship
+            WHERE institutionId=? AND (
+              (sourceType='INTERNAL' AND sourceId=?) OR
+              (targetType='INTERNAL' AND targetId=?)
+            )) +
+          (SELECT COUNT(*) FROM RegulatoryObligationLink
+            WHERE institutionId=? AND targetType='INTERNAL_POLICY' AND targetId=?)
+        ) AS count`,
+      [
+        institutionId, policyId,
+        institutionId, policyId,
+        institutionId, policyId, policyId,
+        institutionId, policyId
+      ]
+    );
+    if (Number(activity?.count || 0) > 0) continue;
+
+    await run(
+      db,
+      `UPDATE PolicyDocument
+          SET status='Bukan Ketentuan',
+              summary=?,
+              updatedAt=?
+        WHERE id=? AND institutionId=?`,
+      [
+        'Direklasifikasi otomatis sebagai ' + cluster.cluster +
+          '. File sumber tetap dipertahankan dan tidak dihapus.',
+        nowIso(),
+        policyId,
+        institutionId
+      ]
+    );
+    await run(
+      db,
+      `DELETE FROM PolicyEntityLink
+        WHERE institutionId=? AND policyDocumentId=? AND sourceType='AUTO_SYNC'`,
+      [institutionId, policyId]
+    );
+    await run(
+      db,
+      `DELETE FROM PolicyRegistrySource
+        WHERE id=? AND institutionId=?`,
+      [String(row.registryId || ''), institutionId]
+    );
+    await run(
+      db,
+      `UPDATE PolicyDocumentCluster
+          SET policyDocumentId=NULL,updatedAt=?
+        WHERE institutionId=? AND sourceType=? AND sourceId=?`,
+      [nowIso(), institutionId, cluster.sourceType, cluster.sourceId]
+    );
+    moved += 1;
+  }
+  return moved;
+}
+
+export async function listPolicyDocumentClusters(institutionId: string) {
+  const db = await ensurePolicyRegistrySchema();
+  const [rows, totals] = await Promise.all([
+    all<Record<string, unknown>>(
+      db,
+      `SELECT sourceType,sourceId,sourceTitle,cluster,documentType,confidence,reason,
+              policyDocumentId,updatedAt
+         FROM PolicyDocumentCluster
+        WHERE institutionId=?
+        ORDER BY updatedAt DESC
+        LIMIT 2000`,
+      [institutionId]
+    ),
+    all<{ cluster: string; count: number }>(
+      db,
+      `SELECT cluster,COUNT(*) AS count
+         FROM PolicyDocumentCluster
+        WHERE institutionId=?
+        GROUP BY cluster
+        ORDER BY cluster`,
+      [institutionId]
+    )
+  ]);
+
+  const counts: Record<string, number> = {};
+  for (const item of totals) counts[String(item.cluster || '')] = Number(item.count || 0);
+  return { counts, rows };
 }
 
 async function policyByNormalizedTitle(db: D1DatabaseLike, institutionId: string) {
@@ -469,7 +781,7 @@ async function policyByNormalizedTitle(db: D1DatabaseLike, institutionId: string
     db,
     `SELECT id,title,documentType,sourceDocumentId
        FROM PolicyDocument
-      WHERE institutionId=?
+      WHERE institutionId=? AND status!='Bukan Ketentuan'
       LIMIT 5000`,
     [institutionId]
   );
@@ -496,7 +808,9 @@ async function mapExistingPolicySources(
        FROM PolicyDocument p
        JOIN SourceDocument s
          ON s.id=p.sourceDocumentId AND s.institutionId=p.institutionId
-      WHERE p.institutionId=? AND p.sourceDocumentId IS NOT NULL
+      WHERE p.institutionId=?
+        AND p.sourceDocumentId IS NOT NULL
+        AND p.status!='Bukan Ketentuan'
       LIMIT 5000`,
     [institutionId]
   );
@@ -1637,7 +1951,14 @@ export async function syncPolicyRegistryFromDatabase(
   );
 
   try {
-    const candidates = await discoverCandidates(db, institutionId);
+    const discovery = await discoverPolicyInputs(db, institutionId);
+    const candidates = discovery.candidates;
+    await persistDocumentClusters(db, institutionId, discovery.clusters);
+    const reclassifiedNonPolicies = await reconcileNonPolicyAutoRegistrations(
+      db,
+      institutionId,
+      discovery.clusters
+    );
     const titleMap = await policyByNormalizedTitle(db, institutionId);
     const hashMap = new Map<string, string>();
     let insertedPolicies = 0;
@@ -1653,6 +1974,19 @@ export async function syncPolicyRegistryFromDatabase(
         hashMap
       );
       if (candidate.contentHash) hashMap.set(candidate.contentHash, result.policyDocumentId);
+      await run(
+        db,
+        `UPDATE PolicyDocumentCluster
+            SET policyDocumentId=?,updatedAt=?
+          WHERE institutionId=? AND sourceType=? AND sourceId=?`,
+        [
+          result.policyDocumentId,
+          nowIso(),
+          institutionId,
+          candidate.sourceType,
+          candidate.sourceId
+        ]
+      );
       if (result.inserted) insertedPolicies += 1;
       if (result.mapped) mappedSources += 1;
     }
@@ -1683,6 +2017,7 @@ export async function syncPolicyRegistryFromDatabase(
       insertedPolicies,
       mappedSources,
       generatedLinks,
+      reclassifiedNonPolicies,
       completedAt
     };
   } catch (error) {

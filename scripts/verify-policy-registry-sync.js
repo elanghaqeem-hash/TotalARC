@@ -16,7 +16,7 @@ function assert(condition, message) {
 function verifyRegistryLayer() {
   const source = read('src/lib/d1-policy-registry.ts');
 
-  for (const table of ['PolicyRegistrySource', 'PolicyEntityLink', 'PolicyRegistrySyncRun']) {
+  for (const table of ['PolicyRegistrySource', 'PolicyEntityLink', 'PolicyDocumentCluster', 'PolicyRegistrySyncRun']) {
     assert(source.includes('CREATE TABLE IF NOT EXISTS ' + table), table + ' schema missing');
   }
 
@@ -26,6 +26,9 @@ function verifyRegistryLayer() {
     'idx_policy_entity_link_unique',
     'idx_policy_entity_link_policy',
     'idx_policy_entity_link_target',
+    'idx_policy_document_cluster_unique',
+    'idx_policy_document_cluster_group',
+    'idx_policy_document_cluster_policy',
     'idx_policy_registry_sync_run'
   ]) {
     assert(source.includes(index), 'index missing: ' + index);
@@ -126,10 +129,38 @@ function verifyRegistryLayer() {
   );
 
   assert(
-    source.includes("POLICY_REGISTRY_SYNC_VERSION = '2026-10-07-v3'") &&
+    source.includes("POLICY_REGISTRY_SYNC_VERSION = '2026-10-08-v4'") &&
       source.includes('syncVersion') &&
       source.includes('syncRequired'),
     'registry algorithm versioning and stale-rebuild detection missing'
+  );
+
+  for (const cluster of [
+    'INTERNAL_RULE',
+    'WORKPAPER_EVIDENCE',
+    'PROCESS_RCM',
+    'REGULATORY_EXTERNAL',
+    'FORM_TEMPLATE',
+    'OTHER'
+  ]) {
+    assert(source.includes("'" + cluster + "'"), 'document cluster missing: ' + cluster);
+  }
+
+  for (const exclusion of [
+    'kertas kerja',
+    'walkthrough',
+    'test of one',
+    'working paper',
+    'risk control matrix',
+    'business process mapping'
+  ]) {
+    assert(source.toLowerCase().includes(exclusion), 'non-policy exclusion missing: ' + exclusion);
+  }
+
+  assert(
+    source.includes("status='Bukan Ketentuan'") &&
+      source.includes('reconcileNonPolicyAutoRegistrations'),
+    'safe reclassification of false AUTO-SOP/Policy records missing'
   );
 
   assert(
@@ -168,6 +199,9 @@ function verifyApi() {
   assert(route.includes("mode === 'regulatory'"), 'Regulatory data must be lazy-loaded instead of blocking initial page load');
   assert(route.includes('listPolicyLibraryOverview'), 'initial Policy Library GET must use aggregate overview');
   assert(route.includes("mode === 'registry'"), 'cross-module registry must be fetched independently');
+  assert(route.includes("mode === 'structure'"), 'cluster/hierarchy endpoint missing');
+  assert(route.includes('listPolicyDocumentClusters'), 'document cluster endpoint missing');
+  assert(route.includes('listPolicyRelationships'), 'policy relationship endpoint missing');
   assert(route.includes('registry: null'), 'initial overview must not wait on registry summary');
   assert(!route.includes('const [registry, dashboard] = await Promise.all('),
     'initial page must not block on registry/database aggregation');
@@ -191,7 +225,8 @@ function verifyUi() {
     'ICOFR/ToD/ToE',
     'CCM',
     'Buku Pedoman Perusahaan',
-    'Petunjuk Teknis'
+    'Petunjuk Teknis',
+    'Hierarki & Cluster'
   ]) {
     assert(ui.includes(phrase), 'Policy Library UI missing: ' + phrase);
   }
@@ -203,8 +238,8 @@ function verifyUi() {
   assert(ui.includes('loadRegulatory'), 'regulatory data must lazy-load only when needed');
   assert(ui.includes('loadRegistry') && ui.includes('mode=registry'),
     'registry must load in a separate request after first paint');
-  assert(ui.includes("tab !== 'relations'") && ui.includes('registryLoaded'),
-    'expensive auto-sync must not run on the initial library tab');
+  assert(ui.includes("['library', 'relations', 'structure'].includes(tab)") && ui.includes('registryLoaded'),
+    'stale registry cleanup must run only after overview paint');
   assert(ui.includes('registrySyncRequestRunning.current'),
     'concurrent registry rebuild attempts must be deduplicated');
   assert(ui.includes('sourcesError') && ui.includes('regulatoryError'),
@@ -212,11 +247,26 @@ function verifyUi() {
   assert(ui.includes('registryLoaded ? registryMetrics.totalLinks'),
     'not-yet-loaded relation counts must not be shown as zero');
   assert(ui.includes("['regulations', 'impacts', 'intelligence'].includes(tab)"), 'regulatory lazy-load tab guard missing');
-  assert(ui.includes('setTimeout(() =>') && ui.includes('1200'), 'registry auto-sync must be deferred after initial render');
+  assert(ui.includes("tab === 'library' ? 2500 : 800"), 'registry auto-sync must be deferred after initial render');
   assert(ui.includes("href: '/ccm'"), 'CCM navigation missing from policy relations');
   assert(ui.includes("href: '/processes'"), 'BPM navigation missing from policy relations');
   assert(ui.includes("href: '/rcm'"), 'RCM navigation missing from policy relations');
-  return { ui: 'PASS' };
+  const hierarchy = read('src/components/policy/PolicyHierarchyWorkspace.tsx');
+  for (const phrase of [
+    'Hierarki Ketentuan & Cluster Dokumen',
+    'Kertas Kerja / Evidence',
+    'Level 0 · Regulasi Eksternal',
+    'Hubungan Antar Ketentuan',
+    'Tambah Hubungan Ketentuan',
+    'PARENT_OF',
+    'IMPLEMENTS',
+    'DERIVED_FROM',
+    'SUPERSEDES',
+    'REVOKES'
+  ]) {
+    assert(hierarchy.includes(phrase), 'Hierarchy workspace missing: ' + phrase);
+  }
+  return { ui: 'PASS', hierarchy: 'PASS', clustering: 'PASS' };
 }
 
 const result = {
