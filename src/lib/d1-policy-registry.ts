@@ -649,10 +649,10 @@ async function reconcileNonPolicyAutoRegistrations(
   institutionId: string,
   clusters: ClusterCandidate[]
 ) {
-  const nonPolicy = new Map(
+  const nonPolicy = new Map<string, ClusterCandidate>(
     clusters
       .filter(item => item.cluster !== 'INTERNAL_RULE')
-      .map(item => [item.sourceType + ':' + item.sourceId, item])
+      .map(item => [item.sourceType + ':' + item.sourceId, item] as [string, ClusterCandidate])
   );
   if (!nonPolicy.size) return 0;
 
