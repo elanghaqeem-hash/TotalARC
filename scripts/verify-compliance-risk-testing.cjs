@@ -23,7 +23,7 @@ has(risk,'residualLikelihood*residualImpact','residual score deterministic');
 
 has(risk,'record.preparedById===actor.id','separate reviewer for risk');
 has(risk,"COMPLIANCE_RISK_REVIEW.has(actor.role)",'risk reviewer RBAC');
-has(risk,"status='APPROVED'",'approved status stored');
+has(risk,"action==='APPROVE'?'APPROVED':'REJECTED'",'approved status stored');
 has(risk,'RegulatoryObligationLink','mapped obligation targets');
 has(risk,'ControlRiskMapping','risk-control process coherence');
 has(risk,"WHERE institutionId=? AND id=?",'risk tenant-filtered lookup');
