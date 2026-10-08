@@ -43,7 +43,10 @@ export function sourceChunks(
   const supplied = Array.isArray(extracted.chunks)
     ? extracted.chunks.map(value => String(value || '').trim()).filter(Boolean)
     : [];
-  if (supplied.length) return supplied.slice(0, maxChunks);
+  if (supplied.length > maxChunks) {
+    throw new Error('DOCUMENT_SOURCE_TOO_LARGE_FOR_COMPLETE_ANALYSIS');
+  }
+  if (supplied.length) return supplied;
 
   const value = String(extracted.text || '').trim();
   if (!value) return [];
