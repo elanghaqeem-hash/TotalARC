@@ -246,6 +246,7 @@ const API_PAGE_MAP: Array<{ api: string; page: string }> = [
   { api: '/api/admin/ai-settings', page: '/admin/ai-settings' },
   { api: '/api/policy-library', page: '/policy-library' },
   { api: '/api/compliance/dashboard', page: '/compliance' },
+  { api: '/api/compliance/monitoring', page: '/compliance/monitoring' },
   { api: '/api/assure/toe', page: '/toe' },
   { api: '/api/assure/remediation', page: '/remediation' },
   { api: '/api/monitor/ccm', page: '/ccm' },
@@ -290,6 +291,11 @@ export function canAccessApi(role: UserRole, pathname: string, method: string) {
     if (!readers.includes(role)) return false;
     if (isReadOnlyMethod(method)) return true;
     return role === 'Admin' || role === 'ComplianceOfficer';
+  }
+  if (pathname.startsWith('/api/compliance/monitoring')) {
+    const readers = ['Admin', 'ComplianceOfficer', 'RiskManager', 'InternalAuditor', 'Executive', 'ReadOnlyAuditor'];
+    if (!readers.includes(role)) return false;
+    return isReadOnlyMethod(method) || role === 'Admin' || role === 'ComplianceOfficer';
   }
   if (pathname === '/api/assurance') {
     if (isReadOnlyMethod(method)) {
