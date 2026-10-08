@@ -643,7 +643,7 @@ export async function listPolicyLibraryRegulatoryData(institutionId: string) {
              changeRequired, impactSummary, actionOwner, dueDate, actionStatus,
              completedAt, createdBy, createdAt, updatedAt
       FROM PolicyRegulationImpact
-      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
+      WHERE institutionId = ?
       ORDER BY updatedAt DESC
       LIMIT 2000
     `).bind(institutionId).all<PolicyRegulationImpactRecord>(),
@@ -692,7 +692,7 @@ export async function listPolicyLibraryDashboard(institutionId: string) {
              changeRequired, impactSummary, actionOwner, dueDate, actionStatus,
              completedAt, createdBy, createdAt, updatedAt
       FROM PolicyRegulationImpact
-      WHERE institutionId = ? AND status != 'Bukan Ketentuan'
+      WHERE institutionId = ?
       ORDER BY updatedAt DESC
       LIMIT 2000
     `).bind(institutionId).all<PolicyRegulationImpactRecord>(),
