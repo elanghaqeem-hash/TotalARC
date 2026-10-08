@@ -229,6 +229,22 @@ function classifyDocumentCluster(input: {
     };
   }
 
+  const explicitType =
+    canonicalDocumentType(input.explicitType) ||
+    canonicalDocumentType(input.category) ||
+    canonicalDocumentType(input.module);
+
+  // Explicit governance metadata wins over generic BPM/RCM/Form keywords,
+  // but never over strong workpaper/evidence signals above.
+  if (explicitType) {
+    return {
+      cluster: 'INTERNAL_RULE' as const,
+      documentType: explicitType,
+      confidence: 'HIGH' as const,
+      reason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
+    };
+  }
+
   const processPatterns = [
     /\bbusiness process mapping\b/,
     /\bprocess mapping\b/,
@@ -266,11 +282,6 @@ function classifyDocumentCluster(input: {
     };
   }
 
-  const explicitType =
-    canonicalDocumentType(input.explicitType) ||
-    canonicalDocumentType(input.category) ||
-    canonicalDocumentType(input.module);
-
   const haystack = normalize(
     [input.title, input.category || '', input.textPreview || ''].join(' ')
   ).slice(0, 16000);
@@ -290,15 +301,6 @@ function classifyDocumentCluster(input: {
     ['Standar', /\bstandar\b|\bstandard\b/, 'Standar internal terdeteksi pada judul/teks sumber.'],
     ['Ketentuan Internal', /\bketentuan\b|\baturan internal\b|\bperaturan internal\b|\brulebook\b/, 'Ketentuan/aturan internal terdeteksi pada judul/teks sumber.']
   ];
-
-  if (explicitType) {
-    return {
-      cluster: 'INTERNAL_RULE' as const,
-      documentType: explicitType,
-      confidence: 'HIGH' as const,
-      reason: 'Jenis ketentuan berasal dari metadata/kategori eksplisit pada database TotalARC.'
-    };
-  }
 
   for (const [documentType, pattern, reason] of rules) {
     if (pattern.test(haystack)) {
@@ -320,22 +322,6 @@ function classifyDocumentCluster(input: {
   };
 }
 
-function classifyInternalRule(input: {
-  title: string;
-  textPreview?: string | null;
-  category?: string | null;
-  module?: string | null;
-  explicitType?: string | null;
-}) {
-  const decision = classifyDocumentCluster(input);
-  if (decision.cluster !== 'INTERNAL_RULE' || !decision.documentType) return null;
-  return {
-    documentType: decision.documentType,
-    confidence: decision.confidence,
-    classificationReason: decision.reason
-  };
-
-}
 
 async function getDb() {
   await ensureCoreDomainSchema();
