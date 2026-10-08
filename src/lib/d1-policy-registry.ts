@@ -6,6 +6,7 @@ import { ensurePolicyLibrarySchema } from '@/lib/d1-policy-library';
 import { ensureRegulatoryObligationSchema } from '@/lib/d1-regulatory-obligations';
 import { ensureRcsaSchema } from '@/lib/d1-rcsa';
 import { ensureAssuranceSchema } from '@/lib/d1-assurance';
+import { ensurePolicyIntelligenceSchema } from '@/lib/d1-policy-intelligence';
 
 type Prepared = {
   bind: (...values: unknown[]) => Prepared;
@@ -344,6 +345,7 @@ async function getDb() {
   await ensureRegulatoryObligationSchema();
   await ensureRcsaSchema();
   await ensureAssuranceSchema();
+  await ensurePolicyIntelligenceSchema();
 
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as unknown as Record<string, unknown>).DB as D1DatabaseLike | undefined;
@@ -2003,6 +2005,19 @@ export async function syncPolicyRegistryFromDatabase(
         hashMap
       );
       if (candidate.contentHash) hashMap.set(candidate.contentHash, result.policyDocumentId);
+      await run(
+        db,
+        `UPDATE PolicyDocumentCluster
+            SET policyDocumentId=?,updatedAt=?
+          WHERE institutionId=? AND sourceType=? AND sourceId=?`,
+        [
+          result.policyDocumentId,
+          nowIso(),
+          institutionId,
+          candidate.sourceType,
+          candidate.sourceId
+        ]
+      );
       if (result.inserted) insertedPolicies += 1;
       if (result.mapped) mappedSources += 1;
     }
