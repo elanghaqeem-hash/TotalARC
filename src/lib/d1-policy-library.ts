@@ -539,6 +539,112 @@ export async function recordPolicyReview(
     .first<PolicyReviewRecord>();
 }
 
+export async function listPolicyLibraryOverview(institutionId: string) {
+  const db = await ensurePolicyLibrarySchema();
+
+  const [policyResult, policyMetrics, regulationMetrics, impactMetrics] = await Promise.all([
+    db.prepare(`
+      SELECT id, institutionId, sourceDocumentId, documentCode, documentType, title,
+             ownerUnit, ownerName, status, version, issueDate, effectiveDate,
+             lastReviewDate, nextReviewDate, reviewCycleMonths, expiryDate,
+             scope, summary, createdBy, createdAt, updatedAt
+      FROM PolicyDocument
+      WHERE institutionId = ?
+      ORDER BY updatedAt DESC
+      LIMIT 1000
+    `).bind(institutionId).all<PolicyDocumentRecord>(),
+    db.prepare(`
+      SELECT
+        COUNT(*) AS totalPolicies,
+        SUM(CASE WHEN status = 'Berlaku' THEN 1 ELSE 0 END) AS activePolicies,
+        SUM(CASE
+          WHEN nextReviewDate IS NOT NULL
+           AND date(nextReviewDate) >= date('now')
+           AND date(nextReviewDate) <= date('now', '+90 day')
+          THEN 1 ELSE 0 END) AS dueForReview,
+        SUM(CASE
+          WHEN nextReviewDate IS NOT NULL
+           AND date(nextReviewDate) < date('now')
+          THEN 1 ELSE 0 END) AS overdueReview
+      FROM PolicyDocument
+      WHERE institutionId = ?
+    `).bind(institutionId).first<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT COUNT(*) AS totalRegulations
+      FROM ExternalRegulationWatch
+      WHERE institutionId = ?
+    `).bind(institutionId).first<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT
+        SUM(CASE
+          WHEN changeRequired = 1 AND actionStatus != 'Selesai'
+          THEN 1 ELSE 0 END) AS openRegulatoryActions,
+        SUM(CASE
+          WHEN changeRequired = 1
+           AND actionStatus != 'Selesai'
+           AND impactLevel IN ('Tinggi','Kritis')
+          THEN 1 ELSE 0 END) AS highImpactOpen
+      FROM PolicyRegulationImpact
+      WHERE institutionId = ?
+    `).bind(institutionId).first<Record<string, unknown>>()
+  ]);
+
+  const policies = policyResult.results || [];
+  return {
+    metrics: {
+      totalPolicies: Number(policyMetrics?.totalPolicies || 0),
+      activePolicies: Number(policyMetrics?.activePolicies || 0),
+      dueForReview: Number(policyMetrics?.dueForReview || 0),
+      overdueReview: Number(policyMetrics?.overdueReview || 0),
+      totalRegulations: Number(regulationMetrics?.totalRegulations || 0),
+      openRegulatoryActions: Number(impactMetrics?.openRegulatoryActions || 0),
+      highImpactOpen: Number(impactMetrics?.highImpactOpen || 0)
+    },
+    policies,
+    regulations: [] as ExternalRegulationRecord[],
+    impacts: [] as PolicyRegulationImpactRecord[],
+    reviews: [] as PolicyReviewRecord[]
+  };
+}
+
+export async function listPolicyLibraryRegulatoryData(institutionId: string) {
+  const db = await ensurePolicyLibrarySchema();
+  const [regulationResult, impactResult, reviewResult] = await Promise.all([
+    db.prepare(`
+      SELECT id, institutionId, regulator, regulationCode, title, category,
+             issueDate, effectiveDate, sourceUrl, status, summary, createdBy,
+             createdAt, updatedAt
+      FROM ExternalRegulationWatch
+      WHERE institutionId = ?
+      ORDER BY COALESCE(issueDate, createdAt) DESC, updatedAt DESC
+      LIMIT 1000
+    `).bind(institutionId).all<ExternalRegulationRecord>(),
+    db.prepare(`
+      SELECT id, institutionId, policyDocumentId, regulationId, impactLevel,
+             changeRequired, impactSummary, actionOwner, dueDate, actionStatus,
+             completedAt, createdBy, createdAt, updatedAt
+      FROM PolicyRegulationImpact
+      WHERE institutionId = ?
+      ORDER BY updatedAt DESC
+      LIMIT 2000
+    `).bind(institutionId).all<PolicyRegulationImpactRecord>(),
+    db.prepare(`
+      SELECT id, institutionId, policyDocumentId, reviewDate, reviewerName,
+             outcome, notes, resultingVersion, nextReviewDate, createdAt
+      FROM PolicyReviewHistory
+      WHERE institutionId = ?
+      ORDER BY reviewDate DESC, createdAt DESC
+      LIMIT 1000
+    `).bind(institutionId).all<PolicyReviewRecord>()
+  ]);
+
+  return {
+    regulations: regulationResult.results || [],
+    impacts: impactResult.results || [],
+    reviews: reviewResult.results || []
+  };
+}
+
 export async function listPolicyLibraryDashboard(institutionId: string) {
   const db = await ensurePolicyLibrarySchema();
 
