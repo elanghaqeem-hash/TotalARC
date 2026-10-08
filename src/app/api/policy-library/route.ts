@@ -97,6 +97,7 @@ export async function GET(request: Request) {
           sourceModifiedAt: item.sourceModifiedAt,
           module: item.module,
           rawSizeBytes: item.rawSizeBytes,
+          textLength: item.textLength,
           importedAt: item.importedAt,
           updatedAt: item.updatedAt
         }))
