@@ -82,12 +82,13 @@ const CLUSTER_LABELS: Record<string, string> = {
 const RELATION_LABELS: Record<string, string> = {
   PARENT_OF: 'Induk dari',
   IMPLEMENTS: 'Mengimplementasikan',
+  REFERENCES: 'Merujuk',
   DERIVED_FROM: 'Turunan dari',
   SUPERSEDES: 'Menggantikan',
   AMENDS: 'Mengubah',
   REVOKES: 'Mencabut',
   RELATED_TO: 'Terkait dengan',
-  IMPACTS: 'Berdampak pada'
+  IMPACTED_BY: 'Terdampak oleh'
 };
 
 const HIERARCHY_LEVELS = [
