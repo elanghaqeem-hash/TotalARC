@@ -614,52 +614,33 @@ async function persistDocumentClusters(
 ) {
   const now = nowIso();
   for (const item of clusters) {
-    const existing = await first<{ id: string }>(
+    await run(
       db,
-      `SELECT id FROM PolicyDocumentCluster
-        WHERE institutionId=? AND sourceType=? AND sourceId=?
-        LIMIT 1`,
-      [institutionId, item.sourceType, item.sourceId]
+      `INSERT INTO PolicyDocumentCluster (
+        id,institutionId,sourceType,sourceId,sourceTitle,cluster,documentType,
+        confidence,reason,policyDocumentId,detectedAt,updatedAt
+      ) VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?)
+      ON CONFLICT(institutionId,sourceType,sourceId) DO UPDATE SET
+        sourceTitle=excluded.sourceTitle,
+        cluster=excluded.cluster,
+        documentType=excluded.documentType,
+        confidence=excluded.confidence,
+        reason=excluded.reason,
+        updatedAt=excluded.updatedAt`,
+      [
+        crypto.randomUUID(),
+        institutionId,
+        item.sourceType,
+        item.sourceId,
+        item.sourceTitle,
+        item.cluster,
+        item.documentType,
+        item.confidence,
+        item.reason,
+        now,
+        now
+      ]
     );
-    if (existing) {
-      await run(
-        db,
-        `UPDATE PolicyDocumentCluster
-            SET sourceTitle=?,cluster=?,documentType=?,confidence=?,reason=?,updatedAt=?
-          WHERE id=? AND institutionId=?`,
-        [
-          item.sourceTitle,
-          item.cluster,
-          item.documentType,
-          item.confidence,
-          item.reason,
-          now,
-          existing.id,
-          institutionId
-        ]
-      );
-    } else {
-      await run(
-        db,
-        `INSERT INTO PolicyDocumentCluster (
-          id,institutionId,sourceType,sourceId,sourceTitle,cluster,documentType,
-          confidence,reason,policyDocumentId,detectedAt,updatedAt
-        ) VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?)`,
-        [
-          crypto.randomUUID(),
-          institutionId,
-          item.sourceType,
-          item.sourceId,
-          item.sourceTitle,
-          item.cluster,
-          item.documentType,
-          item.confidence,
-          item.reason,
-          now,
-          now
-        ]
-      );
-    }
   }
 }
 
@@ -800,7 +781,7 @@ async function policyByNormalizedTitle(db: D1DatabaseLike, institutionId: string
     db,
     `SELECT id,title,documentType,sourceDocumentId
        FROM PolicyDocument
-      WHERE institutionId=?
+      WHERE institutionId=? AND status!='Bukan Ketentuan'
       LIMIT 5000`,
     [institutionId]
   );
@@ -827,7 +808,9 @@ async function mapExistingPolicySources(
        FROM PolicyDocument p
        JOIN SourceDocument s
          ON s.id=p.sourceDocumentId AND s.institutionId=p.institutionId
-      WHERE p.institutionId=? AND p.sourceDocumentId IS NOT NULL
+      WHERE p.institutionId=?
+        AND p.sourceDocumentId IS NOT NULL
+        AND p.status!='Bukan Ketentuan'
       LIMIT 5000`,
     [institutionId]
   );
