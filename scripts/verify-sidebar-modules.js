@@ -41,7 +41,8 @@ const moduleChecks = {
   '/certification': { page: 'src/app/certification/page.tsx', markers: ['/api/icofr/certification'] },
   '/calendar': { page: 'src/app/calendar/page.tsx', markers: ['useAssuranceData'] },
   '/tasks': { page: 'src/app/tasks/page.tsx', markers: ['useAssuranceData'] },
-  '/reports': { page: 'src/app/reports/page.tsx', markers: ['useAssuranceData'] }
+  '/reports': { page: 'src/app/reports/page.tsx', markers: ['useAssuranceData'] },
+  '/compliance': { page: 'src/app/compliance/page.tsx', markers: ['/api/compliance/dashboard'] }
 };
 
 function fail(message) {
