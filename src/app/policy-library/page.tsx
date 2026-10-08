@@ -258,6 +258,7 @@ export default function PolicyLibraryPage() {
   const [registryLoaded, setRegistryLoaded] = useState(false);
   const [registryError, setRegistryError] = useState('');
   const registryRequestRunning = useRef(false);
+  const registrySyncRequestRunning = useRef(false);
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [sourcesError, setSourcesError] = useState('');
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
@@ -489,6 +490,9 @@ export default function PolicyLibraryPage() {
   }, [load]);
 
   const syncRegistry = useCallback(async (automatic = false) => {
+    // A user click and deferred auto-sync must never start two full graph rebuilds.
+    if (registrySyncRequestRunning.current) return false;
+    registrySyncRequestRunning.current = true;
     setRegistrySyncing(true);
     if (!automatic) {
       setError('');
@@ -520,6 +524,7 @@ export default function PolicyLibraryPage() {
       }
       return false;
     } finally {
+      registrySyncRequestRunning.current = false;
       setRegistrySyncing(false);
     }
   }, [load, loadRegistry]);
@@ -531,7 +536,7 @@ export default function PolicyLibraryPage() {
     const requiresSync = Boolean(data?.registry?.syncRequired) || missing > 0;
     // Only rebuild a stale registry after visiting the relations tab (or on manual request).
     if (tab !== 'relations' || !registryLoaded || !data?.canManage ||
-        !requiresSync || registryAutoSyncAttempted.current) return;
+        !requiresSync || registrySyncing || registryAutoSyncAttempted.current) return;
 
     registryAutoSyncAttempted.current = true;
     const timer = window.setTimeout(() => {
@@ -541,6 +546,7 @@ export default function PolicyLibraryPage() {
   }, [
     tab,
     registryLoaded,
+    registrySyncing,
     data?.canManage,
     data?.registry?.syncRequired,
     data?.registry?.metrics.missingCandidates,
