@@ -149,15 +149,16 @@ export async function getComplianceDashboard(institutionId: string) {
       LIMIT 12
     `).bind(institutionId, today).all<CompliancePriority>(),
     db.prepare(`
-      SELECT COALESCE(NULLIF(TRIM(o.ownerName),''), '(Belum ditetapkan)') AS owner,
+      SELECT COALESCE(NULLIF(TRIM(u.name),''), NULLIF(TRIM(o.ownerName),''), '(Belum ditetapkan)') AS owner,
         COUNT(*) AS total,
         COALESCE(SUM(CASE WHEN o.complianceStatus IN ('PARTIAL','NON_COMPLIANT')
                      THEN 1 ELSE 0 END),0) AS gaps,
         COALESCE(SUM(CASE WHEN o.complianceStatus = 'NOT_ASSESSED'
                      THEN 1 ELSE 0 END),0) AS unassessed
       FROM RegulatoryObligation o
+      LEFT JOIN OrganizationUnit u ON u.id = o.ownerUnitId AND u.institutionId = o.institutionId
       WHERE o.institutionId = ? AND o.status = 'Active'
-      GROUP BY COALESCE(NULLIF(TRIM(o.ownerName),''), '(Belum ditetapkan)')
+      GROUP BY COALESCE(NULLIF(TRIM(u.name),''), NULLIF(TRIM(o.ownerName),''), '(Belum ditetapkan)')
       ORDER BY gaps DESC, unassessed DESC, total DESC, owner ASC
       LIMIT 8
     `).bind(institutionId).all<ComplianceOwnerBreakdown>()
