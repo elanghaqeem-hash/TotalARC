@@ -89,9 +89,9 @@ const db = {
   }
 };
 
-const exports = {};
+const moduleExports = {};
 vm.runInNewContext(compile, {
-  exports,
+  exports: moduleExports,
   require: moduleName => {
     assert.equal(moduleName, '@/lib/d1-regulatory-obligations');
     return { ensureRegulatoryObligationSchema: async () => db };
@@ -101,7 +101,7 @@ vm.runInNewContext(compile, {
 
 (async () => {
   nextTenant = 'bank-A'; index = 0; calls.length = 0;
-  const a = await exports.getComplianceDashboard('bank-A');
+  const a = await moduleExports.getComplianceDashboard('bank-A');
   assert.equal(a.metrics.activeObligations, 2);
   assert.equal(a.metrics.draftObligations, 1);
   assert.equal(a.metrics.complianceRate, 50);
@@ -113,7 +113,7 @@ vm.runInNewContext(compile, {
   assert.equal(calls.filter(c => c.args.includes('bank-B')).length, 0);
 
   nextTenant = 'bank-B'; index = 0; calls.length = 0;
-  const b = await exports.getComplianceDashboard('bank-B');
+  const b = await moduleExports.getComplianceDashboard('bank-B');
   assert.equal(b.metrics.activeObligations, 0);
   assert.equal(b.metrics.complianceRate, null, 'no scope must never imply 100% or 0% compliance');
   assert.equal(b.metrics.mappingRate, null);
