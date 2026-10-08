@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import { PolicyIntelligenceWorkspace } from '@/components/policy/PolicyIntelligenceWorkspace';
 import { RegulatoryObligationWorkspace } from '@/components/policy/RegulatoryObligationWorkspace';
 import { RegulatoryClauseWorkspace } from '@/components/policy/RegulatoryClauseWorkspace';
+import { PolicyHierarchyWorkspace } from '@/components/policy/PolicyHierarchyWorkspace';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -17,6 +18,7 @@ import {
   FileCheck2,
   FileText,
   Link2,
+  Layers3,
   Loader2,
   Network,
   Plus,
@@ -163,7 +165,7 @@ type Dashboard = {
   registry: Registry | null;
 };
 
-type TabKey = 'library' | 'relations' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
+type TabKey = 'library' | 'relations' | 'structure' | 'regulations' | 'impacts' | 'intelligence' | 'clauses' | 'obligations' | 'uploads';
 
 const DOCUMENT_TYPES = [
   'Kebijakan',
@@ -1089,6 +1091,7 @@ export default function PolicyLibraryPage() {
             {[
               ['library', 'Library Ketentuan', FileText],
               ['relations', 'Relasi TotalARC', Network],
+              ['structure', 'Hierarki & Cluster', Layers3],
               ['regulations', 'Regulatory Watch', ShieldAlert],
               ['impacts', 'Impact & Action', Link2],
               ['intelligence', 'Regulatory Intelligence', ShieldAlert],
@@ -1343,6 +1346,14 @@ export default function PolicyLibraryPage() {
               )}
             </div>
           </div>
+        )}
+
+        {tab === 'structure' && data && (
+          <PolicyHierarchyWorkspace
+            policies={data.policies}
+            canManage={Boolean(data.canManage)}
+            onChanged={load}
+          />
         )}
 
         {tab === 'regulations' && (
