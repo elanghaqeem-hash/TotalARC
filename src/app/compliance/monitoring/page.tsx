@@ -247,7 +247,7 @@ export default function ComplianceMonitoringPage() {
                 </>}
                 {plan?.status==='REJECTED' && <button type="button" disabled={busy} className={secondary} onClick={()=>void mutate({action:'REVISE',planId:plan.id})}>Kembalikan ke draft</button>}
                 {plan?.status==='APPROVED' && <button type="button" disabled={busy} className={primary} onClick={()=>void mutate({action:'START',planId:plan.id})}>Mulai pelaksanaan</button>}
-                {plan?.status==='IN_PROGRESS' && <button type="button" disabled={busy||detail.activities.some(a=>a.status!=='DONE')} className={primary} onClick={()=>void mutate({action:'COMPLETE',planId:plan.id})}>Tutup rencana</button>}
+                {plan?.status==='IN_PROGRESS' && <button type="button" disabled={busy||detail.activities.some(a=>a.status!=='DONE'&&a.status!=='CANCELLED')} className={primary} onClick={()=>void mutate({action:'COMPLETE',planId:plan.id})}>Tutup rencana</button>}
               </div>
               {plan?.status==='SUBMITTED' && <label className="block text-xs text-slate-600">Catatan keputusan / alasan penolakan
                 <textarea className={field} rows={2} maxLength={1500} value={note} onChange={e=>setNote(e.target.value)}/>
