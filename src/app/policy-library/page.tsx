@@ -230,6 +230,23 @@ function statusPill(value: string) {
   return 'bg-slate-100 text-slate-700';
 }
 
+async function fetchPolicyLibraryBundle(mode: 'sources' | 'regulatory') {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch('/api/policy-library?mode=' + mode, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Data ' + mode + ' gagal dimuat.');
+    return payload;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export default function PolicyLibraryPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [tab, setTab] = useState<TabKey>('library');
@@ -242,8 +259,10 @@ export default function PolicyLibraryPage() {
   const [registryError, setRegistryError] = useState('');
   const registryRequestRunning = useRef(false);
   const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [sourcesError, setSourcesError] = useState('');
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [regulatoryLoading, setRegulatoryLoading] = useState(false);
+  const [regulatoryError, setRegulatoryError] = useState('');
   const [regulatoryLoaded, setRegulatoryLoaded] = useState(false);
   const uploadedSourcesRef = useRef<UploadedSource[]>([]);
   const regulatoryDataRef = useRef<{
@@ -347,19 +366,16 @@ export default function PolicyLibraryPage() {
   const loadSources = useCallback(async () => {
     if (sourcesLoading) return;
     setSourcesLoading(true);
+    setSourcesError('');
     try {
-      const response = await fetch('/api/policy-library?mode=sources', {
-        credentials: 'same-origin',
-        cache: 'no-store'
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Daftar file sumber gagal dimuat.');
+      const payload = await fetchPolicyLibraryBundle('sources');
       const next = Array.isArray(payload.uploadedSources) ? payload.uploadedSources : [];
       uploadedSourcesRef.current = next;
       setData(current => current ? { ...current, uploadedSources: next } : current);
       setSourcesLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Daftar file sumber gagal dimuat.');
+      setSourcesError(err instanceof DOMException && err.name === 'AbortError'
+        ? 'Daftar file sumber melewati batas 15 detik.' : err instanceof Error ? err.message : 'Daftar file sumber gagal dimuat.');
     } finally {
       setSourcesLoading(false);
     }
@@ -413,13 +429,9 @@ export default function PolicyLibraryPage() {
   const loadRegulatory = useCallback(async () => {
     if (regulatoryLoading) return;
     setRegulatoryLoading(true);
+    setRegulatoryError('');
     try {
-      const response = await fetch('/api/policy-library?mode=regulatory', {
-        credentials: 'same-origin',
-        cache: 'no-store'
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Data Regulatory Watch gagal dimuat.');
+      const payload = await fetchPolicyLibraryBundle('regulatory');
       const next = {
         regulations: Array.isArray(payload.regulations) ? payload.regulations : [],
         impacts: Array.isArray(payload.impacts) ? payload.impacts : [],
@@ -429,25 +441,27 @@ export default function PolicyLibraryPage() {
       setData(current => current ? { ...current, ...next } : current);
       setRegulatoryLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Data Regulatory Watch gagal dimuat.');
+      setRegulatoryError(err instanceof DOMException && err.name === 'AbortError'
+        ? 'Data Regulatory Watch melewati batas 15 detik.' : err instanceof Error ? err.message : 'Data Regulatory Watch gagal dimuat.');
     } finally {
       setRegulatoryLoading(false);
     }
   }, [regulatoryLoading]);
 
   useEffect(() => {
-    if (tab !== 'uploads' || sourcesLoaded || sourcesLoading) return;
+    if (tab !== 'uploads' || sourcesLoaded || sourcesLoading || sourcesError) return;
     void loadSources();
-  }, [tab, sourcesLoaded, sourcesLoading, loadSources]);
+  }, [tab, sourcesLoaded, sourcesLoading, sourcesError, loadSources]);
 
   useEffect(() => {
     if (
       !['regulations', 'impacts', 'intelligence'].includes(tab) ||
       regulatoryLoaded ||
-      regulatoryLoading
+      regulatoryLoading ||
+      regulatoryError
     ) return;
     void loadRegulatory();
-  }, [tab, regulatoryLoaded, regulatoryLoading, loadRegulatory]);
+  }, [tab, regulatoryLoaded, regulatoryLoading, regulatoryError, loadRegulatory]);
 
   const postAction = useCallback(async (body: Record<string, unknown>) => {
     setSaving(true);
@@ -1037,6 +1051,25 @@ export default function PolicyLibraryPage() {
         </div>
       )}
 
+      {((tab === 'uploads' && (sourcesError || sourcesLoading)) ||
+        (['regulations', 'impacts', 'intelligence'].includes(tab) && (regulatoryError || regulatoryLoading))) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm" role="status">
+          <span className="text-slate-700">
+            {tab === 'uploads'
+              ? sourcesError || 'Memuat file sumber secara terpisah...'
+              : regulatoryError || 'Memuat data regulasi secara terpisah...'}
+          </span>
+          {tab === 'uploads' && sourcesError && (
+            <button type="button" className="rounded-lg bg-slate-900 px-3 py-2 font-semibold text-white"
+              onClick={() => void loadSources()}>Coba Lagi</button>
+          )}
+          {tab !== 'uploads' && regulatoryError && (
+            <button type="button" className="rounded-lg bg-slate-900 px-3 py-2 font-semibold text-white"
+              onClick={() => void loadRegulatory()}>Coba Lagi</button>
+          )}
+        </div>
+      )}
+
       <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between md:p-5">
           <div className="flex flex-wrap gap-2">
@@ -1370,7 +1403,7 @@ export default function PolicyLibraryPage() {
                       </td>
                     </tr>
                   ))}
-                  {filteredRegulations.length === 0 && (
+                  {regulatoryLoaded && filteredRegulations.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-5 py-14 text-center">
                         <ShieldAlert className="mx-auto h-8 w-8 text-slate-300" />
@@ -1468,7 +1501,7 @@ export default function PolicyLibraryPage() {
                   </article>
                 );
               })}
-              {(data?.impacts || []).length === 0 && (
+              {regulatoryLoaded && (data?.impacts || []).length === 0 && (
                 <div className="py-12 text-center">
                   <Link2 className="mx-auto h-8 w-8 text-slate-300" />
                   <div className="mt-3 font-bold text-slate-700">Belum ada mapping dampak regulasi.</div>
