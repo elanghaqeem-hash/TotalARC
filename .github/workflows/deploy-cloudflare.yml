@@ -655,6 +655,19 @@ jobs:
           echo "- Counter lookup: indexed SEARCH verified" >> "$GITHUB_STEP_SUMMARY"
           echo "- AuthEvent rate-limit scan: removed from login hot path" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify Stage 3 CRA production D1 and session boundary
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          TOTALARC_PRODUCTION_URL: https://totalarc.elang-haqeem.workers.dev
+        run: |
+          set -euo pipefail
+          node scripts/verify-cra-production.cjs
+          echo "### Compliance Risk Assessment (Stage 3)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Production D1 schema: PASS (additive-only)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Reassessment lineage: PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Anonymous GET/POST: session boundary enforced" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify AI runtime and provider connectivity
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
