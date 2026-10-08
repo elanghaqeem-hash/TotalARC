@@ -4,7 +4,8 @@ import { listEffectiveSourceDocuments } from '@/lib/d1-source-library';
 import {
   createExternalRegulation,
   createPolicyDocument,
-  listPolicyLibraryDashboard,
+  listPolicyLibraryOverview,
+  listPolicyLibraryRegulatoryData,
   recordPolicyReview,
   upsertPolicyRegulationImpact
 } from '@/lib/d1-policy-library';
@@ -102,9 +103,18 @@ export async function GET(request: Request) {
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
+    if (mode === 'regulatory') {
+      const regulatory = await listPolicyLibraryRegulatoryData(context.institution.id);
+      return NextResponse.json({
+        institutionId: context.institution.id,
+        canManage: context.canManage,
+        ...regulatory
+      }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
     const [registry, dashboard] = await Promise.all([
       getPolicyRegistrySummary(context.institution.id),
-      listPolicyLibraryDashboard(context.institution.id)
+      listPolicyLibraryOverview(context.institution.id)
     ]);
 
     return NextResponse.json({
