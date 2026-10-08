@@ -62,6 +62,8 @@ export async function POST(request:Request){
     const b=JSON.parse(raw) as Record<string,unknown>;
     if(!b||typeof b!=='object'||Array.isArray(b))throw new Error('CRA_INVALID_INPUT');
     const action=String(b.action||'').toUpperCase();
+    if(action==='REASSESS' && (typeof b.reassessmentOfId!=='string' || !b.reassessmentOfId.trim()))
+      throw new Error('CRA_INVALID_INPUT');
     if((action==='CREATE'||action==='SAVE'||action==='REASSESS')&&a.mayEdit){
       const input:RiskInput={
         obligationId:String(b.obligationId||''),processId:String(b.processId||''),
