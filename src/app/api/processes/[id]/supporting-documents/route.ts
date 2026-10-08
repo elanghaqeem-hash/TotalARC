@@ -472,6 +472,7 @@ export async function POST(request: Request, routeContext: RouteContext) {
       DOCUMENT_CONVERTER_UNAVAILABLE: ['Document conversion is temporarily unavailable.', 503],
       DOCUMENT_CONVERSION_FAILED: ['The document could not be converted to readable text.', 422],
       DOCUMENT_TEXT_EMPTY: ['No readable text or process information could be extracted from this file.', 422],
+      DOCUMENT_SOURCE_TOO_LARGE_FOR_COMPLETE_ANALYSIS: ['Isi dokumen terlalu besar untuk analisis lengkap dalam satu unggahan. Pisahkan dokumen agar tidak ada bagian yang diabaikan.', 422],
       DOCX_INVALID_ZIP: ['The DOCX file is not a valid Word package.', 422],
       DOCX_TEXT_NOT_FOUND: ['No readable text was found in the DOCX file.', 422],
       PPTX_INVALID_ZIP: ['The PPTX file is not a valid PowerPoint package.', 422],
