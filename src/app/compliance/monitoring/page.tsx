@@ -30,7 +30,7 @@ const emptyDraft:Draft = {code:'',title:'',year:yearNow,period:'TAHUNAN',quarter
 const statusText:Record<string,string> = {
   DRAFT:'Draft',SUBMITTED:'Menunggu persetujuan',APPROVED:'Disetujui',
   REJECTED:'Perlu revisi',IN_PROGRESS:'Sedang dilaksanakan',COMPLETED:'Selesai',
-  PLANNED:'Direncanakan',DONE:'Aktivitas selesai'
+  PLANNED:'Direncanakan',DONE:'Aktivitas selesai',CANCELLED:'Dibatalkan'
 };
 const field = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100';
 const primary = 'rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50';
@@ -61,6 +61,7 @@ export default function ComplianceMonitoringPage() {
   const [detail,setDetail] = useState<Detail|null>(null);
   const [options,setOptions] = useState<Options|null>(null);
   const [showCreate,setShowCreate] = useState(false);
+  const [editingId,setEditingId] = useState('');
   const [showActivity,setShowActivity] = useState(false);
   const [draft,setDraft] = useState<Draft>(emptyDraft);
   const [item,setItem] = useState({obligationId:'',processId:'',ownerUnitId:'',description:'',scheduledDate:''});
@@ -128,7 +129,7 @@ export default function ComplianceMonitoringPage() {
             </p>
           </div>
           {canManage && <button className={primary} type="button" onClick={async()=>{
-            setError('');setShowCreate(true);try{await loadOptions();}catch(e){setError(e instanceof Error?e.message:'Referensi tidak tersedia.');}
+            setError('');setEditingId('');setDraft(emptyDraft);setShowCreate(true);try{await loadOptions();}catch(e){setError(e instanceof Error?e.message:'Referensi tidak tersedia.');}
           }}><Plus className="mr-2 inline h-4 w-4" /> Buat rencana</button>}
         </div>
       </header>
@@ -136,10 +137,10 @@ export default function ComplianceMonitoringPage() {
       {message && <div role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">{message}</div>}
 
       {showCreate && canManage && (
-        <form onSubmit={e=>{e.preventDefault();void mutate({action:'CREATE',...draft},()=>{setShowCreate(false);setDraft(emptyDraft);});}}
+        <form onSubmit={e=>{e.preventDefault();void mutate({action:editingId ? 'UPDATE_DRAFT':'CREATE',planId:editingId,...draft},()=>{setShowCreate(false);setEditingId('');setDraft(emptyDraft);});}}
           className="space-y-4 rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-slate-900">Rencana baru · Draft</h2>
+            <h2 className="text-lg font-bold text-slate-900">{editingId ? 'Ubah rincian draft' : 'Rencana baru · Draft'}</h2>
             <button type="button" className={secondary} onClick={()=>setShowCreate(false)}>Tutup</button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -229,8 +230,17 @@ export default function ComplianceMonitoringPage() {
             {plan?.reviewNote && <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Catatan reviewer: {plan.reviewNote}</p>}
             {canManage && <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
               <div className="flex flex-wrap gap-2">
+                {canEdit && <button type="button" disabled={busy} className={secondary} onClick={async()=>{
+                  if (!plan) return;
+                  setEditingId(plan.id);
+                  setDraft({code:plan.code,title:plan.title,year:plan.year,period:plan.period,
+                    quarter:plan.quarter || 1,objective:plan.objective,scope:plan.scope,
+                    ownerUnitId:plan.ownerUnitId,startDate:plan.startDate,endDate:plan.endDate});
+                  setShowCreate(true);try {await loadOptions();}
+                  catch(e) {setError(e instanceof Error ? e.message : 'Referensi tidak dapat dimuat.');}
+                }}>Ubah rincian</button>}
                 {canEdit && <button type="button" disabled={busy} className={secondary} onClick={async()=>{setShowActivity(!showActivity);if(!options)try{await loadOptions();}catch(e){setError(e instanceof Error?e.message:'Referensi gagal dimuat.');}}}><Plus className="mr-1 inline h-4 w-4"/>Tambah aktivitas</button>}
-                {plan?.status==='DRAFT' && <button type="button" disabled={busy||detail.activities.length===0} className={primary} onClick={()=>void mutate({action:'SUBMIT',planId:plan.id})}>Ajukan persetujuan</button>}
+                {plan?.status==='DRAFT' && <button type="button" disabled={busy||!detail.activities.some(a=>a.status!=='CANCELLED')} className={primary} onClick={()=>void mutate({action:'SUBMIT',planId:plan.id})}>Ajukan persetujuan</button>}
                 {plan?.status==='SUBMITTED' && <>
                   <button type="button" disabled={busy} className={primary} onClick={()=>void mutate({action:'APPROVE',planId:plan.id,note})}>Setujui</button>
                   <button type="button" disabled={busy||!note.trim()} className={secondary} onClick={()=>void mutate({action:'REJECT',planId:plan.id,note})}>Tolak</button>
@@ -283,7 +293,7 @@ export default function ComplianceMonitoringPage() {
             </h3>
             {detail.activities.length===0 ? <p className="py-5 text-sm text-slate-500">Belum ada aktivitas. Tambahkan kewajiban yang akan dipantau sebelum mengajukan persetujuan.</p> :
               <div className="divide-y divide-slate-100">
-                {detail.activities.map(a=><article className="py-4" key={a.id}>
+                {detail.activities.map(a=><article className={'py-4 '+(a.status==='CANCELLED'?'opacity-60':'')} key={a.id}>
                   <div className="flex flex-wrap justify-between gap-2">
                     <span className="text-xs font-bold text-sky-800">{a.obligationCode} · {a.criticality}</span>
                     <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{statusText[a.status]||a.status}</span>
@@ -293,6 +303,8 @@ export default function ComplianceMonitoringPage() {
                     {a.processCode ? ' · BPM '+a.processCode : ''}
                   </p>
                   {a.outcomeNote && <p className="mt-2 text-xs text-slate-600">Catatan realisasi: {a.outcomeNote}</p>}
+                  {canEdit && a.status==='PLANNED' && <button type="button" className="mt-2 text-xs font-semibold text-rose-700 hover:underline" disabled={busy}
+                    onClick={()=>void mutate({action:'CANCEL_ACTIVITY',activityId:a.id})}>Batalkan aktivitas draft</button>}
                   {canManage && plan?.status==='IN_PROGRESS' && a.status!=='DONE' && <div className="mt-3 space-y-2 rounded-xl bg-slate-50 p-3">
                     {a.status==='PLANNED' && <button className={secondary} disabled={busy} onClick={()=>void mutate({action:'PROGRESS_ACTIVITY',activityId:a.id,status:'IN_PROGRESS'})}>Mulai aktivitas</button>}
                     <div className="grid gap-2 sm:grid-cols-2">
