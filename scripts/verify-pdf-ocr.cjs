@@ -23,8 +23,8 @@ for (const value of [
   JSON.stringify({ ...input, pages: 301 }),
   JSON.stringify({ ...input, ocrPages: 2 }),
   JSON.stringify({ ...input, text: 'a'.repeat(90001) }),
-  JSON.stringify({ ...input, chunks: Array.from({ length: 17 }, () => 'x') }),
-  JSON.stringify({ ...input, chunks: ['a'.repeat(85001)] })
+  JSON.stringify({ ...input, chunks: Array.from({ length: 25 }, () => 'x') }),
+  JSON.stringify({ ...input, chunks: ['a'.repeat(50001)] })
 ]) {
   assert.throws(() => read(value, 'a.pdf'), /PDF_TEXT_INVALID/);
 }
