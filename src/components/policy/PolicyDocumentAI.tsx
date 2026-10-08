@@ -15,6 +15,7 @@ const labels: Record<string, string> = {
   issueDate: 'Tanggal terbit',
   effectiveDate: 'Tanggal berlaku',
   nextReviewDate: 'Jadwal review',
+  reviewCycleMonths: 'Siklus review (bulan)',
   scope: 'Cakupan',
   summary: 'Ringkasan',
   regulator: 'Regulator',
