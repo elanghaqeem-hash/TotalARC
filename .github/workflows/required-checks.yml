@@ -183,6 +183,7 @@ jobs:
       - run: npm run verify:policy-registry
       - run: npm run verify:compliance-dashboard
       - run: npm run verify:compliance-monitoring
+      - run: npm run verify:compliance-risk-testing
 
   vercel-build:
     name: Vercel Build

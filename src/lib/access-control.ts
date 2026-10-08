@@ -155,6 +155,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
   ],
   Tester: [
     ...COMMON_READ,
+    { path: '/compliance/testing' },
     { path: '/controls' },
     { path: '/rcm' },
     { path: '/evidence' },
@@ -168,6 +169,7 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
   ],
   Reviewer: [
     ...COMMON_READ,
+    { path: '/compliance/testing' },
     { path: '/processes' },
     { path: '/risks' },
     { path: '/controls' },
@@ -247,6 +249,8 @@ const API_PAGE_MAP: Array<{ api: string; page: string }> = [
   { api: '/api/policy-library', page: '/policy-library' },
   { api: '/api/compliance/dashboard', page: '/compliance' },
   { api: '/api/compliance/monitoring', page: '/compliance/monitoring' },
+  { api: '/api/compliance/risk-assessment', page: '/compliance/risk-assessment' },
+  { api: '/api/compliance/testing', page: '/compliance/testing' },
   { api: '/api/assure/toe', page: '/toe' },
   { api: '/api/assure/remediation', page: '/remediation' },
   { api: '/api/monitor/ccm', page: '/ccm' },
@@ -296,6 +300,16 @@ export function canAccessApi(role: UserRole, pathname: string, method: string) {
     const readers = ['Admin', 'ComplianceOfficer', 'RiskManager', 'InternalAuditor', 'Executive', 'ReadOnlyAuditor'];
     if (!readers.includes(role)) return false;
     return isReadOnlyMethod(method) || role === 'Admin' || role === 'ComplianceOfficer';
+  }
+  if (pathname.startsWith('/api/compliance/risk-assessment')) {
+    const readers=['Admin','ComplianceOfficer','RiskManager','InternalAuditor','Executive','ReadOnlyAuditor'];
+    if(!readers.includes(role))return false;
+    return isReadOnlyMethod(method)||role==='Admin'||role==='ComplianceOfficer';
+  }
+  if (pathname.startsWith('/api/compliance/testing')) {
+    const readers=['Admin','ComplianceOfficer','RiskManager','InternalAuditor','Tester','Reviewer','Executive','ReadOnlyAuditor'];
+    if(!readers.includes(role))return false;
+    return isReadOnlyMethod(method)||['Admin','ComplianceOfficer','InternalAuditor','Tester','Reviewer'].includes(role);
   }
   if (pathname === '/api/assurance') {
     if (isReadOnlyMethod(method)) {
