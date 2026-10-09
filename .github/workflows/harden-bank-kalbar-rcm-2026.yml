@@ -1,13 +1,8 @@
 name: Harden Bank Kalbar RCM 2026
 
+# Data-mutating source promotion is an explicit operation, not a side effect
+# of code-only changes or routine production integrity deployments.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/harden-bank-kalbar-rcm-2026.py'
-      - 'src/lib/d1-core.ts'
-      - 'src/app/api/rcm/route.ts'
-      - '.github/workflows/harden-bank-kalbar-rcm-2026.yml'
   workflow_dispatch:
 
 permissions:
