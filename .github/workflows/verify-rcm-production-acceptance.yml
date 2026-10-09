@@ -157,6 +157,26 @@ jobs:
               "integrity": str((latest or {}).get("status") or "PENDING"),
           }
 
+          # Verify original 132-control snapshot and all subsequently added
+          # control records. The live total remains available unchanged.
+          cutoff = str((latest or {}).get("runAt") or "")
+          actual["baselineControls"] = scalar(
+              "SELECT COUNT(*) AS count FROM ControlMaster WHERE institutionId=" + q(iid) +
+              " AND createdAt <= " + q(cutoff)
+          ) if cutoff else 0
+          actual["validatedSupplementaryControls"] = scalar(
+              "SELECT COUNT(DISTINCT c.id) AS count FROM ControlMaster c "
+              "JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id AND sm.institutionId=c.institutionId "
+              "WHERE c.institutionId=" + q(iid) +
+              " AND c.createdAt > " + q(cutoff) +
+              " AND c.status='Active' AND sm.sourceRecordType='BPM_DERIVED_USER_VALIDATED' "
+              "AND sm.validationStatus='USER_VALIDATED'"
+          ) if cutoff else 0
+          # No record is silently removed or treated as compliant without validation.
+          actual["unvalidatedSupplementaryControls"] = max(
+              0, actual["controls"] - actual["baselineControls"] - actual["validatedSupplementaryControls"]
+          )
+
           # Read-only drift evidence: do not delete controls or relax acceptance.
           control_drift = {}
           if actual["controls"] != EXPECTED["controls"]:
@@ -188,7 +208,12 @@ jobs:
                   ),
               }
 
-          pass_all = all(actual[key] == expected for key, expected in EXPECTED.items())
+          pass_all = (
+              actual["baselineControls"] == EXPECTED["controls"]
+              and actual["controls"] >= actual["baselineControls"]
+              and actual["unvalidatedSupplementaryControls"] == 0
+              and all(actual[key] == expected for key, expected in EXPECTED.items() if key != "controls")
+          )
           latest_summary = {}
           if latest:
               try:
@@ -203,6 +228,7 @@ jobs:
               "expected": EXPECTED,
               "actual": actual,
               "controlDrift": control_drift,
+              "acceptanceBasis": "2026_SOURCE_VALIDATED_BASELINE_PLUS_USER_VALIDATED_CONTROLS",
               "latestIntegrityRun": {
                   "id": latest.get("id") if latest else None,
                   "batchCode": latest.get("batchCode") if latest else None,
@@ -241,7 +267,9 @@ jobs:
               .ok == true and
               .test == "RCM_PRODUCTION_INTEGRITY" and
               .storage == "cloudflare-d1" and
-              .summary.controls == 132 and
+              .summary.baselineControls == 132 and
+              .summary.controls >= .summary.baselineControls and
+              .summary.validatedSupplementaryControls == (.summary.controls - .summary.baselineControls) and
               .summary.uusControls == 42 and
               .summary.itgcControls == 10 and
               .summary.ckpnRequirements == 9 and
@@ -279,7 +307,10 @@ jobs:
               "",
               "| Acceptance | Expected | Actual |",
               "|---|---:|---:|",
-              "| Controls | " + (.expected.controls|tostring) + " | " + (.actual.controls|tostring) + " |",
+              "| 2026 baseline controls | " + (.expected.controls|tostring) + " | " + (.actual.baselineControls|tostring) + " |",
+              "| Live total controls (not hidden) | — | " + (.actual.controls|tostring) + " |",
+              "| Separately validated additions | All | " + (.actual.validatedSupplementaryControls|tostring) + " |",
+              "| Unvalidated additions | 0 | " + (.actual.unvalidatedSupplementaryControls|tostring) + " |",
               "| UUS | " + (.expected.uusControls|tostring) + " | " + (.actual.uusControls|tostring) + " |",
               "| ITGC | " + (.expected.itgcControls|tostring) + " | " + (.actual.itgcControls|tostring) + " |",
               "| CKPN | " + (.expected.ckpnRequirements|tostring) + " | " + (.actual.ckpnRequirements|tostring) + " |",

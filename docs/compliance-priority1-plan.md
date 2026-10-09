@@ -42,3 +42,9 @@ Monitoring plans, specific regulatory submission receipts, compliance testing an
 - Testing requires a control mapped to the active obligation, real workprogram, population/sampling basis, versioned evidence, complete ToE sample assessments, explicit findings for exceptions, and independent reviewer. The same person cannot prepare and approve their own workpaper.
 - Re-test is a new workpaper referring to an approved prior test; existing workpapers and MAP status are not overwritten. Results must not automatically update Compliance Universe assessments or ICOFR ToD/ToE.
 - Option lists are bounded (up to 500 records per category); this is not exhaustive for tenants with larger registers.
+
+## Production RCM acceptance: frozen baseline vs live validated additions (2026-10-09)
+
+The prior source-validated RCM integrity run on 2026-10-04 certified exactly **132 Bank Kalbar controls**. On 2026-10-06 a new **Active** control (`BPM-CTL-DPK-SP-78B6FD1-01`) was explicitly user-validated with metadata `BPM_DERIVED_USER_VALIDATED`/`USER_VALIDATED`, so the live total is **133**, with no duplicate control IDs or missing source metadata. Removing it to force 132 would destroy legitimate operational data.
+
+Production acceptance therefore checks: 132 controls created at/before the certified run timestamp; all supplementary controls created thereafter are individually source- and user-validated; baseline UUS=42, ITGC=10, CKPN=9, Reverse Repo=1, ELC draft references=63 and recorded integrity=PASS. The production API and audit output **must continue to disclose live count 133 and baseline count 132 separately**. Unvalidated additions, a reduced/mutated baseline, missing source metadata or other chain failures still fail the gate. This is not a blanket widening of the acceptance criterion.

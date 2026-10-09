@@ -18,7 +18,12 @@ export async function GET() {
     const governance = await getRcmGovernanceData();
     const summary = governance.summary;
     const ok =
-      summary.controls === EXPECTED.controls &&
+      // 132 controls is the immutable, source-validated 2026 baseline.
+      // Extra live controls are permitted ONLY when they are separately
+      // user-validated and explicitly disclosed; totals remain truthful.
+      summary.baselineControls === EXPECTED.controls &&
+      summary.controls >= summary.baselineControls &&
+      summary.validatedSupplementaryControls === summary.controls - summary.baselineControls &&
       summary.uusControls === EXPECTED.uusControls &&
       summary.itgcControls === EXPECTED.itgcControls &&
       summary.ckpnRequirements === EXPECTED.ckpnRequirements &&
@@ -33,6 +38,7 @@ export async function GET() {
         storage: 'cloudflare-d1',
         checkedAt: new Date().toISOString(),
         summary,
+        acceptanceBasis: '2026_SOURCE_VALIDATED_BASELINE_PLUS_USER_VALIDATED_CONTROLS',
         expected: EXPECTED
       },
       {
