@@ -48,6 +48,7 @@
     "verify:compliance-monitoring": "node scripts/verify-compliance-monitoring.cjs",
     "verify:compliance-risk-testing": "node scripts/verify-compliance-risk-testing.cjs",
     "verify:compliance-risk-reassessment": "node scripts/verify-compliance-risk-reassessment.cjs",
+    "verify:assurance-review-migration": "node scripts/verify-assurance-review-migration.cjs",
     "verify:focused": "node scripts/verify-focused-changes.cjs"
   },
   "keywords": [],

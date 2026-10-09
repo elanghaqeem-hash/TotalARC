@@ -169,7 +169,19 @@ jobs:
                       "WHERE sm.controlId=c.id AND sm.institutionId=c.institutionId) "
                       "ORDER BY c.id LIMIT 50"
                   ),
-                  "duplicateControlCodes": rows(
+                  "baselineBatchChangedControls": rows(
+                  "SELECT c.controlId,c.status,sm.sourceRecordType,sm.validationStatus,"
+                  "c.createdAt,c.updatedAt FROM ControlMaster c "
+                  "JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id AND sm.institutionId=c.institutionId "
+                  "WHERE c.institutionId=" + q(iid) +
+                  (" AND c.createdAt > " + q(str(latest.get('runAt'))) if latest and latest.get('runAt') else "") +
+                  " ORDER BY c.createdAt DESC LIMIT 20"
+              ),
+              "controlsByLifecycleStatus": rows(
+                  "SELECT status,COUNT(*) AS count FROM ControlMaster WHERE institutionId=" + q(iid) +
+                  " GROUP BY status ORDER BY status"
+              ),
+              "duplicateControlCodes": rows(
                       "SELECT controlId,COUNT(*) AS count FROM ControlMaster "
                       "WHERE institutionId=" + q(iid) +
                       " GROUP BY controlId HAVING COUNT(*)>1 ORDER BY controlId LIMIT 50"
