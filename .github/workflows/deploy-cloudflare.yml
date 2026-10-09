@@ -315,6 +315,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
         run: python scripts/backfill-process-objectives.py
 
+      - name: Repair legacy assurance columns on pinned production D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: python scripts/migrate-assurance-schema.py
+
       - name: Validate Workers AI account inference
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -654,6 +660,19 @@ jobs:
           echo "- Rate-limit storage: AuthLoginRateLimit counter table" >> "$GITHUB_STEP_SUMMARY"
           echo "- Counter lookup: indexed SEARCH verified" >> "$GITHUB_STEP_SUMMARY"
           echo "- AuthEvent rate-limit scan: removed from login hot path" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify Stage 2 Compliance Monitoring production gate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          TOTALARC_PRODUCTION_URL: ${{ vars.TOTALARC_PRODUCTION_URL || 'https://totalarc.elang-haqeem.workers.dev' }}
+        run: |
+          set -euo pipefail
+          node scripts/verify-stage2-monitoring-production.cjs
+          echo "### Compliance Monitoring Plan (Stage 2)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pinned D1 schema and indexes: PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cross-institution traceability and approval integrity: PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Anonymous GET/POST: blocked (no user-session bypass)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify Stage 3 CRA production D1 and session boundary
         env:
