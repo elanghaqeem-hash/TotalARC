@@ -176,6 +176,44 @@ jobs:
                   ),
               }
 
+          # Diagnostic only: trace the unexpected 133rd sourced control.
+          # These aggregates never modify/retire source-backed bank records.
+          latest_run_at = str((latest or {}).get("runAt") or "")
+          created_after = (
+              " AND c.createdAt > " + q(latest_run_at)
+              if latest_run_at else ""
+          )
+          source_lineage_drift = {
+              "sourceMetadataRows": scalar(
+                  "SELECT COUNT(*) AS count FROM RCMControlSourceMetadata "
+                  "WHERE institutionId=" + q(iid)
+              ),
+              "controlsWithSourceMetadata": scalar(
+                  "SELECT COUNT(DISTINCT c.id) AS count FROM ControlMaster c "
+                  "JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id "
+                  "AND sm.institutionId=c.institutionId "
+                  "WHERE c.institutionId=" + q(iid)
+              ),
+              "controlsCreatedAfterLastValidatedRun": scalar(
+                  "SELECT COUNT(*) AS count FROM ControlMaster c "
+                  "WHERE c.institutionId=" + q(iid) + created_after
+              ) if latest_run_at else None,
+              "sourcedControlsCreatedAfterLastValidatedRun": scalar(
+                  "SELECT COUNT(DISTINCT c.id) AS count FROM ControlMaster c "
+                  "JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id "
+                  "AND sm.institutionId=c.institutionId "
+                  "WHERE c.institutionId=" + q(iid) + created_after
+              ) if latest_run_at else None,
+              "sourceTypeCounts": rows(
+                  "SELECT sm.sourceRecordType, COUNT(DISTINCT c.id) AS count "
+                  "FROM ControlMaster c "
+                  "JOIN RCMControlSourceMetadata sm ON sm.controlId=c.id "
+                  "AND sm.institutionId=c.institutionId "
+                  "WHERE c.institutionId=" + q(iid) +
+                  " GROUP BY sm.sourceRecordType ORDER BY sm.sourceRecordType LIMIT 20"
+              ),
+          }
+
           pass_all = all(actual[key] == expected for key, expected in EXPECTED.items())
           latest_summary = {}
           if latest:
@@ -191,6 +229,7 @@ jobs:
               "expected": EXPECTED,
               "actual": actual,
               "controlDrift": control_drift,
+              "sourceLineageDrift": source_lineage_drift,
               "latestIntegrityRun": {
                   "id": latest.get("id") if latest else None,
                   "batchCode": latest.get("batchCode") if latest else None,
@@ -273,6 +312,13 @@ jobs:
               "| CKPN | " + (.expected.ckpnRequirements|tostring) + " | " + (.actual.ckpnRequirements|tostring) + " |",
               "| Reverse Repo | " + (.expected.reverseRepoRequirements|tostring) + " | " + (.actual.reverseRepoRequirements|tostring) + " |",
               "| ELC draft references | " + (.expected.elcDraftReferences|tostring) + " | " + (.actual.elcDraftReferences|tostring) + " |",
-              "| Integrity | " + .expected.integrity + " | " + .actual.integrity + " |"
+              "| Integrity | " + .expected.integrity + " | " + .actual.integrity + " |",
+              "",
+              "### Read-only control lineage drift",
+              "- Source metadata rows: " + (.sourceLineageDrift.sourceMetadataRows|tostring),
+              "- Controls with source metadata: " + (.sourceLineageDrift.controlsWithSourceMetadata|tostring),
+              "- Controls created after last validated run: " + (.sourceLineageDrift.controlsCreatedAfterLastValidatedRun|tostring),
+              "- Sourced controls created after last validated run: " + (.sourceLineageDrift.sourcedControlsCreatedAfterLastValidatedRun|tostring),
+              "- Source record type distribution: " + ([.sourceLineageDrift.sourceTypeCounts[] | (.sourceRecordType // "UNKNOWN") + "=" + (.count|tostring)] | join(", "))
             ' /tmp/rcm-production-acceptance.json >> "$GITHUB_STEP_SUMMARY"
           fi

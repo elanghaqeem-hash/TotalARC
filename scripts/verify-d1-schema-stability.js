@@ -129,6 +129,17 @@ if (fs.existsSync(assurancePath)) {
     ? assurance.slice(metricsStart, metricsEnd > metricsStart ? metricsEnd : assurance.length)
     : '';
   for (const marker of [
+    'async function ensureAssuranceColumns',
+    "'humanApproved'",
+    "'approvedBy'",
+    'PRAGMA table_info(ControlDeficiency)',
+    'await ensureAssuranceColumns(db);'
+  ]) {
+    if (!assurance.includes(marker)) {
+      findings.push('src/lib/d1-assurance.ts: missing additive legacy assurance migration: ' + marker);
+    }
+  }
+  for (const marker of [
     "SUM(CASE WHEN status <> 'Closed'",
     "SUM(CASE WHEN m.status = 'Overdue'",
     'COUNT(DISTINCT CASE WHEN c.isKeyControl = 1 THEN t.controlId END)'

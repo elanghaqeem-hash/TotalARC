@@ -33,4 +33,23 @@ has(ui,'Tanpa BPM spesifik','explicit BPM relation');
 has(ui,'Aktivitas selesai tidak berarti kewajiban dinyatakan patuh','completion is not compliance');
 has(dashboard,'href="/compliance/monitoring"','dashboard navigation');
 has(workflow,'npm run verify:compliance-monitoring','required CI suite');
+const deploy = read('.github/workflows/deploy-cloudflare.yml');
+const production = read('scripts/verify-stage2-monitoring-production.cjs');
+const assuranceMigration = read('scripts/migrate-assurance-schema.py');
+has(deploy,'Verify Stage 2 Compliance Monitoring production gate','Stage 2 deploy gate');
+has(deploy,'node scripts/verify-stage2-monitoring-production.cjs','Stage 2 runtime/D1 verification command');
+has(deploy,'python scripts/migrate-assurance-schema.py','legacy assurance D1 repair before deployment');
+for (const table of ['ComplianceMonitoringPlan','ComplianceMonitoringActivity','ComplianceMonitoringEvent'])
+  has(production,'CREATE TABLE IF NOT EXISTS '+table,table+' safe additive production schema');
+for (const index of ['idx_cmp_plan_code','idx_cmp_plan_queue','idx_cmp_activity_plan','idx_cmp_activity_obligation','idx_cmp_event_plan'])
+  has(production,index,index+' required in production');
+for (const criterion of [
+  'planOwnerMissing','activityPlanMissing','activityObligationMissing','activityOwnerMissing',
+  'processMappingMissing','eventPlanMissing','selfApproval','invalidPlanStatus',
+  "boundary('GET')","boundary('POST')",'database_id','database_name'
+]) has(production,criterion,'Stage 2 production contract '+criterion);
+for (const criterion of ['TOTALARC_D1_DATABASE_ID','TOTALARC_D1_DATABASE_NAME',
+  'PRAGMA table_info(ControlDeficiency)','humanApproved','approvedBy'])
+  has(assuranceMigration,criterion,'pinned assurance schema repair '+criterion);
+
 console.log('PASS Compliance Monitoring Plan static contract: tenant, RBAC, maker-checker, traceability, persistence, UI and CI');
