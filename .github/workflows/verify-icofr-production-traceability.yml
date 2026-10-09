@@ -71,3 +71,28 @@ jobs:
               ", attestation=" + (.certificationMetrics.managementAttestations|tostring) +
               ", evidence pack=" + (.certificationMetrics.evidencePacks|tostring)
           ' "$OUT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout source for read-only D1 diagnosis
+        if: failure()
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Node for diagnosis
+        if: failure()
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Diagnose completeness SQL on pinned D1 (read only)
+        if: failure()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+          TOTALARC_D1_DATABASE_ID: ${{ vars.TOTALARC_D1_DATABASE_ID }}
+          TOTALARC_D1_DATABASE_NAME: ${{ vars.TOTALARC_D1_DATABASE_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm ci --ignore-scripts
+          node scripts/diagnose-icofr-completeness.cjs
