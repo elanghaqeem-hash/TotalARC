@@ -75,6 +75,20 @@ async function assuranceSchemaIsCurrent(db: D1DatabaseLike) {
   return Number(row?.count || 0) === 13;
 }
 
+// Older D1 installations can have all 13 assurance tables but lack these
+// later-added columns. Checking table count alone must not skip migrations.
+// Deployment migrates first; this is a guarded fallback for legacy environments.
+async function ensureAssuranceColumns(db: D1DatabaseLike) {
+  const result = await db.prepare('PRAGMA table_info(ControlDeficiency)').all<{ name?: string }>();
+  const present = new Set((result.results || []).map(row => String(row.name || '')));
+  if (!present.has('humanApproved')) {
+    await db.prepare('ALTER TABLE ControlDeficiency ADD COLUMN humanApproved INTEGER NOT NULL DEFAULT 0').run();
+  }
+  if (!present.has('approvedBy')) {
+    await db.prepare('ALTER TABLE ControlDeficiency ADD COLUMN approvedBy TEXT').run();
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -117,6 +131,7 @@ export async function ensureAssuranceSchema() {
     const db = await getDb();
 
     if (await assuranceSchemaIsCurrent(db)) {
+      await ensureAssuranceColumns(db);
       return db;
     }
 
@@ -343,6 +358,7 @@ export async function ensureAssuranceSchema() {
       ON AssuranceCalendarEvent(institutionId, status);
     `);
 
+    await ensureAssuranceColumns(db);
     return db;
   })().catch(error => {
     assuranceSchemaReady = null;
