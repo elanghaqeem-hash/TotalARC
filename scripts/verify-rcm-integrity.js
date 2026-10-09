@@ -28,7 +28,7 @@ requireMarker('src/app/api/system/rcm-integrity/route.ts', 'getRcmGovernanceData
 const workflow = '.github/workflows/verify-production-d1.yml';
 for (const marker of [
   '/api/system/rcm-integrity',
-  '.summary.controls == 132',
+  '.summary.baselineControls == 132',
   '.summary.uusControls == 42',
   '.summary.itgcControls == 10',
   '.summary.ckpnRequirements == 9',

@@ -2692,6 +2692,8 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
     return {
       summary: {
         controls: 0,
+        baselineControls: 0,
+        validatedSupplementaryControls: 0,
         uusControls: 0,
         itgcControls: 0,
         ckpnRequirements: 0,
@@ -2815,8 +2817,32 @@ export async function getRcmGovernanceData(requestedInstitutionId?: string | nul
     }
   }
 
+  // Keep the 2026 source-validated baseline separate from legitimate controls
+  // created and independently validated after that integrity snapshot.
+  // Never hide the live total, silently exclude a new control, or mutate bank data.
+  const baselineCutoff = String(latestIntegrity?.runAt || '');
+  const datedMetrics = baselineCutoff
+    ? await first<Record<string, unknown>>(
+        db,
+        `SELECT
+           COUNT(DISTINCT CASE WHEN c.createdAt <= ? THEN c.id END) AS baselineControls,
+           COUNT(DISTINCT CASE
+             WHEN c.createdAt > ?
+              AND c.status = 'Active'
+              AND sm.sourceRecordType = 'BPM_DERIVED_USER_VALIDATED'
+              AND sm.validationStatus = 'USER_VALIDATED'
+             THEN c.id END) AS validatedSupplementaryControls
+         FROM ControlMaster c
+         LEFT JOIN RCMControlSourceMetadata sm
+           ON sm.controlId = c.id AND sm.institutionId = c.institutionId
+         WHERE c.institutionId = ?`,
+        [baselineCutoff, baselineCutoff, institutionId]
+      )
+    : null;
   const summary = {
     controls: Number(controlMetrics?.controls || 0),
+    baselineControls: Number(datedMetrics?.baselineControls || 0),
+    validatedSupplementaryControls: Number(datedMetrics?.validatedSupplementaryControls || 0),
     uusControls: Number(controlMetrics?.uusControls || 0),
     itgcControls: Number(controlMetrics?.itgcControls || 0),
     ckpnRequirements: Number(requirementMetrics?.ckpnRequirements || 0),
