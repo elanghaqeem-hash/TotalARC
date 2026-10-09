@@ -75,6 +75,25 @@ async function assuranceSchemaIsCurrent(db: D1DatabaseLike) {
   return Number(row?.count || 0) === 13;
 }
 
+// Existing D1 tables may have been created before these review fields existed.
+// Add columns without replacing or reclassifying any bank-owned deficiency.
+async function ensureAssuranceReviewColumns(db: D1DatabaseLike) {
+  const columns = await db.prepare('PRAGMA table_info(ControlDeficiency)').all<{ name?: string }>();
+  const existing = new Set((columns.results || []).map(item => String(item.name || '')));
+  for (const [name, definition] of [
+    ['humanApproved', 'INTEGER NOT NULL DEFAULT 0'],
+    ['approvedBy', 'TEXT']
+  ] as const) {
+    if (existing.has(name)) continue;
+    try {
+      await db.prepare('ALTER TABLE ControlDeficiency ADD COLUMN ' + name + ' ' + definition).run();
+    } catch (error) {
+      // D1 concurrent isolates can race while applying the same additive column.
+      if (!/duplicate column name/i.test(String(error))) throw error;
+    }
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -117,6 +136,7 @@ export async function ensureAssuranceSchema() {
     const db = await getDb();
 
     if (await assuranceSchemaIsCurrent(db)) {
+      await ensureAssuranceReviewColumns(db);
       return db;
     }
 
@@ -343,6 +363,7 @@ export async function ensureAssuranceSchema() {
       ON AssuranceCalendarEvent(institutionId, status);
     `);
 
+    await ensureAssuranceReviewColumns(db);
     return db;
   })().catch(error => {
     assuranceSchemaReady = null;

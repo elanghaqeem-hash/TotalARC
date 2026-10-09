@@ -185,6 +185,7 @@ jobs:
       - run: npm run verify:compliance-monitoring
       - run: npm run verify:compliance-risk-testing
       - run: npm run verify:compliance-risk-reassessment
+      - run: npm run verify:assurance-review-migration
 
   vercel-build:
     name: Vercel Build
