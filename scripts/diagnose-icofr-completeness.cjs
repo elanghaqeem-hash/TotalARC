@@ -3,15 +3,38 @@
 // the deployment-pinned D1 database. Never copy or dump banking record content.
 const fs=require('node:fs');
 const cp=require('node:child_process');
-const name=String(process.env.TOTALARC_D1_DATABASE_NAME||'').trim();
-const id=String(process.env.TOTALARC_D1_DATABASE_ID||'').trim();
-if(!name || !id)throw new Error('ICOFR_DIAGNOSTIC_REQUIRES_PINNED_D1');
-const dbs=cp.spawnSync('npx',['wrangler','d1','list','--json'],{
-  encoding:'utf8',timeout:25000,env:process.env,maxBuffer:2*1024*1024
-});
-if(dbs.status!==0)throw new Error('ICOFR_DIAGNOSTIC_D1_LIST_UNAVAILABLE');
-const matches=JSON.parse(dbs.stdout).filter(x=>x.name===name && (x.uuid||x.id)===id);
-if(matches.length!==1)throw new Error('ICOFR_DIAGNOSTIC_D1_IDENTITY_MISMATCH');
+// Resolve the production-pinned D1 from the serving Worker binding when
+// repo variables are not provided to this independent post-deploy workflow.
+async function pinnedDatabase() {
+  const account=String(process.env.CLOUDFLARE_ACCOUNT_ID||'').trim();
+  const token=String(process.env.CLOUDFLARE_API_TOKEN||'').trim();
+  if(!account||!token)throw new Error('ICOFR_DIAGNOSTIC_CLOUDFLARE_ACCESS_MISSING');
+  const response=await fetch(
+    'https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(account)+'/workers/scripts/totalarc/settings',
+    {headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(20000)}
+  );
+  if(!response.ok)throw new Error('ICOFR_DIAGNOSTIC_WORKER_SETTINGS_UNAVAILABLE');
+  const json=await response.json();
+  const bindings=(json?.result?.bindings||[]).filter(x=>x.type==='d1'&&x.name==='DB');
+  if(bindings.length!==1)throw new Error('ICOFR_DIAGNOSTIC_WORKER_BINDING_AMBIGUOUS');
+  const id=String(bindings[0].database_id||bindings[0].id||'').trim();
+  if(!id)throw new Error('ICOFR_DIAGNOSTIC_WORKER_D1_ID_MISSING');
+  if(process.env.TOTALARC_D1_DATABASE_ID && process.env.TOTALARC_D1_DATABASE_ID!==id)
+    throw new Error('ICOFR_DIAGNOSTIC_D1_MISMATCH');
+  const dbs=cp.spawnSync('npx',['wrangler','d1','list','--json'],{
+    encoding:'utf8',timeout:25000,env:process.env,maxBuffer:2*1024*1024
+  });
+  if(dbs.status!==0)throw new Error('ICOFR_DIAGNOSTIC_D1_LIST_UNAVAILABLE');
+  const matches=JSON.parse(dbs.stdout).filter(x=>(x.uuid||x.id)===id);
+  if(matches.length!==1)throw new Error('ICOFR_DIAGNOSTIC_D1_IDENTITY_MISMATCH');
+  const name=String(matches[0].name||'').trim();
+  if(!name || (process.env.TOTALARC_D1_DATABASE_NAME &&
+     name!==process.env.TOTALARC_D1_DATABASE_NAME))
+    throw new Error('ICOFR_DIAGNOSTIC_D1_NAME_MISMATCH');
+  return name;
+}
+(async()=>{
+const name=await pinnedDatabase();
 const code=fs.readFileSync('src/lib/d1-icofr-integrity.ts','utf8');
 const match=code.match(/const completenessSql = `([\s\S]*?)`;/);
 if(!match)throw new Error('ICOFR_COMPLETENESS_SQL_SOURCE_NOT_FOUND');
@@ -47,3 +70,8 @@ let hint='UNCLASSIFIED_D1_ERROR';
 for(const re of patterns){const match=raw.match(re);if(match){hint=match[0].slice(0,180);break}}
 console.log('ICOFR_COMPLETENESS_DIAGNOSTIC: '+hint);
 console.log('CLI_EXIT_STATUS: '+result.status);
+
+})().catch(error=>{
+  console.log('ICOFR_COMPLETENESS_DIAGNOSTIC_SETUP_ERROR: '+String(error.message||'UNKNOWN'));
+  process.exitCode=1;
+});
