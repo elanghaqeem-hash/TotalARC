@@ -519,7 +519,11 @@ export async function getIcofrReferentialIntegrityReport() {
     await runIndividually();
   }
 
-  const completenessSql = `
+  // Each metric group is its own read-only D1 query. The previous monolithic
+  // SELECT expanded a shared UNION-heavy CTE beyond SQLite's compound SELECT limit.
+  // Keeping the same CTE definitions and aggregate expressions preserves the
+  // mandatory-chain policy without treating missing evidence as compliant.
+  const completenessBaseSql = `
     WITH
     significant_financial AS (
       SELECT f.id, f.institutionId
@@ -740,36 +744,36 @@ export async function getIcofrReferentialIntegrityReport() {
       SELECT assertionId FROM approved_deficiency_issue_missing
       UNION
       SELECT assertionId FROM issue_map_missing
-    )
-    SELECT
-      (SELECT COUNT(*) FROM significant_financial) AS significantFinancialItems,
-      (SELECT COUNT(*) FROM significant_financial)
-        - (SELECT COUNT(*) FROM financial_assertion_missing) AS significantFinancialItemsWithAssertion,
-      (SELECT COUNT(*) FROM in_scope) AS inScopeAssertions,
-      (SELECT COUNT(DISTINCT assertionId) FROM assertion_process) AS assertionsWithProcess,
-      (SELECT COUNT(DISTINCT assertionId) FROM assertion_risk) AS assertionsWithRisk,
-      (SELECT COUNT(DISTINCT assertionId) FROM assertion_control) AS assertionsWithControl,
-      (SELECT COUNT(DISTINCT controlDomainId) FROM control_tod) AS controlsWithToD,
-      (SELECT COUNT(DISTINCT controlDomainId) FROM control_toe) AS controlsWithToE,
-      (SELECT COUNT(DISTINCT exceptionId) FROM relevant_deficiency) AS exceptionsWithDeficiency,
-      (SELECT COUNT(DISTINCT deficiencyId) FROM relevant_issue) AS deficienciesWithIssue,
-      (SELECT COUNT(DISTINCT issueId) FROM relevant_map) AS issuesWithMAP,
-      (SELECT COUNT(*) FROM in_scope) - (SELECT COUNT(*) FROM incomplete_assertions) AS completeChains,
-      (SELECT COUNT(*) FROM incomplete_assertions) AS incompleteChains,
-      (SELECT COUNT(*) FROM financial_assertion_missing) AS financialAssertionMissing,
-      (SELECT COUNT(*) FROM risk_missing) AS assertionRiskMissing,
-      (SELECT COUNT(*) FROM process_missing) AS assertionProcessMissing,
-      (SELECT COUNT(*) FROM control_missing) AS riskControlMissing,
-      (SELECT COUNT(*) FROM tod_missing) AS keyControlToDMissing,
-      (SELECT COUNT(*) FROM toe_missing) AS keyControlToEMissing,
-      (SELECT COUNT(*) FROM exception_deficiency_missing) AS exceptionDeficiencyMissing,
-      (SELECT COUNT(*) FROM approved_deficiency_issue_missing) AS approvedDeficiencyIssueMissing,
-      (SELECT COUNT(*) FROM issue_map_missing) AS issueMapMissing
-  `;
+    )`;
+  const completenessMetricGroups = [
+    { name: 'POPULATION', select: `SELECT\n      (SELECT COUNT(*) FROM significant_financial) AS significantFinancialItems,\n      (SELECT COUNT(*) FROM significant_financial)
+        - (SELECT COUNT(*) FROM financial_assertion_missing) AS significantFinancialItemsWithAssertion,\n      (SELECT COUNT(*) FROM in_scope) AS inScopeAssertions,\n      (SELECT COUNT(*) FROM financial_assertion_missing) AS financialAssertionMissing` },
+    { name: 'RISK_PROCESS', select: `SELECT\n      (SELECT COUNT(DISTINCT assertionId) FROM assertion_process) AS assertionsWithProcess,\n      (SELECT COUNT(DISTINCT assertionId) FROM assertion_risk) AS assertionsWithRisk,\n      (SELECT COUNT(DISTINCT assertionId) FROM assertion_control) AS assertionsWithControl,\n      (SELECT COUNT(*) FROM risk_missing) AS assertionRiskMissing,\n      (SELECT COUNT(*) FROM process_missing) AS assertionProcessMissing,\n      (SELECT COUNT(*) FROM control_missing) AS riskControlMissing` },
+    { name: 'TESTING', select: `SELECT\n      (SELECT COUNT(DISTINCT controlDomainId) FROM control_tod) AS controlsWithToD,\n      (SELECT COUNT(DISTINCT controlDomainId) FROM control_toe) AS controlsWithToE,\n      (SELECT COUNT(*) FROM tod_missing) AS keyControlToDMissing,\n      (SELECT COUNT(*) FROM toe_missing) AS keyControlToEMissing` },
+    { name: 'REMEDIATION', select: `SELECT\n      (SELECT COUNT(DISTINCT exceptionId) FROM relevant_deficiency) AS exceptionsWithDeficiency,\n      (SELECT COUNT(DISTINCT deficiencyId) FROM relevant_issue) AS deficienciesWithIssue,\n      (SELECT COUNT(DISTINCT issueId) FROM relevant_map) AS issuesWithMAP,\n      (SELECT COUNT(*) FROM exception_deficiency_missing) AS exceptionDeficiencyMissing,\n      (SELECT COUNT(*) FROM approved_deficiency_issue_missing) AS approvedDeficiencyIssueMissing,\n      (SELECT COUNT(*) FROM issue_map_missing) AS issueMapMissing` },
+    { name: 'COVERAGE', select: `SELECT\n      (SELECT COUNT(*) FROM incomplete_assertions) AS incompleteChains` },
+  ] as const;
 
-  const completenessRow = await integrityStage('COMPLETENESS_METRICS', () =>
-    firstRow<Record<string, unknown>>(db, completenessSql)
-  );
+  const completenessRow = await integrityStage('COMPLETENESS_METRICS', async () => {
+    const merged: Record<string, unknown> = {};
+    // Execute in sequence, avoiding a burst of large cross-tenant integrity reads.
+    for (const group of completenessMetricGroups) {
+      try {
+        const row = await firstRow<Record<string, unknown>>(
+          db, completenessBaseSql + '\n' + group.select
+        );
+        if (!row) throw new Error('MISSING_COMPLETENESS_RESULT');
+        Object.assign(merged, row);
+      } catch (error) {
+        console.error('ICOFR completeness metric group failed:', group.name, error);
+        throw error;
+      }
+    }
+    // The original completeChains was inScopeAssertions - incompleteChains.
+    // Count each incomplete assertion only once through the UNION in COVERAGE.
+    merged.completeChains = Number(merged.inScopeAssertions) - Number(merged.incompleteChains);
+    return merged;
+  });
   const inScopeAssertions = Number(completenessRow?.inScopeAssertions || 0);
   const completeChains = Number(completenessRow?.completeChains || 0);
   const incompleteChains = Number(completenessRow?.incompleteChains || 0);
