@@ -36,6 +36,20 @@ jobs:
 
           cat "$OUT" | jq .
 
+          # Publish actionable counts when the Worker correctly reports
+          # incomplete business records; retain the failing Production Gate.
+          if [ "$CODE" = "409" ]; then
+            {
+              echo "### ICOFR production business completeness"
+              jq -r '"- Significant items: " + (.metrics.significantFinancialItems|tostring),
+                "- Significant items with assertion: " + (.metrics.significantFinancialItemsWithAssertion|tostring),
+                "- Mandatory gaps: " + (.mandatoryChainGapCount|tostring),
+                (.completenessChecks[] | select(.count > 0) | "- " + .code + ": " + (.count|tostring))' "$OUT"
+              echo "- Next action: ICOFR Traceability → Petakan dengan bukti"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+
           if [ "$CODE" != "200" ]; then
             echo "::error::ICOFR integrity endpoint returned HTTP $CODE."
             exit 1
@@ -94,5 +108,12 @@ jobs:
         run: |
           set -euo pipefail
           node --version
+          if [ -f /tmp/icofr-integrity.json ] && jq -e '
+            .test == "ICOFR_END_TO_END_REFERENTIAL_INTEGRITY" and
+            .mandatoryChainGapCount > 0 and .diagnosticCode == null
+          ' /tmp/icofr-integrity.json >/dev/null 2>&1; then
+            echo "ICOFR_DIAGNOSTIC: BUSINESS_COMPLETENESS_GAP; no SQL diagnostic needed."
+            exit 0
+          fi
           npm ci --ignore-scripts
           node scripts/diagnose-icofr-completeness.cjs

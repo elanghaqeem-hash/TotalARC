@@ -37,6 +37,13 @@ async function pinnedDatabase() {
 const name=await pinnedDatabase();
 const code=fs.readFileSync('src/lib/d1-icofr-integrity.ts','utf8');
 const match=code.match(/const completenessSql = `([\s\S]*?)`;/);
+if(!match && code.includes('function completenessSqlFor(select: string)')){
+  // Source now generates bounded queries at runtime instead of one SQL literal.
+  // Do not execute an obsolete query or report a false setup failure.
+  console.log('ICOFR_COMPLETENESS_DIAGNOSTIC: CTE_PRUNED_QUERY_SOURCE');
+  console.log('ICOFR_COMPLETENESS_DIAGNOSTIC: consult Worker completeness group logs');
+  process.exit(0);
+}
 if(!match)throw new Error('ICOFR_COMPLETENESS_SQL_SOURCE_NOT_FOUND');
 const result=cp.spawnSync('npx',['wrangler','d1','execute',name,'--remote','--json','--command',match[1]],{
   encoding:'utf8',timeout:100000,env:process.env,maxBuffer:2*1024*1024
