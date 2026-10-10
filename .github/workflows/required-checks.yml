@@ -158,6 +158,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify:icofr-traceability
+      - run: npm run verify:icofr-split-queries
 
   test-suite:
     name: Test Suite

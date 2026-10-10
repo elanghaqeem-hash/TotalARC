@@ -362,7 +362,9 @@ jobs:
         run: npm run verify:rcm-integrity
 
       - name: Verify ICOFR traceability integrity contract
-        run: npm run verify:icofr-traceability
+        run: |
+          npm run verify:icofr-traceability
+          npm run verify:icofr-split-queries
 
       - name: Verify AI security and banking redaction
         run: npm run verify:ai-security
