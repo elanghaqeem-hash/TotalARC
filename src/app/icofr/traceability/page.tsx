@@ -225,6 +225,20 @@ export default function Page() {
     }
   };
 
+  const unmappedItems = useMemo(() => {
+    const linked = new Set((data?.assertions || [])
+      .filter((a: any) => Number(a.inScope) === 1)
+      .map((a: any) => String(a.financialItemId)));
+    return (data?.financialItems || []).filter(
+      (item: any) => Number(item.significant) === 1 && !linked.has(String(item.id))
+    );
+  }, [data]);
+  const [showAllGaps, setShowAllGaps] = useState(false);
+  const prepareMapping = (item: any) => {
+    setChainForm({ ...emptyChain, financialItemId: String(item.id) });
+    document.getElementById('chain-builder')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   const metrics = data?.metrics || {};
 
   return (
@@ -288,8 +302,37 @@ export default function Page() {
             ))}
           </div>
 
+          {unmappedItems.length > 0 && (
+            <section className="rounded-xl border border-amber-200 bg-white p-4">
+              <h2 className="text-sm font-bold text-slate-900">
+                {unmappedItems.length} akun signifikan belum memiliki assertion in-scope
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Pilih akun dan validasi assertion, risiko, kontrol, serta dasar buktinya.
+                Tidak ada pemetaan atau persetujuan yang dibuat otomatis.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {(showAllGaps ? unmappedItems : unmappedItems.slice(0, 12)).map((item: any) => (
+                  <div key={String(item.id)} className="min-w-0 rounded-lg border p-3">
+                    <p className="truncate text-xs font-bold">{item.itemCode || '-'}</p>
+                    <p className="line-clamp-2 text-xs">{item.name}</p>
+                    <button type="button" onClick={() => prepareMapping(item)}
+                      className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+                      Petakan dengan bukti
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {unmappedItems.length > 12 && (
+                <button type="button" onClick={() => setShowAllGaps(!showAllGaps)}
+                  className="mt-3 text-xs font-semibold underline">
+                  {showAllGaps ? 'Tampilkan 12' : 'Tampilkan semua'}
+                </button>
+              )}
+            </section>
+          )}
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            <form onSubmit={saveChain} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <form id="chain-builder" onSubmit={saveChain} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-sm font-black text-slate-900">1. Build traceability chain</h2>
                 <p className="mt-1 text-[10px] leading-4 text-slate-500">
