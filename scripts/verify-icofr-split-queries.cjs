@@ -20,7 +20,7 @@ let queries=[];
 const sample=Object.fromEntries(aliases.map(k=>[k,0]));
 sample.inScopeAssertions=10; sample.incompleteChains=3;
 function statement(sql){
- const aliasesInSql=[...sql.matchAll(/\\bAS\\s+([a-z][A-Za-z]+)(?=\\s*(?:,|$))/gm)].map(x=>x[1]).filter(x=>expected.has(x));
+ const aliasesInSql=[...sql.matchAll(/\bAS\s+([a-z][A-Za-z]+)(?=\s*(?:,|$))/gm)].map(x=>x[1]).filter(x=>expected.has(x));
  const run=async()=>{
    if(sql.includes('sqlite_master'))return tableNames;
    if(sql.includes('ORDER BY createdAt'))return [];
