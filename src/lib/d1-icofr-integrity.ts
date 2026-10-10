@@ -751,16 +751,46 @@ export async function getIcofrReferentialIntegrityReport() {
     { name: 'RISK_PROCESS', select: `SELECT\n      (SELECT COUNT(DISTINCT assertionId) FROM assertion_process) AS assertionsWithProcess,\n      (SELECT COUNT(DISTINCT assertionId) FROM assertion_risk) AS assertionsWithRisk,\n      (SELECT COUNT(DISTINCT assertionId) FROM assertion_control) AS assertionsWithControl,\n      (SELECT COUNT(*) FROM risk_missing) AS assertionRiskMissing,\n      (SELECT COUNT(*) FROM process_missing) AS assertionProcessMissing,\n      (SELECT COUNT(*) FROM control_missing) AS riskControlMissing` },
     { name: 'TESTING', select: `SELECT\n      (SELECT COUNT(DISTINCT controlDomainId) FROM control_tod) AS controlsWithToD,\n      (SELECT COUNT(DISTINCT controlDomainId) FROM control_toe) AS controlsWithToE,\n      (SELECT COUNT(*) FROM tod_missing) AS keyControlToDMissing,\n      (SELECT COUNT(*) FROM toe_missing) AS keyControlToEMissing` },
     { name: 'REMEDIATION', select: `SELECT\n      (SELECT COUNT(DISTINCT exceptionId) FROM relevant_deficiency) AS exceptionsWithDeficiency,\n      (SELECT COUNT(DISTINCT deficiencyId) FROM relevant_issue) AS deficienciesWithIssue,\n      (SELECT COUNT(DISTINCT issueId) FROM relevant_map) AS issuesWithMAP,\n      (SELECT COUNT(*) FROM exception_deficiency_missing) AS exceptionDeficiencyMissing,\n      (SELECT COUNT(*) FROM approved_deficiency_issue_missing) AS approvedDeficiencyIssueMissing,\n      (SELECT COUNT(*) FROM issue_map_missing) AS issueMapMissing` },
-    { name: 'COVERAGE', select: `SELECT\n      (SELECT COUNT(*) FROM incomplete_assertions) AS incompleteChains` },
   ] as const;
 
+  // The original full-CTE query hits the SQLite compound-SELECT limit even
+  // when most CTEs are unused. Only pass transitively required CTEs to D1.
+  const cteParts = completenessBaseSql.trim()
+    .replace(/^WITH\s*/, '')
+    .split(/\n    \),\n    (?=[a-z_]+\s+AS\s+\()/);
+  if (cteParts.length !== 22) throw new Error('ICOFR_CTE_DEFINITION_DRIFT');
+  const cteDefinitions = cteParts.map((part, index) => ({
+    name: part.match(/^([a-z_]+)\s+AS\s+\(/)?.[1] || '',
+    definition: part + (index < cteParts.length - 1 ? '\n    )' : '')
+  }));
+  function completenessSqlFor(select: string) {
+    const selected = new Set<string>();
+    const visit = (sql: string) => {
+      for (const cte of cteDefinitions) {
+        if (selected.has(cte.name)) continue;
+        if (new RegExp('\\b' + cte.name + '\\b').test(sql)) {
+          selected.add(cte.name);
+          visit(cte.definition);
+        }
+      }
+    };
+    visit(select);
+    return 'WITH ' + cteDefinitions.filter(cte => selected.has(cte.name))
+      .map(cte => cte.definition).join(',\n    ') + '\n' + select;
+  }
+
+  // Count each assertion with a missing link once, even if it has several gaps.
+  const incompleteSources = [
+    'risk_missing','process_missing','control_missing','tod_missing',
+    'toe_missing','exception_deficiency_missing',
+    'approved_deficiency_issue_missing','issue_map_missing'
+  ] as const;
   const completenessRow = await integrityStage('COMPLETENESS_METRICS', async () => {
     const merged: Record<string, unknown> = {};
-    // Execute in sequence, avoiding a burst of large cross-tenant integrity reads.
     for (const group of completenessMetricGroups) {
       try {
         const row = await firstRow<Record<string, unknown>>(
-          db, completenessBaseSql + '\n' + group.select
+          db, completenessSqlFor(group.select)
         );
         if (!row) throw new Error('MISSING_COMPLETENESS_RESULT');
         Object.assign(merged, row);
@@ -769,9 +799,35 @@ export async function getIcofrReferentialIntegrityReport() {
         throw error;
       }
     }
-    // The original completeChains was inScopeAssertions - incompleteChains.
-    // Count each incomplete assertion only once through the UNION in COVERAGE.
-    merged.completeChains = Number(merged.inScopeAssertions) - Number(merged.incompleteChains);
+    // Read-only, keyset-paginated gap scans; never alter assessments or evidence.
+    const incomplete = new Set<string>();
+    for (const source of incompleteSources) {
+      const sql = completenessSqlFor(
+        'SELECT DISTINCT assertionId FROM ' + source +
+        ' WHERE assertionId > ? ORDER BY assertionId LIMIT 500'
+      );
+      let cursor = '';
+      try {
+        for (;;) {
+          const page = await db.prepare(sql).bind(cursor).all<{ assertionId: string }>();
+          const rows = page.results || [];
+          for (const item of rows) {
+            const id = String(item.assertionId || '');
+            if (!id) throw new Error('INVALID_ASSERTION_ID');
+            incomplete.add(id);
+          }
+          if (rows.length < 500) break;
+          const next = String(rows[rows.length - 1].assertionId || '');
+          if (next <= cursor) throw new Error('NON_ADVANCING_COMPLETENESS_CURSOR');
+          cursor = next;
+        }
+      } catch (error) {
+        console.error('ICOFR completeness gap scan failed:', source, error);
+        throw error;
+      }
+    }
+    merged.incompleteChains = incomplete.size;
+    merged.completeChains = Number(merged.inScopeAssertions) - incomplete.size;
     return merged;
   });
   const inScopeAssertions = Number(completenessRow?.inScopeAssertions || 0);
