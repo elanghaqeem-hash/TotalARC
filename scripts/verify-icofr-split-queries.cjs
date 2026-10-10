@@ -36,12 +36,12 @@ function statement(sql){
  return stmt;
 }
 const DB={prepare:statement,batch:async statements=>statements.map(()=>({results:[{count:0}]}))};
-const exports={};
+const moduleExports={};
 vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{
- exports,console:{error(){}},require(id){assert.equal(id,'@opennextjs/cloudflare');return {getCloudflareContext:async()=>({env:{DB}})}}
+ exports:moduleExports,console:{error(){}},require(id){assert.equal(id,'@opennextjs/cloudflare');return {getCloudflareContext:async()=>({env:{DB}})}}
 });
 (async()=>{
- const report=await exports.getIcofrReferentialIntegrityReport();
+ const report=await moduleExports.getIcofrReferentialIntegrityReport();
  assert.equal(queries.length,5,'Must issue 5 bounded metric queries');
  assert.equal(queries.every(x=>x.sql.startsWith('WITH')&&x.sql.includes('incomplete_assertions AS')),true);
  const collected=queries.flatMap(x=>x.fields);
