@@ -43,7 +43,7 @@ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleK
 (async()=>{
  const report=await moduleExports.getIcofrReferentialIntegrityReport();
  assert.equal(queries.length,5,'Must issue 5 bounded metric queries');
- assert.equal(queries.every(x=>x.sql.startsWith('WITH')&&x.sql.includes('incomplete_assertions AS')),true);
+ assert.equal(queries.every(x=>x.sql.trimStart().startsWith('WITH')&&x.sql.includes('incomplete_assertions AS')),true);
  const collected=queries.flatMap(x=>x.fields);
  assert.equal(collected.length,new Set(collected).size,'Metric aliases cannot be counted twice');
  assert.deepEqual(new Set(collected),expected,'Every original completeness metric must be measured');
