@@ -405,9 +405,10 @@ export default function Page() {
                     </select>
                   </label>
 
-                  <label className="text-xs font-bold text-slate-700">
-                    Financial reporting / enterprise risk *
+                  <div className="text-xs font-bold text-slate-700">
+                    <label htmlFor="icofr-risk" className="block">Financial reporting / enterprise risk *</label>
                     <select
+                      id="icofr-risk"
                       required
                       value={chainForm.riskId}
                       onChange={e => setChainForm({ ...chainForm, riskId: e.target.value })}
@@ -425,7 +426,7 @@ export default function Page() {
                           setChainForm(prev => ({ ...prev, riskId: '' }));
                         }} />
                         Tampilkan seluruh risiko (pemetaan lintas BPM wajib dijustifikasi)
-                      </label>
+                      </div>
                     )}
                   </label>
 
