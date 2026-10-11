@@ -426,9 +426,9 @@ export default function Page() {
                           setChainForm(prev => ({ ...prev, riskId: '' }));
                         }} />
                         Tampilkan seluruh risiko (pemetaan lintas BPM wajib dijustifikasi)
-                      </div>
+                      </label>
                     )}
-                  </label>
+                  </div>
 
                   <label className="text-xs font-bold text-slate-700">
                     ELC / PLC / ITGC / ITAC control *
