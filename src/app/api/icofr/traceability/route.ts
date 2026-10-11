@@ -87,6 +87,7 @@ export async function POST(request: Request) {
       CONTROL_DOMAIN_NOT_FOUND: ['Selected ICOFR control was not found.', 400],
       INFORMATION_ARTIFACT_NOT_FOUND: ['Selected IPE/EUC record was not found.', 400],
       SOURCE_CONTROL_NOT_FOUND: ['Selected enterprise Control Master record was not found.', 400],
+      ASSERTION_MAPPING_RATIONALE_REQUIRED: ['Explain the source and reason for this assertion–risk–control link (at least 25 characters).', 400],
       REQUIRED_FIELDS: ['Control, period and tester are required for Test of Design.', 400],
       TEST_ID_CONFLICT: ['Test of Design ID already exists.', 409],
       TRACE_LINK_NOT_FOUND: ['Traceability link was not found.', 404],

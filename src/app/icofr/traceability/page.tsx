@@ -91,15 +91,10 @@ export default function Page() {
         return {
           ...current,
           financialItemId: current.financialItemId || payload.financialItems?.[0]?.id || '',
-          riskId: current.riskId || payload.risks?.[0]?.id || '',
-          controlDomainId: current.controlDomainId || controls?.[0]?.id || '',
-          sourceControlId:
-            current.sourceControlId ||
-            selected?.sourceControlId ||
-            controls?.[0]?.sourceControlId ||
-            '',
-          informationArtifactId:
-            current.informationArtifactId || payload.informationArtifacts?.[0]?.id || ''
+          riskId: current.riskId,
+          controlDomainId: current.controlDomainId,
+          sourceControlId: current.sourceControlId || selected?.sourceControlId || '',
+          informationArtifactId: current.informationArtifactId
         };
       });
       setTodForm(current => ({
@@ -234,7 +229,19 @@ export default function Page() {
     );
   }, [data]);
   const [showAllGaps, setShowAllGaps] = useState(false);
+  const [showAllRisks, setShowAllRisks] = useState(false);
+  const sourceProcesses = useMemo(() =>
+    (data?.scopedProcessMappings || []).filter(
+      (mapping: any) => String(mapping.financialItemId) === chainForm.financialItemId
+    ), [data, chainForm.financialItemId]);
+  const suggestedRisks = useMemo(() => {
+    const ids = new Set(sourceProcesses.map((mapping: any) => String(mapping.processId)));
+    return (data?.risks || []).filter((risk: any) => ids.has(String(risk.processId)));
+  }, [data, sourceProcesses]);
+  const visibleRisks = !showAllRisks && suggestedRisks.length > 0
+    ? suggestedRisks : (data?.risks || []);
   const prepareMapping = (item: any) => {
+    setShowAllRisks(false);
     setChainForm({ ...emptyChain, financialItemId: String(item.id) });
     document.getElementById('chain-builder')?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -336,7 +343,7 @@ export default function Page() {
               <div className="mb-4">
                 <h2 className="text-sm font-black text-slate-900">1. Build traceability chain</h2>
                 <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                  The builder creates explicit links only. It does not invent risk/control relationships.
+                  Pemilihan assertion, risiko dan kontrol harus dikonfirmasi pengguna berdasarkan dokumen sumber; kandidat risiko hanya disaring dari FSLI–BPM yang sudah teregister.
                 </p>
               </div>
 
@@ -352,7 +359,7 @@ export default function Page() {
                 </div>
               ) : (data?.controls?.length || 0) === 0 ? (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  No ICOFR controls are registered. Create ELC, PLC, ITGC or ITAC controls first.
+                  Belum ada kontrol ICOFR. Registrasikan ELC, PLC, ITGC atau ITAC berbasis dokumen sebelum membuat pemetaan.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -361,7 +368,7 @@ export default function Page() {
                     <select
                       required
                       value={chainForm.financialItemId}
-                      onChange={e => setChainForm({ ...chainForm, financialItemId: e.target.value })}
+                      onChange={e => { setChainForm({ ...emptyChain, financialItemId: e.target.value }); setShowAllRisks(false); }}
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                     >
                       <option value="">Select</option>
@@ -372,6 +379,18 @@ export default function Page() {
                       ))}
                     </select>
                   </label>
+
+                  {chainForm.financialItemId && (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950 md:col-span-2">
+                      <p className="font-bold">Referensi BPM dari dokumen scoping — belum merupakan persetujuan assertion</p>
+                      {sourceProcesses.length > 0 ? (
+                        <>
+                          <p className="mt-1">{sourceProcesses.map((m: any) => m.processCode + ' · ' + m.processName).join(' | ')}</p>
+                          <p className="mt-1 text-sky-700">{suggestedRisks.length} risiko kandidat dari BPM terkait. Validasi kesesuaian risiko dan pengendaliannya sebelum menyimpan.</p>
+                        </>
+                      ) : <p className="mt-1 text-amber-800">Belum ada referensi FSLI–BPM dalam scoping. Periksa dokumen sumber terlebih dahulu.</p>}
+                    </div>
+                  )}
 
                   <label className="text-xs font-bold text-slate-700">
                     Assertion *
@@ -395,10 +414,19 @@ export default function Page() {
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                     >
                       <option value="">Select</option>
-                      {(data?.risks || []).map((item: any) => (
+                      {visibleRisks.map((item: any) => (
                         <option key={item.id} value={item.id}>{item.riskId} · {item.name}</option>
                       ))}
                     </select>
+                    {suggestedRisks.length > 0 && (
+                      <label className="mt-2 flex items-center gap-2 text-[11px] font-normal text-slate-600">
+                        <input type="checkbox" checked={showAllRisks} onChange={e => {
+                          setShowAllRisks(e.target.checked);
+                          setChainForm(prev => ({ ...prev, riskId: '' }));
+                        }} />
+                        Tampilkan seluruh risiko (pemetaan lintas BPM wajib dijustifikasi)
+                      </label>
+                    )}
                   </label>
 
                   <label className="text-xs font-bold text-slate-700">
@@ -454,8 +482,10 @@ export default function Page() {
                   </label>
 
                   <label className="text-xs font-bold text-slate-700 md:col-span-2">
-                    Mapping rationale
+                    Alasan dan bukti sumber pemetaan *
                     <textarea
+                      required
+                      minLength={25}
                       rows={3}
                       value={chainForm.rationale}
                       onChange={e => setChainForm({ ...chainForm, rationale: e.target.value })}
@@ -476,7 +506,8 @@ export default function Page() {
                     !chainForm.financialItemId ||
                     !chainForm.assertion ||
                     !chainForm.riskId ||
-                    !chainForm.controlDomainId
+                    !chainForm.controlDomainId ||
+                    chainForm.rationale.trim().length < 25
                   }
                   className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50"
                 >
