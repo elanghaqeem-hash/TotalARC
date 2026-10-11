@@ -291,6 +291,11 @@ export async function saveTraceabilityChain(input: {
   if (!STANDARD_ASSERTIONS.includes(input.assertion as (typeof STANDARD_ASSERTIONS)[number])) {
     throw new Error('INVALID_ASSERTION');
   }
+  // Never publish an in-scope assertion without an accountable human reason.
+  // Source scoping process links are recommendations, not validation.
+  if (!clean(input.rationale) || clean(input.rationale)!.length < 25) {
+    throw new Error('ASSERTION_MAPPING_RATIONALE_REQUIRED');
+  }
 
   let informationArtifact: Record<string, unknown> | null = null;
   if (input.informationArtifactId) {
@@ -748,11 +753,12 @@ export async function getTraceabilityData() {
       informationArtifacts: [],
       designAssessments: [],
       chains: [],
+      scopedProcessMappings: [],
       metrics: {}
     };
   }
 
-  const [financialItems, assertions, risks, controls, enterpriseControls, informationArtifacts, designAssessments, links] = await Promise.all([
+  const [financialItems, assertions, risks, controls, enterpriseControls, informationArtifacts, designAssessments, links, scopedProcessMappings] = await Promise.all([
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM ICOFRFinancialItem WHERE institutionId=? ORDER BY recordType ASC, itemCode ASC',
@@ -791,6 +797,26 @@ export async function getTraceabilityData() {
     all<Record<string, unknown>>(
       db,
       'SELECT * FROM ICOFRTraceabilityLink WHERE institutionId=? ORDER BY createdAt ASC',
+      [institution.id]
+    ),
+    // Source-backed account-to-process scoping mapping. Never infer or insert
+    // a financial statement assertion from process affiliation alone.
+    all<{ financialItemId: string; processId: string; processCode: string; processName: string; sourceReference: string | null }>(
+      db,
+      `SELECT DISTINCT f.id AS financialItemId,
+              b.id AS processId, b.processId AS processCode,
+              b.name AS processName, l.sourceReference AS sourceReference
+         FROM ICOFRScopeLink l
+         JOIN ICOFRScope s ON s.id=l.scopeId AND s.institutionId=?
+         JOIN ICOFRScopeItem fi ON fi.id=l.fromItemId AND fi.scopeId=l.scopeId
+           AND fi.itemType='Financial Account'
+         JOIN ICOFRFinancialItem f ON f.id=fi.sourceId AND f.institutionId=s.institutionId
+         JOIN ICOFRScopeItem pi ON pi.id=l.toItemId AND pi.scopeId=l.scopeId
+           AND pi.itemType='Business Process'
+         JOIN BusinessProcess b ON b.id=pi.sourceId AND b.institutionId=s.institutionId
+        WHERE l.relationType='FSLI_TO_PROCESS' AND f.significant=1
+          AND COALESCE(f.status,'Draft') <> 'Retired'
+        ORDER BY f.id,b.processId`,
       [institution.id]
     )
   ]);
@@ -872,6 +898,7 @@ export async function getTraceabilityData() {
     financialItems: financialItems.map(item => ({ ...item, significant: bool(item.significant) })),
     assertions: assertions.map(item => ({ ...item, inScope: bool(item.inScope) })),
     risks,
+    scopedProcessMappings,
     controls: controls.map(item => ({ ...item, keyControl: bool(item.keyControl) })),
     enterpriseControls: enterpriseControls.map(item => ({
       ...item,
