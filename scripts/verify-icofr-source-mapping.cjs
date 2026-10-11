@@ -16,6 +16,6 @@ for(const marker of ["suggestedRisks","sourceProcesses","visibleRisks",
  assert.ok(page.includes(marker),'Missing human-validation UI: '+marker);
 }
 assert.ok(!page.includes("payload.risks?.[0]?.id"),'Never autochoose first risk');
-assert.ok(!page.includes("controls?.[0]?.id || ''"),'Never autochoose first ICOFR control');
+assert.ok(page.includes('controlDomainId: current.controlDomainId,'),'Never autochoose first ICOFR chain control');
 assert.ok(api.includes('ASSERTION_MAPPING_RATIONALE_REQUIRED'));
 console.log('PASS ICOFR source-backed BPM recommendations, manual risk/assertion selection and rationale validation');
