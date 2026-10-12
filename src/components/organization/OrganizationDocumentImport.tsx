@@ -51,7 +51,7 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
       const notices: string[] = [];
       const providers = new Set<string>();
       let finished = 0;
-      const analyzePart = async (part: string, number: number, depth = 0): Promise<void> => {
+      const analyzePart = async (part: string, number: number, depth = 0, throttled = 0): Promise<void> => {
         status('Analisis tahap ' + number + '/' + chunks.length + ' (' + finished +
           ' bagian selesai)' + (depth ? ' · mengulang bagian lebih kecil…' : '…'));
         const response = await fetch('/api/organization/document-analysis', {
@@ -59,6 +59,19 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
           body: JSON.stringify({text: part, institutionId}), signal: controller.signal
         });
         const result = await response.json();
+        if (response.status === 429 && throttled < 3) {
+          const seconds = Math.min(60, Math.max(1, Number(response.headers.get('Retry-After')) || 60));
+          status('Batas keamanan AI tercapai. Menunggu ' + seconds +
+            ' detik lalu melanjutkan bagian ' + number + ' secara otomatis…');
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, seconds * 1000);
+            controller.signal.addEventListener('abort', () => {
+              clearTimeout(timer);
+              reject(new Error('Analisis dibatalkan.'));
+            }, {once:true});
+          });
+          return analyzePart(part, number, depth, throttled + 1);
+        }
         if (!response.ok) {
           if (response.status === 422 &&
             ['STRUCTURE_INCOMPLETE','STRUCTURE_INVALID_JSON'].includes(result.code) &&
