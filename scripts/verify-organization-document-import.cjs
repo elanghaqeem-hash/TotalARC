@@ -54,13 +54,25 @@ const persistence=load('src/lib/d1-organization.ts',{'@opennextjs/cloudflare':{g
 const save=load('src/app/api/organization/import/route.ts',{...imports,'@/lib/d1-organization':persistence});
 (async()=>{
  const seen=[];
+ const mockDb = {
+   prepare(sql) {
+     return {
+       bind(id) {
+         return {
+           async all() {
+             seen.push({sql,id});
+             return {results: id === 'bank-a' ? [
+               {code:'DIV',name:'Divisi Contoh',type:'Division',parentCode:'DIR',parentId:'parent',hierarchyStatus:'USER_CONFIRMED_PARENT'},
+               {code:'DIR',name:'Direktorat Contoh',type:'Directorate',parentCode:null,parentId:null,hierarchyStatus:'USER_CONFIRMED_PARENT'}
+             ] : []};
+           }
+         };
+       }
+     };
+   }
+ };
  const orgContext = load('src/lib/ai/organization-context.ts',{
-   '@opennextjs/cloudflare':{getCloudflareContext:async()=>({env:{DB:{prepare:sql=>({
-     bind:id=>({all:async()=>{seen.push({sql,id});return {results:id==='bank-a'?[
-       {code:'DIV',name:'Divisi Contoh',type:'Division',parentCode:'DIR',parentId:'parent',hierarchyStatus:'USER_CONFIRMED_PARENT'},
-       {code:'DIR',name:'Direktorat Contoh',type:'Directorate',parentCode:null,parentId:null,hierarchyStatus:'USER_CONFIRMED_PARENT'}
-     ]:[]};}})
-   })}}}})},
+   '@opennextjs/cloudflare':{getCloudflareContext:async()=>({env:{DB:mockDb}})},
    '@/lib/organization-import':contract
  });
  assert.equal(await orgContext.loadInstitutionOrganizationPrompt(), '');
