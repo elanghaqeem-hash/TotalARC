@@ -88,7 +88,7 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
       const merged = mergeOrganizationDrafts(groups);
       setRows(validateOrganizationDraft(merged.units));
       setWarnings([...notices, ...merged.warnings]);
-      setProvider([...providers].filter(Boolean).join(' / '));
+      setProvider(Array.from(providers).filter(Boolean).join(' / '));
       setProgress(merged.units.length + ' unit draft selesai dari ' + finished +
         ' bagian. Tinjau kode, garis pelaporan, dan bukti sebelum menyimpan.');
     } catch (err) { if (current === generation.current) setError(err instanceof Error ? err.message : 'Analisis gagal.'); }
