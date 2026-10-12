@@ -5,6 +5,7 @@ export type AiLevel = 'FAST' | 'STANDARD' | 'ADVANCED';
 export type AiFeature =
   | 'assistant_chat'
   | 'process_analysis'
+  | 'organization_document'
   | 'process_document'
   | 'risk_register'
   | 'risk_heatmap'

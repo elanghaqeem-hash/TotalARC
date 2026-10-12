@@ -1,7 +1,9 @@
+import { validateOrganizationDraft, orderOrganizationDraft } from '@/lib/organization-import';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 
 type D1DatabaseLike = {
+  batch: (statements: ReturnType<ReturnType<D1DatabaseLike["prepare"]>["bind"]>[]) => Promise<unknown>;
   exec: (sql: string) => Promise<unknown>;
   prepare: (sql: string) => {
     bind: (...values: unknown[]) => {
@@ -892,4 +894,36 @@ export async function createOrganizationUnit(input: OrganizationUnitInput, insti
   );
 
   return created;
+}
+
+
+/** One atomic D1 batch: units, source evidence, and audit are committed together. */
+export async function importOrganizationStructure(input: unknown, institutionId: string, sourceName: string, actor: { name: string; role: string }, legalEntityId: string | null) {
+  const rows = validateOrganizationDraft(input);
+  const db = await ensureOrganizationSchema();
+  if (!await first(db, 'SELECT id FROM Institution WHERE id = ?', [institutionId])) throw new Error('Institusi tidak ditemukan.');
+  if (legalEntityId && !await first(db, 'SELECT id FROM LegalEntity WHERE id = ? AND institutionId = ?', [legalEntityId, institutionId])) throw new Error('Entitas legal tidak tersedia untuk institusi ini.');
+  const existing = await all<{id: string; code: string}>(db, 'SELECT id, code FROM OrganizationUnit WHERE institutionId = ?', [institutionId]);
+  const ordered = orderOrganizationDraft(rows, existing);
+  const ids = new Map(existing.map(unit => [unit.code.toUpperCase(), unit.id]));
+  const now = nowIso();
+  const statements: ReturnType<ReturnType<D1DatabaseLike['prepare']>['bind']>[] = [];
+  for (const row of ordered) {
+    const id = crypto.randomUUID(); ids.set(row.code, id);
+    statements.push(db.prepare(`INSERT INTO OrganizationUnit
+      (id, institutionId, legalEntityId, parentId, type, code, name, headName, headEmail, status, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?)`)
+      .bind(id, institutionId, legalEntityId, row.parentCode ? ids.get(row.parentCode)! : null, row.type, row.code, row.name, row.headName || null, row.headEmail || null, now, now));
+    statements.push(db.prepare(`INSERT INTO OrganizationHierarchyEvidence
+      (unitId, institutionId, sourceStatus, hierarchyStatus, sourceReferencesJson, sourceNote, asOfDate, updatedAt)
+      VALUES (?, ?, 'USER_REVIEWED_AI_IMPORT', 'USER_CONFIRMED_PARENT', ?, ?, NULL, ?)`)
+      .bind(id, institutionId, JSON.stringify([sourceName, row.source]), 'Draft AI ditinjau dan disimpan oleh ' + actor.name + '. Dokumen asli tidak diarsipkan oleh fitur impor.', now));
+  }
+  const importId = crypto.randomUUID();
+  statements.push(db.prepare(`INSERT INTO AuditLog
+    (id, institutionId, userName, userRole, action, entityType, recordId, oldValue, newValue, reason, ipAddress, timestamp)
+    VALUES (?, ?, ?, ?, 'CREATE', 'OrganizationImport', ?, NULL, ?, ?, NULL, ?)`)
+    .bind(crypto.randomUUID(), institutionId, actor.name, actor.role, importId, JSON.stringify({sourceName, codes: ordered.map(row => row.code), count: ordered.length}), 'Impor struktur organisasi setelah validasi pengguna', now));
+  await db.batch(statements);
+  return { count: ordered.length, importId };
 }

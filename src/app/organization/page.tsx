@@ -1,5 +1,6 @@
 'use client';
 
+import { OrganizationDocumentImport } from '@/components/organization/OrganizationDocumentImport';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Building2,
@@ -686,10 +687,10 @@ export default function OrganizationPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <GitBranch className="h-4 w-4 text-brand-600" />
-                    <h2 className="font-black text-slate-900">Organization Structure</h2>
+                    <h2 className="font-black text-slate-900">Struktur Organisasi</h2>
                   </div>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Parent-child relationships define the organization hierarchy used across Total ARC.
+                    Hubungan induk dan unit membentuk hierarki organisasi yang digunakan di seluruh TotalARC.
                   </p>
                 </div>
                 <div className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-[10px] font-bold text-slate-500">
@@ -697,6 +698,8 @@ export default function OrganizationPage() {
                   {organizationUnits.length} unit(s)
                 </div>
               </div>
+
+              {institution && <OrganizationDocumentImport key={institution.id} institutionId={institution.id} institutionName={institution.legalName || institution.name} existing={organizationUnits} entities={legalEntities} onSaved={loadOrganization} />}
 
               <div className="mt-4 space-y-3">
                 {rootUnits.length === 0 ? (
