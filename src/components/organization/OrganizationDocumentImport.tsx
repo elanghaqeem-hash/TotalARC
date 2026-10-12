@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PdfCompressControl } from '@/components/documents/PdfCompressControl';
 import { preparePdfText } from '@/lib/pdf-ocr-client';
-import { ORGANIZATION_TYPES, validateOrganizationDraft, orderOrganizationDraft, type OrganizationDraft } from '@/lib/organization-import';
+import { ORGANIZATION_TYPES, ORGANIZATION_HIERARCHY_STANDARD, splitOrganizationDocumentText, mergeOrganizationDrafts, validateOrganizationDraft, orderOrganizationDraft, type OrganizationDraft } from '@/lib/organization-import';
 
 type Props = { institutionId: string; institutionName: string; existing: {id: string; code: string; name: string}[]; entities: {id: string; name: string}[]; onSaved: () => void };
 export function OrganizationDocumentImport({institutionId, institutionName, existing, entities, onSaved}: Props) {
@@ -46,14 +46,51 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
         text = pdf ? pdf.chunks.join('\n\n') : await file.text();
       }
       if (current !== generation.current) return;
-      if (text.length > 90000) throw new Error('Teks melebihi 90.000 karakter. Unggah bagian struktur organisasi saja agar tidak ada isi yang terpotong.');
-      status('Menganalisis unit dan hubungan organisasi…');
-      const response = await fetch('/api/organization/document-analysis', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text, institutionId}), signal:controller.signal});
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Analisis gagal.');
+      const chunks = splitOrganizationDocumentText(text);
+      const groups: OrganizationDraft[][] = [];
+      const notices: string[] = [];
+      const providers = new Set<string>();
+      let finished = 0;
+      const analyzePart = async (part: string, number: number, depth = 0): Promise<void> => {
+        status('Analisis tahap ' + number + '/' + chunks.length + ' (' + finished +
+          ' bagian selesai)' + (depth ? ' · mengulang bagian lebih kecil…' : '…'));
+        const response = await fetch('/api/organization/document-analysis', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({text: part, institutionId}), signal: controller.signal
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          if (response.status === 422 &&
+            ['STRUCTURE_INCOMPLETE','STRUCTURE_INVALID_JSON'].includes(result.code) &&
+            depth < 2 && part.length > 2400) {
+            const smaller = splitOrganizationDocumentText(part, Math.max(1200, Math.floor(part.length / 2)));
+            if (smaller.length > 1) {
+              for (const sub of smaller) await analyzePart(sub, number, depth + 1);
+              return;
+            }
+          }
+          throw new Error('Tahap ' + number + ': ' + (result.error || 'Analisis AI gagal.') +
+            ' Tidak ada perubahan database.');
+        }
+        if (current !== generation.current) throw new Error('Analisis dibatalkan.');
+        if (Array.isArray(result.units) && result.units.length) {
+          groups.push(validateOrganizationDraft(result.units));
+        }
+        if (Array.isArray(result.warnings)) notices.push(...result.warnings);
+        providers.add([result.provider,result.model].filter(Boolean).join(' · '));
+        finished++;
+      };
+      for (let i = 0; i < chunks.length; i++) await analyzePart(chunks[i], i + 1);
       if (current !== generation.current) return;
-      setRows(validateOrganizationDraft(result.units)); setWarnings(result.warnings || []); setProvider([result.provider,result.model].filter(Boolean).join(' · '));
-      setProgress('Draft siap ditinjau. Periksa seluruh unit, induk, dan referensi sumber.');
+      if (!groups.length) {
+        throw new Error('Tidak ditemukan unit organisasi dengan bukti teks yang cukup. Periksa OCR dan halaman lampiran.');
+      }
+      const merged = mergeOrganizationDrafts(groups);
+      setRows(validateOrganizationDraft(merged.units));
+      setWarnings([...notices, ...merged.warnings]);
+      setProvider([...providers].filter(Boolean).join(' / '));
+      setProgress(merged.units.length + ' unit draft selesai dari ' + finished +
+        ' bagian. Tinjau kode, garis pelaporan, dan bukti sebelum menyimpan.');
     } catch (err) { if (current === generation.current) setError(err instanceof Error ? err.message : 'Analisis gagal.'); }
     finally { if (current === generation.current) setBusy(false); }
   }
@@ -76,9 +113,10 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
     <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-bold text-white">Unggah Struktur Organisasi</button>
     {open && <div className="mt-4 space-y-3">
       <p className="text-sm text-slate-700">Institusi: <strong>{institutionName}</strong>. Unggah → kompres PDF → OCR opsional → analisis AI → tinjau → simpan.</p>
-      <p className="text-xs text-slate-500">PDF, TXT, PNG atau JPG · maksimal 40 MB / 300 halaman PDF. Analisis maksimal 90.000 karakter dan 100 unit per impor. File diproses di perangkat; hanya teks dikirim ke AI institusi. Dokumen asli belum diarsipkan.</p>
+      <p className="text-xs text-slate-500">PDF, TXT, PNG atau JPG · maksimal 40 MB / 300 halaman PDF. Analisis bertahap maksimal 90.000 karakter dan 100 unit per impor. Bagian yang tidak lengkap diulang dengan ukuran lebih kecil. File diproses di perangkat; hanya teks dikirim ke AI institusi. Dokumen asli belum diarsipkan.</p>
       <input aria-label="File struktur organisasi" type="file" accept=".pdf,.txt,.png,.jpg,.jpeg" disabled={busy || compressing} onChange={e => choose(e.target.files?.[0] || null)} className="block w-full min-w-0 text-sm" />
       <PdfCompressControl file={file} disabled={busy} onChange={choose} onBusyChange={setCompressing} />
+      <p className="text-xs text-slate-600">Urutan acuan: {ORGANIZATION_HIERARCHY_STANDARD}</p>
       <label className="block text-sm">Pembacaan OCR<select className={field} value={ocr} disabled={busy || compressing} onChange={e => { setOcr(e.target.value); setRows([]); setConfirmed(false); }}><option value="auto">Otomatis untuk halaman scan</option><option value="all">OCR seluruh halaman</option><option value="off">Tanpa OCR — PDF teks / TXT</option></select></label>
       <button type="button" disabled={!file || busy || compressing} onClick={analyze} className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Memproses…' : 'Analisis AI Struktur'}</button>
       <p role="status" className="text-sm text-slate-600">{progress}</p>
@@ -99,7 +137,7 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
           <label className="text-xs font-semibold sm:col-span-2">Bukti / halaman sumber<textarea className={field} value={row.source} onChange={e => edit(index,'source',e.target.value)} /></label>
           <button type="button" onClick={() => {setRows(rows.filter((_,i) => i !== index));setConfirmed(false);}} className="justify-self-start text-sm text-red-700 underline">Hapus dari draft</button>
         </div>)}
-        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-1" />Saya sudah memeriksa seluruh unit dan hubungan induk terhadap dokumen sumber untuk {institutionName}. Simpan sebagai unit aktif; unit lama tidak ditimpa.</label>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-1" />Saya sudah memeriksa seluruh unit dan hubungan induk terhadap dokumen sumber untuk {institutionName}. Simpan sebagai unit aktif dan referensi AI institusi; unit lama tidak ditimpa.</label>
         <button type="button" disabled={!confirmed || !rows.length} onClick={save} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Validasi & Simpan Struktur</button>
       </fieldset>}
     </div>}
