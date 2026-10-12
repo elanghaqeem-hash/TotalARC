@@ -31,7 +31,7 @@ function sourceFromDocument(name: string, documentText: string): string | null {
   const index = lower.indexOf(name.toLocaleLowerCase('id'));
   if (index < 0) return null;
   const before = documentText.slice(0, index);
-  const labels = [...before.matchAll(/--- (?:Halaman|Gambar halaman) (\d+) ---/gi)];
+  const labels = Array.from(before.matchAll(/--- (?:Halaman|Gambar halaman) (\d+) ---/gi));
   const page = labels.length ? labels[labels.length - 1][1] : '';
   if (!page) return null;
   // This is an evidence locator, not a claim that a reporting line is confirmed.
