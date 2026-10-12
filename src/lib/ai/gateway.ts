@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { redactBankingSensitiveData } from './redaction';
 import { getAiRuntimeRouting } from './admin-config';
+import { loadInstitutionOrganizationPrompt } from './organization-context';
 
 type WorkersAiBinding = {
   run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
@@ -668,8 +669,10 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
     Math.max(256, request.maxOutputTokens || MAX_OUTPUT_TOKENS)
   );
 
+  // Authoritative, tenant-scoped hierarchy is supplied to every institution-aware AI task.
+  const organizationContext = await loadInstitutionOrganizationPrompt(request.institutionId);
   const basePrompt = truncateInput(request.prompt);
-  const baseSystem = truncateInput(request.systemPrompt);
+  const baseSystem = truncateInput(request.systemPrompt + organizationContext);
   let totalRedactions = 0;
   let lastError: unknown;
 
