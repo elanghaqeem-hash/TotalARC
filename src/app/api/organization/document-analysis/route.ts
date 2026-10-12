@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { guardAiPost } from '@/lib/ai/http-security';
 import { runAiGateway } from '@/lib/ai/gateway';
-import { ORGANIZATION_TYPES, ORGANIZATION_HIERARCHY_STANDARD, validateOrganizationDraft } from '@/lib/organization-import';
+import { ORGANIZATION_TYPES, ORGANIZATION_HIERARCHY_STANDARD } from '@/lib/organization-import';
+import { normalizeOrganizationAiDraft } from '@/lib/organization-ai-normalize';
 
 export const dynamic = 'force-dynamic';
 const headers = { 'Cache-Control': 'no-store' };
@@ -55,23 +56,41 @@ export async function POST(request: Request) {
     } catch {
       return NextResponse.json({error: 'Respons AI bukan JSON yang utuh. Coba analisis bagian yang lebih pendek.', code: 'STRUCTURE_INVALID_JSON'}, {status: 422, headers});
     }
-    if (parsed.complete !== true || !Array.isArray(parsed.units)) {
+    if (![true, 'true'].includes(parsed.complete as boolean | string) || !Array.isArray(parsed.units)) {
       return NextResponse.json({error: 'Sebagian hasil AI terpotong atau belum lengkap. Sistem perlu membagi bagian ini lebih kecil.', code: 'STRUCTURE_INCOMPLETE'}, {status: 422, headers});
     }
-    const units = parsed.units.length ? validateOrganizationDraft(parsed.units) : [];
+    let normalized: ReturnType<typeof normalizeOrganizationAiDraft>;
+    try {
+      normalized = normalizeOrganizationAiDraft(parsed.units, text);
+    } catch (error) {
+      // Invalid values are not necessarily truncated output: splitting them
+      // repeatedly only wastes provider calls and can hide the real problem.
+      console.warn(JSON.stringify({
+        event: 'totalarc.organization.ai_draft_invalid',
+        code: 'STRUCTURE_INVALID_DRAFT',
+        reason: error instanceof Error ? error.message.slice(0, 180) : 'unknown'
+      }));
+      return NextResponse.json({
+        error: 'Format atau referensi unit dari AI tidak dapat diverifikasi. Periksa kualitas OCR atau pilih OCR seluruh halaman sebelum mencoba kembali.',
+        code: 'STRUCTURE_INVALID_DRAFT'
+      }, {status: 422, headers});
+    }
     const warnings = Array.isArray(parsed.warnings)
       ? parsed.warnings.filter((s): s is string => typeof s === 'string').slice(0, 30).map(s => s.slice(0, 1000))
       : [];
-    return NextResponse.json({units, warnings, provider: ai.provider, model: ai.model, requiresValidation: true}, {headers});
+    return NextResponse.json({
+      units: normalized.units, warnings: [...warnings, ...normalized.warnings].slice(0, 60),
+      provider: ai.provider, model: ai.model, requiresValidation: true
+    }, {headers});
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     const draftInvalid = /^(Impor harus|Unit |Field |Kode|Email unit|Referensi sumber|Hubungan induk)/.test(message);
     console.warn(JSON.stringify({event:'totalarc.organization.ai_chunk_failed', code:draftInvalid?'INVALID_AI_DRAFT':'AI_PROVIDER_UNAVAILABLE', institutionId:context.institution.id}));
     return NextResponse.json({
       error: draftInvalid
-        ? 'Struktur dari AI tidak lolos validasi. Sistem perlu menganalisis bagian lebih kecil.'
+        ? 'Format struktur AI tidak valid. Periksa hasil OCR sebelum mengulang.'
         : 'Penyedia AI tidak dapat menyelesaikan analisis. Periksa konfigurasi AI dan coba lagi.',
-      code: draftInvalid ? 'STRUCTURE_INCOMPLETE' : 'AI_PROVIDER_UNAVAILABLE'
+      code: draftInvalid ? 'STRUCTURE_INVALID_DRAFT' : 'AI_PROVIDER_UNAVAILABLE'
     }, {status: draftInvalid ? 422 : 503, headers});
   }
 }

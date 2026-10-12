@@ -9,6 +9,32 @@ function load(path, imports = {}) {
   return exports;
 }
 const contract = load('src/lib/organization-import.ts');
+const normalize = load('src/lib/organization-ai-normalize.ts', {'./organization-import': contract});
+const fromAi = normalize.normalizeOrganizationAiDraft(
+  [{code:'DIR UTAMA', name:'Direktur Utama', type:'Direktorat', source:'',
+    parentCode:'', headName:'', headEmail:''}],
+  '--- Halaman 3 ---\nDirektur Utama\n'
+);
+assert.equal(fromAi.units.length,1);
+assert.equal(fromAi.units[0].code,'DIR-UTAMA');
+assert.equal(fromAi.units[0].type,'Directorate');
+assert(fromAi.units[0].source.includes('Halaman 3'));
+assert(fromAi.warnings.length>0);
+assert.throws(()=>normalize.normalizeOrganizationAiDraft(
+  [{code:'ABC',name:'Fiktif',type:'Unit',source:''}],
+  '--- Halaman 1 ---\nData lain\n'
+));
+assert.throws(()=>normalize.normalizeOrganizationAiDraft(
+  [{code:'X',name:'Direktorat A',type:'Unknown',source:'Halaman 1'}],
+  '--- Halaman 1 ---\nDirektorat A\n'
+));
+const deduplicated = normalize.normalizeOrganizationAiDraft(
+ [{code:'CAB',name:'Cabang Utama',type:'Cabang',source:'Halaman 1'},
+  {code:'CAB',name:'Cabang Utama',type:'Branch',source:'Halaman 2'}],
+ '--- Halaman 1 ---\nCabang Utama'
+);
+assert.equal(deduplicated.units.length,1);
+
 const row = (code,parentCode='') => ({code,name:code,type:'Unit',parentCode,source:'Halaman 1: '+code});
 assert.throws(()=>contract.validateOrganizationDraft([]));
 assert.throws(()=>contract.validateOrganizationDraft([row('A'),row('a')]));
@@ -46,6 +72,7 @@ const imports = {
  '@/lib/institution-context':{resolveInstitutionAccess:async()=>context},
  '@/lib/ai/http-security':{guardAiPost:async()=>({ok:true,body})},
  '@/lib/organization-import':contract,
+ '@/lib/organization-ai-normalize':normalize,
  '@/lib/ai/gateway':{runAiGateway:async input=>{calls++;assert.equal(input.institutionId,'bank-a');assert.equal(input.feature,'organization_document');return {text:JSON.stringify({units:[row('A')],complete:true,warnings:[]})};}}
 };
 const analysis = load('src/app/api/organization/document-analysis/route.ts',imports);
