@@ -46,8 +46,12 @@ export async function POST(request: Request) {
     });
     let parsed: Record<string, unknown>;
     try {
-      const raw = ai.text.trim().replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-      parsed = JSON.parse(raw);
+      // Some reasoning models prepend a <think> segment or a JSON code fence.
+      const plain = ai.text.trim().replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      const open = plain.indexOf('{');
+      const close = plain.lastIndexOf('}');
+      if (open < 0 || close <= open) throw new Error('Missing JSON object');
+      parsed = JSON.parse(plain.slice(open, close + 1));
     } catch {
       return NextResponse.json({error: 'Respons AI bukan JSON yang utuh. Coba analisis bagian yang lebih pendek.', code: 'STRUCTURE_INVALID_JSON'}, {status: 422, headers});
     }
