@@ -664,8 +664,10 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
   });
   const attemptedProviders: AiProvider[] = [];
   const temperature = Math.min(1, Math.max(0, request.temperature ?? 0.2));
+  // Organization extraction needs a higher response cap than ordinary short GRC answers.
+  const outputCap = request.feature === 'organization_document' ? Math.max(MAX_OUTPUT_TOKENS, 6000) : MAX_OUTPUT_TOKENS;
   const maxOutputTokens = Math.min(
-    MAX_OUTPUT_TOKENS,
+    outputCap,
     Math.max(256, request.maxOutputTokens || MAX_OUTPUT_TOKENS)
   );
 
