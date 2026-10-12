@@ -35,6 +35,8 @@ export const AI_FEATURE_CATALOG: Array<{
   description: string;
   recommendedLevel: AiLevel;
 }> = [
+  { id: 'organization_document', page: '/organization', pageLabel: 'Struktur Organisasi', buttonLabel: 'Analisis AI Struktur', description: 'Ekstraksi dokumen organisasi menjadi draft hierarki untuk ditinjau.', recommendedLevel: 'ADVANCED' },
+
   {
     id: 'assistant_chat',
     page: 'Global',

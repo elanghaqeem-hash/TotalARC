@@ -145,6 +145,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify:ai-security
+      - run: node scripts/verify-organization-document-import.cjs
 
   icofr-traceability:
     name: ICOFR Traceability Integrity

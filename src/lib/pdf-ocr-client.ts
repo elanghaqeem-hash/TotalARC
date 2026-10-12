@@ -62,7 +62,8 @@ function previewText(fullText: string) {
 export async function preparePdfText(
   file: File,
   forceOcr: boolean,
-  progress: (message: string) => void
+  progress: (message: string) => void,
+  allowOcr = true
 ) {
   if (!/\.pdf$/i.test(file.name)) return null;
   progress('Membuka PDF…');
@@ -103,7 +104,8 @@ export async function preparePdfText(
           .join('')
           .trim();
 
-        const needsOcr = forceOcr || pageText.replace(/\s/g, '').length < 80;
+        const needsOcr = allowOcr && (forceOcr || pageText.replace(/\s/g, '').length < 80);
+        if (!allowOcr && pageText.replace(/\s/g, '').length < 20) throw new Error(`Halaman ${pageNumber} tidak memiliki teks yang cukup. Aktifkan OCR untuk membaca seluruh dokumen.`);
         if (needsOcr) {
           if (!worker) {
             const { createWorker } = await import('tesseract.js');
