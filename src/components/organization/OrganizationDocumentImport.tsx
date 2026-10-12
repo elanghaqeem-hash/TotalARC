@@ -5,7 +5,7 @@ import { preparePdfText } from '@/lib/pdf-ocr-client';
 import { ORGANIZATION_TYPES, ORGANIZATION_HIERARCHY_STANDARD, splitOrganizationDocumentText, mergeOrganizationDrafts, validateOrganizationDraft, orderOrganizationDraft, type OrganizationDraft } from '@/lib/organization-import';
 
 type AnalysisCache = {
-  file: File; ocr: string; chunks: string[]; groups: OrganizationDraft[][];
+  file: File; ocr: string; institutionId: string; chunks: string[]; groups: OrganizationDraft[][];
   notices: string[]; providers: Set<string>; completed: Set<number>; partsDone: number;
 };
 type Props = { institutionId: string; institutionName: string; existing: {id: string; code: string; name: string}[]; entities: {id: string; name: string}[]; onSaved: () => void };
@@ -27,6 +27,14 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
   useEffect(() => () => { generation.current++; request.current?.abort(); }, []);
+  useEffect(() => {
+    generation.current++;
+    request.current?.abort();
+    request.current = null;
+    cache.current = null;
+    setFile(null); setRows([]); setWarnings([]); setConfirmed(false);
+    setIncomplete(false); setBusy(false); setProgress(''); setError('');
+  }, [institutionId]);
   const choose = (next: File | null) => { cache.current = null; setIncomplete(false); setFile(next); setRows([]); setConfirmed(false); setError(''); setWarnings([]); setProgress(''); };
   function edit(index: number, key: keyof OrganizationDraft, value: string) {
     setRows(current => current.map((row, i) => i === index ? {...row, [key]: value} : row)); setConfirmed(false);
@@ -46,7 +54,8 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
         if (current !== generation.current || controller.signal.aborted) throw new Error('Analisis dibatalkan.');
         setProgress(message);
       };
-      session = cache.current?.file === file && cache.current.ocr === ocr ? cache.current : null;
+      session = cache.current?.file === file && cache.current.ocr === ocr &&
+        cache.current.institutionId === institutionId ? cache.current : null;
       if (!session) {
         setRows([]); setWarnings([]);
         let text: string;
@@ -68,7 +77,7 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
         status('Menyiapkan bagian analisis organisasi…');
         const chunks = splitOrganizationDocumentText(text, 8000);
         session = {
-          file, ocr, chunks, groups: [], notices: [],
+          file, ocr, institutionId, chunks, groups: [], notices: [],
           providers: new Set<string>(), completed: new Set<number>(), partsDone: 0
         };
         cache.current = session;
@@ -178,7 +187,7 @@ export function OrganizationDocumentImport({institutionId, institutionName, exis
       <PdfCompressControl file={file} disabled={busy} onChange={choose} onBusyChange={setCompressing} />
       <p className="text-xs text-slate-600">Urutan acuan: {ORGANIZATION_HIERARCHY_STANDARD}</p>
       <label className="block text-sm">Pembacaan OCR<select className={field} value={ocr} disabled={busy || compressing} onChange={e => { cache.current = null; setOcr(e.target.value); setRows([]); setIncomplete(false); setConfirmed(false); }}><option value="auto">Otomatis untuk halaman scan</option><option value="all">OCR seluruh halaman</option><option value="off">Tanpa OCR — PDF teks / TXT</option></select></label>
-      <button type="button" disabled={!file || busy || compressing} onClick={analyze} className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Memproses…' : cache.current?.file === file ? 'Lanjutkan Analisis' : 'Analisis AI Struktur'}</button>
+      <button type="button" disabled={!file || busy || compressing} onClick={analyze} className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Memproses…' : cache.current?.file === file && cache.current.institutionId === institutionId ? 'Lanjutkan Analisis' : 'Analisis AI Struktur'}</button>
       {busy && <button type="button" onClick={() => request.current?.abort()} className="ml-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">Batalkan</button>}
       <p role="status" className="text-sm text-slate-600">{progress}</p>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
