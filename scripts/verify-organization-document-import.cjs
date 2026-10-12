@@ -17,6 +17,22 @@ assert.throws(()=>contract.validateOrganizationDraft([row('A','A')]));
 assert.throws(()=>contract.validateOrganizationDraft([{...row('A'),type:'Unknown'}]));
 assert.throws(()=>contract.validateOrganizationDraft([{...row('A'),source:''}]));
 assert.throws(()=>contract.validateOrganizationDraft(Array.from({length:101},(_,i)=>row('U'+i))));
+const standard = contract.ORGANIZATION_HIERARCHY_STANDARD;
+assert(standard.includes('Direktorat') && standard.includes('Cabang'));
+const source = '--- Halaman 1 ---\n' + 'Struktur bank\n'.repeat(1200);
+const parts = contract.splitOrganizationDocumentText(source, 1800);
+assert(parts.length > 2);
+assert(parts.every(part => part.length <= 1900));
+assert.throws(() => contract.splitOrganizationDocumentText('X'.repeat(90001)));
+const merged = contract.mergeOrganizationDrafts([
+ [row('DIV'), row('CAB','DIV')],
+ [row('DIV'), {...row('CAB'),name:'Cabang Lain'}]
+]);
+assert.equal(merged.units.length,3);
+assert(merged.warnings.some(w => w.includes('CAB')));
+assert(merged.units.some(u => u.code==='CAB-2' && !u.parentCode));
+assert.equal(contract.mergeOrganizationDrafts([[row('DIV')],[row('DIV')]]).units.length,1);
+assert.throws(() => contract.mergeOrganizationDrafts([Array.from({length:101},(_,i)=>row('X'+i))]));
 const rows = contract.validateOrganizationDraft([row('B','A'),{...row('A'),institutionId:'bank-b',status:'Approved'}]);
 assert.equal(rows[1].institutionId,undefined);
 assert.equal(rows[1].status,undefined);
@@ -37,6 +53,35 @@ const db = {prepare(sql) { const statement = {sql,values:[],bind(...values){retu
 const persistence=load('src/lib/d1-organization.ts',{'@opennextjs/cloudflare':{getCloudflareContext:async()=>({env:{DB:db}})},'@/lib/institution-context':{},'@/lib/organization-import':contract});
 const save=load('src/app/api/organization/import/route.ts',{...imports,'@/lib/d1-organization':persistence});
 (async()=>{
+ const seen=[];
+ const mockDb = {
+   prepare(sql) {
+     return {
+       bind(id) {
+         return {
+           async all() {
+             seen.push({sql,id});
+             return {results: id === 'bank-a' ? [
+               {code:'DIV',name:'Divisi Contoh',type:'Division',parentCode:'DIR',parentId:'parent',hierarchyStatus:'USER_CONFIRMED_PARENT'},
+               {code:'DIR',name:'Direktorat Contoh',type:'Directorate',parentCode:null,parentId:null,hierarchyStatus:'USER_CONFIRMED_PARENT'}
+             ] : []};
+           }
+         };
+       }
+     };
+   }
+ };
+ const orgContext = load('src/lib/ai/organization-context.ts',{
+   '@opennextjs/cloudflare':{getCloudflareContext:async()=>({env:{DB:mockDb}})},
+   '@/lib/organization-import':contract
+ });
+ assert.equal(await orgContext.loadInstitutionOrganizationPrompt(), '');
+ const prompt=await orgContext.loadInstitutionOrganizationPrompt('bank-a');
+ assert(prompt.indexOf('DIR |') < prompt.indexOf('DIV |'));
+ assert(prompt.includes('induk=DIR'));
+ assert(!prompt.includes('headEmail'));
+ assert(seen.every(x=>x.id==='bank-a' && x.sql.includes('o.institutionId = ?')));
+ assert((await orgContext.loadInstitutionOrganizationPrompt('bank-b')).includes('Belum ada unit'));
  body={institutionId:'bank-a',text:'Bank organization '.repeat(10)};
  context=null;assert.equal((await analysis.POST({})).status,403);
  context={institution:{id:'bank-a'},profile:{role:'RiskManager',name:'Tester'}};

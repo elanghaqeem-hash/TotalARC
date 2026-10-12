@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { redactBankingSensitiveData } from './redaction';
 import { getAiRuntimeRouting } from './admin-config';
+import { loadInstitutionOrganizationPrompt } from './organization-context';
 
 type WorkersAiBinding = {
   run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
@@ -663,13 +664,17 @@ export async function runAiGateway(request: AiGatewayRequest): Promise<AiGateway
   });
   const attemptedProviders: AiProvider[] = [];
   const temperature = Math.min(1, Math.max(0, request.temperature ?? 0.2));
+  // Organization extraction needs a higher response cap than ordinary short GRC answers.
+  const outputCap = request.feature === 'organization_document' ? Math.max(MAX_OUTPUT_TOKENS, 6000) : MAX_OUTPUT_TOKENS;
   const maxOutputTokens = Math.min(
-    MAX_OUTPUT_TOKENS,
+    outputCap,
     Math.max(256, request.maxOutputTokens || MAX_OUTPUT_TOKENS)
   );
 
+  // Authoritative, tenant-scoped hierarchy is supplied to every institution-aware AI task.
+  const organizationContext = await loadInstitutionOrganizationPrompt(request.institutionId);
   const basePrompt = truncateInput(request.prompt);
-  const baseSystem = truncateInput(request.systemPrompt);
+  const baseSystem = truncateInput(request.systemPrompt + organizationContext);
   let totalRedactions = 0;
   let lastError: unknown;
 
