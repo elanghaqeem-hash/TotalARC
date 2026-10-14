@@ -174,6 +174,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify:security-negative
+      - run: node scripts/verify-health-probe-scope.cjs
       - run: npm run verify:process-flow
       - run: npm run verify:process-document-ai
       - run: npm run verify:ai-risk-register
