@@ -185,6 +185,7 @@ jobs:
       - run: npm run verify:regulatory-obligations
       - run: npm run verify:regulatory-clauses
       - run: npm run verify:policy-registry
+      - run: node scripts/verify-policy-registry-sync-recovery.cjs
       - run: npm run verify:compliance-dashboard
       - run: npm run verify:compliance-monitoring
       - run: npm run verify:compliance-risk-testing
