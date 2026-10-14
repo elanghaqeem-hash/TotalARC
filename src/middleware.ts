@@ -48,18 +48,28 @@ async function authorizedRegulatoryCron(request: NextRequest) {
   return safeEqual(configured, supplied);
 }
 
+// Health credentials are intentionally NOT user sessions. They may only reach
+// named read-only system probes and the two guarded deployment operations.
+// Never extend this list to tenant-scoped, operational, or admin GET endpoints.
+const READ_ONLY_HEALTH_PROBES = new Set([
+  '/api/system/database',
+  '/api/system/rcm-integrity',
+  '/api/system/icofr-integrity'
+]);
+
 async function authorizedHealthProbe(request: NextRequest) {
-  if (!request.nextUrl.pathname.startsWith('/api/')) return false;
-  const bootstrapPost =
-    request.nextUrl.pathname === '/api/auth/bootstrap' && request.method === 'POST';
-  const sourceMigrationPost =
-    request.nextUrl.pathname === '/api/system/source-migration' && request.method === 'POST';
-  if (
-    !bootstrapPost &&
-    !sourceMigrationPost &&
-    request.method !== 'GET' &&
-    request.method !== 'HEAD'
-  ) return false;
+  const pathname = request.nextUrl.pathname;
+  const method = request.method.toUpperCase();
+  const readOnlyProbe =
+    (method === 'GET' || method === 'HEAD') &&
+    READ_ONLY_HEALTH_PROBES.has(pathname);
+  const guardedBootstrap =
+    method === 'POST' && pathname === '/api/auth/bootstrap';
+  const guardedSourceMigration =
+    method === 'POST' && pathname === '/api/system/source-migration';
+  if (!readOnlyProbe && !guardedBootstrap && !guardedSourceMigration) {
+    return false;
+  }
 
   const configured = await runtimeValue('TOTAL_ARC_HEALTHCHECK_TOKEN');
   if (!configured || configured.length < 24) return false;
