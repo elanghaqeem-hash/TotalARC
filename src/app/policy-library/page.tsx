@@ -127,6 +127,7 @@ type Registry = {
   byTargetType: Record<string, number>;
   sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>>;
   syncRequired: boolean;
+  staleSync?: boolean;
   syncVersion: string;
   candidates: Array<{
     sourceType: string;
@@ -962,6 +963,14 @@ export default function PolicyLibraryPage() {
             className="rounded-lg bg-white px-3 py-2 text-sm font-bold text-amber-900 shadow-sm disabled:opacity-60">
             Coba Muat Relasi
           </button>
+        </section>
+      )}
+
+      {data?.registry?.staleSync && (
+        <section role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+          Sinkronisasi Policy Registry sebelumnya terhenti tanpa konfirmasi selesai.
+          Data dan relasi yang sudah ada tetap dipertahankan.
+          Administrator dapat menjalankan ulang sinkronisasi dari menu Registry.
         </section>
       )}
 

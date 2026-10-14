@@ -116,7 +116,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # Static schema/binding checks do not need Prisma native engine postinstall.
+      # Avoid unnecessary network downloads and flaky ECONNRESET on CI runners.
+      - run: npm ci --ignore-scripts
       - run: npm run verify:d1-schema-stability
       - run: npm run verify:d1-binding-config
 
@@ -185,6 +187,7 @@ jobs:
       - run: npm run verify:regulatory-obligations
       - run: npm run verify:regulatory-clauses
       - run: npm run verify:policy-registry
+      - run: node scripts/verify-policy-registry-sync-recovery.cjs
       - run: npm run verify:compliance-dashboard
       - run: npm run verify:compliance-monitoring
       - run: npm run verify:compliance-risk-testing
