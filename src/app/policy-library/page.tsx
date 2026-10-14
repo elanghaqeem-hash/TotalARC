@@ -127,6 +127,7 @@ type Registry = {
   byTargetType: Record<string, number>;
   sourcesByPolicy: Record<string, Array<{ sourceType: string; sourceId: string }>>;
   syncRequired: boolean;
+  staleSync?: boolean;
   syncVersion: string;
   candidates: Array<{
     sourceType: string;
@@ -1008,6 +1009,12 @@ export default function PolicyLibraryPage() {
                       ' sumber/ketentuan existing akan disinkronkan tanpa menduplikasi file sumber.'
                     : ' Registry saat ini sudah mencakup seluruh kandidat yang terdeteksi di database.'}
               </p>
+              {data?.registry?.staleSync && (
+                <p role="alert" className="mt-2 text-sm font-semibold text-amber-800">
+                  Sinkronisasi sebelumnya terhenti tanpa konfirmasi selesai. Data yang sudah ada tetap dipertahankan.
+                  Administrator dapat menjalankan ulang sinkronisasi; proses lama akan ditandai terinterupsi.
+                </p>
+              )}
             </div>
           </div>
           {data?.canManage &&
