@@ -966,6 +966,14 @@ export default function PolicyLibraryPage() {
         </section>
       )}
 
+      {data?.registry?.staleSync && (
+        <section role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+          Sinkronisasi Policy Registry sebelumnya terhenti tanpa konfirmasi selesai.
+          Data dan relasi yang sudah ada tetap dipertahankan.
+          Administrator dapat menjalankan ulang sinkronisasi dari menu Registry.
+        </section>
+      )}
+
       {(registryMetrics.missingCandidates > 0 ||
         registryMetrics.unmappedPolicySources > 0 ||
         registryMetrics.discoveredCandidates > 0) && (
@@ -1009,12 +1017,6 @@ export default function PolicyLibraryPage() {
                       ' sumber/ketentuan existing akan disinkronkan tanpa menduplikasi file sumber.'
                     : ' Registry saat ini sudah mencakup seluruh kandidat yang terdeteksi di database.'}
               </p>
-              {data?.registry?.staleSync && (
-                <p role="alert" className="mt-2 text-sm font-semibold text-amber-800">
-                  Sinkronisasi sebelumnya terhenti tanpa konfirmasi selesai. Data yang sudah ada tetap dipertahankan.
-                  Administrator dapat menjalankan ulang sinkronisasi; proses lama akan ditandai terinterupsi.
-                </p>
-              )}
             </div>
           </div>
           {data?.canManage &&
