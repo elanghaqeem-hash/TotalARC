@@ -104,7 +104,7 @@ export default function IcofrAiMappingPage(){
       {([['Akun signifikan',summary.significantItems],['Relasi FSLI–BPM',summary.scopingPairs],
         ['Akun dengan kandidat',summary.itemsWithCandidates],['Gap PLC',summary.missingPlc],
         ['Usulan draft/review',summary.proposals],['Published',summary.published]] as [string,unknown][]).map(([label,value])=>
-          <div key={label} className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold tabular-nums">{value??'—'}</p></div>)}
+          <div key={label} className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold tabular-nums">{String(value??'—')}</p></div>)}
     </div>
     {error&&<div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"><AlertCircle className="h-4 w-4 shrink-0"/>{error}</div>}
     {message&&<div className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 className="h-4 w-4 shrink-0"/>{message}</div>}
