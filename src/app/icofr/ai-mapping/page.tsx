@@ -143,6 +143,16 @@ export default function IcofrAiMappingPage(){
             {canCreate&&<button onClick={()=>void ai()} disabled={busy||!selected.source} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"><Sparkles className="h-4 w-4"/> Rekomendasi AI</button>}
           </div>
           {aiStatus&&<p className="mt-2 rounded-lg bg-sky-50 p-3 text-xs leading-5 text-sky-800">{aiStatus}</p>}
+          <div className="mt-3">
+            <p className="text-xs font-semibold text-slate-600">Kandidat assertion dari analisis risiko (belum divalidasi)</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(selected.proposedAssertions||[]).map((value:string)=>
+                <button type="button" key={value} onClick={()=>setAssertion(value)}
+                  className={'rounded-full border px-3 py-1.5 text-xs '+(assertion===value?'border-sky-600 bg-sky-50 text-sky-900':'border-slate-200 text-slate-600')}>
+                  {value}
+                </button>)}
+            </div>
+          </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-bold">Assertion
               <select value={assertion} onChange={e=>setAssertion(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 text-sm font-normal">
