@@ -133,7 +133,8 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/controls' },
     { path: '/rcm' },
     { path: '/rcsa' },
-    { path: '/remediation' }
+    { path: '/remediation' },
+    { path: '/icofr/ai-mapping' }
   ],
   ControlOwner: [
     ...COMMON_READ,
