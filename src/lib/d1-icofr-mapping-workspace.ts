@@ -132,7 +132,7 @@ export async function getMappingWorkspace(institutionId:string){
       a.riskCode.localeCompare(b.riskCode));
     const source=sourceByTitle.get(norm(item.name))||null;
     const plcCandidates=candidates.filter(c=>c.domainCategory==='PLC');
-    return {...item,source:source?{recordKey:source.recordKey,documentId:source.sourceDocumentId,
+    return {...item,id:String(item.id),itemCode:String(item.itemCode),name:String(item.name),financialStatement:String(item.financialStatement),source:source?{recordKey:source.recordKey,documentId:source.sourceDocumentId,
       documentTitle:source.sourceTitle,sha256:source.sourceHash}:null,
       processes:mapped.map(p=>({id:p.processId,code:p.processCode,name:p.processName,sourceReference:p.sourceReference})),
       riskControlCandidates:candidates.slice(0,60),candidateCount:candidates.length,
@@ -190,7 +190,7 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   if(note.length<15)err('REVIEW_NOTE_REQUIRED');
   const database=await db();await ensureSchema(database);
   const proposal=await first(database,'SELECT * FROM ICOFRMappingProposal WHERE id=? AND institutionId=? LIMIT 1',[id,institutionId]);
-  if(!proposal)err('PROPOSAL_NOT_FOUND');
+  if(!proposal) throw new Error('PROPOSAL_NOT_FOUND');
   const before=targetStatus(proposal);
   if(!stage.from.includes(before))err('INVALID_WORKFLOW_TRANSITION');
   const reviewerIds=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].filter(Boolean).map(String);
