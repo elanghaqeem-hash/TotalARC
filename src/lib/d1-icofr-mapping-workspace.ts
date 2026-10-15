@@ -87,7 +87,7 @@ export async function getMappingWorkspace(institutionId:string){
   const q=[
     all(database,`SELECT id,itemCode,name,financialStatement,processReference,scopingRationale,significant,status
       FROM ICOFRFinancialItem WHERE institutionId=? AND significant=1 ORDER BY itemCode`,[institutionId]),
-    all(database,`SELECT f.id financialItemId,b.id processId,b.processId processCode,b.name processName,
+    all(database,`SELECT DISTINCT f.id financialItemId,b.id processId,b.processId processCode,b.name processName,
       l.sourceReference FROM ICOFRScopeLink l
       JOIN ICOFRScope s ON s.id=l.scopeId AND s.institutionId=?
       JOIN ICOFRScopeItem fi ON fi.id=l.fromItemId AND fi.scopeId=l.scopeId AND fi.itemType='Financial Account'
@@ -194,7 +194,7 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   const before=targetStatus(proposal);
   if(!stage.from.includes(before))err('INVALID_WORKFLOW_TRANSITION');
   const reviewerIds=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].filter(Boolean).map(String);
-  if(action!=='REJECT'&&reviewerIds.includes(actor.id))err('SEGREGATION_OF_DUTIES_REQUIRED');
+  if(action!=='REJECT'&&action!=='PUBLISH'&&reviewerIds.includes(actor.id))err('SEGREGATION_OF_DUTIES_REQUIRED');
   // The maker must not approve, and the same person cannot approve their own review.
   if(action==='PUBLISH'){
     if(!proposal.controlDomainId)err('PLC_MAPPING_REQUIRED');
