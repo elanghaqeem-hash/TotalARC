@@ -199,7 +199,7 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   let publishedDomainId: string | null = null;
   if(action==='PUBLISH'){
 
-    const control=await first(database,"SELECT id,category,sourceControlId FROM ICOFRControlDomain WHERE institutionId=? AND sourceControlId=? AND category='PLC' LIMIT 1",[institutionId,proposal.controlMasterId]);
+    const control=await first(database,"SELECT id,category,sourceControlId FROM ICOFRControlDomain WHERE institutionId=? AND sourceControlId=? AND category='PLC' AND status IN ('Approved','Active','Validated') LIMIT 1",[institutionId,proposal.controlMasterId]);
     if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId)err('PLC_MAPPING_REQUIRED');
     publishedDomainId=String(control.id);
     const source=await first(database,`SELECT d.rawSha256 FROM SourceDocument d
