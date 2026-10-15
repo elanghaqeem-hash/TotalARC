@@ -197,9 +197,8 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   if(action!=='REJECT'&&action!=='PUBLISH'&&reviewerIds.includes(actor.id))err('SEGREGATION_OF_DUTIES_REQUIRED');
   // The maker must not approve, and the same person cannot approve their own review.
   if(action==='PUBLISH'){
-    if(!proposal.controlDomainId)err('PLC_MAPPING_REQUIRED');
-    const control=await first(database,'SELECT category,sourceControlId FROM ICOFRControlDomain WHERE id=? AND institutionId=? LIMIT 1',
-      [proposal.controlDomainId,institutionId]);
+
+    const control=await first(database,"SELECT id,category,sourceControlId FROM ICOFRControlDomain WHERE institutionId=? AND sourceControlId=? AND category='PLC' LIMIT 1",[institutionId,proposal.controlMasterId]);
     if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId)err('PLC_MAPPING_REQUIRED');
     const source=await first(database,`SELECT d.rawSha256 FROM SourceDocument d
       JOIN SourceStructuredRecord s ON s.sourceDocumentId=d.id AND s.institutionId=d.institutionId
@@ -209,7 +208,7 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
     // No assertion is created until separate process owner, coordinator and reviewer sign-off.
     await saveTraceabilityChain({
       financialItemId:String(proposal.financialItemId),assertion:String(proposal.assertion),
-      riskId:String(proposal.riskId),controlDomainId:String(proposal.controlDomainId),
+      riskId:String(proposal.riskId),controlDomainId:String(control!.id),
       sourceControlId:String(proposal.controlMasterId),
       rationale:String(proposal.rationale)+' | Bukti: '+String(proposal.sourceRecordKey)+' / '+String(proposal.sourceReference)
     });
