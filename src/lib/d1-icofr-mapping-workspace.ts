@@ -80,7 +80,7 @@ function pickAssertion(item:Row,risk:Row):string[]{
   if(/rekonsiliasi|pembukuan|pencatatan|pelaporan|salah saji/.test(text))a.add('Accuracy');
   if(/laporan|pengungkapan|disajikan|klasifikasi|ekuitas/.test(text))a.add('Presentation & Disclosure');
   if(/akhir periode|cut.off|tutup buku|akrual/.test(text))a.add('Cut-off');
-  return [...a].filter(x=>(STANDARD_ASSERTIONS as readonly string[]).includes(x)).slice(0,4);
+  return Array.from(a).filter(x=>(STANDARD_ASSERTIONS as readonly string[]).includes(x)).slice(0,4);
 }
 export async function getMappingWorkspace(institutionId:string){
   const database=await db();await ensureSchema(database);
@@ -137,7 +137,7 @@ export async function getMappingWorkspace(institutionId:string){
       processes:mapped.map(p=>({id:p.processId,code:p.processCode,name:p.processName,sourceReference:p.sourceReference})),
       riskControlCandidates:candidates.slice(0,60),candidateCount:candidates.length,
       plcGap:plcCandidates.length===0,plcCandidates:plcCandidates.length,
-      proposedAssertions:[...new Set(candidates.flatMap(c=>c.assertions))].slice(0,8),
+      proposedAssertions:Array.from(new Set(candidates.flatMap(c=>c.assertions))).slice(0,8),
       proposals:proposals.filter(p=>p.financialItemId===item.id)};
   });
   return {items:proposed,summary:{significantItems:items.length,scopingPairs:scoping.length,
@@ -159,9 +159,9 @@ export async function createMappingProposal(institutionId:string,actor:AuthUserP
   if(rationale.length<50||sourceReference.length<12)err('SOURCE_RATIONALE_REQUIRED');
   const workspace=await getMappingWorkspace(institutionId);
   const item=workspace.items.find(x=>x.id===financialItemId);
-  if(!item||!item.source)err('SOURCE_DOCUMENT_REQUIRED');
+  if(!item||!item.source) throw new Error('SOURCE_DOCUMENT_REQUIRED');
   const candidate=item.riskControlCandidates.find(x=>x.riskId===riskId&&x.controlId===controlMasterId);
-  if(!candidate)err('SOURCE_CHAIN_NOT_FOUND');
+  if(!candidate) throw new Error('SOURCE_CHAIN_NOT_FOUND');
   const database=await db();
   const existing=await first(database,`SELECT id FROM ICOFRMappingProposal WHERE institutionId=? AND financialItemId=?
     AND assertion=? AND riskId=? AND controlMasterId=? AND status NOT IN ('REJECTED') LIMIT 1`,
