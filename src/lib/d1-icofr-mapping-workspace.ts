@@ -196,10 +196,12 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   const reviewerIds=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].filter(Boolean).map(String);
   if(action!=='REJECT'&&action!=='PUBLISH'&&reviewerIds.includes(actor.id))err('SEGREGATION_OF_DUTIES_REQUIRED');
   // The maker must not approve, and the same person cannot approve their own review.
+  let publishedDomainId: string | null = null;
   if(action==='PUBLISH'){
 
     const control=await first(database,"SELECT id,category,sourceControlId FROM ICOFRControlDomain WHERE institutionId=? AND sourceControlId=? AND category='PLC' LIMIT 1",[institutionId,proposal.controlMasterId]);
     if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId)err('PLC_MAPPING_REQUIRED');
+    publishedDomainId=String(control.id);
     const source=await first(database,`SELECT d.rawSha256 FROM SourceDocument d
       JOIN SourceStructuredRecord s ON s.sourceDocumentId=d.id AND s.institutionId=d.institutionId
       WHERE d.id=? AND d.institutionId=? AND s.recordKey=? LIMIT 1`,
@@ -217,8 +219,8 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
     action==='APPROVE'?'approvedBy':action==='PUBLISH'?'publishedBy':null;
   const now=new Date().toISOString();
   const sql=`UPDATE ICOFRMappingProposal SET status=?,updatedAt=?,version=version+1`+
-    (field?', '+field+'=?':'')+' WHERE id=? AND institutionId=? AND status=? AND version=?';
-  const args:unknown[]=[stage.to,now,...(field?[actor.id]:[]),id,institutionId,before,proposal.version];
+    (field?', '+field+'=?':'')+(publishedDomainId?',controlDomainId=?':'')+' WHERE id=? AND institutionId=? AND status=? AND version=?';
+  const args:unknown[]=[stage.to,now,...(field?[actor.id]:[]),...(publishedDomainId?[publishedDomainId]:[]),id,institutionId,before,proposal.version];
   const outcome=await run(database,sql,args);
   if(outcome?.meta?.changes!==1)err('CONCURRENT_REVIEW_CONFLICT');
   await logReview(database,institutionId,id,action,before,stage.to,actor,note);
