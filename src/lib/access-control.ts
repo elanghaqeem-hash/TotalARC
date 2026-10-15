@@ -133,7 +133,8 @@ const PAGE_ACCESS: Record<UserRole, AccessRule[]> = {
     { path: '/controls' },
     { path: '/rcm' },
     { path: '/rcsa' },
-    { path: '/remediation' }
+    { path: '/remediation' },
+    { path: '/icofr/ai-mapping' }
   ],
   ControlOwner: [
     ...COMMON_READ,
@@ -286,6 +287,14 @@ function isReadOnlyMethod(method: string) {
 export function canAccessApi(role: UserRole, pathname: string, method: string) {
   if (pathname === '/api/auth/profile') return true;
   if (role === 'SystemAdmin') return true;
+
+  if (pathname === '/api/icofr/ai-mapping' || pathname.startsWith('/api/icofr/ai-mapping/')) {
+    const readers = ['ICOFRCoordinator', 'ProcessOwner', 'Reviewer', 'InternalAuditor', 'ReadOnlyAuditor'];
+    if (!readers.includes(role)) return false;
+    if (isReadOnlyMethod(method)) return true;
+    if (pathname === '/api/icofr/ai-mapping/recommend') return role === 'ICOFRCoordinator';
+    return ['ICOFRCoordinator', 'ProcessOwner', 'Reviewer'].includes(role);
+  }
 
   if (role === 'Admin' && pathname.startsWith('/api/ai/')) return false;
   if (pathname.startsWith('/api/ai/')) return true;

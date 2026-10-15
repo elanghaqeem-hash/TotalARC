@@ -25,6 +25,7 @@ import {
 const modules = [
   { href: '/icofr/scoping', title: 'Scoping & Materiality', detail: 'Reporting perimeter, OM, PM, clearly-trivial/SAD and component materiality.', icon: Target, countKey: 'scopes' },
   { href: '/icofr/accounts', title: 'Accounts, Disclosures & Assertions', detail: 'Significant accounts/disclosures, relevant assertions, risk factors and process references.', icon: FileSpreadsheet, countKey: 'financialItems' },
+  { href: '/icofr/ai-mapping', title: 'AI Mapping & Validation', detail: 'Source-backed financial item to assertion, BPM, RCM, PLC gap review, maker-checker approvals and controlled publication.', icon: Sparkles },
   { href: '/icofr/traceability', title: 'End-to-End Traceability Matrix', detail: 'Connect account/disclosure → assertion → risk → control → IPE/EUC → ToD → ToE → deficiency → MAP.', icon: Link2, metricKey: 'traceability' },
   { href: '/icofr/coverage', title: 'Coverage & Gap Analytics', detail: 'Measure real ICOFR coverage, detect missing relationships/tests, map ITAC dependencies and manage database-backed gap actions.', icon: BarChart3, metricKey: 'coverage' },
   { href: '/icofr/elc', title: 'Entity-Level Controls (ELC)', detail: 'Governance, control environment, monitoring, fraud risk and period-end reporting controls.', icon: Shield, countKey: 'elc' },
