@@ -91,6 +91,28 @@ export async function POST(request: Request) {
   if (body.status === 'Approved' && ctx.profile.role !== 'Reviewer')
     return errorResponse('Persetujuan ToD hanya dapat dilakukan Reviewer.', 403);
 
+  // A test result is never evidence of its own approval. Enforce review inputs
+  // on the server, regardless of what the browser chooses to display.
+  const status = String(body.status || 'Draft');
+  const conclusion = String(body.conclusion || 'Not Assessed');
+  if (!['Draft', 'Under Review', 'Approved'].includes(status))
+    return errorResponse('Status ToD tidak valid.', 400);
+  if (!['Not Assessed', 'Effective', 'Partially Effective', 'Ineffective'].includes(conclusion))
+    return errorResponse('Kesimpulan ToD tidak valid.', 400);
+  if (status === 'Approved') {
+    const reviewer = String(body.reviewerName || '').trim();
+    const tester = String(body.testerName || '').trim();
+    const notes = String(body.notes || '').trim();
+    if (!reviewer || !tester || reviewer.toLocaleLowerCase() === tester.toLocaleLowerCase())
+      return errorResponse('Reviewer ToD wajib berbeda dari penguji.', 409, { code: 'TOD_SEGREGATION_REQUIRED' });
+    if (notes.length < 40)
+      return errorResponse('Persetujuan ToD membutuhkan referensi bukti dan catatan review minimal 40 karakter.', 409, { code: 'TOD_EVIDENCE_REQUIRED' });
+    if (conclusion === 'Not Assessed')
+      return errorResponse('ToD yang belum dinilai tidak dapat disetujui.', 409, { code: 'TOD_ASSESSMENT_REQUIRED' });
+    if (conclusion === 'Effective' && !['objectiveAlignment','riskCoverage','precisionAdequate','evidenceSufficiency','walkthroughComplete'].every(key => body[key] === true))
+      return errorResponse('Kesimpulan Effective memerlukan seluruh kriteria desain dan bukti terpenuhi.', 409, { code: 'TOD_EFFECTIVENESS_CRITERIA_REQUIRED' });
+  }
+
   try {
     const result = await saveDesignAssessment(body);
     return NextResponse.json(result, { status: body.id ? 200 : 201, headers });
