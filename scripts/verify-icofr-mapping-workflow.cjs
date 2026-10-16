@@ -27,7 +27,7 @@ const db={prepare(sql){return {bind(...args){return{
   },
   async run(){
     if(sql.includes('UPDATE ICOFRMappingProposal')){
-      const oldStatus=args[args.length-2],version=args[args.length-1];
+      const oldStatus=(sql.includes("status='PUBLISHED'")||sql.includes("status='APPROVED'"))?'PUBLISHING':args[args.length-2],version=args[args.length-1];
       if(proposal.status!==oldStatus||proposal.version!==version)return {meta:{changes:0}};
       if(sql.includes("status='PUBLISHING'"))proposal.status='PUBLISHING';
       else if(sql.includes("status='PUBLISHED'"))proposal.status='PUBLISHED';
