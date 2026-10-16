@@ -11,7 +11,7 @@ type Database = {
     run: ()=>Promise<{meta?:{changes?:number}}>;
   };
 };
-export type MappingStatus = 'DRAFT'|'OWNER_REVIEWED'|'ICOFR_REVIEWED'|'APPROVED'|'PUBLISHED'|'REJECTED';
+export type MappingStatus = 'DRAFT'|'OWNER_REVIEWED'|'ICOFR_REVIEWED'|'APPROVED'|'PUBLISHING'|'PUBLISHED'|'REJECTED';
 const REVIEW_STAGES: Record<string, {from: MappingStatus[];to: MappingStatus;roles: string[]}> = {
   OWNER_REVIEW: {from:['DRAFT'],to:'OWNER_REVIEWED',roles:['ProcessOwner']},
   ICOFR_REVIEW: {from:['OWNER_REVIEWED'],to:'ICOFR_REVIEWED',roles:['ICOFRCoordinator']},
@@ -225,34 +225,76 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   if(note.length<15)err('REVIEW_NOTE_REQUIRED');
   const database=await db();await ensureSchema(database);
   const proposal=await first(database,'SELECT * FROM ICOFRMappingProposal WHERE id=? AND institutionId=? LIMIT 1',[id,institutionId]);
-  if(!proposal) throw new Error('PROPOSAL_NOT_FOUND');
+  if(!proposal)err('PROPOSAL_NOT_FOUND');
   const before=targetStatus(proposal);
-  if(!stage.from.includes(before))err('INVALID_WORKFLOW_TRANSITION');
-  await assertProposalEvidenceCurrent(database,institutionId,proposal);
+  const resuming=action==='PUBLISH'&&before==='PUBLISHING';
+  if(!stage.from.includes(before)&&!resuming)err('INVALID_WORKFLOW_TRANSITION');
+  // A worker interrupted after reserving publication may retry only after the lease expires.
+  if(resuming&&Date.now()-Date.parse(String(proposal.updatedAt))<120000)err('PUBLISH_IN_PROGRESS');
+  if(action!=='REJECT')await assertProposalEvidenceCurrent(database,institutionId,proposal);
   if(action==='OWNER_REVIEW')await assertOwnerAssigned(database,institutionId,actor,proposal);
   const reviewerIds=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].filter(Boolean).map(String);
   if(action!=='REJECT'&&action!=='PUBLISH'&&reviewerIds.includes(actor.id))err('SEGREGATION_OF_DUTIES_REQUIRED');
-  // The maker must not approve, and the same person cannot approve their own review.
-  let publishedDomainId: string | null = null;
-  if(action==='PUBLISH'){
-
-    const control=await first(database,"SELECT id,category,sourceControlId FROM ICOFRControlDomain WHERE institutionId=? AND sourceControlId=? AND category='PLC' AND status IN ('Approved','Active','Validated') LIMIT 1",[institutionId,proposal.controlMasterId]);
-    if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId) throw new Error('PLC_MAPPING_REQUIRED');
-    publishedDomainId=String(control.id);
-    // No assertion is created until separate process owner, coordinator and reviewer sign-off.
-    await saveTraceabilityChain({
-      financialItemId:String(proposal.financialItemId),assertion:String(proposal.assertion),
-      riskId:String(proposal.riskId),controlDomainId:String(control!.id),
-      sourceControlId:String(proposal.controlMasterId),
-      rationale:String(proposal.rationale)+' | Bukti: '+String(proposal.sourceRecordKey)+' / '+String(proposal.sourceReference)
-    });
-  }
-  const field=action==='OWNER_REVIEW'?'ownerReviewedBy':action==='ICOFR_REVIEW'?'icofrReviewedBy':
-    action==='APPROVE'?'approvedBy':action==='PUBLISH'?'publishedBy':null;
   const now=new Date().toISOString();
+
+  if(action==='PUBLISH'){
+    const signers=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].map(String);
+    if(signers.some(x=>!x||x==='null'||x==='undefined')||new Set(signers).size!==4)
+      err('SEGREGATION_OF_DUTIES_REQUIRED');
+    const control=await first(database,`SELECT id,category,sourceControlId FROM ICOFRControlDomain
+      WHERE institutionId=? AND sourceControlId=? AND category='PLC' AND status IN ('Approved','Active','Validated')
+      LIMIT 1`,[institutionId,proposal.controlMasterId]);
+    if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId)
+      err('PLC_MAPPING_REQUIRED');
+    // Recheck the source-backed account→BPM→risk→enterprise control graph at publication time.
+    const graph=await first(database,`SELECT c.id FROM ControlRiskMapping m
+      JOIN RiskMaster r ON r.id=m.riskId AND r.institutionId=?
+      JOIN ControlMaster c ON c.id=m.controlId AND c.institutionId=r.institutionId
+      JOIN BusinessProcess b ON b.id=r.processId AND b.institutionId=r.institutionId
+      JOIN ICOFRScopeItem pi ON pi.sourceId=b.id AND pi.itemType='Business Process'
+      JOIN ICOFRScopeLink sl ON sl.toItemId=pi.id AND sl.relationType='FSLI_TO_PROCESS'
+      JOIN ICOFRScopeItem fi ON fi.id=sl.fromItemId AND fi.scopeId=pi.scopeId
+        AND fi.itemType='Financial Account' AND fi.sourceId=?
+      JOIN ICOFRScope sc ON sc.id=pi.scopeId AND sc.institutionId=r.institutionId
+      WHERE r.id=? AND c.id=? LIMIT 1`,
+      [institutionId,proposal.financialItemId,proposal.riskId,proposal.controlMasterId]);
+    if(!graph)err('SOURCE_CHAIN_NOT_FOUND');
+    // Reserve with optimistic CAS before any published assertion/traceability side effects.
+    const reserved=await run(database,`UPDATE ICOFRMappingProposal
+      SET status='PUBLISHING',updatedAt=?,version=version+1
+      WHERE id=? AND institutionId=? AND status=? AND version=?`,
+      [now,id,institutionId,before,proposal.version]);
+    if(reserved?.meta?.changes!==1)err('CONCURRENT_REVIEW_CONFLICT');
+    const reservedVersion=Number(proposal.version)+1;
+    try{
+      await saveTraceabilityChain({
+        financialItemId:String(proposal.financialItemId),assertion:String(proposal.assertion),
+        riskId:String(proposal.riskId),controlDomainId:String(control.id),
+        sourceControlId:String(proposal.controlMasterId),
+        rationale:String(proposal.rationale)+' | Bukti: '+String(proposal.sourceRecordKey)+' / '+String(proposal.sourceReference)
+      });
+      const published=await run(database,`UPDATE ICOFRMappingProposal
+        SET status='PUBLISHED',controlDomainId=?,publishedBy=?,updatedAt=?,version=version+1
+        WHERE id=? AND institutionId=? AND status='PUBLISHING' AND version=?`,
+        [control.id,actor.id,new Date().toISOString(),id,institutionId,reservedVersion]);
+      if(published?.meta?.changes!==1)err('CONCURRENT_REVIEW_CONFLICT');
+    }catch(error){
+      // Crash-safe recovery: PUBLISHING becomes retryable after its short lease; a normal
+      // exception restores APPROVED. saveTraceabilityChain upserts links idempotently.
+      await run(database,`UPDATE ICOFRMappingProposal SET status='APPROVED',updatedAt=?,version=version+1
+        WHERE id=? AND institutionId=? AND status='PUBLISHING' AND version=?`,
+        [new Date().toISOString(),id,institutionId,reservedVersion]).catch(()=>undefined);
+      throw error;
+    }
+    await logReview(database,institutionId,id,action,before,'PUBLISHED',actor,note);
+    return {id,status:'PUBLISHED'};
+  }
+
+  const field=action==='OWNER_REVIEW'?'ownerReviewedBy':action==='ICOFR_REVIEW'?'icofrReviewedBy':
+    action==='APPROVE'?'approvedBy':null;
   const sql=`UPDATE ICOFRMappingProposal SET status=?,updatedAt=?,version=version+1`+
-    (field?', '+field+'=?':'')+(publishedDomainId?',controlDomainId=?':'')+' WHERE id=? AND institutionId=? AND status=? AND version=?';
-  const args:unknown[]=[stage.to,now,...(field?[actor.id]:[]),...(publishedDomainId?[publishedDomainId]:[]),id,institutionId,before,proposal.version];
+    (field?', '+field+'=?':'')+' WHERE id=? AND institutionId=? AND status=? AND version=?';
+  const args:unknown[]=[stage.to,now,...(field?[actor.id]:[]),id,institutionId,before,proposal.version];
   const outcome=await run(database,sql,args);
   if(outcome?.meta?.changes!==1)err('CONCURRENT_REVIEW_CONFLICT');
   await logReview(database,institutionId,id,action,before,stage.to,actor,note);
