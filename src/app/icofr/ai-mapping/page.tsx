@@ -30,7 +30,12 @@ export default function IcofrAiMappingPage(){
     try{const response=await fetch(endpoint,{cache:'no-store'});
       const json=await response.json();
       if(!response.ok)throw new Error(json.error||'Tidak dapat memuat workspace');
-      setData(json);setSelectedId(id=>json.items?.some((v:RecordAny)=>v.id===id)?id:json.items?.[0]?.id||'');
+      setData(json);
+      setSelectedId(id=>{
+        const target = new URLSearchParams(window.location.search).get('item');
+        if(target && json.items?.some((v:RecordAny)=>v.id===target))return target;
+        return json.items?.some((v:RecordAny)=>v.id===id)?id:json.items?.[0]?.id||'';
+      });
     }catch(e){setError(e instanceof Error?e.message:'Gagal memuat data');}
     finally{setLoading(false);}
   },[]);
