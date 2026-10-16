@@ -41,7 +41,7 @@ export default function IcofrAiMappingPage(){
   }),[data,query,onlyGaps]);
   const selected=(data?.items||[]).find((item:RecordAny)=>item.id===selectedId);
   const candidate=selected?.riskControlCandidates?.find((c:RecordAny)=>c.riskId+'|'+c.controlId===choice);
-  useEffect(()=>{setChoice('');setAssertion('');setRationale('');setSourceReference('');setHistory(null);setAiStatus('');},[selectedId]);
+  useEffect(()=>{setChoice('');setAssertion('');setRationale('');setSourceReference(String((data?.items||[]).find((x:RecordAny)=>x.id===selectedId)?.source?.recordKey||''));setHistory(null);setAiStatus('');},[selectedId]);
   async function post(url:string,payload:RecordAny){
     const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const json=await response.json();
@@ -68,7 +68,8 @@ export default function IcofrAiMappingPage(){
       setChoice(suggestion.riskId+'|'+suggestion.controlMasterId);
       setAssertion(String(suggestion.assertion));
       setRationale(String(suggestion.rationale||''));
-      setAiStatus('Usulan AI dari '+result.provider+' / '+result.model+'. Harus direviu manusia. '+(suggestion.limitations||''));
+      setSourceReference(String(suggestion.sourceReference||selected.source?.recordKey||''));
+      setAiStatus('Usulan AI dari '+result.provider+' / '+result.model+' berdasarkan field '+(suggestion.evidenceField||'sumber')+'. Harus direviu manusia. '+(suggestion.limitations||''));
     }catch(e){setError(e instanceof Error?e.message:'AI belum tersedia');}
     finally{setBusy(false);}
   }
@@ -132,6 +133,11 @@ export default function IcofrAiMappingPage(){
             <p className="break-words">{selected.source?.documentTitle||'Tidak ditemukan pasangan dokumen yang persis sama'}</p>
             <p>Record: {selected.source?.recordKey||'—'}</p>
             <p className="break-all">SHA-256: {selected.source?.sha256||'—'}</p>
+            {selected.source?.evidence&&<div className="mt-2 border-t border-slate-200 pt-2">
+              <p className="font-semibold">Cuplikan bukti terdaftar (belum disetujui)</p>
+              {Object.entries(selected.source.evidence).map(([key,value])=>
+                <p key={key} className="break-words"><strong>{key}:</strong> {String(value)}</p>)}
+            </div>}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">{selected.processes.map((p:RecordAny)=>
             <span key={p.id} title={p.sourceReference||''} className="rounded-full bg-sky-50 px-3 py-1 text-xs text-sky-800">{p.code} · {p.name}</span>)}</div>
@@ -174,7 +180,7 @@ export default function IcofrAiMappingPage(){
             <textarea rows={3} value={rationale} onChange={e=>setRationale(e.target.value)} className="mt-1 w-full rounded-lg border p-3 text-sm font-normal" placeholder="Jelaskan alasan assertion → risk → control, serta bukti yang mendasarinya"/>
           </label>
           <label className="mt-3 block text-xs font-bold">Rujukan bukti spesifik (minimal 12 karakter)
-            <input value={sourceReference} onChange={e=>setSourceReference(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 text-sm font-normal" placeholder="Nama dokumen, sheet/baris atau halaman, nomor SOP"/>
+            <input value={sourceReference} onChange={e=>setSourceReference(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 text-sm font-normal" placeholder="Wajib berisi source recordKey, lalu sheet/baris atau halaman dokumen"/>
           </label>
           <div className="mt-4 flex justify-end">
             <button onClick={()=>void draft()} disabled={!canCreate||busy||!selected.source||!candidate||!assertion||rationale.trim().length<50||sourceReference.trim().length<12} className="rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">Simpan usulan Draft</button>
@@ -183,7 +189,7 @@ export default function IcofrAiMappingPage(){
         </section>
         <section className="rounded-xl border bg-white p-5">
           <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-sky-700"/><h2 className="font-bold">Validasi dan persetujuan berjenjang</h2></div>
-          <p className="mt-2 text-xs leading-5 text-slate-500">Process Owner → Koordinator ICOFR → Reviewer independen → Publish. Identitas setiap peninjau dicatat; pembuat draft tidak dapat meninjau proposal sendiri.</p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">Process Owner → Koordinator ICOFR → Reviewer independen → Publish. Identitas setiap peninjau dicatat; pembuat draft tidak dapat meninjau proposal sendiri. Process Owner harus memiliki unit organisasi atau email yang cocok dengan BPM tertaut.</p>
           <label className="mt-3 block text-xs font-semibold">Catatan review (minimal 15 karakter)
             <textarea value={reviewNote} onChange={e=>setReviewNote(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border p-2 text-sm font-normal"/>
           </label>

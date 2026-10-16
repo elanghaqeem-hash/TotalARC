@@ -11,7 +11,7 @@ type Database = {
     run: ()=>Promise<{meta?:{changes?:number}}>;
   };
 };
-export type MappingStatus = 'DRAFT'|'OWNER_REVIEWED'|'ICOFR_REVIEWED'|'APPROVED'|'PUBLISHED'|'REJECTED';
+export type MappingStatus = 'DRAFT'|'OWNER_REVIEWED'|'ICOFR_REVIEWED'|'APPROVED'|'PUBLISHING'|'PUBLISHED'|'REJECTED';
 const REVIEW_STAGES: Record<string, {from: MappingStatus[];to: MappingStatus;roles: string[]}> = {
   OWNER_REVIEW: {from:['DRAFT'],to:'OWNER_REVIEWED',roles:['ProcessOwner']},
   ICOFR_REVIEW: {from:['OWNER_REVIEWED'],to:'ICOFR_REVIEWED',roles:['ICOFRCoordinator']},
@@ -22,6 +22,14 @@ const REVIEW_STAGES: Record<string, {from: MappingStatus[];to: MappingStatus;rol
 const ALLOWED_MAKERS=['ICOFRCoordinator','SystemAdmin'];
 const clean = (value:unknown,max=1000)=>typeof value==='string'?value.trim().slice(0,max):'';
 const norm = (value:unknown)=>clean(value,500).toLowerCase().normalize('NFKC').replace(/\s+/g,' ');
+const SOURCE_EVIDENCE_FIELDS = ['accountName','qualitativeNotes','finalConclusion','relatedProcesses','qualitativeFactors','quantitativeClassification'] as const;
+function extractSourceEvidence(raw:unknown):Record<string,string>{
+  let parsed:Record<string,unknown>={};
+  try{const p=JSON.parse(String(raw||'{}'));if(p&&typeof p==='object'&&!Array.isArray(p))parsed=p;}catch{return {};}
+  const evidence:Record<string,string>={};
+  for(const key of SOURCE_EVIDENCE_FIELDS){const value=parsed[key];if(typeof value==='string'&&value.trim())evidence[key]=value.trim().slice(0,500);}
+  return evidence;
+}
 const isKey=(c:Row)=>Number(c.isKeyControl)===1||Number(c.isIcofrKey)===1;
 const err=(code:string):never=>{throw new Error(code);};
 const targetStatus=(row:Row)=>String(row.status||'DRAFT') as MappingStatus;
@@ -101,7 +109,7 @@ export async function getMappingWorkspace(institutionId:string){
       JOIN RiskMaster r ON r.id=m.riskId AND r.institutionId=?
       JOIN ControlMaster c ON c.id=m.controlId AND c.institutionId=r.institutionId`,[institutionId]),
     all(database,'SELECT id,sourceControlId,category,controlCode,name,status FROM ICOFRControlDomain WHERE institutionId=?',[institutionId]),
-    all(database,`SELECT s.recordKey,s.recordTitle,s.sourceDocumentId,d.title sourceTitle,d.rawSha256 sourceHash
+    all(database,`SELECT s.recordKey,s.recordTitle,s.sourceDocumentId,s.payloadJson,d.title sourceTitle,d.rawSha256 sourceHash
       FROM SourceStructuredRecord s JOIN SourceDocument d ON d.id=s.sourceDocumentId
       AND d.institutionId=s.institutionId
       WHERE s.institutionId=? AND s.recordType='ICOFR_SIGNIFICANT_ACCOUNT'
@@ -114,7 +122,11 @@ export async function getMappingWorkspace(institutionId:string){
   const sourceByTitle=new Map<string,Row>();
   for(const s of sources)if(!sourceByTitle.has(norm(s.recordTitle)))sourceByTitle.set(norm(s.recordTitle),s);
   const controlById=new Map(controls.map(c=>[String(c.id),c]));
-  const domainByControl=new Map(domains.filter(d=>d.sourceControlId).map(d=>[String(d.sourceControlId),d]));
+  const domainByControl=new Map<string,Row[]>();
+  for(const domain of domains.filter(d=>d.sourceControlId)){
+    const key=String(domain.sourceControlId);
+    domainByControl.set(key,[...(domainByControl.get(key)||[]),domain]);
+  }
   const linksByRisk=new Map<string,Row[]>();
   for(const m of mappings){const control=controlById.get(String(m.controlId));if(!control)continue;linksByRisk.set(String(m.riskId),[...(linksByRisk.get(String(m.riskId))||[]),control]);}
   const proposed=items.map(item=>{
@@ -122,18 +134,23 @@ export async function getMappingWorkspace(institutionId:string){
     const processIds=new Set(mapped.map(p=>String(p.processId)));
     const related=risks.filter(r=>processIds.has(String(r.processId)));
     const candidates=related.flatMap(r=>(linksByRisk.get(String(r.id))||[]).map(c=>{
-      const domain=domainByControl.get(String(c.id));
+      const linkedDomains=domainByControl.get(String(c.id))||[];
+      const domain=linkedDomains.find(d=>d.category==='PLC'&&['Approved','Active','Validated'].includes(String(d.status)))
+        ||linkedDomains.find(d=>d.category==='PLC')||linkedDomains[0];
       return {riskId:r.id,riskCode:r.riskId,riskName:r.name,riskStatus:r.status,
         processId:r.processId,controlId:c.id,controlCode:c.controlId,controlName:c.name,
-        controlStatus:c.status,domainId:domain?.id||null,domainCategory:domain?.category||null,
+        controlStatus:c.status,domainId:domain?.id||null,domainCategory:domain?.category||null,domainStatus:domain?.status||null,
         keyControl:isKey(c),assertions:pickAssertion(item,r)};
-    })).sort((a,b)=>Number(Boolean(b.keyControl))-Number(Boolean(a.keyControl))||
-      Number(Boolean(b.domainCategory==='PLC'))-Number(Boolean(a.domainCategory==='PLC'))||
+    })).sort((a,b)=>
+      Number(b.domainCategory==='PLC'&&['Approved','Active','Validated'].includes(String(b.domainStatus)))-
+      Number(a.domainCategory==='PLC'&&['Approved','Active','Validated'].includes(String(a.domainStatus)))||
+      Number(!String(b.riskCode).startsWith('ITGC-'))-Number(!String(a.riskCode).startsWith('ITGC-'))||
+      Number(Boolean(b.keyControl))-Number(Boolean(a.keyControl))||
       a.riskCode.localeCompare(b.riskCode));
     const source=sourceByTitle.get(norm(item.name))||null;
-    const plcCandidates=candidates.filter(c=>c.domainCategory==='PLC');
+    const plcCandidates=candidates.filter(c=>c.domainCategory==='PLC'&&['Approved','Active','Validated'].includes(String(c.domainStatus)));
     return {...item,id:String(item.id),itemCode:String(item.itemCode),name:String(item.name),financialStatement:String(item.financialStatement),source:source?{recordKey:source.recordKey,documentId:source.sourceDocumentId,
-      documentTitle:source.sourceTitle,sha256:source.sourceHash}:null,
+      documentTitle:source.sourceTitle,sha256:source.sourceHash,evidence:extractSourceEvidence(source.payloadJson)}:null,
       processes:mapped.map(p=>({id:p.processId,code:p.processCode,name:p.processName,sourceReference:p.sourceReference})),
       riskControlCandidates:candidates.slice(0,60),candidateCount:candidates.length,
       plcGap:plcCandidates.length===0,plcCandidates:plcCandidates.length,
@@ -160,6 +177,9 @@ export async function createMappingProposal(institutionId:string,actor:AuthUserP
   const workspace=await getMappingWorkspace(institutionId);
   const item=workspace.items.find(x=>x.id===financialItemId);
   if(!item||!item.source) throw new Error('SOURCE_DOCUMENT_REQUIRED');
+  // Free-text references alone are insufficient: anchor each draft to an actual, versioned source record.
+  if(!sourceReference.includes(String(item.source.recordKey))||!/^([a-f0-9]{64})$/i.test(String(item.source.sha256||'')))
+    err('SOURCE_RECORD_CITATION_REQUIRED');
   const candidate=item.riskControlCandidates.find(x=>x.riskId===riskId&&x.controlId===controlMasterId);
   if(!candidate) throw new Error('SOURCE_CHAIN_NOT_FOUND');
   const database=await db();
@@ -177,6 +197,30 @@ export async function createMappingProposal(institutionId:string,actor:AuthUserP
   await logReview(database,institutionId,id,'CREATE',null,'DRAFT',actor,rationale);
   return {id,status:'DRAFT'};
 }
+async function assertProposalEvidenceCurrent(database:Database,institutionId:string,proposal:Row){
+  const current=await first(database,`SELECT d.rawSha256,s.recordTitle FROM SourceDocument d
+    JOIN SourceStructuredRecord s ON s.sourceDocumentId=d.id AND s.institutionId=d.institutionId
+    WHERE d.id=? AND d.institutionId=? AND s.recordKey=? AND s.recordType='ICOFR_SIGNIFICANT_ACCOUNT'
+    LIMIT 1`,[proposal.sourceDocumentId,institutionId,proposal.sourceRecordKey]);
+  if(!current||!current.rawSha256||current.rawSha256!==proposal.sourceHash)
+    err('SOURCE_VERSION_CHANGED');
+  if(!String(proposal.sourceReference||'').includes(String(proposal.sourceRecordKey)))
+    err('SOURCE_RECORD_CITATION_REQUIRED');
+}
+async function assertOwnerAssigned(database:Database,institutionId:string,actor:AuthUserProfile,proposal:Row){
+  if(!actor.orgUnitId&&!actor.email)err('PROCESS_OWNER_SCOPE_DENIED');
+  const row=await first(database,`SELECT b.id FROM BusinessProcess b
+    JOIN ICOFRScopeItem pi ON pi.sourceId=b.id AND pi.itemType='Business Process'
+    JOIN ICOFRScopeLink sl ON sl.toItemId=pi.id AND sl.relationType='FSLI_TO_PROCESS'
+    JOIN ICOFRScopeItem fi ON fi.id=sl.fromItemId AND fi.scopeId=pi.scopeId
+      AND fi.itemType='Financial Account' AND fi.sourceId=?
+    JOIN ICOFRScope sc ON sc.id=pi.scopeId AND sc.institutionId=b.institutionId
+    WHERE b.institutionId=? AND
+      ((b.orgUnitId IS NOT NULL AND b.orgUnitId=?)
+       OR (b.ownerEmail IS NOT NULL AND TRIM(b.ownerEmail)<>'' AND LOWER(TRIM(b.ownerEmail))=LOWER(?)))
+    LIMIT 1`,[proposal.financialItemId,institutionId,actor.orgUnitId||'',actor.email||'']);
+  if(!row)err('PROCESS_OWNER_SCOPE_DENIED');
+}
 async function logReview(database:Database,institutionId:string,id:string,action:string,
   from:string|null,to:string,actor:AuthUserProfile,note:string){
   await run(database,`INSERT INTO ICOFRMappingReviewEvent
@@ -192,35 +236,74 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   const proposal=await first(database,'SELECT * FROM ICOFRMappingProposal WHERE id=? AND institutionId=? LIMIT 1',[id,institutionId]);
   if(!proposal) throw new Error('PROPOSAL_NOT_FOUND');
   const before=targetStatus(proposal);
-  if(!stage.from.includes(before))err('INVALID_WORKFLOW_TRANSITION');
+  const resuming=action==='PUBLISH'&&before==='PUBLISHING';
+  if(!stage.from.includes(before)&&!resuming)err('INVALID_WORKFLOW_TRANSITION');
+  // A worker interrupted after reserving publication may retry only after the lease expires.
+  if(resuming&&Date.now()-Date.parse(String(proposal.updatedAt))<120000)err('PUBLISH_IN_PROGRESS');
+  if(action!=='REJECT')await assertProposalEvidenceCurrent(database,institutionId,proposal);
+  if(action==='OWNER_REVIEW')await assertOwnerAssigned(database,institutionId,actor,proposal);
   const reviewerIds=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].filter(Boolean).map(String);
   if(action!=='REJECT'&&action!=='PUBLISH'&&reviewerIds.includes(actor.id))err('SEGREGATION_OF_DUTIES_REQUIRED');
-  // The maker must not approve, and the same person cannot approve their own review.
-  let publishedDomainId: string | null = null;
-  if(action==='PUBLISH'){
-
-    const control=await first(database,"SELECT id,category,sourceControlId FROM ICOFRControlDomain WHERE institutionId=? AND sourceControlId=? AND category='PLC' AND status IN ('Approved','Active','Validated') LIMIT 1",[institutionId,proposal.controlMasterId]);
-    if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId) throw new Error('PLC_MAPPING_REQUIRED');
-    publishedDomainId=String(control.id);
-    const source=await first(database,`SELECT d.rawSha256 FROM SourceDocument d
-      JOIN SourceStructuredRecord s ON s.sourceDocumentId=d.id AND s.institutionId=d.institutionId
-      WHERE d.id=? AND d.institutionId=? AND s.recordKey=? LIMIT 1`,
-      [proposal.sourceDocumentId,institutionId,proposal.sourceRecordKey]);
-    if(!source||source.rawSha256!==proposal.sourceHash)err('SOURCE_VERSION_CHANGED');
-    // No assertion is created until separate process owner, coordinator and reviewer sign-off.
-    await saveTraceabilityChain({
-      financialItemId:String(proposal.financialItemId),assertion:String(proposal.assertion),
-      riskId:String(proposal.riskId),controlDomainId:String(control!.id),
-      sourceControlId:String(proposal.controlMasterId),
-      rationale:String(proposal.rationale)+' | Bukti: '+String(proposal.sourceRecordKey)+' / '+String(proposal.sourceReference)
-    });
-  }
-  const field=action==='OWNER_REVIEW'?'ownerReviewedBy':action==='ICOFR_REVIEW'?'icofrReviewedBy':
-    action==='APPROVE'?'approvedBy':action==='PUBLISH'?'publishedBy':null;
   const now=new Date().toISOString();
+
+  if(action==='PUBLISH'){
+    const signers=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].map(String);
+    if(signers.some(x=>!x||x==='null'||x==='undefined')||new Set(signers).size!==4)
+      err('SEGREGATION_OF_DUTIES_REQUIRED');
+    const control=await first(database,`SELECT id,category,sourceControlId FROM ICOFRControlDomain
+      WHERE institutionId=? AND sourceControlId=? AND category='PLC' AND status IN ('Approved','Active','Validated')
+      LIMIT 1`,[institutionId,proposal.controlMasterId]);
+    if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId)
+      throw new Error('PLC_MAPPING_REQUIRED');
+    // Recheck the source-backed account→BPM→risk→enterprise control graph at publication time.
+    const graph=await first(database,`SELECT c.id FROM ControlRiskMapping m
+      JOIN RiskMaster r ON r.id=m.riskId AND r.institutionId=?
+      JOIN ControlMaster c ON c.id=m.controlId AND c.institutionId=r.institutionId
+      JOIN BusinessProcess b ON b.id=r.processId AND b.institutionId=r.institutionId
+      JOIN ICOFRScopeItem pi ON pi.sourceId=b.id AND pi.itemType='Business Process'
+      JOIN ICOFRScopeLink sl ON sl.toItemId=pi.id AND sl.relationType='FSLI_TO_PROCESS'
+      JOIN ICOFRScopeItem fi ON fi.id=sl.fromItemId AND fi.scopeId=pi.scopeId
+        AND fi.itemType='Financial Account' AND fi.sourceId=?
+      JOIN ICOFRScope sc ON sc.id=pi.scopeId AND sc.institutionId=r.institutionId
+      WHERE r.id=? AND c.id=? LIMIT 1`,
+      [institutionId,proposal.financialItemId,proposal.riskId,proposal.controlMasterId]);
+    if(!graph)err('SOURCE_CHAIN_NOT_FOUND');
+    // Reserve with optimistic CAS before any published assertion/traceability side effects.
+    const reserved=await run(database,`UPDATE ICOFRMappingProposal
+      SET status='PUBLISHING',updatedAt=?,version=version+1
+      WHERE id=? AND institutionId=? AND status=? AND version=?`,
+      [now,id,institutionId,before,proposal.version]);
+    if(reserved?.meta?.changes!==1)err('CONCURRENT_REVIEW_CONFLICT');
+    const reservedVersion=Number(proposal.version)+1;
+    try{
+      await saveTraceabilityChain({
+        financialItemId:String(proposal.financialItemId),assertion:String(proposal.assertion),
+        riskId:String(proposal.riskId),controlDomainId:String(control.id),
+        sourceControlId:String(proposal.controlMasterId),
+        rationale:String(proposal.rationale)+' | Bukti: '+String(proposal.sourceRecordKey)+' / '+String(proposal.sourceReference)
+      });
+      const published=await run(database,`UPDATE ICOFRMappingProposal
+        SET status='PUBLISHED',controlDomainId=?,publishedBy=?,updatedAt=?,version=version+1
+        WHERE id=? AND institutionId=? AND status='PUBLISHING' AND version=?`,
+        [control.id,actor.id,new Date().toISOString(),id,institutionId,reservedVersion]);
+      if(published?.meta?.changes!==1)err('CONCURRENT_REVIEW_CONFLICT');
+    }catch(error){
+      // Crash-safe recovery: PUBLISHING becomes retryable after its short lease; a normal
+      // exception restores APPROVED. saveTraceabilityChain upserts links idempotently.
+      await run(database,`UPDATE ICOFRMappingProposal SET status='APPROVED',updatedAt=?,version=version+1
+        WHERE id=? AND institutionId=? AND status='PUBLISHING' AND version=?`,
+        [new Date().toISOString(),id,institutionId,reservedVersion]).catch(()=>undefined);
+      throw error;
+    }
+    await logReview(database,institutionId,id,action,before,'PUBLISHED',actor,note);
+    return {id,status:'PUBLISHED'};
+  }
+
+  const field=action==='OWNER_REVIEW'?'ownerReviewedBy':action==='ICOFR_REVIEW'?'icofrReviewedBy':
+    action==='APPROVE'?'approvedBy':null;
   const sql=`UPDATE ICOFRMappingProposal SET status=?,updatedAt=?,version=version+1`+
-    (field?', '+field+'=?':'')+(publishedDomainId?',controlDomainId=?':'')+' WHERE id=? AND institutionId=? AND status=? AND version=?';
-  const args:unknown[]=[stage.to,now,...(field?[actor.id]:[]),...(publishedDomainId?[publishedDomainId]:[]),id,institutionId,before,proposal.version];
+    (field?', '+field+'=?':'')+' WHERE id=? AND institutionId=? AND status=? AND version=?';
+  const args:unknown[]=[stage.to,now,...(field?[actor.id]:[]),id,institutionId,before,proposal.version];
   const outcome=await run(database,sql,args);
   if(outcome?.meta?.changes!==1)err('CONCURRENT_REVIEW_CONFLICT');
   await logReview(database,institutionId,id,action,before,stage.to,actor,note);

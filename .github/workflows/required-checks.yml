@@ -161,6 +161,7 @@ jobs:
       - run: npm run verify:icofr-traceability
       - run: npm run verify:icofr-source-mapping
       - run: node scripts/verify-icofr-ai-mapping.cjs
+      - run: node scripts/verify-icofr-mapping-workflow.cjs
       - run: npm run verify:icofr-split-queries
 
   test-suite:
