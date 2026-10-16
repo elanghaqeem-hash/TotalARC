@@ -235,7 +235,7 @@ export default function Page() {
               <h2 className="text-sm font-black text-slate-900">1. Pemetaan melalui Draft dan persetujuan berjenjang</h2>
               <p className="mt-2 text-xs leading-5 text-slate-700">
                 Assertion final tidak boleh ditulis langsung dari matriks. Gunakan AI Mapping &amp; Validation Workspace
-                untuk memilih kandidat berdasarkan 153 relasi BPM yang teregister, melampirkan dokumen sumber,
+                untuk memilih kandidat berdasarkan relasi BPM yang teregister, melampirkan dokumen sumber,
                 dan menjalankan Process Owner → ICOFR Reviewer → Approver. Publikasi hanya tersedia sesudah
                 validasi PLC dan persetujuan terpisah.
               </p>
