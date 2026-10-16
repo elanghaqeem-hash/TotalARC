@@ -10,29 +10,8 @@ import {
   RefreshCw,
   Save,
   ShieldCheck,
-  Trash2
+  ArrowRight
 } from 'lucide-react';
-
-const ASSERTIONS = [
-  'Existence / Occurrence',
-  'Completeness',
-  'Accuracy',
-  'Valuation / Allocation',
-  'Rights & Obligations',
-  'Cut-off',
-  'Classification',
-  'Presentation & Disclosure'
-];
-
-const emptyChain = {
-  financialItemId: '',
-  assertion: '',
-  riskId: '',
-  controlDomainId: '',
-  informationArtifactId: '',
-  sourceControlId: '',
-  rationale: ''
-};
 
 const emptyTod = {
   testId: '',
@@ -67,10 +46,8 @@ function badge(value: string | null | undefined, tone = 'slate') {
 
 export default function Page() {
   const [data, setData] = useState<any>(null);
-  const [chainForm, setChainForm] = useState(emptyChain);
   const [todForm, setTodForm] = useState(emptyTod);
   const [loading, setLoading] = useState(true);
-  const [savingChain, setSavingChain] = useState(false);
   const [savingTod, setSavingTod] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -85,18 +62,6 @@ export default function Page() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Traceability data unavailable.');
       setData(payload);
-      setChainForm(current => {
-        const controls = payload.controls || [];
-        const selected = controls.find((item: any) => item.id === current.controlDomainId);
-        return {
-          ...current,
-          financialItemId: current.financialItemId || payload.financialItems?.[0]?.id || '',
-          riskId: current.riskId,
-          controlDomainId: current.controlDomainId,
-          sourceControlId: current.sourceControlId || selected?.sourceControlId || '',
-          informationArtifactId: current.informationArtifactId
-        };
-      });
       setTodForm(current => ({
         ...current,
         controlDomainId: current.controlDomainId || payload.controls?.[0]?.id || ''
@@ -111,11 +76,6 @@ export default function Page() {
   useEffect(() => {
     loadData();
   }, []);
-
-  const selectedControl = useMemo(
-    () => data?.controls?.find((item: any) => item.id === chainForm.controlDomainId) || null,
-    [data, chainForm.controlDomainId]
-  );
 
   const filteredChains = useMemo(() => {
     const rows = data?.chains || [];
@@ -139,37 +99,6 @@ export default function Page() {
       return haystack.includes(query.trim().toLowerCase());
     });
   }, [data, query, incompleteOnly]);
-
-  const onControlChange = (controlDomainId: string) => {
-    const control = data?.controls?.find((item: any) => item.id === controlDomainId);
-    setChainForm(current => ({
-      ...current,
-      controlDomainId,
-      sourceControlId: control?.sourceControlId || ''
-    }));
-  };
-
-  const saveChain = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setSavingChain(true);
-    setError('');
-    setMessage('');
-    try {
-      const response = await fetch('/api/icofr/traceability', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actionType: 'SAVE_CHAIN', ...chainForm })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to save traceability chain.');
-      setMessage('Traceability chain saved. Downstream ToD, ToE, deficiency and MAP links are resolved from persisted records.');
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save traceability chain.');
-    } finally {
-      setSavingChain(false);
-    }
-  };
 
   const saveTod = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -197,29 +126,6 @@ export default function Page() {
     }
   };
 
-  const removeChain = async (row: any) => {
-    if (!window.confirm('Remove this assertion-to-risk traceability chain?')) return;
-    setError('');
-    setMessage('');
-    try {
-      const response = await fetch('/api/icofr/traceability', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actionType: 'REMOVE_CHAIN',
-          assertionId: row.assertion?.id,
-          riskId: row.risk?.id
-        })
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to remove traceability link.');
-      setMessage('Traceability link removed.');
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to remove traceability link.');
-    }
-  };
-
   const unmappedItems = useMemo(() => {
     const linked = new Set((data?.assertions || [])
       .filter((a: any) => Number(a.inScope) === 1)
@@ -229,22 +135,8 @@ export default function Page() {
     );
   }, [data]);
   const [showAllGaps, setShowAllGaps] = useState(false);
-  const [showAllRisks, setShowAllRisks] = useState(false);
-  const sourceProcesses = useMemo(() =>
-    (data?.scopedProcessMappings || []).filter(
-      (mapping: any) => String(mapping.financialItemId) === chainForm.financialItemId
-    ), [data, chainForm.financialItemId]);
-  const suggestedRisks = useMemo(() => {
-    const ids = new Set(sourceProcesses.map((mapping: any) => String(mapping.processId)));
-    return (data?.risks || []).filter((risk: any) => ids.has(String(risk.processId)));
-  }, [data, sourceProcesses]);
-  const visibleRisks = !showAllRisks && suggestedRisks.length > 0
-    ? suggestedRisks : (data?.risks || []);
-  const prepareMapping = (item: any) => {
-    setShowAllRisks(false);
-    setChainForm({ ...emptyChain, financialItemId: String(item.id) });
-    document.getElementById('chain-builder')?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const approvedPlc = (data?.controls || []).filter((control: any) => control.category === 'PLC' && ['Approved', 'Active', 'Validated'].includes(String(control.status))).length;
+  const scopedPairs = (data?.scopedProcessMappings || []).length;
 
   const metrics = data?.metrics || {};
 
@@ -323,10 +215,10 @@ export default function Page() {
                   <div key={String(item.id)} className="min-w-0 rounded-lg border p-3">
                     <p className="truncate text-xs font-bold">{item.itemCode || '-'}</p>
                     <p className="line-clamp-2 text-xs">{item.name}</p>
-                    <button type="button" onClick={() => prepareMapping(item)}
-                      className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
-                      Petakan dengan bukti
-                    </button>
+                    <Link href={'/icofr/ai-mapping?item=' + encodeURIComponent(String(item.id))}
+                      className="mt-2 inline-flex rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+                      Buat Draft berbasis bukti <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                    </Link>
                   </div>
                 ))}
               </div>
@@ -339,184 +231,40 @@ export default function Page() {
             </section>
           )}
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            <form id="chain-builder" onSubmit={saveChain} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4">
-                <h2 className="text-sm font-black text-slate-900">1. Build traceability chain</h2>
-                <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                  Pemilihan assertion, risiko dan kontrol harus dikonfirmasi pengguna berdasarkan dokumen sumber; kandidat risiko hanya disaring dari FSLI–BPM yang sudah teregister.
-                </p>
+            <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+              <h2 className="text-sm font-black text-slate-900">1. Pemetaan melalui Draft dan persetujuan berjenjang</h2>
+              <p className="mt-2 text-xs leading-5 text-slate-700">
+                Assertion final tidak boleh ditulis langsung dari matriks. Gunakan AI Mapping &amp; Validation Workspace
+                untuk memilih kandidat berdasarkan 153 relasi BPM yang teregister, melampirkan dokumen sumber,
+                dan menjalankan Process Owner → ICOFR Reviewer → Approver. Publikasi hanya tersedia sesudah
+                validasi PLC dan persetujuan terpisah.
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl border border-sky-100 bg-white p-3">
+                  <p className="text-slate-500">Pasangan FSLI–BPM terbaca</p>
+                  <p className="mt-1 text-xl font-bold text-slate-900">{scopedPairs}</p>
+                </div>
+                <div className="rounded-xl border border-sky-100 bg-white p-3">
+                  <p className="text-slate-500">PLC disetujui / aktif</p>
+                  <p className="mt-1 text-xl font-bold text-slate-900">{approvedPlc}</p>
+                </div>
+                <div className="rounded-xl border border-sky-100 bg-white p-3">
+                  <p className="text-slate-500">Akun belum punya assertion in-scope</p>
+                  <p className="mt-1 text-xl font-bold text-amber-800">{unmappedItems.length}</p>
+                </div>
+                <div className="rounded-xl border border-sky-100 bg-white p-3">
+                  <p className="text-slate-500">Rantai lengkap / total</p>
+                  <p className="mt-1 text-xl font-bold text-slate-900">{metrics.completeChains || 0} / {metrics.totalChains || 0}</p>
+                </div>
               </div>
-
-              {(data?.financialItems?.length || 0) === 0 ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  No accounts/disclosures are registered.{' '}
-                  <Link href="/icofr/accounts" className="font-bold underline">Open Accounts & Assertions</Link>.
-                </div>
-              ) : (data?.risks?.length || 0) === 0 ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  No enterprise risks are registered.{' '}
-                  <Link href="/risks" className="font-bold underline">Open Risk Universe</Link>.
-                </div>
-              ) : (data?.controls?.length || 0) === 0 ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  Belum ada kontrol ICOFR. Registrasikan ELC, PLC, ITGC atau ITAC berbasis dokumen sebelum membuat pemetaan.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <label className="text-xs font-bold text-slate-700 md:col-span-2">
-                    Account / disclosure *
-                    <select
-                      required
-                      value={chainForm.financialItemId}
-                      onChange={e => { setChainForm({ ...emptyChain, financialItemId: e.target.value }); setShowAllRisks(false); }}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                    >
-                      <option value="">Select</option>
-                      {(data?.financialItems || []).map((item: any) => (
-                        <option key={item.id} value={item.id}>
-                          {item.itemCode} · {item.name} {item.significant ? '· Significant' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {chainForm.financialItemId && (
-                    <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950 md:col-span-2">
-                      <p className="font-bold">Referensi BPM dari dokumen scoping — belum merupakan persetujuan assertion</p>
-                      {sourceProcesses.length > 0 ? (
-                        <>
-                          <p className="mt-1">{sourceProcesses.map((m: any) => m.processCode + ' · ' + m.processName).join(' | ')}</p>
-                          <p className="mt-1 text-sky-700">{suggestedRisks.length} risiko kandidat dari BPM terkait. Validasi kesesuaian risiko dan pengendaliannya sebelum menyimpan.</p>
-                        </>
-                      ) : <p className="mt-1 text-amber-800">Belum ada referensi FSLI–BPM dalam scoping. Periksa dokumen sumber terlebih dahulu.</p>}
-                    </div>
-                  )}
-
-                  <label className="text-xs font-bold text-slate-700">
-                    Assertion *
-                    <select
-                      required
-                      value={chainForm.assertion}
-                      onChange={e => setChainForm({ ...chainForm, assertion: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                    >
-                      <option value="">Select</option>
-                      {ASSERTIONS.map(item => <option key={item}>{item}</option>)}
-                    </select>
-                  </label>
-
-                  <div className="text-xs font-bold text-slate-700">
-                    <label htmlFor="icofr-risk" className="block">Financial reporting / enterprise risk *</label>
-                    <select
-                      id="icofr-risk"
-                      required
-                      value={chainForm.riskId}
-                      onChange={e => setChainForm({ ...chainForm, riskId: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                    >
-                      <option value="">Select</option>
-                      {visibleRisks.map((item: any) => (
-                        <option key={item.id} value={item.id}>{item.riskId} · {item.name}</option>
-                      ))}
-                    </select>
-                    {suggestedRisks.length > 0 && (
-                      <label className="mt-2 flex items-center gap-2 text-[11px] font-normal text-slate-600">
-                        <input type="checkbox" checked={showAllRisks} onChange={e => {
-                          setShowAllRisks(e.target.checked);
-                          setChainForm(prev => ({ ...prev, riskId: '' }));
-                        }} />
-                        Tampilkan seluruh risiko (pemetaan lintas BPM wajib dijustifikasi)
-                      </label>
-                    )}
-                  </div>
-
-                  <label className="text-xs font-bold text-slate-700">
-                    ELC / PLC / ITGC / ITAC control *
-                    <select
-                      required
-                      value={chainForm.controlDomainId}
-                      onChange={e => onControlChange(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                    >
-                      <option value="">Select</option>
-                      {(data?.controls || []).map((item: any) => (
-                        <option key={item.id} value={item.id}>
-                          {item.category} · {item.controlCode} · {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="text-xs font-bold text-slate-700">
-                    Enterprise Control Master
-                    <select
-                      value={chainForm.sourceControlId}
-                      onChange={e => setChainForm({ ...chainForm, sourceControlId: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                    >
-                      <option value="">No enterprise control link yet</option>
-                      {(data?.enterpriseControls || []).map((item: any) => (
-                        <option key={item.id} value={item.id}>
-                          {item.controlId} · {item.name}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="mt-1 block text-[9px] font-medium text-slate-400">
-                      Required for automatic ToE → deficiency → MAP resolution.
-                    </span>
-                  </label>
-
-                  <label className="text-xs font-bold text-slate-700 md:col-span-2">
-                    IPE / EUC dependency
-                    <select
-                      value={chainForm.informationArtifactId}
-                      onChange={e => setChainForm({ ...chainForm, informationArtifactId: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                    >
-                      <option value="">No IPE/EUC dependency</option>
-                      {(data?.informationArtifacts || []).map((item: any) => (
-                        <option key={item.id} value={item.id}>
-                          {item.artifactType} · {item.itemCode} · {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="text-xs font-bold text-slate-700 md:col-span-2">
-                    Alasan dan bukti sumber pemetaan *
-                    <textarea
-                      required
-                      minLength={25}
-                      rows={3}
-                      value={chainForm.rationale}
-                      onChange={e => setChainForm({ ...chainForm, rationale: e.target.value })}
-                      placeholder="Document why the assertion is exposed to this risk and why the selected control addresses it."
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal leading-5"
-                    />
-                  </label>
-                </div>
-              )}
-
-              <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
-                <div className="text-[10px] text-slate-400">
-                  {selectedControl?.sourceControlId ? 'Selected ICOFR control is already linked to Control Master.' : 'Link to Control Master to activate downstream ToE resolution.'}
-                </div>
-                <button
-                  disabled={
-                    savingChain ||
-                    !chainForm.financialItemId ||
-                    !chainForm.assertion ||
-                    !chainForm.riskId ||
-                    !chainForm.controlDomainId ||
-                    chainForm.rationale.trim().length < 25
-                  }
-                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50"
-                >
-                  <Save className="h-4 w-4" />
-                  {savingChain ? 'Saving…' : 'Save Chain'}
-                </button>
-              </div>
-            </form>
+              {approvedPlc === 0 && <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                Belum ada PLC disetujui/aktif dalam ICOFR Control Domain. Pendaftaran dan validasi kontrol
+                proses harus berbasis sumber sebelum Draft dapat dipublikasikan. ITGC tidak otomatis menggantikan PLC.
+              </p>}
+              <Link href="/icofr/ai-mapping" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white">
+                Buka AI Mapping &amp; Validation Workspace <ArrowRight className="h-4 w-4" />
+              </Link>
+            </section>
 
             <form onSubmit={saveTod} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4">
@@ -699,7 +447,6 @@ export default function Page() {
                       <th className="p-2.5 text-left">Deficiency</th>
                       <th className="p-2.5 text-left">MAP</th>
                       <th className="p-2.5 text-left">Status</th>
-                      <th className="p-2.5 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -775,17 +522,7 @@ export default function Page() {
                           <td className="p-2.5">
                             {row.complete ? badge('Complete', 'emerald') : badge('Incomplete', 'amber')}
                           </td>
-                          <td className="p-2.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => removeChain(row)}
-                              title="Remove assertion-to-risk traceability link"
-                              className="rounded-lg border border-slate-200 p-2 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
+                         </tr>
                       );
                     })}
                   </tbody>
