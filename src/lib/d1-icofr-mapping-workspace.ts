@@ -22,6 +22,14 @@ const REVIEW_STAGES: Record<string, {from: MappingStatus[];to: MappingStatus;rol
 const ALLOWED_MAKERS=['ICOFRCoordinator','SystemAdmin'];
 const clean = (value:unknown,max=1000)=>typeof value==='string'?value.trim().slice(0,max):'';
 const norm = (value:unknown)=>clean(value,500).toLowerCase().normalize('NFKC').replace(/\s+/g,' ');
+const SOURCE_EVIDENCE_FIELDS = ['accountName','qualitativeNotes','finalConclusion','relatedProcesses','qualitativeFactors','quantitativeClassification'] as const;
+function extractSourceEvidence(raw:unknown):Record<string,string>{
+  let parsed:Record<string,unknown>={};
+  try{const p=JSON.parse(String(raw||'{}'));if(p&&typeof p==='object'&&!Array.isArray(p))parsed=p;}catch{return {};}
+  const evidence:Record<string,string>={};
+  for(const key of SOURCE_EVIDENCE_FIELDS){const value=parsed[key];if(typeof value==='string'&&value.trim())evidence[key]=value.trim().slice(0,500);}
+  return evidence;
+}
 const isKey=(c:Row)=>Number(c.isKeyControl)===1||Number(c.isIcofrKey)===1;
 const err=(code:string):never=>{throw new Error(code);};
 const targetStatus=(row:Row)=>String(row.status||'DRAFT') as MappingStatus;
@@ -101,7 +109,7 @@ export async function getMappingWorkspace(institutionId:string){
       JOIN RiskMaster r ON r.id=m.riskId AND r.institutionId=?
       JOIN ControlMaster c ON c.id=m.controlId AND c.institutionId=r.institutionId`,[institutionId]),
     all(database,'SELECT id,sourceControlId,category,controlCode,name,status FROM ICOFRControlDomain WHERE institutionId=?',[institutionId]),
-    all(database,`SELECT s.recordKey,s.recordTitle,s.sourceDocumentId,d.title sourceTitle,d.rawSha256 sourceHash
+    all(database,`SELECT s.recordKey,s.recordTitle,s.sourceDocumentId,s.payloadJson,d.title sourceTitle,d.rawSha256 sourceHash
       FROM SourceStructuredRecord s JOIN SourceDocument d ON d.id=s.sourceDocumentId
       AND d.institutionId=s.institutionId
       WHERE s.institutionId=? AND s.recordType='ICOFR_SIGNIFICANT_ACCOUNT'
@@ -133,7 +141,7 @@ export async function getMappingWorkspace(institutionId:string){
     const source=sourceByTitle.get(norm(item.name))||null;
     const plcCandidates=candidates.filter(c=>c.domainCategory==='PLC');
     return {...item,id:String(item.id),itemCode:String(item.itemCode),name:String(item.name),financialStatement:String(item.financialStatement),source:source?{recordKey:source.recordKey,documentId:source.sourceDocumentId,
-      documentTitle:source.sourceTitle,sha256:source.sourceHash}:null,
+      documentTitle:source.sourceTitle,sha256:source.sourceHash,evidence:extractSourceEvidence(source.payloadJson)}:null,
       processes:mapped.map(p=>({id:p.processId,code:p.processCode,name:p.processName,sourceReference:p.sourceReference})),
       riskControlCandidates:candidates.slice(0,60),candidateCount:candidates.length,
       plcGap:plcCandidates.length===0,plcCandidates:plcCandidates.length,
@@ -160,6 +168,9 @@ export async function createMappingProposal(institutionId:string,actor:AuthUserP
   const workspace=await getMappingWorkspace(institutionId);
   const item=workspace.items.find(x=>x.id===financialItemId);
   if(!item||!item.source) throw new Error('SOURCE_DOCUMENT_REQUIRED');
+  // Free-text references alone are insufficient: anchor each draft to an actual, versioned source record.
+  if(!sourceReference.includes(String(item.source.recordKey))||!/^([a-f0-9]{64})$/i.test(String(item.source.sha256||'')))
+    err('SOURCE_RECORD_CITATION_REQUIRED');
   const candidate=item.riskControlCandidates.find(x=>x.riskId===riskId&&x.controlId===controlMasterId);
   if(!candidate) throw new Error('SOURCE_CHAIN_NOT_FOUND');
   const database=await db();
@@ -177,6 +188,30 @@ export async function createMappingProposal(institutionId:string,actor:AuthUserP
   await logReview(database,institutionId,id,'CREATE',null,'DRAFT',actor,rationale);
   return {id,status:'DRAFT'};
 }
+async function assertProposalEvidenceCurrent(database:Database,institutionId:string,proposal:Row){
+  const current=await first(database,`SELECT d.rawSha256,s.recordTitle FROM SourceDocument d
+    JOIN SourceStructuredRecord s ON s.sourceDocumentId=d.id AND s.institutionId=d.institutionId
+    WHERE d.id=? AND d.institutionId=? AND s.recordKey=? AND s.recordType='ICOFR_SIGNIFICANT_ACCOUNT'
+    LIMIT 1`,[proposal.sourceDocumentId,institutionId,proposal.sourceRecordKey]);
+  if(!current||!current.rawSha256||current.rawSha256!==proposal.sourceHash)
+    err('SOURCE_VERSION_CHANGED');
+  if(!String(proposal.sourceReference||'').includes(String(proposal.sourceRecordKey)))
+    err('SOURCE_RECORD_CITATION_REQUIRED');
+}
+async function assertOwnerAssigned(database:Database,institutionId:string,actor:AuthUserProfile,proposal:Row){
+  if(!actor.orgUnitId&&!actor.email)err('PROCESS_OWNER_SCOPE_DENIED');
+  const row=await first(database,`SELECT b.id FROM BusinessProcess b
+    JOIN ICOFRScopeItem pi ON pi.sourceId=b.id AND pi.itemType='Business Process'
+    JOIN ICOFRScopeLink sl ON sl.toItemId=pi.id AND sl.relationType='FSLI_TO_PROCESS'
+    JOIN ICOFRScopeItem fi ON fi.id=sl.fromItemId AND fi.scopeId=pi.scopeId
+      AND fi.itemType='Financial Account' AND fi.sourceId=?
+    JOIN ICOFRScope sc ON sc.id=pi.scopeId AND sc.institutionId=b.institutionId
+    WHERE b.institutionId=? AND
+      ((b.orgUnitId IS NOT NULL AND b.orgUnitId=?)
+       OR (b.ownerEmail IS NOT NULL AND TRIM(b.ownerEmail)<>'' AND LOWER(TRIM(b.ownerEmail))=LOWER(?)))
+    LIMIT 1`,[proposal.financialItemId,institutionId,actor.orgUnitId||'',actor.email||'']);
+  if(!row)err('PROCESS_OWNER_SCOPE_DENIED');
+}
 async function logReview(database:Database,institutionId:string,id:string,action:string,
   from:string|null,to:string,actor:AuthUserProfile,note:string){
   await run(database,`INSERT INTO ICOFRMappingReviewEvent
@@ -193,6 +228,8 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   if(!proposal) throw new Error('PROPOSAL_NOT_FOUND');
   const before=targetStatus(proposal);
   if(!stage.from.includes(before))err('INVALID_WORKFLOW_TRANSITION');
+  await assertProposalEvidenceCurrent(database,institutionId,proposal);
+  if(action==='OWNER_REVIEW')await assertOwnerAssigned(database,institutionId,actor,proposal);
   const reviewerIds=[proposal.createdBy,proposal.ownerReviewedBy,proposal.icofrReviewedBy,proposal.approvedBy].filter(Boolean).map(String);
   if(action!=='REJECT'&&action!=='PUBLISH'&&reviewerIds.includes(actor.id))err('SEGREGATION_OF_DUTIES_REQUIRED');
   // The maker must not approve, and the same person cannot approve their own review.
@@ -202,11 +239,6 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
     const control=await first(database,"SELECT id,category,sourceControlId FROM ICOFRControlDomain WHERE institutionId=? AND sourceControlId=? AND category='PLC' AND status IN ('Approved','Active','Validated') LIMIT 1",[institutionId,proposal.controlMasterId]);
     if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId) throw new Error('PLC_MAPPING_REQUIRED');
     publishedDomainId=String(control.id);
-    const source=await first(database,`SELECT d.rawSha256 FROM SourceDocument d
-      JOIN SourceStructuredRecord s ON s.sourceDocumentId=d.id AND s.institutionId=d.institutionId
-      WHERE d.id=? AND d.institutionId=? AND s.recordKey=? LIMIT 1`,
-      [proposal.sourceDocumentId,institutionId,proposal.sourceRecordKey]);
-    if(!source||source.rawSha256!==proposal.sourceHash)err('SOURCE_VERSION_CHANGED');
     // No assertion is created until separate process owner, coordinator and reviewer sign-off.
     await saveTraceabilityChain({
       financialItemId:String(proposal.financialItemId),assertion:String(proposal.assertion),
