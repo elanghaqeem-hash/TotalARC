@@ -122,7 +122,11 @@ export async function getMappingWorkspace(institutionId:string){
   const sourceByTitle=new Map<string,Row>();
   for(const s of sources)if(!sourceByTitle.has(norm(s.recordTitle)))sourceByTitle.set(norm(s.recordTitle),s);
   const controlById=new Map(controls.map(c=>[String(c.id),c]));
-  const domainByControl=new Map(domains.filter(d=>d.sourceControlId).map(d=>[String(d.sourceControlId),d]));
+  const domainByControl=new Map<string,Row[]>();
+  for(const domain of domains.filter(d=>d.sourceControlId)){
+    const key=String(domain.sourceControlId);
+    domainByControl.set(key,[...(domainByControl.get(key)||[]),domain]);
+  }
   const linksByRisk=new Map<string,Row[]>();
   for(const m of mappings){const control=controlById.get(String(m.controlId));if(!control)continue;linksByRisk.set(String(m.riskId),[...(linksByRisk.get(String(m.riskId))||[]),control]);}
   const proposed=items.map(item=>{
@@ -130,16 +134,21 @@ export async function getMappingWorkspace(institutionId:string){
     const processIds=new Set(mapped.map(p=>String(p.processId)));
     const related=risks.filter(r=>processIds.has(String(r.processId)));
     const candidates=related.flatMap(r=>(linksByRisk.get(String(r.id))||[]).map(c=>{
-      const domain=domainByControl.get(String(c.id));
+      const linkedDomains=domainByControl.get(String(c.id))||[];
+      const domain=linkedDomains.find(d=>d.category==='PLC'&&['Approved','Active','Validated'].includes(String(d.status)))
+        ||linkedDomains.find(d=>d.category==='PLC')||linkedDomains[0];
       return {riskId:r.id,riskCode:r.riskId,riskName:r.name,riskStatus:r.status,
         processId:r.processId,controlId:c.id,controlCode:c.controlId,controlName:c.name,
-        controlStatus:c.status,domainId:domain?.id||null,domainCategory:domain?.category||null,
+        controlStatus:c.status,domainId:domain?.id||null,domainCategory:domain?.category||null,domainStatus:domain?.status||null,
         keyControl:isKey(c),assertions:pickAssertion(item,r)};
-    })).sort((a,b)=>Number(Boolean(b.keyControl))-Number(Boolean(a.keyControl))||
-      Number(Boolean(b.domainCategory==='PLC'))-Number(Boolean(a.domainCategory==='PLC'))||
+    })).sort((a,b)=>
+      Number(b.domainCategory==='PLC'&&['Approved','Active','Validated'].includes(String(b.domainStatus)))-
+      Number(a.domainCategory==='PLC'&&['Approved','Active','Validated'].includes(String(a.domainStatus)))||
+      Number(!String(b.riskCode).startsWith('ITGC-'))-Number(!String(a.riskCode).startsWith('ITGC-'))||
+      Number(Boolean(b.keyControl))-Number(Boolean(a.keyControl))||
       a.riskCode.localeCompare(b.riskCode));
     const source=sourceByTitle.get(norm(item.name))||null;
-    const plcCandidates=candidates.filter(c=>c.domainCategory==='PLC');
+    const plcCandidates=candidates.filter(c=>c.domainCategory==='PLC'&&['Approved','Active','Validated'].includes(String(c.domainStatus)));
     return {...item,id:String(item.id),itemCode:String(item.itemCode),name:String(item.name),financialStatement:String(item.financialStatement),source:source?{recordKey:source.recordKey,documentId:source.sourceDocumentId,
       documentTitle:source.sourceTitle,sha256:source.sourceHash,evidence:extractSourceEvidence(source.payloadJson)}:null,
       processes:mapped.map(p=>({id:p.processId,code:p.processCode,name:p.processName,sourceReference:p.sourceReference})),
