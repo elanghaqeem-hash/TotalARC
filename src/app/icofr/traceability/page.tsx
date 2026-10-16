@@ -261,9 +261,14 @@ export default function Page() {
                 Belum ada PLC disetujui/aktif dalam ICOFR Control Domain. Pendaftaran dan validasi kontrol
                 proses harus berbasis sumber sebelum Draft dapat dipublikasikan. ITGC tidak otomatis menggantikan PLC.
               </p>}
+              {approvedPlc === 0 && <Link href="/icofr/plc" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-amber-900 underline">
+                Daftarkan dan validasi kontrol PLC berdasarkan bukti sumber <ArrowRight className="h-3.5 w-3.5" />
+              </Link>}
+              <div className="mt-4">
               <Link href="/icofr/ai-mapping" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white">
                 Buka AI Mapping &amp; Validation Workspace <ArrowRight className="h-4 w-4" />
               </Link>
+              </div>
             </section>
 
             <form onSubmit={saveTod} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
