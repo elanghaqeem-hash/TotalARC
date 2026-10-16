@@ -225,7 +225,7 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
   if(note.length<15)err('REVIEW_NOTE_REQUIRED');
   const database=await db();await ensureSchema(database);
   const proposal=await first(database,'SELECT * FROM ICOFRMappingProposal WHERE id=? AND institutionId=? LIMIT 1',[id,institutionId]);
-  if(!proposal)err('PROPOSAL_NOT_FOUND');
+  if(!proposal) throw new Error('PROPOSAL_NOT_FOUND');
   const before=targetStatus(proposal);
   const resuming=action==='PUBLISH'&&before==='PUBLISHING';
   if(!stage.from.includes(before)&&!resuming)err('INVALID_WORKFLOW_TRANSITION');
@@ -245,7 +245,7 @@ export async function updateMappingStage(institutionId:string,actor:AuthUserProf
       WHERE institutionId=? AND sourceControlId=? AND category='PLC' AND status IN ('Approved','Active','Validated')
       LIMIT 1`,[institutionId,proposal.controlMasterId]);
     if(!control||control.category!=='PLC'||control.sourceControlId!==proposal.controlMasterId)
-      err('PLC_MAPPING_REQUIRED');
+      throw new Error('PLC_MAPPING_REQUIRED');
     // Recheck the source-backed account→BPM→risk→enterprise control graph at publication time.
     const graph=await first(database,`SELECT c.id FROM ControlRiskMapping m
       JOIN RiskMaster r ON r.id=m.riskId AND r.institutionId=?
