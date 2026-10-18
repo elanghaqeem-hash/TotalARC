@@ -1,3 +1,5 @@
+import type { AuthUserProfile } from '@/lib/auth';
+import { bindTestPreparer, assertIndependentReviewer, assertDesignConclusion, testSnapshot, testSnapshotSql, sampleSnapshotSql, type WorkpaperType } from '@/lib/icofr-test-governance';
 import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
@@ -206,7 +208,8 @@ async function audit(
   action: string,
   recordId: string,
   newValue: unknown,
-  oldValue?: unknown
+  oldValue?: unknown,
+  actor?: AuthUserProfile
 ) {
   await run(
     db,
@@ -217,14 +220,14 @@ async function audit(
     [
       crypto.randomUUID(),
       institutionId,
-      'System',
-      'System',
+      actor?.name || 'System',
+      actor?.role || 'System',
       action,
       'ICOFRWorkpaperReview',
       recordId,
       oldValue === undefined ? null : JSON.stringify(oldValue),
       JSON.stringify(newValue),
-      'ICOFR ToD/ToE workpaper preparation, supervisory review, review-note clearance and quality-gate governance.',
+      'ICOFR workpaper governance.' + (actor ? ' Actor ID: ' + actor.id : ''),
       null,
       nowIso()
     ]
@@ -323,14 +326,14 @@ function checklistComplete(item: Record<string, unknown>) {
   ].every(bool);
 }
 
-export async function saveWorkpaperReview(input: Record<string, unknown>) {
+export async function saveWorkpaperReview(input: Record<string, unknown>, actor: AuthUserProfile) {
   const db = await ensureIcofrWorkpaperReviewSchema();
   const institution = await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const workpaperType = String(input.workpaperType || '').trim();
   const workpaperId = String(input.workpaperId || '').trim();
-  const preparedBy = String(input.preparedBy || '').trim();
+  const preparedBy = actor?.name || '';
   const reviewerName = clean(input.reviewerName);
   const preparerConclusion = String(input.preparerConclusion || 'Not Assessed').trim();
 
@@ -346,6 +349,8 @@ export async function saveWorkpaperReview(input: Record<string, unknown>) {
     workpaperId
   );
   if (!context) throw new Error('WORKPAPER_NOT_FOUND');
+  await bindTestPreparer(db, String(institution.id), workpaperType as WorkpaperType,
+    workpaperId, actor, String(context.testerName || ''));
 
   await assertReviewPeriodWritable(db, String(institution.id), context);
 
@@ -479,7 +484,8 @@ export async function saveWorkpaperReview(input: Record<string, unknown>) {
     existing ? 'UPDATE_WORKPAPER_REVIEW' : 'CREATE_WORKPAPER_REVIEW',
     id,
     record,
-    existing || undefined
+    existing || undefined,
+    actor
   );
   return record;
 }
@@ -593,14 +599,14 @@ export async function saveWorkpaperEvidence(input: Record<string, unknown>) {
   return record;
 }
 
-export async function reviewWorkpaperEvidence(input: Record<string, unknown>) {
+export async function reviewWorkpaperEvidence(input: Record<string, unknown>, actor: AuthUserProfile) {
   const db = await ensureIcofrWorkpaperReviewSchema();
   const institution = await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const evidenceId = String(input.evidenceId || '').trim();
   const reviewerDecision = String(input.reviewerDecision || '').trim();
-  const reviewerName = String(input.reviewerName || '').trim();
+  const reviewerName = actor?.name || '';
   const reviewerNotes = clean(input.reviewerNotes);
 
   if (
@@ -625,6 +631,12 @@ export async function reviewWorkpaperEvidence(input: Record<string, unknown>) {
     [evidenceId, institution.id]
   );
   if (!evidence) throw new Error('EVIDENCE_NOT_FOUND');
+  const parent = await first<Record<string, unknown>>(db,
+    'SELECT workpaperType,workpaperId FROM ICOFRWorkpaperReview WHERE id=? AND institutionId=?',
+    [evidence.reviewId,institution.id]);
+  if (!parent) throw new Error('REVIEW_NOT_FOUND');
+  await assertIndependentReviewer(db,String(institution.id),parent.workpaperType as WorkpaperType,
+    String(parent.workpaperId),actor);
   if (String(evidence.reviewStatus) === 'Approved') throw new Error('REVIEW_LOCKED');
   if (reviewerName.toLowerCase() === String(evidence.owner || '').toLowerCase()) {
     throw new Error('EVIDENCE_SELF_REVIEW');
@@ -662,7 +674,7 @@ export async function reviewWorkpaperEvidence(input: Record<string, unknown>) {
     reviewerNotes,
     reviewedAt: reviewerDecision === 'Pending' ? null : now
   };
-  await audit(db, String(institution.id), 'REVIEW_WORKPAPER_EVIDENCE', String(evidence.reviewId), result, evidence);
+  await audit(db, String(institution.id), 'REVIEW_WORKPAPER_EVIDENCE', String(evidence.reviewId), result, evidence, actor);
   return result;
 }
 
@@ -1104,7 +1116,7 @@ async function qualityGate(
     gates.push({
       key: 'FAILED_SAMPLE_EVALUATION',
       label: 'Failed samples evaluated for exception handling',
-      passed: failedWithoutException === 0 || bool(review.exceptionsEvaluated),
+      passed: failedWithoutException === 0,
       detail:
         failedWithoutException +
         ' failed sample(s) have no persisted Testing Exception; preparer exceptions-evaluated declaration=' +
@@ -1130,13 +1142,13 @@ async function qualityGate(
   };
 }
 
-export async function decideWorkpaperReview(input: Record<string, unknown>) {
+export async function decideWorkpaperReview(input: Record<string, unknown>, actor: AuthUserProfile) {
   const db = await ensureIcofrWorkpaperReviewSchema();
   const institution = await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const reviewId = String(input.reviewId || '').trim();
-  const reviewerName = String(input.reviewerName || '').trim();
+  const reviewerName = actor?.name || '';
   const decision = String(input.decision || '').trim();
   const reviewerConclusion = String(input.reviewerConclusion || 'Not Assessed').trim();
   const reviewerComments = String(input.reviewerComments || '').trim();
@@ -1151,6 +1163,8 @@ export async function decideWorkpaperReview(input: Record<string, unknown>) {
     [reviewId, institution.id]
   );
   if (!review) throw new Error('REVIEW_NOT_FOUND');
+  const identity = await assertIndependentReviewer(db,String(institution.id),
+    review.workpaperType as WorkpaperType,String(review.workpaperId),actor);
   if (String(review.status) === 'Approved') throw new Error('REVIEW_LOCKED');
   if (!['Under Review', 'Returned', 'Submitted'].includes(String(review.status))) {
     throw new Error('REVIEW_NOT_SUBMITTED');
@@ -1189,7 +1203,7 @@ export async function decideWorkpaperReview(input: Record<string, unknown>) {
       reviewerComments,
       reviewedAt: now
     };
-    await audit(db, String(institution.id), 'RETURN_WORKPAPER_REVIEW', reviewId, result, review);
+    await audit(db, String(institution.id), 'RETURN_WORKPAPER_REVIEW', reviewId, result, review, actor);
     return result;
   }
 
@@ -1197,53 +1211,83 @@ export async function decideWorkpaperReview(input: Record<string, unknown>) {
     throw new Error('REVIEWER_CONCLUSION_REQUIRED');
   }
 
+  if (reviewerComments.length < 40) throw new Error('TOD_EVIDENCE_REQUIRED');
+  const type = review.workpaperType as WorkpaperType;
+  const table = type === 'ToD' ? 'ICOFRDesignAssessment' : 'ToETest';
+  const source = await first<Record<string, unknown>>(db, `SELECT t.*${type==='ToE'?', '+sampleSnapshotSql()+' AS sampleSnapshot':''} FROM ${table} t
+    WHERE t.id=?`, [review.workpaperId]);
+  if (!source || source.period !== review.period) throw new Error('TEST_PERIOD_MISMATCH');
+  if (type === 'ToD') assertDesignConclusion(source,reviewerConclusion);
+  if (type === 'ToE') {
+    const samples = JSON.parse(String(source.sampleSnapshot || '[]')) as Array<Record<string, unknown>>;
+    if (Number(source.sampleSize)<=0 || Number(source.populationSize)<Number(source.sampleSize) ||
+      samples.length!==Number(source.sampleSize) ||
+      ['','Not Provided'].includes(String(source.populationSource || '').trim()) ||
+      ['','Not Selected'].includes(String(source.samplingMethod || '').trim()) ||
+      samples.some(item=>!['Pass','Fail'].includes(String(item.result)) || !String(item.evidenceRef || '').trim()) ||
+      samples.filter(item=>item.result==='Pass').length!==Number(source.passCount) ||
+      samples.filter(item=>item.result==='Fail').length!==Number(source.failCount))
+      throw new Error('TEST_SAMPLE_EVIDENCE_REQUIRED');
+  }
+
+  const expectedSnapshot = testSnapshot(type,source);
   const gate = await qualityGate(db, String(institution.id), review);
   if (!gate.passed) throw new Error('QUALITY_GATE_NOT_MET');
 
-  await run(
-    db,
-    `UPDATE ICOFRWorkpaperReview SET
-      reviewerDecision='Approved',reviewerConclusion=?,reviewerComments=?,
-      status='Approved',reviewedAt=?,updatedAt=?
-     WHERE id=? AND institutionId=?`,
-    [
-      reviewerConclusion,
-      reviewerComments || null,
-      now,
-      now,
-      reviewId,
-      institution.id
-    ]
-  );
-
-  if (review.workpaperType === 'ToD') {
-    await run(
-      db,
-      `UPDATE ICOFRDesignAssessment SET
-        reviewerName=?,conclusion=?,status='Approved',updatedAt=?
-       WHERE id=? AND institutionId=?`,
-      [
-        reviewerName,
-        reviewerConclusion,
-        now,
-        review.workpaperId,
-        institution.id
-      ]
-    );
-  } else {
-    await run(
-      db,
-      `UPDATE ToETest SET
-        reviewerName=?,testerConclusion=?,finalConclusion=?,status='Approved'
-       WHERE id=?`,
-      [
-        reviewerName,
-        review.preparerConclusion,
-        reviewerConclusion,
-        review.workpaperId
-      ]
-    );
+  // Every accepted index entry must reference actual, current, hash-verified bytes.
+  // Free text citations alone never authorize a positive approval.
+  const { loadEvidenceVersionBytes, ensureEvidenceRepositorySchema } = await import('@/lib/d1-evidence-repository');
+  await ensureEvidenceRepositorySchema();
+  const indexes = await all<Record<string, unknown>>(db,
+    'SELECT * FROM ICOFRWorkpaperEvidenceIndex WHERE reviewId=? AND institutionId=?',
+    [review.id,institution.id]);
+  const proofs: Array<{indexId:string;versionId:string;sha256:string;reviewedAt:string}> = [];
+  for (const index of indexes) {
+    const version = await first<Record<string, unknown>>(db, `SELECT v.* FROM EvidenceLink l
+      JOIN EvidenceVersion v ON v.id=l.versionId AND v.institutionId=l.institutionId
+      JOIN EvidenceDocument d ON d.id=v.documentId AND d.institutionId=v.institutionId
+      WHERE l.entityType='WORKPAPER_EVIDENCE' AND l.entityId=? AND l.institutionId=?
+        AND l.documentId=d.id AND d.status='Active' AND d.currentVersionId=v.id AND v.isCurrent=1
+      ORDER BY v.createdAt DESC LIMIT 1`, [index.id,institution.id]);
+    if (index.reviewerDecision !== 'Accepted' || !index.reviewedAt || !version ||
+      !/^[a-f0-9]{64}$/i.test(String(version.sha256 || '')) || Number(version.sizeBytes)<=0)
+      throw new Error('TEST_PERSISTED_EVIDENCE_REQUIRED');
+    const loaded = await loadEvidenceVersionBytes(String(version.id));
+    const digest = await crypto.subtle.digest('SHA-256',new Uint8Array(loaded.bytes));
+    const actual = Array.from(new Uint8Array(digest)).map(v=>v.toString(16).padStart(2,'0')).join('');
+    if (actual !== version.sha256) throw new Error('TEST_EVIDENCE_HASH_MISMATCH');
+    proofs.push({indexId:String(index.id),versionId:String(version.id),sha256:actual,reviewedAt:String(index.reviewedAt)});
   }
+  if (!proofs.length) throw new Error('TEST_PERSISTED_EVIDENCE_REQUIRED');
+  const updated = type === 'ToD'
+    ? {...source,reviewerName,conclusion:reviewerConclusion,status:'Approved'}
+    : {...source,reviewerName,testerConclusion:review.preparerConclusion,finalConclusion:reviewerConclusion,status:'Approved'};
+  const sourceResult = await run(db, type === 'ToD'
+    ? `UPDATE ICOFRDesignAssessment AS t SET reviewerName=?,conclusion=?,status='Approved',updatedAt=?
+        WHERE id=? AND institutionId=? AND ${testSnapshotSql(type)}=?`
+    : `UPDATE ToETest AS t SET reviewerName=?,testerConclusion=?,finalConclusion=?,status='Approved'
+        WHERE id=? AND ${testSnapshotSql(type)}=?`, type === 'ToD'
+    ? [reviewerName,reviewerConclusion,now,review.workpaperId,institution.id,expectedSnapshot]
+    : [reviewerName,review.preparerConclusion,reviewerConclusion,review.workpaperId,expectedSnapshot]);
+  if ((sourceResult as {meta?:{changes?:number}})?.meta?.changes !== 1) throw new Error('CONCURRENT_REVIEW_CONFLICT');
+  const reviewResult = await run(db, `UPDATE ICOFRWorkpaperReview SET
+    reviewerName=?,reviewerDecision='Approved',reviewerConclusion=?,reviewerComments=?,
+    status='Approved',reviewedAt=?,updatedAt=? WHERE id=? AND institutionId=? AND updatedAt=?
+      AND status IN ('Under Review','Returned','Submitted')`,
+    [reviewerName,reviewerConclusion,reviewerComments,now,now,reviewId,institution.id,review.updatedAt]);
+  if ((reviewResult as {meta?:{changes?:number}})?.meta?.changes !== 1) throw new Error('CONCURRENT_REVIEW_CONFLICT');
+  await run(db, `DELETE FROM ICOFRTestEvidence WHERE institutionId=? AND workpaperType=? AND workpaperId=?`,
+    [institution.id,type,review.workpaperId]);
+  for (const proof of proofs) await run(db, `INSERT INTO ICOFRTestEvidence
+    (institutionId,workpaperType,workpaperId,evidenceIndexId,versionId,sha256,evidenceReviewedAt)
+    VALUES (?,?,?,?,?,?,?)`,[institution.id,type,review.workpaperId,proof.indexId,proof.versionId,proof.sha256,proof.reviewedAt]);
+  // Publish the proof last. Interrupted writes remain ineligible, never PASS.
+  const signed = await run(db, `UPDATE ICOFRTestGovernance SET reviewerUserId=?,reviewerName=?,
+    reviewerRole=?,reviewId=?,approvedSnapshot=?,approvedAt=?
+    WHERE institutionId=? AND workpaperType=? AND workpaperId=? AND preparerUserId=?
+      AND approvedSnapshot IS NULL`,[actor.id,reviewerName,actor.role,review.id,testSnapshot(type,updated),now,
+      institution.id,type,review.workpaperId,identity.preparerUserId]);
+  if ((signed as {meta?:{changes?:number}})?.meta?.changes !== 1) throw new Error('CONCURRENT_REVIEW_CONFLICT');
 
   const result = {
     id: reviewId,
@@ -1255,7 +1299,7 @@ export async function decideWorkpaperReview(input: Record<string, unknown>) {
     reviewedAt: now,
     qualityGate: gate
   };
-  await audit(db, String(institution.id), 'APPROVE_WORKPAPER_REVIEW', reviewId, result, review);
+  await audit(db, String(institution.id), 'APPROVE_WORKPAPER_REVIEW', reviewId, result, review, actor);
   return result;
 }
 

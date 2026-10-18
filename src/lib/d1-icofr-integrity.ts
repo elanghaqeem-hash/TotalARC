@@ -32,6 +32,19 @@ const INTEGRITY_REQUIRED_TABLES = [
   'ControlMaster',
   'ControlRiskMapping',
   'ICOFRDesignAssessment',
+  'ICOFRTestGovernance',
+  'ICOFRTestEvidence',
+  'ICOFRWorkpaperReview',
+  'ICOFRWorkpaperEvidenceIndex',
+  'ICOFRWorkpaperReviewNote',
+  'EvidenceDocument',
+  'EvidenceVersion',
+  'EvidenceLink',
+  'EvidenceBinaryChunk',
+  'TestSample',
+  'ICOFRApprovedToDV1',
+  'ICOFRApprovedToEV1',
+  'ICOFRPublishedMappingV1',
   'ToETest',
   'TestingException',
   'ControlDeficiency',
@@ -63,7 +76,7 @@ async function assertIntegrityTablesReady(db: D1DatabaseLike) {
     .prepare(
       `SELECT name
          FROM sqlite_master
-        WHERE type = 'table'
+        WHERE type IN ('table','view')
           AND name IN (${placeholders})`
     )
     .bind(...INTEGRITY_REQUIRED_TABLES)
@@ -532,7 +545,7 @@ export async function getIcofrReferentialIntegrityReport() {
          AND COALESCE(f.status, 'Draft') <> 'Retired'
     ),
     in_scope AS (
-      SELECT a.id, a.institutionId, a.financialItemId
+      SELECT a.id, a.institutionId, a.financialItemId, a.assertion
         FROM ICOFRAssertion a
        WHERE a.inScope = 1
     ),
@@ -593,18 +606,21 @@ export async function getIcofrReferentialIntegrityReport() {
        AND cm.institutionId = ar.institutionId
     ),
     control_tod AS (
-      SELECT DISTINCT ac.assertionId, ac.controlDomainId
+      SELECT DISTINCT ac.assertionId, ac.controlDomainId, tod.period
         FROM assertion_control ac
-        JOIN ICOFRDesignAssessment tod
+        JOIN ICOFRApprovedToDV1 tod
           ON tod.institutionId = ac.institutionId
          AND tod.controlDomainId = ac.controlDomainId
     ),
     control_toe AS (
       SELECT DISTINCT ac.assertionId, ac.controlDomainId, toe.id AS toeId
         FROM assertion_control ac
-        JOIN ToETest toe
+        JOIN ICOFRApprovedToEV1 toe
           ON ac.sourceControlId IS NOT NULL
          AND toe.controlId = ac.sourceControlId
+          AND toe.institutionId = ac.institutionId
+          AND EXISTS (SELECT 1 FROM control_tod d WHERE d.assertionId=ac.assertionId
+            AND d.controlDomainId=ac.controlDomainId AND d.period=toe.period)
     ),
     relevant_toe AS (
       SELECT DISTINCT ac.assertionId, ac.institutionId, toe.id AS toeId
@@ -639,6 +655,15 @@ export async function getIcofrReferentialIntegrityReport() {
       SELECT DISTINCT ri.assertionId, ri.issueId, m.id AS mapId
         FROM relevant_issue ri
         JOIN ManagementActionPlan m ON m.issueId = ri.issueId
+    ),
+    mapping_missing AS (
+      SELECT i.id AS assertionId FROM in_scope i
+      WHERE NOT EXISTS (SELECT 1 FROM assertion_risk ar WHERE ar.assertionId=i.id)
+        OR EXISTS (SELECT 1 FROM assertion_risk ar WHERE ar.assertionId=i.id AND NOT EXISTS (
+          SELECT 1 FROM ICOFRPublishedMappingV1 m JOIN assertion_control c
+            ON c.assertionId=i.id AND c.riskId=ar.riskId AND c.controlDomainId=m.controlDomainId
+          WHERE m.institutionId=i.institutionId AND m.financialItemId=i.financialItemId
+            AND m.assertion=i.assertion AND m.riskId=ar.riskId))
     ),
     financial_assertion_missing AS (
       SELECT sf.id AS financialItemId
@@ -758,7 +783,7 @@ export async function getIcofrReferentialIntegrityReport() {
   const cteParts = completenessBaseSql.trim()
     .replace(/^WITH\s*/, '')
     .split(/\n    \),\n    (?=[a-z_]+\s+AS\s+\()/);
-  if (cteParts.length !== 22) throw new Error('ICOFR_CTE_DEFINITION_DRIFT');
+  if (cteParts.length !== 23) throw new Error('ICOFR_CTE_DEFINITION_DRIFT');
   const cteDefinitions = cteParts.map((part, index) => ({
     name: part.match(/^([a-z_]+)\s+AS\s+\(/)?.[1] || '',
     definition: part + (index < cteParts.length - 1 ? '\n    )' : '')
@@ -781,7 +806,7 @@ export async function getIcofrReferentialIntegrityReport() {
 
   // Count each assertion with a missing link once, even if it has several gaps.
   const incompleteSources = [
-    'risk_missing','process_missing','control_missing','tod_missing',
+    'risk_missing','process_missing','control_missing','mapping_missing','tod_missing',
     'toe_missing','exception_deficiency_missing',
     'approved_deficiency_issue_missing','issue_map_missing'
   ] as const;
@@ -807,6 +832,7 @@ export async function getIcofrReferentialIntegrityReport() {
         ' WHERE assertionId > ? ORDER BY assertionId LIMIT 500'
       );
       let cursor = '';
+      const sourceIds = new Set<string>();
       try {
         for (;;) {
           const page = await db.prepare(sql).bind(cursor).all<{ assertionId: string }>();
@@ -815,6 +841,7 @@ export async function getIcofrReferentialIntegrityReport() {
             const id = String(item.assertionId || '');
             if (!id) throw new Error('INVALID_ASSERTION_ID');
             incomplete.add(id);
+            sourceIds.add(id);
           }
           if (rows.length < 500) break;
           const next = String(rows[rows.length - 1].assertionId || '');
@@ -825,6 +852,7 @@ export async function getIcofrReferentialIntegrityReport() {
         console.error('ICOFR completeness gap scan failed:', source, error);
         throw error;
       }
+      if (source === 'mapping_missing') merged.approvedMappingMissing = sourceIds.size;
     }
     merged.incompleteChains = incomplete.size;
     merged.completeChains = Number(merged.inScopeAssertions) - incomplete.size;
@@ -856,6 +884,9 @@ export async function getIcofrReferentialIntegrityReport() {
   };
 
   const completenessChecks: CompletenessCheck[] = [
+    {code:'ASSERTION_APPROVED_PLC_MAPPING_MISSING',
+      description:'Every in-scope assertion/risk must have a published, source-current, independently approved PLC mapping.',
+      count:Number(completenessRow?.approvedMappingMissing || 0),severity:'Critical'},
     {
       code: 'SIGNIFICANT_FINANCIAL_ITEM_ASSERTION_MISSING',
       description: 'Every significant financial account/disclosure must have at least one in-scope assertion.',
@@ -972,7 +1003,7 @@ export async function getIcofrReferentialIntegrityReport() {
       assertionToBusinessProcess: 'mandatory through the linked risk BusinessProcess reference',
       assertionToRisk: 'mandatory',
       riskToControl: 'mandatory',
-      testing: 'mandatory for ICOFRControlDomain.keyControl, ControlMaster.isIcofrKey, or ControlMaster.isKeyControl',
+      testing: 'session-bound independently approved ToD/ToE with persisted evidence and matching period; mandatory for ICOFRControlDomain.keyControl, ControlMaster.isIcofrKey, or ControlMaster.isKeyControl',
       exceptionToDeficiency: 'mandatory when an exception exists',
       deficiencyToIssue: 'mandatory when ControlDeficiency.humanApproved = 1',
       issueToMAP: 'mandatory for remediation issues arising from human-approved deficiencies',

@@ -64,6 +64,7 @@ export default function Page() {
       setData(payload);
       setTodForm(current => ({
         ...current,
+        testerName: payload.currentTester?.name || '',
         controlDomainId: current.controlDomainId || payload.controls?.[0]?.id || ''
       }));
     } catch (err) {
@@ -321,19 +322,11 @@ export default function Page() {
                   <input
                     required
                     value={todForm.testerName}
-                    onChange={e => setTodForm({ ...todForm, testerName: e.target.value })}
+                    readOnly
+                    title="Penguji mengikuti identitas login"
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
                   />
                 </label>
-                <label className="text-xs font-bold text-slate-700">
-                  Reviewer
-                  <input
-                    value={todForm.reviewerName}
-                    onChange={e => setTodForm({ ...todForm, reviewerName: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
-                  />
-                </label>
-
                 <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 p-3 md:col-span-2 sm:grid-cols-2">
                   {[
                     ['objectiveAlignment', 'Objective alignment'],
@@ -376,7 +369,7 @@ export default function Page() {
                   >
                     <option>Draft</option>
                     <option>Under Review</option>
-                    <option>Approved</option>
+
                   </select>
                 </label>
                 <label className="text-xs font-bold text-slate-700 md:col-span-2">
@@ -390,6 +383,7 @@ export default function Page() {
                 </label>
               </div>
 
+              <p className="mt-3 text-xs text-slate-600">Persetujuan dilakukan reviewer independen melalui <Link href="/icofr/workpaper-review" className="font-semibold text-brand-600 underline">Workpaper Review</Link> setelah bukti diunggah dan direview.</p>
               <div className="mt-4 flex justify-end border-t border-slate-100 pt-4">
                 <button
                   disabled={savingTod || !todForm.controlDomainId || !todForm.period || !todForm.testerName}

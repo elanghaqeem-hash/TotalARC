@@ -18,7 +18,7 @@ const fields=['significantFinancialItems','significantFinancialItemsWithAssertio
 const expected=new Set(fields),values=Object.fromEntries(fields.map(f=>[f,0]));
 values.inScopeAssertions=10;
 const gaps={risk_missing:['a-1','a-2'],process_missing:['a-2','a-3'],
- control_missing:[],tod_missing:[],toe_missing:[],exception_deficiency_missing:[],
+ control_missing:[],mapping_missing:[],tod_missing:[],toe_missing:[],exception_deficiency_missing:[],
  approved_deficiency_issue_missing:[],issue_map_missing:[]};
 const aggregates=[],scans=[];
 function prepare(sql){
@@ -62,7 +62,7 @@ vm.runInNewContext(ts.transpileModule(source,{
  const report=await moduleExports.getIcofrReferentialIntegrityReport();
  assert.equal(aggregates.length,4,'Four bounded aggregate queries');
  assert.deepEqual(new Set(aggregates.flatMap(x=>x.aliases)),expected);
- assert.equal(scans.length,8,'Eight distinct gap-source scans');
+ assert.equal(scans.length,9,'Nine distinct gap-source scans');
  assert.ok(scans.every(x=>x.sql.length<5000 && !x.sql.includes('incomplete_assertions AS (')));
  assert.equal(report.metrics.inScopeAssertions,10);
  assert.equal(report.metrics.incompleteChains,3,'Overlapping missing IDs must count once');

@@ -1,3 +1,5 @@
+import type { AuthUserProfile } from '@/lib/auth';
+import { TEST_GOVERNANCE_SCHEMA, validateTodInput, bindTestPreparer } from '@/lib/icofr-test-governance';
 import { resolveServerActiveInstitutionId } from '@/lib/institution-context';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { ensureCoreDomainSchema } from '@/lib/d1-core';
@@ -146,6 +148,7 @@ export async function ensureIcofrTraceabilitySchema() {
       CREATE INDEX IF NOT EXISTS idx_icofr_design_control
         ON ICOFRDesignAssessment(institutionId, controlDomainId);
     `);
+    await executeSchema(db, TEST_GOVERNANCE_SCHEMA);
     return db;
   })().catch(error => {
     traceSchemaReady = null;
@@ -177,7 +180,8 @@ async function audit(
   entityType: string,
   recordId: string,
   newValue: unknown,
-  oldValue?: unknown
+  oldValue?: unknown,
+  actor?: AuthUserProfile
 ) {
   await run(
     db,
@@ -188,14 +192,14 @@ async function audit(
     [
       crypto.randomUUID(),
       institutionId,
-      'System',
-      'System',
+      actor?.name || 'System',
+      actor?.role || 'System',
       action,
       entityType,
       recordId,
       oldValue === undefined ? null : JSON.stringify(oldValue),
       JSON.stringify(newValue),
-      'ICOFR end-to-end traceability maintenance.',
+      'ICOFR end-to-end traceability maintenance.' + (actor ? ' Actor ID: ' + actor.id : ''),
       null,
       nowIso()
     ]
@@ -441,14 +445,16 @@ export async function removeTraceabilityChain(input: {
   return { success: true };
 }
 
-export async function saveDesignAssessment(input: Record<string, unknown>) {
+export async function saveDesignAssessment(input: Record<string, unknown>, actor?: AuthUserProfile) {
+  input = validateTodInput(input);
+  if (input.status === 'Approved') throw new Error('TOD_WORKPAPER_REVIEW_REQUIRED');
   const db = await ensureIcofrTraceabilitySchema();
   const institution = await primaryInstitution(db);
   if (!institution) throw new Error('INSTITUTION_REQUIRED');
 
   const controlDomainId = String(input.controlDomainId || '').trim();
   const period = String(input.period || '').trim();
-  const testerName = String(input.testerName || '').trim();
+  const testerName = actor?.name || String(input.testerName || '').trim();
   if (!controlDomainId || !period || !testerName) throw new Error('REQUIRED_FIELDS');
 
   const control = await first<Record<string, unknown>>(
@@ -479,6 +485,9 @@ export async function saveDesignAssessment(input: Record<string, unknown>) {
     [institution.id, testId, id]
   );
   if (duplicate) throw new Error('TEST_ID_CONFLICT');
+  if (existing?.status === 'Approved') throw new Error('REVIEW_LOCKED');
+  if (actor) await bindTestPreparer(db, String(institution.id), 'ToD', id, actor,
+    String(existing?.testerName || testerName));
 
   const record = {
     id,
@@ -532,7 +541,7 @@ export async function saveDesignAssessment(input: Record<string, unknown>) {
     );
   }
 
-  await audit(db,String(institution.id),existing?'UPDATE':'CREATE','ICOFRDesignAssessment',id,record,existing||undefined);
+  await audit(db,String(institution.id),existing?'UPDATE':'CREATE','ICOFRDesignAssessment',id,record,existing||undefined,actor);
   return record;
 }
 
@@ -592,7 +601,8 @@ export async function listDesignAssessments(institutionId?: string | null) {
 async function downstreamForControl(db: D1DatabaseLike, controlDomain: Record<string, unknown>) {
   const designTests = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM ICOFRDesignAssessment WHERE controlDomainId=? ORDER BY createdAt DESC',
+    `SELECT t.*,EXISTS(SELECT 1 FROM ICOFRApprovedToDV1 a WHERE a.id=t.id) AS approvalEligible
+      FROM ICOFRDesignAssessment t WHERE controlDomainId=? ORDER BY createdAt DESC`,
     [controlDomain.id]
   );
 
@@ -602,7 +612,8 @@ async function downstreamForControl(db: D1DatabaseLike, controlDomain: Record<st
 
   const toeTests = await all<Record<string, unknown>>(
     db,
-    'SELECT * FROM ToETest WHERE controlId=? ORDER BY testedAt DESC',
+    `SELECT t.*,EXISTS(SELECT 1 FROM ICOFRApprovedToEV1 a WHERE a.id=t.id) AS approvalEligible
+      FROM ToETest t WHERE controlId=? ORDER BY testedAt DESC`,
     [controlDomain.sourceControlId]
   );
   if (toeTests.length === 0) return { designTests, toeTests: [], deficiencies: [], maps: [] };
@@ -648,7 +659,13 @@ async function downstreamForControl(db: D1DatabaseLike, controlDomain: Record<st
   return { designTests, toeTests, deficiencies, maps };
 }
 
+async function prepareApprovalReads() {
+  const { ensureEvidenceRepositorySchema } = await import('@/lib/d1-evidence-repository');
+  await ensureEvidenceRepositorySchema();
+}
+
 export async function getTraceabilityMetrics() {
+  await prepareApprovalReads();
   const db = await ensureIcofrTraceabilitySchema();
   const institution = await primaryInstitution(db);
   if (!institution) {
@@ -668,7 +685,7 @@ export async function getTraceabilityMetrics() {
     `WITH chains AS (
        SELECT DISTINCT
          a.id AS assertionId,
-         a.financialItemId,
+         a.financialItemId, a.assertion,
          r.id AS riskId,
          d.id AS controlId,
          d.sourceControlId
@@ -710,18 +727,21 @@ export async function getTraceabilityMetrics() {
                 )
             AND EXISTS (
                   SELECT 1
-                    FROM ICOFRDesignAssessment tod
+                    FROM ICOFRApprovedToDV1 tod
                    WHERE tod.controlDomainId = chains.controlId
                      AND tod.institutionId = ?
                 )
             AND chains.sourceControlId IS NOT NULL
             AND EXISTS (
                   SELECT 1
-                    FROM ToETest toe
+                    FROM ICOFRApprovedToEV1 toe
                     JOIN ControlMaster cm ON cm.id = toe.controlId
                    WHERE toe.controlId = chains.sourceControlId
                      AND cm.institutionId = ?
+                     AND EXISTS (SELECT 1 FROM ICOFRApprovedToDV1 d WHERE d.controlDomainId=chains.controlId AND d.period=toe.period)
                 )
+            AND EXISTS (SELECT 1 FROM ICOFRPublishedMappingV1 m WHERE m.financialItemId=chains.financialItemId
+              AND m.assertion=chains.assertion AND m.riskId=chains.riskId AND m.controlDomainId=chains.controlId)
            THEN 1 ELSE 0
          END
        ) AS completeChains
@@ -740,6 +760,7 @@ export async function getTraceabilityMetrics() {
 }
 
 export async function getTraceabilityData() {
+  await prepareApprovalReads();
   const db = await ensureIcofrTraceabilitySchema();
   const institution = await primaryInstitution(db);
   if (!institution) {
@@ -854,8 +875,11 @@ export async function getTraceabilityData() {
           Boolean(financialById.get(String(assertionRow.financialItemId))) &&
           Boolean(risk) &&
           Boolean(control) &&
-          downstream.designTests.length > 0 &&
-          downstream.toeTests.length > 0;
+          downstream.designTests.some(tod => bool(tod.approvalEligible) && downstream.toeTests.some(toe =>
+            bool(toe.approvalEligible) && String(tod.period) === String(toe.period))) &&
+          Boolean(await first(db, `SELECT id FROM ICOFRPublishedMappingV1
+            WHERE institutionId=? AND financialItemId=? AND assertion=? AND riskId=? AND controlDomainId=? LIMIT 1`,
+            [institution.id,assertionRow.financialItemId,assertionRow.assertion,risk.id,control.id]));
 
         chains.push({
           id: String(assertionRow.id) + ':' + String(risk.id) + ':' + String(control.id),

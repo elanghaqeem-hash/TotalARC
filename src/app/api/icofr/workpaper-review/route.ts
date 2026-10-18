@@ -1,3 +1,5 @@
+import { readIcofrJson } from '@/lib/icofr-test-governance';
+import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { NextResponse } from 'next/server';
 import {
   clearWorkpaperReviewNote,
@@ -14,12 +16,20 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+const readRoles = new Set(['SystemAdmin','ICOFRCoordinator','ProcessOwner','Reviewer','InternalAuditor','ReadOnlyAuditor']);
+const writeRoles = new Set(['ICOFRCoordinator','Reviewer','InternalAuditor']);
+const reviewerActions = new Set(['REVIEW_EVIDENCE','DECIDE_REVIEW','CLEAR_REVIEW_NOTE']);
+const headers = { 'Cache-Control': 'no-store' };
+
+export async function GET(request: Request) {
+  const ctx = await resolveInstitutionAccess(request);
+  if (!ctx?.institution || !readRoles.has(ctx.profile.role))
+    return NextResponse.json({error:'Hak akses tidak valid.'},{status:403,headers});
   try {
     const data = await getWorkpaperReviewData();
     return NextResponse.json(
-      { ...data, storage: 'cloudflare-d1' },
-      { headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=45' } }
+      { ...data, currentActor: {id:ctx.profile.id,name:ctx.profile.name,role:ctx.profile.role}, storage: 'cloudflare-d1' },
+      { headers }
     );
   } catch (error) {
     console.error('Failed to load ICOFR workpaper review data:', error);
@@ -31,12 +41,30 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const ctx = await resolveInstitutionAccess(request);
+  if (!ctx?.institution || !writeRoles.has(ctx.profile.role))
+    return NextResponse.json({error:'Hak akses tidak valid.'},{status:403,headers});
+  const origin = request.headers.get('origin');
+  if (request.headers.get('sec-fetch-site') === 'cross-site' ||
+    (origin && origin !== new URL(request.url).origin))
+    return NextResponse.json({error:'Cross-origin blocked.'},{status:403,headers});
+  let body: Record<string, unknown>;
   try {
-    const body = (await request.json()) as Record<string, unknown>;
-    const actionType = typeof body.actionType === 'string' ? body.actionType : '';
-
+    body = await readIcofrJson(request);
+    for (const key of ['actionType','decision','reviewerConclusion','reviewId','workpaperId','workpaperType',
+      'reviewerComments','reviewerName','preparedBy','evidenceId','id'])
+      if (body[key]!==undefined && body[key]!==null && typeof body[key]!=='string') throw new Error('INVALID_JSON');
+  } catch (error) {
+    const oversized = error instanceof Error && error.message==='PAYLOAD_TOO_LARGE';
+    return NextResponse.json({error:oversized?'Payload terlalu besar.':'JSON tidak valid.'},{status:oversized?413:400,headers});
+  }
+  const actionType = typeof body.actionType==='string'?body.actionType:'';
+  if (reviewerActions.has(actionType) && ctx.profile.role!=='Reviewer')
+    return NextResponse.json({error:'Aksi memerlukan Reviewer.'},{status:403,headers});
+  if (reviewerActions.has(actionType)) body.reviewerName = ctx.profile.name;
+  try {
     if (actionType === 'SAVE_REVIEW') {
-      const record = await saveWorkpaperReview(body);
+      const record = await saveWorkpaperReview(body,ctx.profile);
       return NextResponse.json(record, { status: body.id ? 200 : 201 });
     }
     if (actionType === 'SAVE_EVIDENCE') {
@@ -44,7 +72,7 @@ export async function POST(request: Request) {
       return NextResponse.json(record, { status: body.id ? 200 : 201 });
     }
     if (actionType === 'REVIEW_EVIDENCE') {
-      return NextResponse.json(await reviewWorkpaperEvidence(body));
+      return NextResponse.json(await reviewWorkpaperEvidence(body,ctx.profile));
     }
     if (actionType === 'REMOVE_EVIDENCE') {
       const id = typeof body.id === 'string' ? body.id.trim() : '';
@@ -66,13 +94,25 @@ export async function POST(request: Request) {
       return NextResponse.json(await submitWorkpaperReview(reviewId));
     }
     if (actionType === 'DECIDE_REVIEW') {
-      return NextResponse.json(await decideWorkpaperReview(body));
+      return NextResponse.json(await decideWorkpaperReview(body,ctx.profile));
     }
 
     return NextResponse.json({ error: 'Unsupported ICOFR workpaper-review action.' }, { status: 400 });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const known: Record<string, [string, number]> = {
+      TEST_ACTOR_REQUIRED:['Identitas pengguna tidak valid.',403],
+      TEST_PREPARER_REQUIRED:['Penguji harus menyimpan kertas kerja dengan identitas login sebelum review.',409],
+      TEST_REVIEWER_REQUIRED:['Reviewer harus sesuai identitas login dan institusi.',403],
+      TOD_SEGREGATION_REQUIRED:['Reviewer wajib berbeda dari penguji.',409],
+      TOD_ASSESSMENT_REQUIRED:['Kesimpulan ToD belum dinilai.',409],
+      TOD_EFFECTIVENESS_CRITERIA_REQUIRED:['Kesimpulan Effective memerlukan semua kriteria desain.',409],
+      TOD_EVIDENCE_REQUIRED:['Catatan review minimal 40 karakter wajib diisi.',409],
+      TEST_PERSISTED_EVIDENCE_REQUIRED:['Setiap indeks bukti harus terhubung ke versi file aktif yang telah direview.',409],
+      TEST_EVIDENCE_HASH_MISMATCH:['Hash file bukti tidak cocok. Unggah dan review ulang bukti.',409],
+      TEST_PERIOD_MISMATCH:['Periode pengujian dan review harus sesuai.',409],
+      TEST_SAMPLE_EVIDENCE_REQUIRED:['Lengkapi populasi, sampel, bukti dan exception ToE aktual.',409],
+      CONCURRENT_REVIEW_CONFLICT:['Kertas kerja berubah saat direview. Muat ulang dan review kembali.',409],
       INSTITUTION_REQUIRED: ['Register an institution before using workpaper review.', 409],
       INVALID_WORKPAPER_TYPE: ['Workpaper type must be ToD or ToE.', 400],
       REVIEW_REQUIRED: ['Workpaper, workpaper type and preparer are required.', 400],
@@ -111,7 +151,7 @@ export async function POST(request: Request) {
     };
 
     if (known[code]) {
-      return NextResponse.json({ error: known[code][0] }, { status: known[code][1] });
+      return NextResponse.json({ error: known[code][0] }, { status: known[code][1], headers });
     }
 
     console.error('Failed to process ICOFR workpaper-review action:', error);

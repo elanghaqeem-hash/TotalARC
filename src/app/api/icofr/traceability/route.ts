@@ -1,3 +1,4 @@
+import { validateTodInput, readIcofrJson } from '@/lib/icofr-test-governance';
 import { NextResponse } from 'next/server';
 import { resolveInstitutionAccess } from '@/lib/institution-context';
 import { getTraceabilityData, saveDesignAssessment } from '@/lib/d1-icofr-traceability';
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
     const data = await getTraceabilityData();
     return NextResponse.json({
       ...data,
+      currentTester: { id: ctx.profile.id, name: ctx.profile.name },
       storage: 'cloudflare-d1',
       publicationWorkflow: '/icofr/ai-mapping',
       requiresHumanApproval: true
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
   // Origin are still authenticated by the session cookie, never by a probe token.
   const origin = request.headers.get('origin');
   if (request.headers.get('sec-fetch-site') === 'cross-site' ||
-    (origin && new URL(origin).host !== new URL(request.url).host)) {
+    (origin && origin !== new URL(request.url).origin)) {
     return errorResponse('Cross-origin blocked.', 403);
   }
   if (Number(request.headers.get('content-length') || 0) > 32000)
@@ -52,13 +54,10 @@ export async function POST(request: Request) {
 
   let body: Record<string, unknown>;
   try {
-    const raw = await request.text();
-    if (raw.length > 32000) return errorResponse('Payload terlalu besar.', 413);
-    body = JSON.parse(raw);
-    if (!body || Array.isArray(body) || typeof body !== 'object')
-      return errorResponse('JSON tidak valid.', 400);
-  } catch {
-    return errorResponse('JSON tidak valid.', 400);
+    body = await readIcofrJson(request);
+  } catch (error) {
+    const oversized = error instanceof Error && error.message==='PAYLOAD_TOO_LARGE';
+    return errorResponse(oversized?'Payload terlalu besar.':'JSON tidak valid.',oversized?413:400);
   }
 
   const actionType = typeof body.actionType === 'string' ? body.actionType : '';
@@ -86,39 +85,22 @@ export async function POST(request: Request) {
   if (!todRoles.has(ctx.profile.role))
     return errorResponse('Role tidak diizinkan membuat Test of Design.', 403);
 
-  // Approval of a design test requires a distinct reviewer role. Creating a
-  // Draft never constitutes positive control effectiveness evidence.
-  if (body.status === 'Approved' && ctx.profile.role !== 'Reviewer')
-    return errorResponse('Persetujuan ToD hanya dapat dilakukan Reviewer.', 403);
-
-  // A test result is never evidence of its own approval. Enforce review inputs
-  // on the server, regardless of what the browser chooses to display.
-  const status = String(body.status || 'Draft');
-  const conclusion = String(body.conclusion || 'Not Assessed');
-  if (!['Draft', 'Under Review', 'Approved'].includes(status))
-    return errorResponse('Status ToD tidak valid.', 400);
-  if (!['Not Assessed', 'Effective', 'Partially Effective', 'Ineffective'].includes(conclusion))
-    return errorResponse('Kesimpulan ToD tidak valid.', 400);
-  if (status === 'Approved') {
-    const reviewer = String(body.reviewerName || '').trim();
-    const tester = String(body.testerName || '').trim();
-    const notes = String(body.notes || '').trim();
-    if (!reviewer || !tester || reviewer.toLocaleLowerCase() === tester.toLocaleLowerCase())
-      return errorResponse('Reviewer ToD wajib berbeda dari penguji.', 409, { code: 'TOD_SEGREGATION_REQUIRED' });
-    if (notes.length < 40)
-      return errorResponse('Persetujuan ToD membutuhkan referensi bukti dan catatan review minimal 40 karakter.', 409, { code: 'TOD_EVIDENCE_REQUIRED' });
-    if (conclusion === 'Not Assessed')
-      return errorResponse('ToD yang belum dinilai tidak dapat disetujui.', 409, { code: 'TOD_ASSESSMENT_REQUIRED' });
-    if (conclusion === 'Effective' && !['objectiveAlignment','riskCoverage','precisionAdequate','evidenceSufficiency','walkthroughComplete'].every(key => body[key] === true))
-      return errorResponse('Kesimpulan Effective memerlukan seluruh kriteria desain dan bukti terpenuhi.', 409, { code: 'TOD_EFFECTIVENESS_CRITERIA_REQUIRED' });
-  }
-
   try {
-    const result = await saveDesignAssessment(body);
+    const canonical = validateTodInput(body);
+    if (canonical.status === 'Approved' && ctx.profile.role !== 'Reviewer')
+      return errorResponse('Persetujuan ToD hanya dapat dilakukan Reviewer.', 403);
+    const result = await saveDesignAssessment(canonical, ctx.profile);
     return NextResponse.json(result, { status: body.id ? 200 : 201, headers });
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     const known: Record<string, [string, number]> = {
+      TOD_INVALID_FIELD_TYPE: ['Tipe field ToD tidak valid.', 400],
+      TOD_INVALID_STATUS: ['Status ToD tidak valid.', 400],
+      TOD_INVALID_CONCLUSION: ['Kesimpulan ToD tidak valid.', 400],
+      TOD_WORKPAPER_REVIEW_REQUIRED: ['Persetujuan ToD dilakukan melalui Workpaper Review dengan bukti tersimpan dan reviewer independen.', 409],
+      TEST_ACTOR_REQUIRED: ['Identitas pengguna tidak valid.', 403],
+      TEST_PREPARER_REQUIRED: ['ToD hanya dapat diperbarui penguji yang tercatat.', 403],
+      REVIEW_LOCKED: ['ToD yang telah disetujui dikunci.', 409],
       INSTITUTION_REQUIRED: ['Registrasikan institusi sebelum membuat ToD.', 409],
       CONTROL_DOMAIN_NOT_FOUND: ['Kontrol ICOFR tidak ditemukan pada institusi aktif.', 404],
       REQUIRED_FIELDS: ['Kontrol, periode, dan penguji ToD wajib diisi.', 400],

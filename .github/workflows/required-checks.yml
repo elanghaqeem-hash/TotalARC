@@ -130,7 +130,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
       - run: npm run verify:rcm-integrity
 
   ai-security:
@@ -163,6 +162,7 @@ jobs:
       - run: node scripts/verify-icofr-ai-mapping.cjs
       - run: node scripts/verify-icofr-mapping-workflow.cjs
       - run: npm run verify:icofr-split-queries
+      - run: npm run verify:icofr-test-approval
 
   test-suite:
     name: Test Suite
