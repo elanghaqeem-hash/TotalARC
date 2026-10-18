@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'src/lib/icofr-test-governance.ts'
+      - 'src/app/api/icofr/traceability/route.ts'
+      - 'src/app/api/icofr/workpaper-review/route.ts'
+      - 'src/lib/d1-icofr-workpaper-review.ts'
+      - 'scripts/verify-icofr-test-approval.cjs'
       - 'src/lib/d1-icofr-integrity.ts'
       - 'src/lib/d1-icofr-traceability.ts'
       - 'src/lib/d1-icofr-certification.ts'
@@ -13,6 +18,11 @@ on:
       - '.github/workflows/verify-icofr-traceability.yml'
   pull_request:
     paths:
+      - 'src/lib/icofr-test-governance.ts'
+      - 'src/app/api/icofr/traceability/route.ts'
+      - 'src/app/api/icofr/workpaper-review/route.ts'
+      - 'src/lib/d1-icofr-workpaper-review.ts'
+      - 'scripts/verify-icofr-test-approval.cjs'
       - 'src/lib/d1-icofr-integrity.ts'
       - 'src/lib/d1-icofr-traceability.ts'
       - 'src/lib/d1-icofr-certification.ts'
@@ -37,3 +47,4 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run verify:icofr-traceability
+      - run: npm run verify:icofr-test-approval
