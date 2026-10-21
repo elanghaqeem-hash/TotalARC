@@ -460,6 +460,29 @@ export async function ensurePolicyRegistrySchema() {
   if (schemaReady) return schemaReady;
   schemaReady = (async () => {
     const db = await getDb();
+    // On warm production schemas, avoid running thirteen sequential DDL queries
+    // just to serve a lightweight registry summary. This read-only check also
+    // confirms that the previously introduced syncVersion column is present.
+    const required = [
+      'PolicyRegistrySource', 'idx_policy_registry_source_unique',
+      'idx_policy_registry_source_policy', 'PolicyEntityLink',
+      'idx_policy_entity_link_unique', 'idx_policy_entity_link_policy',
+      'idx_policy_entity_link_target', 'PolicyDocumentCluster',
+      'idx_policy_document_cluster_unique', 'idx_policy_document_cluster_group',
+      'idx_policy_document_cluster_policy', 'PolicyRegistrySyncRun',
+      'idx_policy_registry_sync_run'
+    ];
+    const objects = await all<{ name: string }>(
+      db,
+      'SELECT name FROM sqlite_master WHERE name IN (' +
+        required.map(() => '?').join(',') + ')',
+      required
+    );
+    const existing = new Set(objects.map(item => item.name));
+    if (required.every(name => existing.has(name))) {
+      const columns = await all<{ name: string }>(db, 'PRAGMA table_info(PolicyRegistrySyncRun)');
+      if (columns.some(column => column.name === 'syncVersion')) return db;
+    }
     await executeSchema(db);
     return db;
   })().catch(error => {
@@ -1695,6 +1718,17 @@ async function rebuildPolicyLinks(db: D1DatabaseLike, institutionId: string) {
   return Number(total?.count || 0);
 }
 
+const POLICY_REGISTRY_ACTIVE_WINDOW_MS = 15 * 60 * 1000;
+
+// Interrupted Workers do not execute the catch/finalizer. A RUNNING record
+// older than the maximal allowed sync window is diagnostic, not evidence of
+// a currently executing job.
+function isStaleRegistrySync(row: Record<string, unknown> | null): boolean {
+  if (!row || String(row.status || '') !== 'RUNNING') return false;
+  const started = Date.parse(String(row.startedAt || ''));
+  return Number.isFinite(started) && started < Date.now() - POLICY_REGISTRY_ACTIVE_WINDOW_MS;
+}
+
 export async function getPolicyRegistrySummary(institutionId: string) {
   const db = await ensurePolicyRegistrySchema();
 
@@ -1825,6 +1859,7 @@ export async function getPolicyRegistrySummary(institutionId: string) {
     candidates: [],
     syncRequired,
     syncVersion: POLICY_REGISTRY_SYNC_VERSION,
+    staleSync: isStaleRegistrySync(lastSync),
     lastSync: lastSync || null,
     coverageMode: 'SUMMARY'
   };
@@ -1941,14 +1976,41 @@ export async function syncPolicyRegistryFromDatabase(
   const db = await ensurePolicyRegistrySchema();
   const runId = crypto.randomUUID();
   const startedAt = nowIso();
+  const staleBefore = new Date(Date.now() - POLICY_REGISTRY_ACTIVE_WINDOW_MS).toISOString();
+
+  // This cleanup runs only when a privileged user explicitly requests sync.
+  // Keep old audit rows but mark abandoned runs as interrupted; do not touch
+  // any bank policy, evidence, or previously generated relationships here.
+  await run(
+    db,
+    `UPDATE PolicyRegistrySyncRun
+        SET status='INTERRUPTED',errorCode='STALE_WORKER_EXECUTION',
+            completedAt=?
+      WHERE institutionId=? AND status='RUNNING' AND startedAt < ?`,
+    [startedAt, institutionId, staleBefore]
+  );
+
+  // Atomic INSERT ... WHERE NOT EXISTS guards against concurrent sync clicks
+  // across Worker instances. Only one fresh RUNNING row may be inserted.
   await run(
     db,
     `INSERT INTO PolicyRegistrySyncRun (
       id,institutionId,status,discoveredCandidates,insertedPolicies,mappedSources,
       generatedLinks,syncVersion,actorName,startedAt,completedAt,errorCode
-    ) VALUES (?,?,'RUNNING',0,0,0,0,?,?,?,NULL,NULL)`,
-    [runId, institutionId, POLICY_REGISTRY_SYNC_VERSION, actorName, startedAt]
+    )
+    SELECT ?,?,'RUNNING',0,0,0,0,?,?,?,NULL,NULL
+    WHERE NOT EXISTS (
+      SELECT 1 FROM PolicyRegistrySyncRun
+       WHERE institutionId=? AND status='RUNNING' AND startedAt >= ?
+    )`,
+    [runId, institutionId, POLICY_REGISTRY_SYNC_VERSION, actorName, startedAt, institutionId, staleBefore]
   );
+  const ownsRun = await first<{ id: string }>(
+    db,
+    'SELECT id FROM PolicyRegistrySyncRun WHERE id=? AND institutionId=? LIMIT 1',
+    [runId, institutionId]
+  );
+  if (!ownsRun) throw new Error('POLICY_REGISTRY_SYNC_IN_PROGRESS');
 
   try {
     const discovery = await discoverPolicyInputs(db, institutionId);

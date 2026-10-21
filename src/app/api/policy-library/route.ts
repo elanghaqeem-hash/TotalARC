@@ -59,7 +59,8 @@ function errorResponse(error: unknown) {
     POLICY_LIBRARY_REVIEWER_REQUIRED: { status: 400, error: 'Nama reviewer wajib diisi.' },
     POLICY_LIBRARY_REVIEW_OUTCOME_REQUIRED: { status: 400, error: 'Hasil review wajib dipilih.' },
     POLICY_LIBRARY_SOURCE_NOT_FOUND: { status: 404, error: 'File sumber tidak ditemukan atau bukan milik institusi aktif.' },
-    POLICY_REGISTRY_DATABASE_UNAVAILABLE: { status: 503, error: 'Database registry ketentuan belum tersedia.' }
+    POLICY_REGISTRY_DATABASE_UNAVAILABLE: { status: 503, error: 'Database registry ketentuan belum tersedia.' },
+    POLICY_REGISTRY_SYNC_IN_PROGRESS: { status: 409, error: 'Sinkronisasi ketentuan masih berjalan. Periksa status atau coba setelah proses selesai.' }
   };
 
   const mapped = mapping[code];
